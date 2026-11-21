@@ -413,7 +413,7 @@ describe('X11 · écran « Studio » de l’application', () => {
     await t.click(t.byText('Envoyer en mode essai'));
     const sent = t.calls.filter((c) => c.url === '/v1/studio/publications/post1/envoi');
     expect(sent).toHaveLength(1);
-    expect(JSON.parse(sent[0]!.body!)).toEqual({ targets: [{ channel: 'instagram', account: 'reseau' }] });
+    expect(JSON.parse(sent[0]!.body!)).toEqual({ targets: [{ channel: 'instagram', account: 'reseau', mode: 'essai' }] });
   });
 
   it('[R134] AU036 · un réseau mis en service est dit « publication réelle » ; rien ne part sans la case cochée ; lien et action affichés', async () => {
@@ -449,6 +449,7 @@ describe('X11 · écran « Studio » de l’application', () => {
     t.input('Je publie pour de vrai sur les réseaux marqués « publication réelle »').checked = true;
     await t.click(t.byText('Publier'));
     expect(t.calls.filter((c) => c.url === '/v1/studio/publications/post1/envoi')).toHaveLength(1);
+    expect(JSON.parse(t.calls.find((c) => c.url === '/v1/studio/publications/post1/envoi')!.body!)).toEqual({ targets: [{ channel: 'instagram', account: 'reseau', mode: 'reel' }] });
   });
 
   describe('AT20 · liens à coller', () => {

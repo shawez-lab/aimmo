@@ -309,9 +309,9 @@ describeWithSqlite('AU036 · la vraie route d’envoi avec les réseaux mis en s
     expect((await t.call(t.agent, 'POST', `/studio/publications/${postId}/validation`)).status).toBe(200);
     const sent = await t.call(t.agent, 'POST', `/studio/publications/${postId}/envoi`, {
       targets: [
-        { channel: 'facebook', account: 'reseau' },
-        { channel: 'instagram', account: 'reseau' },
-        { channel: 'linkedin', account: 'agent' },
+        { channel: 'facebook', account: 'reseau', mode: 'reel' },
+        { channel: 'instagram', account: 'reseau', mode: 'reel' },
+        { channel: 'linkedin', account: 'agent', mode: 'essai' },
       ],
     });
     expect(sent.body?.data.sends).toEqual([

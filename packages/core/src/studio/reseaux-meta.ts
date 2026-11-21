@@ -21,8 +21,8 @@
  * qui publie s'est perdue : la publication a pu être faite, elle n'est jamais refaite). Ni le jeton, ni le texte, ni la
  * réponse du réseau ne sortent d'ici : seul le code [R13].
  *
- * Retirer (R42) : `DELETE` sur la publication, chez Facebook comme chez Instagram ; une publication déjà absente est
- * tenue pour retirée.
+ * Retirer (R42) : `DELETE` sur la publication, chez Facebook comme chez Instagram ; seul un succès explicite la tient
+ * pour retirée.
  */
 import { SocialSendError, type SocialChannel, type SocialPayload } from './publications.ts';
 
@@ -120,21 +120,20 @@ export function metaSocialChannels(config: MetaChannelsConfig): SocialChannel[] 
     return id;
   };
   /**
-   * Retirer une publication [R42]. Elle n'est tenue pour retirée que sur un succès du réseau, ou quand une relecture
-   * établit qu'elle n'existe plus (code 100, sous-code 33 de Meta). Tout autre refus, même de contenu, reste dû.
+   * Retirer une publication [R42]. Elle n'est tenue pour retirée que sur un succès explicite du réseau. Tout le reste,
+   * même une publication que le réseau dit introuvable (le même code couvre des droits perdus), reste dû et se
+   * réessaie ; l'écart se voit au journal.
    */
   const remove = async (postRef: string, account: SocialPayload['account']): Promise<void> => {
     if (account !== 'reseau') throw new SocialSendError('compte_non_relie', 'relier');
     if (!/^[0-9_]{1,64}$/.test(postRef)) throw new SocialSendError('reference_illisible', 'verifier');
+    let done: Json;
     try {
-      const done = await call('DELETE', postRef, {});
-      if (done.success !== true) throw new SocialSendError('retrait_non_confirme', 'reessayer');
+      done = await call('DELETE', postRef, {});
     } catch (error) {
-      const seen = await raw('GET', postRef, { fields: 'id' });
-      const err = seen?.data !== null && typeof seen?.data === 'object' ? ((seen.data as Json).error as Json | undefined) : undefined;
-      if (seen && seen.res.status >= 400 && seen.res.status < 500 && err?.code === 100 && err.error_subcode === 33) return;
       throw error instanceof SocialSendError ? new SocialSendError(error.code, error.action === 'corriger' ? 'reessayer' : error.action) : new SocialSendError('erreur_reseau', 'reessayer');
     }
+    if (done.success !== true) throw new SocialSendError('retrait_non_confirme', 'reessayer');
   };
   /**
    * Chaque photo doit se lire à son adresse publique avant d'envoyer quoi que ce soit : une photo que le site ne sert

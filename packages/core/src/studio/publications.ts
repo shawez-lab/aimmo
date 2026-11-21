@@ -406,16 +406,28 @@ export class Publications {
     const subject = `property:${post.value.property_id}`;
     if (!Array.isArray(targets) || targets.length === 0 || targets.length > SOCIAL_CHANNELS.length * SOCIAL_ACCOUNTS.length) return this.bad(actor, subject, 'R10', 'cibles_invalides');
     const wanted: { channel: SocialChannelName; account: SocialAccount }[] = [];
+    const expected = new Map<SocialChannelName, unknown>();
     for (const t of targets) {
       if (typeof t !== 'object' || t === null) return this.bad(actor, subject, 'R10', 'cibles_invalides');
-      const { channel, account } = t as Record<string, unknown>;
+      const { channel, account, mode } = t as Record<string, unknown>;
       if (!(SOCIAL_CHANNELS as readonly unknown[]).includes(channel) || !(SOCIAL_ACCOUNTS as readonly unknown[]).includes(account)) return this.bad(actor, subject, 'R10', 'cibles_invalides');
+      if (mode !== undefined && !(SOCIAL_MODES as readonly unknown[]).includes(mode)) return this.bad(actor, subject, 'R10', 'cibles_invalides');
+      expected.set(channel as SocialChannelName, mode);
       if (!wanted.some((w) => w.channel === channel && w.account === account)) wanted.push({ channel: channel as SocialChannelName, account: account as SocialAccount });
     }
     const current = (await this.view(postId))!;
     if (await this.isBusiness(post.value.property_id)) return this.bad(actor, subject, 'R110', 'commerce_discret');
     if (!current.validated) return this.bad(actor, subject, 'R134', 'non_validee');
     if (wanted.some((w) => !this.channels.has(w.channel))) return this.bad(actor, subject, 'R26', 'canal_hors_service');
+    // Une vraie publication exige que l'agent l'ait confirmée comme telle (`mode: 'reel'` sur chaque cible réelle) ;
+    // un mode annoncé qui n'est plus celui du réseau (passage de l'essai au réel, ou l'inverse) refuse tout l'envoi :
+    // l'écran doit être rechargé et confirmé [R134].
+    for (const w of wanted) {
+      const mode = this.channels.get(w.channel)!.mode;
+      const said = expected.get(w.channel);
+      if (mode === 'reel' && said !== 'reel') return this.bad(actor, subject, 'R134', said === undefined ? 'reel_non_confirme' : 'mode_change');
+      if (mode === 'essai' && said === 'reel') return this.bad(actor, subject, 'R134', 'mode_change');
+    }
     if (!(await this.deps.diffusion.canDiffuse(post.value.network_id, post.value.property_id, this.now())).allowed) return this.bad(actor, subject, 'R42', 'bien_non_diffusable');
     // L'événement est encore vrai au moment d'envoyer : une offre retirée ne s'annonce plus [R10].
     const status = await this.db.first<{ status: PropertyStatus }>('SELECT status FROM properties WHERE id = ?', [post.value.property_id]);

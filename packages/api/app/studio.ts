@@ -44,6 +44,8 @@ const REFUSALS = {
   non_validee: 'Validez d’abord la publication.',
   canal_hors_service: 'Ce réseau n’est pas en service.',
   cibles_invalides: 'Choisissez au moins un réseau.',
+  reel_non_confirme: 'Publication réelle non confirmée : rien n’est parti.',
+  mode_change: 'Un réseau a changé de mode depuis l’ouverture : rien n’est parti, rouvrez la publication et confirmez.',
   visuels_non_controles: 'Contrôlez d’abord chaque visuel.',
   visuel_refuse: 'Un visuel est refusé : préparez une nouvelle publication.',
   deja_validee: 'Cette publication est déjà validée.',
@@ -627,7 +629,8 @@ globalThis.AIMMO_STUDIO = function (t) {
         }
         s.appendChild(button(anyLive ? 'Publier' : 'Envoyer en mode essai', function () {
           var chosen = nets.filter(function (n) { return n[1].checked; });
-          var targets = chosen.map(function (n) { return { channel: n[0], account: acc.value }; });
+          // Le mode vu à l'écran part avec chaque cible : le serveur refuse tout si un réseau a changé de mode depuis.
+          var targets = chosen.map(function (n) { return { channel: n[0], account: acc.value, mode: isLive(n[0]) ? 'reel' : 'essai' }; });
           if (!targets.length) { state(NO.cibles_invalides); return; }
           var live = chosen.filter(function (n) { return isLive(n[0]); }).map(function (n) { return CHANNELS[n[0]]; });
           if (live.length && !(sure && sure.checked)) { state('Publication réelle sur ' + live.join(', ') + ' : cochez la case qui le confirme.'); return; }
