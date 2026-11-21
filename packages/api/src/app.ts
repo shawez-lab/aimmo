@@ -111,7 +111,7 @@ import { tourneeRoutes, type TourneeRoute } from './tournee.ts';
 import { rechercheRoutes, type RechercheRoute } from './recherche.ts';
 import { statistiquesSiteRoutes, type StatistiquesSiteRoute } from './statistiques-site.ts';
 import { pigeRoutes, type PigeRoute } from './pige.ts';
-import type { PigeSource } from '../../core/src/pige/index.ts';
+import type { PigeProviderSettings, PigeSource } from '../../core/src/pige/index.ts';
 import { adressePigeRoutes, type AdressePigeRoute } from './adresse-pige.ts';
 import { sequencesOf, sequencesRoutes, type SequencesRoute } from './sequences.ts';
 import { AdemeDiagnosisSearch, type AdressePigeServices } from '../../core/src/adresse-pige/index.ts';
@@ -206,6 +206,8 @@ export interface ApiConfig {
   scoreSources?: ScoreServices | null;
   /** La source des annonces de particuliers de la pige (BR29) ; absente, aucune relève, rien n'est rangé. */
   pigeSource?: PigeSource | null;
+  /** AU034 : les réglages du vrai fournisseur de la pige, pour l'état de la relève ; avec eux, seul son réseau relève. */
+  pigeProvider?: PigeProviderSettings | null;
   /** La base de l'ADEME et le cadastre de l'adresse de pige (BR30) ; absents, ceux de `fetchPublicData`, sinon seuls les diagnostics de la veille. */
   adressePigeSources?: AdressePigeServices;
   estimationLimits?: EstimationLimits;
@@ -1507,12 +1509,12 @@ function tourneeRoutesDef(geocoder: Geocoder | null): RouteDef[] {
 }
 
 /** Les routes de la pige (BR29) : rôles contrôlés avant le corps [R16], rien n'est envoyé [R275]. */
-function pigeRoutesDef(source: PigeSource | null): RouteDef[] {
+function pigeRoutesDef(source: PigeSource | null, provider: PigeProviderSettings | null): RouteDef[] {
   return pigeRoutes().map((r: PigeRoute) => ({
     method: r.method,
     pattern: r.pattern,
     name: r.name,
-    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, source }, viewer, params, request),
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, source, provider }, viewer, params, request),
   }));
 }
 
@@ -2533,7 +2535,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...tourneeRoutesDef(config.estimation?.geocoder ?? null),
     ...rechercheRoutesDef(),
     ...statistiquesSiteRoutesDef(),
-    ...pigeRoutesDef(config.pigeSource ?? null),
+    ...pigeRoutesDef(config.pigeSource ?? null, config.pigeProvider ?? null),
     ...adressePigeRoutesDef(adressePigeSourcesOf(config)),
     ...sequencesRoutesDef(),
     ...phasesRoutesDef(),
