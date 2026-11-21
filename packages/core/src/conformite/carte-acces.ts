@@ -246,6 +246,7 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'commission.encaissement': INTERNE('Encaissement des honoraires par le réseau.'),
   // HX49 : rapprochement d'une facture et d'une ligne de banque (des identifiants) ; relance d'une facture impayée, qui porte la fiche du client.
   'banque.rapprochement': INTERNE('Rapprochement d\'une facture et d\'une ligne de banque du réseau : des identifiants, sans donnée d\'un client.'),
+  'banque.part': INTERNE('Part d\'une ligne de banque du réseau rapprochée d\'une facture (AU094) : des identifiants, sans montant ni donnée d\'un client.'),
   'facture.relance': 'client',
   'commission.reversement': INTERNE('Reversement à l\'agent.'),
   'commission.alerte_reversement': INTERNE('Alerte de reversement à l\'agent.'),
