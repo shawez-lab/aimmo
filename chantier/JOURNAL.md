@@ -1572,3 +1572,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 05:00 · voie 3 · AU094 (#751) corrigée après Codex ; AU087 proposée (#752) : une demande d'avis retenue par le plafond du jour ne s'éteint plus.
 - 2026-11-21 05:53 · AU033 · Instagram, Facebook et WhatsApp : un message signé rejoint la bonne fiche avec son origine et une réponse prête ; `GET /v1/captation/meta` dit les réglages manquants et chaque canal « vérifiée » seulement après un vrai message traité ; R670 ; Codex 4 P0 corrigés ; vérification GitHub verte (un test de vitesse sans lien relancé une fois) ; fusionnée (#748, a46c699e) · prochaine : AU034
 - 2026-11-21 05:53 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU034
+- 2026-11-21 05:55 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 04:54 par une autre séance voie 2, active : push sur chantier/AU085 à 05:45)
