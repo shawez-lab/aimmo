@@ -173,7 +173,7 @@ export interface CommissionRevision {
 export type RegularizationProblem = {
   ok: false;
   rule: 'R678' | null;
-  code: 'unknown' | 'bad_reason' | 'not_planned' | 'already_due' | 'nothing_to_fix' | 'partage_invalide' | 'partage_inconnu' | 'parts_changees' | 'agence_partenaire' | 'stale';
+  code: 'unknown' | 'bad_reason' | 'not_planned' | 'already_due' | 'nothing_to_fix' | 'partage_invalide' | 'partage_inconnu' | 'parts_changees' | 'releve_emis' | 'stale';
 };
 
 /** Une vente que le passage n'arrive pas à faire avancer : la direction tranche [R63, R67]. Sans montant ni nom [R13]. */
@@ -409,7 +409,8 @@ export class Commissions {
    * AU091 · la régularisation d'une commission prévue après un avenant d'honoraires signé après le compromis [R678].
    * La direction seule l'approuve, avec son motif ; le code recalcule les honoraires (ceux de l'avenant), les parts (au
    * même taux, palier compris, avec partages et parrainage de M14 ; un partage ou une prime rangés sans leur source
-   * branchée refusent, jamais effacés). Une vente avec une agence partenaire attend AU091b. En une seule
+   * branchée refusent, jamais effacés). Avec une agence partenaire, sa part suit au taux du bon, tant que son relevé n'est
+   * pas émis (AU091b). En une seule
    * écriture : la version, qui garde les parts d'avant et d'après, puis le montant de chaque part et les honoraires
    * (les parts gardent leur rang et leur bénéficiaire ; rien ne s'efface). Seulement
    * tant que la commission n'est pas due : aucune facture ni aucun versement n'existe encore, donc rien n'est payé deux
@@ -432,14 +433,23 @@ export class Commissions {
     // L'écran dit la dernière version qu'il a montrée (0 sans régularisation) : une autre entre-temps refuse celle-ci.
     const seen = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM commission_revisions WHERE file_id = ?', [fileId]);
     if (input.expectedVersion !== undefined && input.expectedVersion !== (seen?.v ?? 0)) return { ok: false, rule: null, code: 'stale' };
-    // Une vente avec une agence partenaire : sa part et son relevé suivent les honoraires du compromis, hors d'ici (AU091b).
-    if (await this.db.first('SELECT 1 FROM agency_delegation_files WHERE file_id = ?', [fileId])) return { ok: false, rule: 'R678', code: 'agence_partenaire' };
+    // AU091b · une vente avec une agence partenaire : sa part et son relevé suivent la version approuvée, tant que le relevé
+    // n'est pas émis. Un relevé déjà émis a pu être facturé par l'agence : jamais payé deux fois, la direction tranche.
+    const agency = await this.db.first<{ delegation_id: string; agency_id: string; partner_share_bp: number; amount_cents: number }>(
+      `SELECT x.delegation_id, a.agency_id, x.partner_share_bp, x.amount_cents FROM commission_agency_shares x
+       JOIN agency_delegations d ON d.id = x.delegation_id JOIN agency_shares a ON a.id = d.share_id WHERE x.file_id = ?`,
+      [fileId],
+    );
+    if (agency && (await this.db.first('SELECT 1 FROM agency_fee_statements WHERE delegation_id = ? OR file_id = ?', [agency.delegation_id, fileId]))) return { ok: false, rule: 'R678', code: 'releve_emis' };
     const pending = await this.pendingTerms(fileId, c);
     if (!pending) return { ok: false, rule: 'R678', code: 'nothing_to_fix' };
-    const before = await this.sharesOf(fileId);
+    const agencyShare = (amountCents: number): CommissionShare => ({ kind: 'agence', beneficiaryId: `agence:${agency!.agency_id}`, reason: null, amountCents });
+    const before = [...(await this.sharesOf(fileId)), ...(agency ? [agencyShare(Number(agency.amount_cents))] : [])];
     // Un partage ou une prime déjà rangés ne s'effacent jamais faute de savoir les recalculer : sans la source de M14, rien.
     if ((before.some((x) => x.kind === 'partage') && !this.partages) || (before.some((x) => x.kind === 'parrainage') && !this.primes)) return { ok: false, rule: null, code: 'partage_inconnu' };
-    const base = pending.feeCents;
+    // La part de l'agence d'abord, au même taux du bon et au centime inférieur, puis la grille sur le reste [R235].
+    const agencyCents = agency ? Math.floor((pending.feeCents * Number(agency.partner_share_bp)) / 10_000) : 0;
+    const base = pending.feeCents - agencyCents;
     // Le taux de la vente ne change pas : celui gardé au compromis (taux propre, palier rangé, ou taux de la grille).
     const rate = await this.rateFor(c.network_id, fileId, c);
     let shares: CommissionShare[];
@@ -451,7 +461,7 @@ export class Commissions {
     } catch {
       return { ok: false, rule: null, code: 'partage_invalide' };
     }
-    const after = shares;
+    const after = [...shares, ...(agency ? [agencyShare(agencyCents)] : [])];
     // La somme des parts fait les honoraires, au centime [R69].
     if (after.reduce((a, x) => a + x.amountCents, 0) !== pending.feeCents) return { ok: false, rule: null, code: 'partage_invalide' };
     // Les mêmes parts, aux mêmes bénéficiaires : seul leur montant change ; rien ne s'efface [R17]. Un partage ou une prime
@@ -468,7 +478,9 @@ export class Commissions {
           params: [fileId, c.network_id, version, Number(c.fee_cents), pending.feeCents, c.fee_charge, pending.feeCharge, pending.amendmentId, reason, JSON.stringify(before), JSON.stringify(after), this.actor(viewer), at],
         },
         // Chaque part à son nouveau montant, avant les honoraires : la garde de la base vérifie ceux de la version.
-        ...after.map((sh, i) => ({ sql: 'UPDATE commission_shares SET amount_cents = ? WHERE file_id = ? AND seq = ?', params: [sh.amountCents, fileId, i + 1] })),
+        ...shares.map((sh, i) => ({ sql: 'UPDATE commission_shares SET amount_cents = ? WHERE file_id = ? AND seq = ?', params: [sh.amountCents, fileId, i + 1] })),
+        // AU091b · la part de l'agence, à son nouveau montant ; la garde de la base la recalcule et refuse un relevé émis.
+        ...(agency ? [{ sql: 'UPDATE commission_agency_shares SET amount_cents = ? WHERE file_id = ?', params: [agencyCents, fileId] }] : []),
         { sql: 'UPDATE commissions SET fee_cents = ?, fee_charge = ? WHERE file_id = ? AND fee_cents = ?', params: [pending.feeCents, pending.feeCharge, fileId, Number(c.fee_cents)] },
       ]);
     } catch {
