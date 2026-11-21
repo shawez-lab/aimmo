@@ -1034,7 +1034,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU094b · Une relance remplacée après un paiement partiel ne consomme pas l'un des trois rangs
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU094
 - Cahier : M13 Pilotage et finances ; relecture Codex de #751 (P2), endroit : C/facturation/relances.ts, `MAX_REMINDERS`.
 - Constat : chaque relance fermée par une nouvelle part (`paiement_partiel`) prend un rang ; après trois remplacements, plus aucune relance ne se prépare, même si un reste dû n'a jamais été relancé.
