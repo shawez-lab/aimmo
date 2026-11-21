@@ -125,6 +125,7 @@ globalThis.AIMMO_CLES = function (t) {
   /* Une écriture sans réponse, ou coupée par une panne du serveur, a pu passer : l'écran ne dit ni fait ni pas fait. */
   var LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Relisez l’écran avant de recommencer.';
   var NO_WEBAUTHN = 'Cet appareil ou ce navigateur ne sait pas tenir de clé d’accès : ouvrez AIMMO dans un navigateur à jour.';
+  var NO_MEMORY = 'Cet appareil ne peut pas retenir qui il sert : la clé n’est pas rangée. Réessayez dans un moment, hors navigation privée.';
   var BAD_LABEL = 'Le nom de l’appareil : de 1 à 40 lettres, chiffres, espaces, tirets ou apostrophes.';
   var busy = null, showing = 0, place = 'accueil';
   function state(text) { $('cles-' + place + '-etat').textContent = text; }
@@ -207,9 +208,13 @@ globalThis.AIMMO_CLES = function (t) {
     return once(function () {
       state('Demande à l’appareil…');
       /* AU108 · la clé d'application cesse dès que la clé de l'appareil est rangée : l'identité se lit avant, tant qu'elle sert. */
-      var whoAsk = send('/v1/cles/identite', 'GET');
-      return send('/v1/cles/enregistrement/debut', 'POST').then(function (x) {
-        if (x.gone) return false;
+      return send('/v1/cles/identite', 'GET').then(function (i) {
+        if (i.gone) return false;
+        /* Sans identité retenue sur l'appareil, sa clé ne pourrait pas servir à entrer : rien n'est rangé. */
+        if (!keepWho(i)) { state(i.offline ? OFFLINE : NO_MEMORY); return false; }
+        return send('/v1/cles/enregistrement/debut', 'POST');
+      }).then(function (x) {
+        if (x === false || x.gone) return false;
         var c = x.ok ? challengeOf(x) : null;
         if (!c) { state(why(x, 'La clé n’est pas rangée.')); return false; }
         var user = new Uint8Array(16);
@@ -237,8 +242,7 @@ globalThis.AIMMO_CLES = function (t) {
             if (y.offline || !y.body || y.status >= 500) { state(LOST); return false; }
             if (!y.ok) { state(why(y, 'La clé n’est pas rangée.')); return false; }
             var d = y.body.data || {};
-            return whoAsk.then(function (i) {
-              keepWho(i);
+            return Promise.resolve().then(function () {
               /* AU108 · la clé d'application vient de cesser : l'appareil entre désormais par sa propre clé. */
               if (y.body.handoff === true && typeof t.handoff === 'function') {
                 t.handoff(d.status === 'actif' ? 'Clé de cet appareil rangée : elle est active. Entrez avec la clé de cet appareil.' : 'Clé de cet appareil rangée : elle attend l’accord de la direction. Une fois acceptée, entrez avec la clé de cet appareil.');
@@ -259,9 +263,12 @@ globalThis.AIMMO_CLES = function (t) {
     if (!own.some(function (d) { return d && (d.status === 'actif' || d.status === 'en_attente'); })) return;
     send('/v1/cles/identite', 'GET').then(keepWho);
   }
+  /* Rend vrai seulement si l'identité est lue et bien retenue sur l'appareil. */
   function keepWho(x) {
     var d = x && x.ok && x.body && x.body.data;
-    if (d && ID.test(String(d.networkId)) && ID.test(String(d.userId)) && ROLES[d.role]) try { localStorage.setItem(WHO, JSON.stringify({ networkId: d.networkId, role: d.role, userId: d.userId })); } catch (e) { /* sans mémoire */ }
+    if (!d || !ID.test(String(d.networkId)) || !ID.test(String(d.userId)) || !ROLES[d.role]) return false;
+    var who = JSON.stringify({ networkId: d.networkId, role: d.role, userId: d.userId });
+    try { localStorage.setItem(WHO, who); return localStorage.getItem(WHO) === who; } catch (e) { return false; }
   }
   /* Une demande sans clé : la connexion est publique, la clé de l'appareil fait la preuve [R600]. */
   function post(path, payload) {

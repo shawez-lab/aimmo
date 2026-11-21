@@ -39,6 +39,7 @@ async function run(answers: Record<string, Answer> = {}, role = 'agent', dev: De
     'GET /v1/moi': ok({ role, firstName: 'Alex' }),
     'GET /v1/cles/mes-appareils': ok(MINE),
     'GET /v1/cles/appareils': ok([...MINE, device({ id: 'd-9', userRole: 'agent', userId: 'agent-2', ownerName: 'Sam Imaginaire', label: 'Téléphone de Sam', status: 'en_attente', approvedAt: null }), device({ id: 'd-7', userRole: 'agent', userId: 'agent-3', ownerName: null, label: 'Téléphone de Lou', status: 'en_attente', approvedAt: null }), device({ id: 'd-8', userRole: 'compliance', userId: 'conf-1', label: 'Poste conformité' })]),
+    'GET /v1/cles/identite': ok({ networkId: 'n-1', role, userId: 'agent-1' }),
     'POST /v1/cles/enregistrement/debut': ok(CHALLENGE),
     'POST /v1/cles/enregistrement/fin': ok(device({ id: 'd-4', label: 'Mon téléphone', status: 'en_attente', approvedAt: null })),
     'POST /v1/cles/preuve/debut': ok(CHALLENGE),
@@ -151,6 +152,18 @@ describe('BR18 · la clé de cet appareil et la preuve d’une action, à l’é
     expect(order.indexOf('GET /v1/cles/identite')).toBeLessThan(order.indexOf('POST /v1/cles/enregistrement/fin'));
     expect(JSON.parse(t.storage.get('aimmo.appareil')!)).toEqual(who);
     expect(t.storage.get('aimmo.appareil')).not.toContain(KEY);
+  });
+
+  it('[R600] AU108 · sans identité lue et retenue sur l’appareil, la clé n’est pas rangée : la clé d’application reste', async () => {
+    const t = await run({ 'GET /v1/cles/mes-appareils': ok([]), 'GET /v1/cles/identite': () => Promise.reject(new TypeError('coupé')) });
+    await t.voir();
+    t.input('cles-accueil-nom').value = 'Mon téléphone';
+    await t.click(t.find('Ranger la clé de cet appareil'));
+    await settle();
+    expect(t.posts()).toEqual([]);
+    expect(t.state()).toBe('Pas de réseau. Réessayez dans un moment.');
+    expect(t.storage.get('aimmo.cle')).toBe(KEY);
+    expect(t.storage.get('aimmo.appareil')).toBeUndefined();
   });
 
   it('[R600] AU108 · la clé d’application cesse en rangeant celle de l’appareil : l’application la quitte et propose l’entrée par l’appareil', async () => {
