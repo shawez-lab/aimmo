@@ -126,6 +126,7 @@ import { handleLicencesPublic, licencesRoutes, type LicencesRoute } from './lice
 import type { StockageFichiersPlages } from '../../core/src/licences/index.ts';
 import { recrutementRoutes, type RecrutementRoute } from './recrutement.ts';
 import { marketingRoutes, type MarketingRoute } from './marketing.ts';
+import type { AdsSettings } from './publicite-reelle.ts';
 import { financesRoutes, type FinancesRoute } from './finances.ts';
 import { handleMcpPublic, mcpRoutes, MCP_PUBLIC_PREFIX, type McpPublicLimits, type McpRoute } from './mcp.ts';
 import { formationRoutes, handleAttestationPublic, type FormationRoute } from './formation.ts';
@@ -264,6 +265,8 @@ export interface ApiConfig {
    * seulement quand tout est réglé (H07) ; il met la fiche seule en mode réel.
    */
   attirer?: Pick<AttirerServices, 'gbpWriter' | 'neighbourhoodWriter' | 'gbp'>;
+  /** AU038 : les plateformes de la publicité payante, réelles seulement quand le Worker les a mises en service (H63). */
+  ads?: AdsSettings | null;
   /**
    * La copropriété et l'urbanisme résumés (RC52, BR87) : la Base adresse nationale, le Géoportail de l'urbanisme et le
    * lecteur IA de la prélecture. Absents, le géocodeur de l'estimation et le Géoportail lu par `fetchPublicData` ; sans
@@ -1656,12 +1659,12 @@ function formationRoutesDef(): RouteDef[] {
 }
 
 /** Les routes du marketing (BR03) : chaque rôle contrôlé avant le corps [R16] ; rien ne part ni ne se paie [R26, R587]. */
-function marketingRoutesDef(): RouteDef[] {
+function marketingRoutesDef(ads: AdsSettings | null): RouteDef[] {
   return marketingRoutes().map((r: MarketingRoute) => ({
     method: r.method,
     pattern: r.pattern,
     name: r.name,
-    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now }, viewer, params, request),
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, ads }, viewer, params, request),
   }));
 }
 
@@ -2558,7 +2561,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...postgresqlRoutesDef(config.platformNetworkId || null),
     ...licencesRoutesDef(),
     ...recrutementRoutesDef(),
-    ...marketingRoutesDef(),
+    ...marketingRoutesDef(config.ads ?? null),
     ...formationRoutesDef(),
     ...mcpRoutesDef(),
     ...financesRoutesDef(config.lecteurFactures ?? null),
