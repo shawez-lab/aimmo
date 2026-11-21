@@ -17,7 +17,8 @@
  */
 import { AdPlatformError, type AdLaunch, type AdPlatform, type AdReceipt, type AdRef } from './publicite.ts';
 
-export const GOOGLE_ADS_VERSION = 'v21';
+/** v26, annoncée en octobre 2026 ; v21 et v22 sont arrêtées ou en fin de vie. Réglable dans le client. */
+export const GOOGLE_ADS_VERSION = 'v26';
 export const META_GRAPH_VERSION = 'v23.0';
 /** Chez Meta, une annonce de logement vise un rayon d'au moins 15 miles autour d'une ville : 25 km, arrondi au-dessus. */
 export const META_HOUSING_MIN_RADIUS_KM = 25;
@@ -213,7 +214,9 @@ export function googleAdsPlatform(config: GoogleAdsConfig): AdPlatform {
     async start(launch: AdLaunch): Promise<AdReceipt> {
       if (!CODE.test(launch.code)) throw new AdPlatformError('refusee');
       const places = placesOf(launch, config.places);
-      const name = platformName(launch.code);
+      // Google refuse deux campagnes (ou deux budgets) du même nom, même en pause : chaque lancement a le sien, qui
+      // commence toujours par le code de suivi, pour que la pause le retrouve sans accusé.
+      const name = `${platformName(launch.code)} ${now().toISOString().replace(/[-:.]/g, '')}`;
       const [budget] = await create('campaignBudgets:mutate', [{ create: { name, amountMicros: String(launch.dailyBudgetCents * 10_000), deliveryMethod: 'STANDARD', explicitlyShared: false } }]);
       // Créée en pause : rien ne dépense avant que la zone, les mots et l'annonce soient en place.
       const [campaign] = await create('campaigns:mutate', [
@@ -252,7 +255,8 @@ export function googleAdsPlatform(config: GoogleAdsConfig): AdPlatform {
       if (typeof externalRef === 'string' && GOOGLE_CAMPAIGN.test(externalRef)) refs = [externalRef];
       else {
         if (!CODE.test(code)) throw new AdPlatformError('refusee');
-        const rows = await search(`SELECT campaign.resource_name FROM campaign WHERE campaign.name = '${platformName(code)}' AND campaign.status != 'REMOVED'`);
+        // Chaque lancement de ce code, déjà en pause ou non : redemander une pause ne coûte rien.
+        const rows = await search(`SELECT campaign.resource_name FROM campaign WHERE campaign.name LIKE '${platformName(code)} %' AND campaign.status != 'REMOVED'`);
         refs = rows.map((r) => obj(r.campaign)?.resourceName).filter((x): x is string => typeof x === 'string' && GOOGLE_CAMPAIGN.test(x));
       }
       // Rien trouvé sous ce nom : rien ne dépense, la pause est tenue.

@@ -257,7 +257,7 @@ it('[R589] Google Ads : créée en pause, zone en communes seules, mots et annon
     descriptions: ['Un conseiller du réseau vous répond.', 'Prenez rendez-vous en ligne.'],
   };
   expect(() => googleAdsPlatform({ ...config, headlines: ['Un', 'Deux'] })).toThrow(/Titres/);
-  const google = googleAdsPlatform(config);
+  const google = googleAdsPlatform({ ...config, now: () => new Date(START) });
   // Une commune sans lieu réglé : rien ne part.
   await expect(google.start({ ...LAUNCH, communes: ['21000'] })).rejects.toMatchObject({ failure: 'lieu_inconnu' });
   expect(g.calls).toEqual([]);
@@ -266,8 +266,10 @@ it('[R589] Google Ads : créée en pause, zone en communes seules, mots et annon
   const mutations = g.calls.filter((c) => c.url.includes(':mutate'));
   expect(mutations.map((c) => c.url.split('/').pop())).toEqual(['campaignBudgets:mutate', 'campaigns:mutate', 'campaignCriteria:mutate', 'adGroups:mutate', 'adGroupCriteria:mutate', 'adGroupAds:mutate', 'campaigns:mutate']);
   const ops = (i: number) => (mutations[i]!.body as { operations: Array<Record<string, any>> }).operations;
-  expect(ops(0)[0]!.create).toMatchObject({ name: 'AIMMO abcdefgh2345', amountMicros: '20000000' });
-  expect(ops(1)[0]!.create).toMatchObject({ name: 'AIMMO abcdefgh2345', status: 'PAUSED', advertisingChannelType: 'SEARCH' });
+  // Un nom par lancement, commençant par le code : Google refuse deux campagnes du même nom, même en pause.
+  expect(ops(0)[0]!.create).toMatchObject({ name: 'AIMMO abcdefgh2345 20271011T080000000Z', amountMicros: '20000000' });
+  expect(ops(1)[0]!.create).toMatchObject({ name: 'AIMMO abcdefgh2345 20271011T080000000Z', status: 'PAUSED', advertisingChannelType: 'SEARCH' });
+  expect(mutations[0]!.url).toBe('https://googleads.googleapis.com/v26/customers/1234567890/campaignBudgets:mutate');
   expect(ops(2).map((o) => o.create)).toEqual([
     { campaign: 'customers/1234567890/campaigns/2', location: { geoTargetConstant: 'geoTargetConstants/1006095' } },
     { campaign: 'customers/1234567890/campaigns/2', location: { geoTargetConstant: 'geoTargetConstants/1006094' } },
@@ -280,6 +282,10 @@ it('[R589] Google Ads : créée en pause, zone en communes seules, mots et annon
   // La dépense d'un jour : 12,345678 € → 1 235 centimes.
   expect(await google.spend!({ code: LAUNCH.code, externalRef: receipt.externalRef }, '2027-10-11')).toBe(1_235);
   // Les erreurs de Google deviennent des codes fermés, jamais leur message.
+  // Sans accusé, la pause cherche chaque lancement de ce code.
+  const searched = g.calls.length;
+  await google.pause(LAUNCH.code, null);
+  expect((g.calls[searched]!.body as { query: string }).query).toBe("SELECT campaign.resource_name FROM campaign WHERE campaign.name LIKE 'AIMMO abcdefgh2345 %' AND campaign.status != 'REMOVED'");
   const bad = fakeHttp(() => ({ status: 401, body: { error: { status: 'UNAUTHENTICATED', message: 'jeton secret-essai' } } }));
   const off = googleAdsPlatform({ ...config, http: bad.http });
   await expect(off.pause(LAUNCH.code, null)).rejects.toMatchObject({ failure: 'reconnecter', message: 'plateforme publicitaire : reconnecter' });
