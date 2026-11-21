@@ -1552,3 +1552,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 00:27 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 20:53 et 21:53 n'ont produit ni commit ni tâche finie : verrou occupé)
 - 2026-11-21 00:37 · voie 3 · AU063 (#733) fusionnée : surfaces habitable, Carrez et utile.
 - 2026-11-21 00:50 · voie 3 · AU060 (#737) fusionnée : droits démembrés (usufruit, nue-propriété) et leurs preuves ; AU110 (#738) et AU109 (#740) corrigés après Codex, relecture demandée.
+- 2026-11-21 01:41 · AU083 · chaque étape du financement dit sa demande (banque ou courtier, jamais un numéro) : un refus ne clôt que sa demande, le prêt n'est refusé que si toutes le sont, seule une offre encore vivante éteint l'alerte de la date limite ; R61 précisée ; Codex rien ; vérification GitHub verte ; fusionnée (#741, d0784edb) · prochaine : AU084
+- 2026-11-21 01:41 · VOIE 2 : AU083, d0784edb (main), relancé non
+- 2026-11-21 01:41 · VOIE 2 : relance refusée, question 2 (la séance voie 2 de 23:55 n'a produit ni commit ni tâche finie : verrou occupé)
