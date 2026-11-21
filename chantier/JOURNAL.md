@@ -1581,3 +1581,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 07:00 · voie 3 · AU094 (#751) fusionnée : règlements partiels et virements groupés rapprochés au centime, soldes, encaissement à la facture soldée, relance du reste dû.
 - 2026-11-21 07:55 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 06:54 par une autre séance voie 2, active : push sur chantier/AU088 à 07:48)
 - 2026-11-21 08:18 · AU034 · pige relevée chaque jour à 6 h chez le fournisseur réglé (PIGE_SOURCE_URL, PIGE_SOURCE_TOKEN, PIGE_NETWORK_ID), chaque passage rangé dans pige_runs, panne au journal, date de dernière relève et alerte à l'écran (GET /v1/pige/etat) ; R671 ; Codex 2 P0 et 1 P1 corrigés ; vérification GitHub verte ; fusionnée (#754, e0df09b0) ; réel : H75 · prochaine : AU035
+- 2026-11-21 08:19 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU035
