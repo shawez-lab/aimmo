@@ -1578,3 +1578,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 05:50 · voie 3 · AU092 (#749) fusionnée : grille à paliers selon le chiffre d'affaires cumulé de l'année, palier montré avec la vente. AU087 (#752) fusionnée : demande d'avis plafonnée jamais close par le délai. AU086 proposée (#753).
 - 2026-11-21 06:48 · voie 3 · AU086 (#753) fusionnée : un accord de fidélisation donné plus tard, daté et prouvé, n'ouvre que les dates clés à venir.
 - 2026-11-21 06:58 · voie 3 · AU090 proposée (#756) : un texte juridique non vérifié depuis un an ou non relu par l'avocat ne fonde aucune réponse.
+- 2026-11-21 07:00 · voie 3 · AU094 (#751) fusionnée : règlements partiels et virements groupés rapprochés au centime, soldes, encaissement à la facture soldée, relance du reste dû.
