@@ -817,7 +817,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU073b · Dessiner le secteur d'une recherche au doigt, sur une carte
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU073
 - Cahier : M08 Acquéreurs et visites ; suite de l'audit A073 (relecture de Codex sur #692).
 - Constat : le secteur dessiné existe dans le serveur (polygone de 3 à 40 points) mais l'écran ne propose que le rayon autour d'un lieu.
