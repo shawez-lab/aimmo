@@ -6,7 +6,7 @@
  * fiches (`GBP_REFRESH_TOKEN`), deux secrets. Il manque une seule pièce, ou l'une est mal formée : rien de réel, la
  * fiche Google reste d'essai [R26]. Le reste de M01 (pages, IndexNow) n'en change pas.
  */
-import { googleBusinessClient } from '../../core/src/attirer/fiche-google-reel.ts';
+import { googleBusinessClient, type GoogleBusinessConfig } from '../../core/src/attirer/fiche-google-reel.ts';
 import type { GbpClient } from '../../core/src/attirer/fiche-google.ts';
 
 export interface GbpEnv {
@@ -17,7 +17,7 @@ export interface GbpEnv {
 }
 
 /** Le vrai client de la fiche Google, ou `null` tant que la mise en service n'est pas complète. */
-export function gbpFromEnv(env: GbpEnv, http: typeof fetch): GbpClient | null {
+export function gbpFromEnv(env: GbpEnv, http: GoogleBusinessConfig['http']): GbpClient | null {
   if (env.GBP_MODE !== 'reel') return null;
   const clientId = env.GBP_CLIENT_ID?.trim() ?? '';
   const clientSecret = env.GBP_CLIENT_SECRET?.trim() ?? '';

@@ -154,6 +154,7 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   diffusion_portal_text_validations: { via: [['text_id', 'diffusion_portal_texts', 'id']] },
   first_reply_claims: { via: [['inbound_id', 'inbound_messages', 'id']] },
   gbp_validations: { via: [['draft_id', 'gbp_drafts', 'id']] },
+  gbp_receipts: { via: [['send_id', 'gbp_sends', 'id']] },
   invoice_facturx: { via: [['invoice_id', 'invoices', 'id']] },
   invoice_transmission_claims: { via: [['invoice_id', 'invoices', 'id']] },
   invoice_transmissions: { via: [['invoice_id', 'invoices', 'id']] },
@@ -321,7 +322,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   document_checks mandate_questionnaire_gap_acks mandate_questionnaires signature_remises signature_dossiers
   signature_validations signature_session_proxies signature_sessions signed_amendments
   signed_documents document_co_mandants document_mandant_rights document_proxies documents person_domiciles property_designations property_positions property_sanitation property_installations local_hazard_orders dpe_letters dpe_alert_items dpe_watch_stops dpe_watch_sectors person_request_alerts
-  person_request_answers person_request_outputs person_requests erasure_object_targets exclusions gbp_claims gbp_sends gbp_validations
+  person_request_answers person_request_outputs person_requests erasure_object_targets exclusions gbp_claims gbp_receipts gbp_sends gbp_validations
   gbp_drafts gbp_locations gbp_reviews attach_claims attach_log contact_ai_engines contact_origins contact_vitrines
   first_reply_claims callback_tasks contact_scores qualification_corrections qualifications reception_log
   virtual_tour_contacts inbound_message_keys inbound_messages mailbox_attachment_links mailbox_attachments mailbox_drafts mailbox_mails

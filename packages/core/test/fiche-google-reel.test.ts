@@ -13,7 +13,7 @@ type Answer = { status: number; body?: unknown } | 'coupure';
 
 function fakeHttp(answers: Record<string, Answer[]>) {
   const calls: Call[] = [];
-  const http = (async (input: RequestInfo | URL, init: RequestInit = {}) => {
+  const http = (async (input: string | URL | Request, init: RequestInit = {}) => {
     const url = String(input);
     const method = init.method ?? 'GET';
     const headers = (init.headers ?? {}) as Record<string, string>;
