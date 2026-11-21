@@ -1141,7 +1141,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU104 · Même le paquet hors ligne prévu exclut l’adresse et le téléphone
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-21)
+- Reste : fusionnée (#760, `c7a54416`), `packages/core/src/hors-ligne/prive.ts`, `POST /v1/hors-ligne/prive`, R676 en service, R278 précisée. Décidé, lecture prudente : adresse de la désignation du bien seulement (l'adresse reprise reste dans son espace privé, R46), nom et un numéro de la personne rencontrée, jamais le mail ni le vendeur, visites du jour seulement ; chiffré sur le téléphone sous un code de 6 à 12 chiffres (PBKDF2, AES-GCM), une visite par enregistrement ; refermé 5 min après le dernier geste ; effacé 2 h après chaque visite, à minuit, à la sortie, à la clé refusée, après 5 codes faux, à l'annulation. Codex 9 P0 corrigés en six tours, puis rien à signaler. Jamais vu : l'adresse et le numéro en zone blanche, chiffrés sous un code qui ne quitte pas l'appareil, effacés d'eux-mêmes visite par visite.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A104 (majeur), endroit : C/hors-ligne/reception.ts, `OfflinePack`, R278.
 - Constat de l'audit : Même le paquet hors ligne prévu exclut l’adresse et le téléphone : en zone blanche je ne retrouve ni l’entrée ni mon contact.

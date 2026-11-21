@@ -1593,3 +1593,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 11:05 · AU035 · bloquée : deux appartements de 65 m² distingués par les pièces (R672), doute lu pour fermer ; Codex 9 P0 corrigés en six tours, le dernier (doute invisible aux déclencheurs de la base) demande une autre approche ; #757 ouverte sans fusion, branche gardée · prochaine : AU036
 - 2026-11-21 11:07 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU036
 - 2026-11-21 11:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 09:55 par une autre séance voie 2, active : push sur chantier/AU104 à 11:20)
+- 2026-11-21 12:31 · AU104 · mode privé de la visite : adresse et numéro du jour chiffrés sur le téléphone sous un code, refermés au dernier geste, effacés visite par visite ; R676 ; Codex 9 P0 corrigés ; fusionnée (#760, c7a54416) · prochaine : AU103
+- 2026-11-21 12:31 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 07:55 et 08:54 n'ont rien produit)
+- 2026-11-21 12:31 · VOIE 2 : AU104, c7a54416 (main), relancé non
