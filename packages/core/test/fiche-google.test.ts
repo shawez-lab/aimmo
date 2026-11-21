@@ -6,6 +6,8 @@ import {
   fallbackReply,
   listingPostText,
   nameTokenHashes,
+  GbpError,
+  type GbpAck,
   type GbpClient,
   type GbpReview,
   type ReviewReplyWriter,
@@ -24,21 +26,32 @@ class FakeGbp implements GbpClient {
   calls: string[] = [];
   reviewsToGive: GbpReview[] = [];
   fail = false;
+  /** L'erreur que Google lève à la place de la panne simple (AU037). */
+  error: Error | null = null;
+  /** L'accusé rendu à la place de celui de Google, pour un accusé absent ou mal formé. */
+  ack: unknown = undefined;
+  private n = 0;
+  private answer(ref: string, url: string | null = null): GbpAck {
+    if (this.error) throw this.error;
+    if (this.fail) throw new Error('panne inventée');
+    return (this.ack === undefined ? { ref, url } : this.ack) as GbpAck;
+  }
   async listReviews(): Promise<GbpReview[]> {
     this.calls.push('listReviews');
+    if (this.error) throw this.error;
     return this.reviewsToGive;
   }
-  async replyToReview(_l: string, reviewRef: string, text: string): Promise<void> {
+  async replyToReview(_l: string, reviewRef: string, text: string): Promise<GbpAck> {
     this.calls.push(`reply:${reviewRef}:${text.length}`);
-    if (this.fail) throw new Error('panne inventée');
+    return this.answer(`${reviewRef}/reply`);
   }
-  async createPost(_l: string, post: { text: string; linkUri: string }): Promise<void> {
+  async createPost(l: string, post: { text: string; linkUri: string }): Promise<GbpAck> {
     this.calls.push(`post:${post.linkUri}`);
-    if (this.fail) throw new Error('panne inventée');
+    return this.answer(`${l}/localPosts/p${++this.n}`, `https://local.google.test/post/${this.n}`);
   }
-  async updateInfo(): Promise<void> {
+  async updateInfo(l: string): Promise<GbpAck> {
     this.calls.push('info');
-    if (this.fail) throw new Error('panne inventée');
+    return this.answer(l);
   }
   writes(): string[] {
     return this.calls.filter((c) => c !== 'listReviews');
@@ -363,7 +376,7 @@ describeWithSqlite('AT06 · fiche Google : publications et réponses aux avis pr
     expect(await s.fiche.syncInfo('net-1', 'ag-1')).toEqual({ ok: true, changed: false, mode: 'reel' });
     expect(await s.fiche.setLocation(direction, 'ag-1', { locationRef: 'locations/123', title: 'Camille Exemple, agent immobilier à Dijon', websiteUri: 'https://camille.exemple.test' })).toEqual({ ok: true });
     s.client.fail = true;
-    expect(await s.fiche.syncInfo('net-1', 'ag-1')).toEqual({ ok: false, rule: null, code: 'echec' });
+    expect(await s.fiche.syncInfo('net-1', 'ag-1')).toEqual({ ok: false, rule: null, code: 'echec', error: 'panne', action: 'reessayer' });
     s.client.fail = false;
     expect(await s.fiche.syncInfo('net-1', 'ag-1')).toEqual({ ok: true, changed: true, mode: 'reel' });
     expect(s.client.writes()).toEqual(['info', 'info', 'info']);
@@ -534,7 +547,7 @@ describeWithSqlite('AT06 · fiche Google : publications et réponses aux avis pr
     if (!d.ok) throw new Error('refusé');
     await s.fiche.validate(agent, d.value.draftId);
     s.client.fail = true;
-    expect(await s.fiche.publish(agent, d.value.draftId)).toEqual({ ok: false, rule: null, code: 'echec' });
+    expect(await s.fiche.publish(agent, d.value.draftId)).toEqual({ ok: false, rule: null, code: 'echec', error: 'panne', action: 'reessayer' });
     s.client.fail = false;
     expect(await s.fiche.publish(agent, d.value.draftId)).toEqual({ ok: true, mode: 'reel' });
     expect(await s.db.all('SELECT outcome FROM gbp_sends ORDER BY rowid')).toEqual([{ outcome: 'echec' }, { outcome: 'envoye' }]);
