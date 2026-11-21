@@ -744,7 +744,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU067 · Mon retrait urgent attend le prochain passage périodique au lieu de déclencher immédiatement les retraits…
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A067 (majeur), endroit : A/worker.ts, passage aux quarts d’heure ; C/annonces/publication.ts.
 - Constat de l'audit : Mon retrait urgent attend le prochain passage périodique au lieu de déclencher immédiatement les retraits disponibles.

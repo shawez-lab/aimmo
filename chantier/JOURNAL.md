@@ -1588,3 +1588,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 09:22 · VOIE 2 : AU088, cee2438f (main), relancé non
 - 2026-11-21 09:12 · VOIE 3 : AU090 fusionnée (#756) : un texte non vérifié, vérifié dans le futur ou à une date impossible ne donne qu'une citation à vérifier [R252]
 - 2026-11-21 10:15 · VOIE 3 : AU089 fusionnée (#758) : la direction nomme le responsable LCB-FT et range la procédure approuvée ; sans eux, ni signalement lu, ni décision, ni dossier de l'agence tiré [R94]
+- 2026-11-21 10:40 · VOIE 3 : AU067 fusionnée (#759) : rétractation ou annulation du mandat → retrait immédiat sur chaque canal et portail, accusés dans la réponse ; un passage en cours relit avant de rendre la main ; le passage planifié a les mêmes connecteurs [R42]
