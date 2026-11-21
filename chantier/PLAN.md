@@ -1134,7 +1134,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU105 · Manque
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A105 (majeur), endroit : UI/avis.ts, `wipe`, changement d’écran ; UI/fiche-bien.ts.
 - Constat de l'audit : Manque : la saisie non envoyée n’a pas de brouillon durable ni de garde générale avant de quitter l’écran.
