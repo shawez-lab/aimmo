@@ -549,6 +549,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX62 : rapports enregistrés (nom libre de l'auteur) et empreintes des exports d'un agent.
       custom_reports: ['owner_id', 'owner_role', 'name'],
       agent_exports: ['agent_id'],
+      // AU110 : l'autorisation d'un export de reprise, au vu d'un contrat.
+      agent_export_authorizations: ['agent_id', 'contract_ref', 'granted_by'],
       // AU111 : l'accès de sortie d'un agent parti, gardé par l'empreinte de son lien.
       agent_exit_accesses: ['agent_id', 'token_hash', 'granted_by'],
       agent_exit_access_revocations: ['revoked_by'],
@@ -1402,6 +1404,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   commission_shares: ['file_id', 'seq', 'kind'],
   custom_reports: ['id', 'network_id', 'definition', 'created_at'],
   agent_exports: ['id', 'network_id', 'fingerprint', 'row_count', 'made_at'],
+  agent_export_authorizations: ['id', 'network_id', 'scope', 'expires_on', 'granted_at'],
   agent_exit_accesses: ['id', 'network_id', 'expires_on', 'granted_at'],
   agent_exit_access_revocations: ['access_id', 'network_id', 'revoked_at'],
   mcp_drafts: ['id', 'network_id', 'kind', 'property_id', 'status', 'created_at', 'decided_at'],

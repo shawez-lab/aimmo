@@ -700,6 +700,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   security_challenges: out('agent', 'Défis envoyés aux appareils des utilisateurs du réseau (HX56) : aucun client ; l\'objet d\'une action sensible n\'est qu\'un identifiant.'),
   security_sessions: out('agent', 'Séances ouvertes par la clé d\'un appareil (HX56) : aucun client.'),
   security_step_ups: out('agent', 'Preuves du second facteur des utilisateurs du réseau (HX56) : aucun client ; l\'objet n\'est qu\'un identifiant.'),
+  agent_export_authorizations: out('agent', 'Autorisation d\'un export de reprise d\'un agent (AU110) : périmètre, contrat, durée, aucun client.'),
   agent_exports: out('agent', 'Empreinte d\'un export complet remis à un agent (HX62) : jamais le contenu, aucun client.'),
   agent_exit_accesses: out('agent', 'Accès de sortie d\'un agent parti (AU111) : l\'empreinte du lien et sa durée, aucun client.'),
   agent_exit_access_revocations: out('agent', 'Retrait d\'un accès de sortie d\'agent (AU111) : qui et quand, aucun client.'),
