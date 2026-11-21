@@ -150,7 +150,7 @@ export class InstallationsBien {
     const version = Number(last?.v ?? 0) + 1;
     try {
       await this.db.run(
-        `INSERT INTO property_installations (id, network_id, property_id, installation, version, present, since_year, proof_kind, proof_ref, set_by, set_at)
+        `INSERT INTO property_installations (id, network_id, property_id, installation, version, present, since_year, evidence_kind, proof_ref, set_by, set_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [this.newId(), kind.network_id, propertyId, installation, version, input.present ? 1 : 0, since, input.proof, input.proofRef, this.actor(viewer), this.now().toISOString()],
       );
@@ -170,14 +170,14 @@ export class InstallationsBien {
  * de Codex). Sans contrôle des droits : à l'appelant de les avoir vérifiés.
  */
 export async function installationFactsOf(db: SqlDatabase, networkId: string, propertyId: string, upTo?: string): Promise<InstallationFacts> {
-  const all = await db.all<{ installation: Installation; version: number; present: number; since_year: number | null; proof_kind: InstallationProof; set_at: string }>(
-    'SELECT installation, version, present, since_year, proof_kind, set_at FROM property_installations WHERE property_id = ? AND network_id = ? ORDER BY installation, version',
+  const all = await db.all<{ installation: Installation; version: number; present: number; since_year: number | null; evidence_kind: InstallationProof; set_at: string }>(
+    'SELECT installation, version, present, since_year, evidence_kind, set_at FROM property_installations WHERE property_id = ? AND network_id = ? ORDER BY installation, version',
     [propertyId, networkId],
   );
   const latest = new Map<Installation, (typeof all)[number]>();
   for (const r of all) if (upTo === undefined || localTime(new Date(r.set_at), TIME_ZONE).date <= upTo) latest.set(r.installation, r);
   const rows = [...latest.values()];
   const facts: Partial<Record<Installation, InstallationFact>> = {};
-  for (const r of rows) facts[r.installation] = { present: Number(r.present) === 1, since: r.since_year === null ? null : Number(r.since_year), proof: r.proof_kind, version: Number(r.version) };
+  for (const r of rows) facts[r.installation] = { present: Number(r.present) === 1, since: r.since_year === null ? null : Number(r.since_year), proof: r.evidence_kind, version: Number(r.version) };
   return facts;
 }

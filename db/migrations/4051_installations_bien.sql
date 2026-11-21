@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS property_installations (
   version INTEGER NOT NULL CHECK (version >= 1),
   present INTEGER NOT NULL CHECK (present IN (0, 1)),
   since_year INTEGER CHECK (since_year IS NULL OR (since_year >= 1880 AND present = 1)),
-  proof_kind TEXT NOT NULL CHECK (proof_kind IN ('certificat_conformite', 'facture_travaux', 'declaration_vendeur')),
+  evidence_kind TEXT NOT NULL CHECK (evidence_kind IN ('certificat_conformite', 'facture_travaux', 'declaration_vendeur')),
   proof_ref TEXT NOT NULL,
   set_by TEXT NOT NULL,
   set_at TEXT NOT NULL,

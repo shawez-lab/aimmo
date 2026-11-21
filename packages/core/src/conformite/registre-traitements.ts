@@ -1369,7 +1369,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   sale_file_pieces: ['id', 'file_id', 'network_id', 'piece', 'version', 'ref', 'issued_on', 'received_at'],
   local_hazard_orders: ['id', 'network_id', 'hazard', 'version', 'source_title', 'dated_on', 'read_on', 'set_at'],
   property_sanitation: ['id', 'network_id', 'property_id', 'version', 'mode', 'set_at'],
-  property_installations: ['id', 'network_id', 'property_id', 'installation', 'version', 'present', 'since_year', 'proof_kind', 'set_at'],
+  property_installations: ['id', 'network_id', 'property_id', 'installation', 'version', 'present', 'since_year', 'evidence_kind', 'set_at'],
   sale_file_dates: ['file_id', 'network_id', 'kind', 'version', 'day', 'at'],
   sale_file_buyer_notices: ['file_id', 'network_id', 'version', 'day', 'at'],
   offer_co_buyers: ['offer_id', 'network_id', 'position'],
