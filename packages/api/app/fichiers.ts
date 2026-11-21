@@ -2226,6 +2226,8 @@ ${LOUER_JS}
       // tout autre rôle est refusé ici.
       if (res.refused || (res.body && (!me || (me.role !== 'agent' && me.role !== 'direction' && me.role !== 'compliance')))) {
         forgetKey(key);
+        // AU104 : le mode privé de la visite gardé sous cette clé s'efface avec elle [R676].
+        offline(function (H) { return H.oublier ? H.oublier(key) : null; });
         // L'autre clé de l'appareil, si elle reste, garde son accès.
         // Celle de la direction, seule restante, devient la clé de l'appareil.
         if (!readKey() && readDirectionKey()) { var kept = readDirectionKey(); forgetKey(); writeKey(kept); }

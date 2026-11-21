@@ -204,13 +204,20 @@ type World = Awaited<ReturnType<typeof setup>>;
  * Le téléphone : l'application et la visite sans réseau, chargées comme la page les charge. `network` décide si le
  * réseau répond ; `loseAnswer` fait perdre la réponse d'un envoi après que le serveur l'a reçu.
  */
-async function phone(w: World, idb: Map<string, unknown>, net: { network: boolean; loseAnswer?: boolean; hold?: Promise<void>; decode?: Promise<void>; dropPack?: boolean }, who: { key: string; viewer?: Viewer } = { key: KEY }) {
+async function phone(w: World, idb: Map<string, unknown>, net: { network: boolean; loseAnswer?: boolean; hold?: Promise<void>; decode?: Promise<void>; dropPack?: boolean; refuseMe?: boolean }, who: { key: string; viewer?: Viewer } = { key: KEY }) {
   const viewer = who.viewer ?? w.agent;
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
   const winListeners: Record<string, () => void> = {};
   const calls: string[] = [];
   const bodies: unknown[] = [];
-  const later: (() => unknown)[] = [];
+  const later: { f: () => unknown; done: boolean }[] = [];
+  /** Les attentes longues échues : chacune une fois, sans celles qu'elles posent elles-mêmes. */
+  const fire = async () => {
+    for (const t of later.filter((x) => !x.done)) {
+      t.done = true;
+      await t.f();
+    }
+  };
   let uuids = 0;
   const NowDate = class extends Date {
     constructor(...a: unknown[]) {
@@ -237,8 +244,8 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
     atob,
     crypto: { subtle: crypto.subtle, getRandomValues: (a: Uint8Array) => crypto.getRandomValues(a), randomUUID: () => `7d1c2b3a-2222-4a2b-8c3d-${String(Math.floor(Math.random() * 1e6)).padStart(6, '0')}${String(++uuids).padStart(6, '0')}` },
     // Les attentes longues sont gardées, pas lancées : le test les déclenche quand il avance l'horloge.
-    setTimeout: (f: () => void, ms: number) => (ms === 0 ? setTimeout(f, 0) : (later.push(f), later.length)),
-    clearTimeout: (id: number) => void (later[id - 1] = () => undefined),
+    setTimeout: (f: () => void, ms: number) => (ms === 0 ? setTimeout(f, 0) : (later.push({ f, done: false }), later.length)),
+    clearTimeout: (id: number) => void (later[id - 1] && (later[id - 1]!.done = true)),
     localStorage: { getItem: () => who.key, setItem: () => undefined, removeItem: () => undefined },
     addEventListener: (n: string, f: () => void) => (winListeners[n] = f),
     navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
@@ -256,7 +263,7 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
         if (net.loseAnswer && method === 'POST') throw new TypeError('réponse perdue');
         return r;
       }
-      if (url === '/v1/moi') return stub({ role: 'agent', firstName: 'Alex' });
+      if (url === '/v1/moi') return net.refuseMe ? Response.json({ ok: false }, { status: 401 }) : stub({ role: 'agent', firstName: 'Alex' });
       if (url === '/v1/rendez-vous/jour') return stub({ day: '2026-12-08', appointments: [] });
       if (url === '/v1/contacts-chauds') return stub({ contacts: [] });
       return stub(null);
@@ -288,7 +295,7 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
     await settle();
   };
   const H = (ctx.AimmoHorsLigne ?? { pending: async () => [], refused: async () => [] }) as { pending: (o?: string) => Promise<unknown[]>; refused: () => Promise<unknown[]> };
-  return { els, ctx, calls, bodies, later, loads, root, find, click, H, online: async () => (winListeners.online?.(), await settle()) };
+  return { els, ctx, calls, bodies, later, fire, loads, root, find, click, H, online: async () => (winListeners.online?.(), await settle()) };
 }
 
 describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’envoi', () => {
@@ -691,7 +698,7 @@ describeWithSqlite('AU104 · le mode privé de la visite, sur le téléphone', (
     field.find('textarea')!.value = 'Note pas encore gardée';
     w.setClock(w.clock() + 6 * MIN);
     expect(field.later.length).toBeGreaterThan(0);
-    for (const f of field.later.splice(0)) await f();
+    await field.fire();
     await settle();
     expect(field.find('textarea')!.value).toBe('Note pas encore gardée');
     expect(address(field)).toBeUndefined();
@@ -707,7 +714,7 @@ describeWithSqlite('AU104 · le mode privé de la visite, sur le téléphone', (
     expect(privOf(idb)).toBeUndefined();
   });
 
-  it('[R676] cinq codes faux, la sortie, une visite annulée, une clé refusée ou minuit effacent le mode privé du téléphone', async () => {
+  it('[R676] cinq codes faux, la sortie, une visite annulée, une clé refusée (à l’entrée ou à la préparation) ou minuit effacent le mode privé du téléphone', async () => {
     const w = await setup();
     await designate(w);
     const idb = new Map<string, unknown>();
@@ -717,7 +724,9 @@ describeWithSqlite('AU104 · le mode privé de la visite, sur le téléphone', (
       await openDay(p);
       typeCode(p, KEEP, '482913');
       await p.click(p.find('button', 'Garder pour aujourd’hui'));
-      await until(() => privOf(idb) && address(p), 'gardé');
+      await until(() => privOf(idb) && address(p), 'gardé').catch((e) => {
+        throw new Error(`${String(e)} ${p.root().all().filter((x) => x.tagName === 'section').map((x) => x.textContent).join('|')} ${p.calls.join(',')}`);
+      });
       return p;
     };
     // Cinq codes faux.
@@ -739,12 +748,16 @@ describeWithSqlite('AU104 · le mode privé de la visite, sur le téléphone', (
     await w.db.run("UPDATE appointments SET status = 'cancelled' WHERE id = ?", [w.visitId]);
     await phone(w, idb, { network: true });
     await until(() => !privOf(idb), 'effacé après annulation');
-    // Minuit : même sans ouvrir, la lecture efface ce qui a passé sa fin.
     await w.db.run("UPDATE appointments SET status = 'booked' WHERE id = ?", [w.visitId]);
     // La clé refusée par le serveur (appareil retiré, agent parti) : effacé à la préparation suivante.
     await keep();
     await phone(w, idb, { network: true }, { key: KEY, viewer: { ...w.agent, role: 'compliance' } as Viewer });
     await until(() => !privOf(idb), 'effacé avec la clé refusée');
+    // La clé refusée dès l'entrée, avant même la journée : effacé aussi.
+    await keep();
+    await phone(w, idb, { network: true, refuseMe: true });
+    await until(() => !privOf(idb), 'effacé avec la clé refusée à l’entrée');
+    // Minuit : même sans ouvrir, la lecture efface ce qui a passé sa fin.
     await keep();
     w.setClock(Date.parse('2026-12-08T23:00:00.000Z'));
     await phone(w, idb, { network: false });
@@ -774,7 +787,7 @@ describeWithSqlite('AU104 · le mode privé de la visite, sur le téléphone', (
     // le téléphone à son heure, la seconde reste.
     w.setClock((await end(w)) + 2 * HOUR + MIN);
     expect(items()).toHaveLength(2);
-    for (const f of home.later.splice(0)) await f();
+    await home.fire();
     await until(() => items().length === 1, 'première effacée');
     expect(items()).toEqual(['visite-test-2']);
     const field = await phone(w, idb, { network: false });
@@ -782,6 +795,51 @@ describeWithSqlite('AU104 · le mode privé de la visite, sur le téléphone', (
     await field.click(field.find('button', 'Ouvrir'));
     await until(() => address(field), 'seconde ouverte');
     expect(field.root().all().filter((e) => e.tagName === 'p' && e.textContent === '12 rue des Vignes, 21240 Talant')).toHaveLength(1);
+  });
+
+  it('[R676] un effacement à l’heure ne repousse pas le verrouillage : seule une main sur l’écran le fait', async () => {
+    const w = await setup();
+    await designate(w);
+    await w.db.run(
+      `INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, created_at, updated_at)
+       SELECT 'visite-test-2', network_id, agent_id, person_id, property_id, kind, ?, ?, status, 'jeton-test-2', source, created_at, updated_at FROM appointments WHERE id = ?`,
+      [new Date(w.visitStart + 3 * HOUR).toISOString(), new Date(w.visitStart + 4 * HOUR).toISOString(), w.visitId],
+    );
+    const idb = new Map<string, unknown>();
+    // Ouvert quatre minutes avant que la première visite ne s'efface.
+    const wipe1 = (await end(w)) + 2 * HOUR;
+    w.setClock(wipe1 - 4 * MIN);
+    const p = await phone(w, idb, { network: true });
+    await openDay(p);
+    typeCode(p, KEEP, '482913');
+    await p.click(p.find('button', 'Garder pour aujourd’hui'));
+    await until(() => p.find('p', '1 visite gardée, ouvertes.') || p.find('p', '2 visites gardées, ouvertes.'), 'gardé');
+    const opened = w.clock();
+    const run = async () => {
+      await p.fire();
+      await settle();
+    };
+    // La première s'efface à son heure, sans geste.
+    w.setClock(wipe1 + 10_000);
+    await run();
+    expect(p.root().all().filter((e) => e.tagName === 'p' && e.textContent === '12 rue des Vignes, 21240 Talant')).toHaveLength(1);
+    // Cinq minutes après l'ouverture : refermé, l'effacement n'a rien repoussé.
+    w.setClock(opened + 5 * MIN + 2_000);
+    await run();
+    expect(address(p)).toBeUndefined();
+    // Un geste repousse, lui : ouvert de nouveau, touché à quatre minutes, encore ouvert à six.
+    typeCode(p, OPEN, '482913');
+    await p.click(p.find('button', 'Ouvrir'));
+    await until(() => address(p), 'rouvert');
+    const again = w.clock();
+    w.setClock(again + 4 * MIN);
+    p.root().listeners.pointerdown!({});
+    w.setClock(again + 6 * MIN);
+    await run();
+    expect(address(p)).toBeDefined();
+    w.setClock(again + 9 * MIN + 2_000);
+    await run();
+    expect(address(p)).toBeUndefined();
   });
 
   it('[R676] une sortie pendant que le mode privé se prépare : rien n’est écrit ensuite, rien ne reste ouvert', async () => {

@@ -331,12 +331,12 @@ function privOpen(o, code) {
     });
   });
 }
-/* Les visites ouvertes, ou null : fermé, ou refermé faute de geste depuis cinq minutes. Chaque lecture compte comme geste. */
+/* Les visites ouvertes, ou null : fermé, ou refermé faute de geste depuis cinq minutes. Lire n'est pas un geste : un
+   effacement à l'heure ou un nouveau dessin ne repousse jamais le verrouillage. */
+function privTouch() { if (open_ && Date.now() - open_.at <= P.idleMs) { open_.at = Date.now(); watchIdle(); } }
 function privVisits(o) {
   if (!open_ || open_.o !== o) return Promise.resolve(null);
   if (Date.now() - open_.at > P.idleMs) { open_ = null; return Promise.resolve(null); }
-  open_.at = Date.now();
-  watchIdle();
   var mine = open_;
   mine.visits = mine.visits.filter(alive);
   if (!mine.visits.length) open_ = null;
@@ -527,6 +527,8 @@ function render() {
     var p = got[0], box = got[1];
     clear(root);
     mine.slots = {};
+    // Un geste de l'agent sur l'écran (toucher, taper) repousse le verrouillage ; rien d'autre ne le fait.
+    if (!root.privWatched && root.addEventListener) { root.privWatched = true; root.addEventListener('pointerdown', privTouch); root.addEventListener('keydown', privTouch); }
     if (mine.back) root.appendChild(btn('Retour à ma journée', function () { mine.open = false; mine.back(mine.key); }, 'retour'));
     root.appendChild(el('h2', 'Mes visites sans réseau'));
     mine.etat = el('p', '', 'etat');
@@ -699,6 +701,11 @@ function shotTools(li, a, s, o) {
 }
 /* La sortie efface le mode privé de l'agent qui sort, même si l'écran l'a déjà oublié [R676]. */
 var last = null;
+/* Une clé refusée par le serveur à l'entrée : le mode privé de son agent s'efface, même sans avoir ouvert la visite. */
+function oublier(key) {
+  privGen += 1;
+  return tag(key).then(get).then(function (o) { return typeof o === 'string' ? privWipe(o) : null; }, function () { return null; });
+}
 function sortie() { var o = (ui && ui.owner) || last; last = null; privGen += 1; open_ = null; return o ? privWipe(o) : Promise.resolve(); }
 // Au retour du réseau : la boîte part ; une préparation qui n'avait pas abouti est refaite.
 if (G.addEventListener) G.addEventListener('online', function () { if (ui && ui.key) (ui.owner ? sync(ui.key) : prepare(ui.key, ui.show, ui.back)); });
@@ -710,10 +717,11 @@ G.AimmoHorsLigne = Object.freeze({
   add: add,
   stop: stop,
   sortie: sortie,
+  oublier: oublier,
   pending: function (o) { o = o || (ui && ui.owner); return o ? box(o).then(function (s) { return s.pending.slice(); }) : Promise.resolve([]); },
   refused: function (o) { o = o || (ui && ui.owner); return o ? box(o).then(function (s) { return s.refused.slice(); }) : Promise.resolve([]); },
   readPack: readPack,
-  prive: Object.freeze({ garder: privKeep, ouvrir: privOpen, visites: privVisits, verrouiller: privLock, effacer: privWipe, lire: readPriv, veille: idleCheck }),
+  prive: Object.freeze({ toucher: privTouch, garder: privKeep, ouvrir: privOpen, visites: privVisits, verrouiller: privLock, effacer: privWipe, lire: readPriv, veille: idleCheck }),
   photo: Object.freeze({ figures: figures, judge: judge, fuse: fuse, hdr: hdr, encode: encode, reduce: reduce })
 });
 })();
