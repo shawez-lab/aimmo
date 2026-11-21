@@ -760,4 +760,25 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     // Le 4 pièces ne peut pas être lui : son message se prépare.
     expect(await s.pige.prepare(s.agentAlex, await id('Site C'))).toMatchObject({ ok: true });
   });
+
+  it('[R672] une annonce sans pièces revue fermée avec ses pièces ne tient plus dans le doute un bien qu’elle ne peut pas être', async () => {
+    const s = await setup();
+    const a = s.ad({ ...flat, rooms: undefined });
+    await s.pige.ingest(s.network.id, [a]);
+    s.at(MONDAY_10H + 3_600_000);
+    // Revue en 3 pièces « pas d'agence » : elle est fermée, et ne dit plus qu'elle pourrait être un 4 pièces.
+    await s.pige.ingest(s.network.id, [{ ...a, rooms: 3, noAgency: true }]);
+    expect(await s.pige.ingest(s.network.id, [s.ad({ ...flat, source: 'Site B', rooms: 4 })])).toMatchObject({ added: 1 });
+    // Un 3 pièces ailleurs, lui, est fermé ; une autre annonce sans pièces aussi, dans le doute.
+    expect(await s.pige.ingest(s.network.id, [s.ad({ ...flat, source: 'Site C', rooms: 3 })])).toMatchObject({ added: 0, noAgency: 1 });
+    expect(await s.pige.ingest(s.network.id, [s.ad({ ...flat, source: 'Site D', rooms: undefined })])).toMatchObject({ added: 0, noAgency: 1 });
+    // Revue chaque jour, chacune ne note qu'une fois ce qu'elle dit.
+    const noted = async () => (await s.db.first<{ n: number }>('SELECT count(*) AS n FROM pige_closed_descriptions'))!.n;
+    expect(await noted()).toBe(3);
+    await s.pige.ingest(s.network.id, [{ ...a, rooms: 3, noAgency: true }]);
+    await s.pige.ingest(s.network.id, [{ ...a, rooms: 3 }]);
+    expect(await noted()).toBe(3);
+    const q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value.map((e) => e.rooms)).toEqual([4]);
+  });
 });

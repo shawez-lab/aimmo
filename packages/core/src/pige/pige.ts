@@ -440,6 +440,7 @@ export class Pige {
         for (const f of keys) {
           await this.db.run('INSERT OR IGNORE INTO pige_no_agency (network_id, fingerprint, noted_at) VALUES (?, ?, ?)', [networkId, f, now.toISOString()]);
         }
+        await this.noteClosedDescription(networkId, closing.ref, closing.key, now);
         noAgency += 1;
         continue;
       }
@@ -527,6 +528,7 @@ export class Pige {
         for (const f of closeAll) {
           await this.db.run('INSERT OR IGNORE INTO pige_no_agency (network_id, fingerprint, noted_at) VALUES (?, ?, ?)', [networkId, f, now.toISOString()]);
         }
+        await this.noteClosedDescription(networkId, ref, key, now);
         return true;
       }
       keys.push(...l.keys);
@@ -554,6 +556,7 @@ export class Pige {
         );
       }
     }
+    if (closed) await this.noteClosedDescription(networkId, ref, key, now);
     return closed;
   }
 
@@ -713,22 +716,70 @@ export class Pige {
    */
   private async doubtsOf(networkId: string, ad: FingerprintInput, except: AdRef | null = null): Promise<string[]> {
     const out = await doubtFingerprints(ad);
-    const rows = await this.db.all<{ source: string; source_ref: string; commune: string }>(
-      `SELECT b.source, b.source_ref, b.commune FROM pige_ads b
-        WHERE b.network_id = ? AND b.kind = ? AND b.postal_code = ? AND b.surface_m2 BETWEEN ? AND ? ${typeof ad.rooms === 'number' ? 'AND b.rooms IS NULL' : ''}
+    const roomed = typeof ad.rooms === 'number';
+    const slug = communeSlug(ad.commune);
+    const exceptKey = except ? await refKey(except.source, except.sourceRef) : null;
+    const add = async (key: string, rows: readonly { fingerprint: string }[]): Promise<void> => {
+      if (key === exceptKey) return;
+      out.push(key);
+      for (const f of rows) out.push(f.fingerprint);
+    };
+    const fpsOf = (source: string, sourceRef: string) =>
+      this.db.all<{ fingerprint: string }>('SELECT DISTINCT fingerprint FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ?', [networkId, source, sourceRef]);
+    // Ce qu'une annonce fermée a dit d'elle en dernier, quand elle a été revue après sa dernière relève rangée.
+    const lastSaid = (key: string) =>
+      this.db.first<{ property_fingerprint: string; rooms_said: number; noted_at: string }>(
+        'SELECT property_fingerprint, rooms_said, noted_at FROM pige_closed_descriptions WHERE network_id = ? AND ref_key = ? ORDER BY noted_at DESC, rowid DESC LIMIT 1',
+        [networkId, key],
+      );
+    const legacy = new Set(await nearFingerprints({ ...ad, rooms: null }));
+    const fits = (d: { property_fingerprint: string; rooms_said: number }): boolean => legacy.has(d.property_fingerprint) && (!roomed || d.rooms_said === 0);
+    const rows = await this.db.all<{ source: string; source_ref: string; commune: string; collected_at: string }>(
+      `SELECT b.source, b.source_ref, b.commune, b.collected_at FROM pige_ads b
+        WHERE b.network_id = ? AND b.kind = ? AND b.postal_code = ? AND b.surface_m2 BETWEEN ? AND ? ${roomed ? 'AND b.rooms IS NULL' : ''}
           AND b.rowid = (SELECT c.rowid FROM pige_ads c WHERE c.network_id = b.network_id AND c.source = b.source AND c.source_ref = b.source_ref
                           ORDER BY c.collected_at DESC, c.rowid DESC LIMIT 1)`,
       [networkId, ad.kind, ad.postalCode, ad.surfaceM2 - SURFACE_TOLERANCE_M2, ad.surfaceM2 + SURFACE_TOLERANCE_M2],
     );
-    const slug = communeSlug(ad.commune);
+    const seen = new Set<string>();
     for (const r of rows) {
       if (communeSlug(r.commune) !== slug) continue;
-      if (except && r.source === except.source && r.source_ref === except.sourceRef) continue;
-      out.push(await refKey(r.source, r.source_ref));
-      const fps = await this.db.all<{ fingerprint: string }>('SELECT DISTINCT fingerprint FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ?', [networkId, r.source, r.source_ref]);
-      for (const f of fps) out.push(f.fingerprint);
+      const key = await refKey(r.source, r.source_ref);
+      seen.add(key);
+      // Revue depuis, fermée, et ne pouvant plus être ce bien : elle ne compte plus pour le doute.
+      const said = await lastSaid(key);
+      if (said && said.noted_at >= r.collected_at && !fits(said)) continue;
+      await add(key, await fpsOf(r.source, r.source_ref));
+    }
+    // Et une annonce fermée revue depuis sa dernière relève, qui dit aujourd'hui ce qui pourrait être ce bien.
+    const described = await this.db.all<{ ref_key: string; property_fingerprint: string; rooms_said: number; noted_at: string }>(
+      `SELECT d.ref_key, d.property_fingerprint, d.rooms_said, d.noted_at FROM pige_closed_descriptions d
+        WHERE d.network_id = ? AND d.property_fingerprint IN (SELECT value FROM json_each(?))
+          AND d.rowid = (SELECT e.rowid FROM pige_closed_descriptions e WHERE e.network_id = d.network_id AND e.ref_key = d.ref_key ORDER BY e.noted_at DESC, e.rowid DESC LIMIT 1)`,
+      [networkId, JSON.stringify([...legacy])],
+    );
+    for (const d of described) {
+      if (seen.has(d.ref_key) || !fits(d)) continue;
+      out.push(d.ref_key);
     }
     return out;
+  }
+
+  /** Note ce qu'une annonce fermée dit d'elle en revenant : des empreintes seulement, pour le doute [R672]. */
+  private async noteClosedDescription(networkId: string, ref: AdRef | null, key: PropertyKey | null, now: Date): Promise<void> {
+    if (!ref || !key) return;
+    const k = await refKey(ref.source, ref.sourceRef);
+    const fp = await adFingerprint({ ...key, rooms: null });
+    const said = key.rooms === null ? 0 : 1;
+    // Une ligne seulement quand ce qu'elle dit change : revue chaque jour, la table ne grossit pas.
+    await this.db.run(
+      `INSERT INTO pige_closed_descriptions (network_id, ref_key, property_fingerprint, rooms_said, noted_at)
+       SELECT ?, ?, ?, ?, ?
+        WHERE coalesce((SELECT property_fingerprint || '|' || rooms_said FROM pige_closed_descriptions WHERE network_id = ? AND ref_key = ? ORDER BY noted_at DESC, rowid DESC LIMIT 1), '') <> ?
+           OR EXISTS (SELECT 1 FROM pige_ads a WHERE a.network_id = ? AND a.source = ? AND a.source_ref = ?
+                       AND a.collected_at > (SELECT max(noted_at) FROM pige_closed_descriptions WHERE network_id = ? AND ref_key = ?))`,
+      [networkId, k, fp, said, now.toISOString(), networkId, k, `${fp}|${said}`, networkId, ref.source, ref.sourceRef, networkId, k],
+    );
   }
 
   /**
