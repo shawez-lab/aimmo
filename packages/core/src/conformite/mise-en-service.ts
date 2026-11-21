@@ -14,6 +14,8 @@
  * mentions (ses réglages, le numéro et le titulaire de la carte) : un changement après la relecture la rend « à relire ».
  */
 import type { Viewer } from '../acces/droits.ts';
+// La page des mentions et ce tableau lisent le numéro affiché par la même fonction (import croisé, lu à l'appel seulement).
+import { displayedCardNumber } from '../attirer/mentions-site.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -193,7 +195,7 @@ export class MiseEnService {
       'SELECT prerequisite, version, withdrawn, document_number, issuer, proof_ref, valid_from, valid_until, set_at FROM launch_proofs WHERE network_id = ? ORDER BY prerequisite, version',
       [networkId],
     );
-    const card = await this.db.first<{ card_number: string }>('SELECT card_number FROM listing_settings WHERE network_id = ? ORDER BY set_at DESC, id DESC LIMIT 1', [networkId]);
+    const card = await displayedCardNumber(this.db, networkId);
     const mediator = await this.db.first<{ mediator_name: string }>('SELECT mediator_name FROM complaint_settings WHERE network_id = ? ORDER BY version DESC LIMIT 1', [networkId]);
     // Tout ce que la page des mentions montre : ses réglages, et le numéro et le titulaire de la carte, lus ailleurs.
     const changes = await this.db.all<{ at: string | null }>(
@@ -203,7 +205,7 @@ export class MiseEnService {
       [networkId, networkId, networkId],
     );
     const mentionChange = changes.map((c) => c.at).filter((at): at is string => typeof at === 'string' && ISO.test(at) && !Number.isNaN(Date.parse(at))).sort().at(-1) ?? null;
-    const lines = PREREQUISITES.map((p) => this.line(p, rows.filter((r) => r.prerequisite === p), day, { card: card?.card_number?.trim() || null, mediator: mediator?.mediator_name ?? null, mentionChange }));
+    const lines = PREREQUISITES.map((p) => this.line(p, rows.filter((r) => r.prerequisite === p), day, { card, mediator: mediator?.mediator_name ?? null, mentionChange }));
     const byId = new Map(lines.map((l) => [l.prerequisite, l]));
     const features = (Object.keys(LAUNCH_FEATURES) as LaunchFeature[]).map((feature) => {
       const closedBy = LAUNCH_FEATURES[feature].needs.filter((p) => byId.get(p)!.state !== 'valide');

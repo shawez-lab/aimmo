@@ -55,6 +55,15 @@ export type SiteMentionsResult = { ok: true } | { ok: false; rule: 'R16' | null;
 
 const isField = (k: string): k is SiteMentionField => Object.hasOwn(SITE_MENTION_FIELDS, k);
 
+/**
+ * Le numéro de carte que le réseau affiche (annonces, site, mentions) : le dernier réglage rangé. Une seule lecture,
+ * partagée par la page des mentions et ce tableau, pour qu'ils voient toujours le même numéro.
+ */
+export async function displayedCardNumber(db: SqlDatabase, networkId: string): Promise<string | null> {
+  const card = await db.first<{ card_number: string }>('SELECT card_number FROM listing_settings WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
+  return card && card.card_number.trim() !== '' ? card.card_number.trim() : null;
+}
+
 export class MentionsSite {
   private readonly now: () => Date;
   private readonly newId: () => string;
@@ -76,9 +85,9 @@ export class MentionsSite {
       if (r.value === '') delete values[r.field];
       else values[r.field] = r.value;
     }
-    const card = await this.db.first<{ card_number: string }>('SELECT card_number FROM listing_settings WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
+
     const holder = await this.db.first<{ holder_name: string }>('SELECT holder_name FROM card_holders WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
-    const cardNumber = card && card.card_number.trim() !== '' ? card.card_number.trim() : null;
+    const cardNumber = await displayedCardNumber(this.db, networkId);
     const cardHolder = holder?.holder_name ?? null;
     const missing: string[] = (Object.keys(SITE_MENTION_FIELDS) as SiteMentionField[]).filter((f) => !values[f]).map((f) => SITE_MENTION_FIELDS[f]);
     if (!cardNumber) missing.push(CARD_LABEL);

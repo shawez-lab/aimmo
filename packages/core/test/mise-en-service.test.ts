@@ -139,6 +139,13 @@ describeWithSqlite('AU088 · le tableau de mise en service du réseau', () => {
     await t.db.run("INSERT INTO listing_settings (id, network_id, card_number, set_by, set_at) VALUES ('s2', 'net-1', 'CPI 9999 0000 000 000 002', 'direction:dir-1', '2026-11-21T10:00:00.000Z')");
     await t.db.exec('PRAGMA foreign_keys = ON');
     expect(await lineOf(t, 'carte')).toMatchObject({ state: 'ecart', gap: 'numero_affiche' });
+    // Deux réglages au même instant : le tableau lit le même numéro que la page, le dernier rangé.
+    await t.db.exec('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO listing_settings (id, network_id, card_number, set_by, set_at) VALUES ('z-ancien', 'net-1', ?, 'direction:dir-1', '2026-11-21T11:00:00.000Z')", [CARD]);
+    await t.db.run("INSERT INTO listing_settings (id, network_id, card_number, set_by, set_at) VALUES ('a-nouveau', 'net-1', 'CPI 9999 0000 000 000 003', 'direction:dir-1', '2026-11-21T11:00:00.000Z')");
+    await t.db.exec('PRAGMA foreign_keys = ON');
+    expect((await t.mentions.read('net-1')).cardNumber).toBe('CPI 9999 0000 000 000 003');
+    expect(await lineOf(t, 'carte')).toMatchObject({ state: 'ecart', gap: 'numero_affiche' });
     expect(siteReady(await t.mentions.read('net-1'))).toBe(false);
     // Le médiateur proposé aux clients qui se plaignent n'est pas celui de l'adhésion prouvée : écart.
     await t.db.run("INSERT INTO complaint_settings (network_id, version, response_days, mediator_name, mediator_site, set_by, set_at) VALUES ('net-1', 1, 10, 'Médiateur Inventé', 'https://mediateur.exemple.test', 'direction:dir-1', 'x')");
