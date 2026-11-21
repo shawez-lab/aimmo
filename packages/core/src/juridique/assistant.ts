@@ -41,6 +41,17 @@ export const TOO_LONG = 'Question trop longue : posez-la en moins de 2 000 carac
 export const UNCHECKED = 'Version jamais vérifiée sur Légifrance : à vérifier avant de vous en servir.';
 export const STALE = 'Version vérifiée il y a plus d’un an : à revérifier sur Légifrance avant de vous en servir.';
 export const NOT_VALIDATED = 'Texte pas encore relu par l’avocat du réseau.';
+/**
+ * AU090 · des textes couvrent la question, mais aucun n'est à la fois vérifié sur Légifrance depuis moins d'un an et
+ * relu par l'avocat du réseau : aucune réponse n'en est tirée, seules leurs références sont données.
+ */
+export const TO_CHECK =
+  'Les textes qui couvrent votre question n’ont pas été vérifiés récemment ni relus par l’avocat du réseau : je ne m’en sers pas pour vous répondre. Voici leurs références, pour en parler à votre avocat.';
+
+/** AU090 · un texte peut fonder une réponse : vérifié depuis moins d'un an, et relu par l'avocat du réseau. */
+export function usableSource(s: LegalSource, now: Date): boolean {
+  return citationOf(s, now).warnings.length === 0;
+}
 
 /** Ce que l'IA reçoit : la question sans nom ni coordonnée, et les seuls textes retenus par le code. */
 export interface LegalFacts {
@@ -87,7 +98,9 @@ export type LegalAnswer =
       /** Qui a écrit les paragraphes : l'IA, ou le code à partir des textes. */
       writtenBy: 'ia' | 'textes';
     }
-  | { status: 'je_ne_sais_pas' | 'litige'; text: string; citations: []; notice: string };
+  | { status: 'je_ne_sais_pas' | 'litige'; text: string; citations: []; notice: string }
+  /** AU090 · des textes couvrent la question, mais aucun n'est à jour et relu : leurs références seules, aucune réponse. */
+  | { status: 'a_verifier'; text: string; citations: Citation[]; notice: string };
 
 export type DraftProblem =
   | 'format'
@@ -235,7 +248,8 @@ const DAY = 86_400_000;
 export function citationOf(s: LegalSource, now: Date): Citation {
   const warnings: string[] = [];
   const checked = s.checkedOn === null ? Number.NaN : Date.parse(`${s.checkedOn}T00:00:00.000Z`);
-  if (Number.isNaN(checked)) warnings.push(UNCHECKED);
+  // Une date mal écrite ou à venir ne prouve aucune vérification (AU090).
+  if (Number.isNaN(checked) || !/^\d{4}-\d{2}-\d{2}$/.test(s.checkedOn ?? '') || new Date(checked).toISOString().slice(0, 10) !== s.checkedOn || checked > now.getTime()) warnings.push(UNCHECKED);
   else if (now.getTime() - checked > LEGAL_CHECK_MAX_AGE_DAYS * DAY) warnings.push(STALE);
   if (s.validatedBy === null || s.validatedBy.trim() === '') warnings.push(NOT_VALIDATED);
   return {
@@ -438,7 +452,7 @@ function fromTexts(sources: readonly LegalSource[]): LegalParagraph[] {
   return sources.map((s) => ({ text: `${s.title}, ${s.article} : ${s.summary}`, sources: [s.id] }));
 }
 
-type Outcome = 'ia' | 'textes' | 'ia_refusee' | 'ia_en_panne' | 'ia_ne_sait_pas' | 'aucun_texte' | 'litige' | 'question_invalide';
+type Outcome = 'ia' | 'textes' | 'ia_refusee' | 'ia_en_panne' | 'ia_ne_sait_pas' | 'aucun_texte' | 'litige' | 'question_invalide' | 'textes_non_verifies';
 
 /**
  * Répond à une question juridique de l'agent. Ne lève jamais d'erreur pour une IA absente, en panne ou hors format :
@@ -459,7 +473,7 @@ export async function askLegal(question: string, options: AskOptions = {}): Prom
           actor: options.actor ?? 'system:juridique',
           subject: 'juridique',
           data: {
-            rule: outcome === 'litige' ? 'R253' : outcome === 'aucun_texte' || outcome === 'ia_ne_sait_pas' ? 'R250' : 'R251',
+            rule: outcome === 'litige' ? 'R253' : outcome === 'textes_non_verifies' ? 'R252' : outcome === 'aucun_texte' || outcome === 'ia_ne_sait_pas' ? 'R250' : 'R251',
             outcome,
             sources: answer.citations.map((c) => c.id),
             problems,
@@ -480,10 +494,14 @@ export async function askLegal(question: string, options: AskOptions = {}): Prom
   if (q === '') return finish(refuse('je_ne_sais_pas'), 'question_invalide');
   if (isDispute(q)) return finish(refuse('litige'), 'litige');
   if (q.length > MAX_QUESTION_LENGTH) return finish({ status: 'je_ne_sais_pas', text: TOO_LONG, citations: [], notice: LAWYER_NOTICE }, 'question_invalide');
-  const sources = coveringSources(q, library);
-  if (sources.length === 0) return finish(refuse('je_ne_sais_pas'), 'aucun_texte');
+  const covering = coveringSources(q, library);
+  if (covering.length === 0) return finish(refuse('je_ne_sais_pas'), 'aucun_texte');
 
   const at = now();
+  // AU090 · seuls les textes vérifiés depuis moins d'un an et relus par l'avocat fondent une réponse ; sinon leurs
+  // références, sans rien en tirer.
+  const sources = covering.filter((s) => usableSource(s, at));
+  if (sources.length === 0) return finish({ status: 'a_verifier', text: TO_CHECK, citations: covering.map((s) => citationOf(s, at)), notice: LAWYER_NOTICE }, 'textes_non_verifies');
   const citationsFor = (ids: readonly string[]): Citation[] =>
     sources.filter((s) => ids.includes(s.id)).map((s) => citationOf(s, at));
   const byTexts = (outcome: Outcome, problems: DraftProblem[] = []): Promise<LegalAnswer> =>
