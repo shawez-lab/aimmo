@@ -1615,3 +1615,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 19:24 · voie 1 : PLAN.md rétabli (la fin de séance AU037, 8d112dc8, l'avait tronqué de 7751 à 466 lignes ; seules les lignes d'AU037 gardées) ; AU038 en cours
 - 2026-11-21 19:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 17:53 par une autre séance voie 2, active : push sur chantier/AU091 à 19:40)
 - 2026-11-21 20:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 17:53 par une autre séance voie 2, active : push sur chantier/AU091 à 20:23 ; pas de reprise du verrou pour ne pas doubler le travail)
+- 2026-11-21 21:37 · AU091 · régularisation d'une commission prévue après un avenant d'honoraires (R678, migration 4086), proposition #767 ouverte, Codex sans remarque restante ; vérification GitHub coupée deux fois à 35 min, non fusionnée · prochaine : AU091 (relancer la vérification), puis AU091b
+- 2026-11-21 21:37 · VOIE 2 : relance refusée, question 2 (la séance voie 2 de 16:55 n'a rien produit)
+- 2026-11-21 21:37 · VOIE 2 : AU091, commits sur chantier/AU091 (#767, non fusionnée), relancé non
