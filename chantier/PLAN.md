@@ -960,7 +960,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU088 · La carte professionnelle du réseau, l’assurance, le médiateur et les mentions juridiques restent des…
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-21)
+- Reste : fusionnée (#755, cee2438f), migration `4070`, R675 en service, R221 précisée. Constat confirmé (les mentions remplies suffisaient au site réel, sans preuve ni validité). `conformite/mise-en-service.ts`, `MiseEnService` : carte, garantie, assurance RCP, médiateur, relecture des mentions par l'avocat, déclarées par la direction avec numéro, émetteur, référence et dates, en versions ; états valide, manquante, à venir, expirée, retirée, écart, à relire ; fin à 30 jours signalée ; `verified: false`. Fonction fermée : le site en réel (`siteReady`, référencement et pages publiques). Routes `GET/POST /v1/attirer/mise-en-service`. Jamais vu : écart si la carte affichée ou le médiateur proposé aux clients ne sont pas ceux de la preuve ; relecture « à relire » dès qu'une mention, le numéro ou le titulaire de la carte changent après elle. Codex : 3 P0 corrigés (titulaire de la carte, version relue par identifiant, même lecture du numéro affiché), puis rien ; vérification GitHub verte. Restent : écran de la direction (voie 1, `app.ts`) ; fermer aussi diffusion sur les portails, mandats réels et proposition du médiateur (socle, voie 1) ; situation réelle (H09, H47).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M12 Conformité ; audit A088 (majeur), endroit : chantier/HUMAIN.md, H09/H47 ; C/attirer/mentions-site.ts.
 - Constat de l'audit : La carte professionnelle du réseau, l’assurance, le médiateur et les mentions juridiques restent des prérequis non soldés dans le chantier.
