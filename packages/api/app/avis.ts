@@ -164,6 +164,18 @@ globalThis.AIMMO_AVIS = function (t) {
       box.appendChild(el('p', r.text, 'brouillon'));
       box.appendChild(button('Télécharger la page à imprimer', function () { return download(r.id); }));
       box.appendChild(button('Préparer un nouvel avis', function () { seq += 1; clear(body()); state(''); form(); }));
+      // AU105 · une correction gardée sur cet appareil, l'avis validé depuis ailleurs : elle reste lisible, pour la
+      // reporter dans un nouvel avis, jusqu'à ce que l'agent dise l'abandonner.
+      var late = drafts.get('avis:' + r.id);
+      if (late && late.value && typeof late.value.text === 'string') {
+        var note = el('div', null, 'retard');
+        note.setAttribute('role', 'status');
+        note.appendChild(el('p', 'Une correction de cet avis n’a pas été enregistrée sur cet appareil, et l’avis a été validé depuis : elle ne s’y ajoute plus. La voici, pour un nouvel avis.'));
+        note.appendChild(el('p', 'Fourchette : ' + late.value.low + ' à ' + late.value.high + ' €.', 'doux'));
+        note.appendChild(el('p', late.value.text, 'brouillon'));
+        note.appendChild(button('Abandonner la correction', function () { drafts.drop('avis:' + r.id); box.removeChild(note); }));
+        box.insertBefore(note, box.firstChild);
+      }
       body().appendChild(box);
       return;
     }

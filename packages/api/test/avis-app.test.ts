@@ -236,6 +236,17 @@ describe('AU105 · une correction de l’avis non enregistrée se retrouve, ou s
     expect(JSON.parse(again.storage.get('aimmo.brouillons')!)).toEqual({});
   });
 
+  it('[R276] l’avis validé depuis un autre appareil : la correction gardée reste lisible jusqu’à son abandon', async () => {
+    const kept = JSON.stringify({ 'avis:r1': { at: 'x', value: { updatedAt: DRAFT.updatedAt, low: '180000', high: '210000', text: 'Texte corrigé ici' } } });
+    const t = await run({ 'GET /v1/biens/b1/avis': ok([{ ...DRAFT, status: 'validated', validatedAt: '2026-11-03T08:00:00.000Z' }]) }, { 'aimmo.brouillons': kept });
+    await t.open();
+    expect(t.body().textContent).toContain('l’avis a été validé depuis');
+    expect(t.body().textContent).toContain('Texte corrigé ici');
+    await t.click(t.byText('Abandonner la correction'));
+    expect(t.body().textContent).not.toContain('Texte corrigé ici');
+    expect(JSON.parse(t.storage.get('aimmo.brouillons')!)).toEqual({});
+  });
+
   it('[R276] un appareil qui ne peut pas garder la correction le dit tout de suite', async () => {
     const t = await run(answers(), { 'aimmo.brouillons': '{}' });
     await t.open();
