@@ -402,4 +402,18 @@ describeWithSqlite('L09 · passages de M12 au planificateur', () => {
     expect(later!.ran).toContain(CONFORMITE_HOURLY_JOB);
     expect(later!.ran).not.toContain(CONFORMITE_DAILY_JOB);
   });
+  it('[R94] [R16] la direction nomme le responsable et range la procédure approuvée ; avant, le responsable ne lit pas les signalements', async () => {
+    const t = await setup();
+    expect((await t.call(t.compliance, 'GET', '/signalements')).status).toBe(403);
+    expect((await t.call(t.agent, 'POST', '/lcb/responsable', { officerUserId: 'conformite-1' })).status).toBe(403);
+    expect((await t.call(t.compliance, 'POST', '/lcb/responsable', { officerUserId: 'conformite-1' })).status).toBe(403);
+    expect(await t.call(t.direction, 'POST', '/lcb/responsable', { officerUserId: 'conformite-1' })).toMatchObject({ status: 200, body: { ok: true, data: { ready: false } } });
+    expect((await t.call(t.compliance, 'GET', '/signalements')).status).toBe(200);
+    const sha = 'a'.repeat(64);
+    expect((await t.call(t.direction, 'POST', '/lcb/procedure', { documentRef: 'Procédure LCB-FT v1', documentSha256: 'pas-une-empreinte', approvedBy: 'Maître Exemple', approvedOn: '2026-01-10' })).status).toBe(400);
+    const ok = await t.call(t.direction, 'POST', '/lcb/procedure', { documentRef: 'Procédure LCB-FT v1', documentSha256: sha, approvedBy: 'Maître Exemple', approvedOn: '2026-01-10' });
+    expect(ok).toMatchObject({ status: 200, body: { ok: true, data: { ready: true, procedure: { version: 1 } } } });
+    expect(await t.call(t.compliance, 'GET', '/lcb/dispositif')).toMatchObject({ status: 200, body: { data: { ready: true, officer: { userId: 'conformite-1' } } } });
+    expect((await t.call(t.agent, 'GET', '/lcb/dispositif')).status).toBe(403);
+  });
 });

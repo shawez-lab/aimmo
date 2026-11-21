@@ -21,6 +21,7 @@ import { FicheUnique } from '../fiche/fusion.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { canonical, caseScopeOf, caseSnapshotOf, compareSnapshots, sha256Hex, type CaseScope, type CaseSnapshot, type FrozenCheck } from './dossier-fige.ts';
 import { appendEvent } from '../journal/journal.ts';
+import { DispositifLcb } from './dispositif-lcb.ts';
 import type { JournalStore } from '../journal/types.ts';
 
 const TIME_ZONE = 'Europe/Paris';
@@ -76,6 +77,15 @@ export class SignalementSoupcon {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.unique = new FicheUnique(db, new FicheClient(db, { now: this.now }), { now: this.now });
+    this.dispositif = new DispositifLcb(db, journal, { now: this.now });
+  }
+
+  private readonly dispositif: DispositifLcb;
+
+  /** AU089 · le responsable nommé seul lit ; décider demande aussi la procédure approuvée [R94]. */
+  private async gate(viewer: Viewer, needProcedure: boolean): Promise<SuspicionRefusal | null> {
+    const code = await this.dispositif.officerGate(viewer, needProcedure);
+    return code === null ? null : this.refuse(viewer, code);
   }
 
   private actor(viewer: Viewer): string {
@@ -161,7 +171,8 @@ export class SignalementSoupcon {
 
   /** Les signalements du réseau, ceux qui attendent une décision d'abord : le responsable seul. */
   async list(viewer: Viewer): Promise<{ ok: true; value: SuspicionReport[] } | SuspicionRefusal> {
-    if (viewer.role !== 'compliance') return this.refuse(viewer, 'role');
+    const closed = await this.gate(viewer, false);
+    if (closed) return closed;
     await this.ensureEvents(viewer.networkId);
     const rows = await this.db.all<ReportRow>('SELECT * FROM suspicion_reports WHERE network_id = ? ORDER BY reported_at, id', [viewer.networkId]);
     const out: SuspicionReport[] = [];
@@ -171,7 +182,8 @@ export class SignalementSoupcon {
 
   /** Le dossier est-il resté tel qu'au signalement ? Le responsable seul. */
   async checkFrozen(viewer: Viewer, reportId: string): Promise<{ ok: true; value: FrozenCheck } | SuspicionRefusal> {
-    if (viewer.role !== 'compliance') return this.refuse(viewer, 'role');
+    const closed = await this.gate(viewer, false);
+    if (closed) return closed;
     const row = await this.db.first<ReportRow>('SELECT * FROM suspicion_reports WHERE id = ? AND network_id = ?', [reportId, viewer.networkId]);
     if (!row) return { ok: false, rule: null, code: 'unknown_report' };
     // La copie se refait sur le même périmètre qu'au signalement : une partie ajoutée depuis n'y entre pas.
@@ -186,7 +198,8 @@ export class SignalementSoupcon {
     reportId: string,
     input: { decision: unknown; reason: unknown; validatorName: unknown },
   ): Promise<{ ok: true; value: SuspicionReport } | SuspicionRefusal> {
-    if (viewer.role !== 'compliance') return this.refuse(viewer, 'role');
+    const closed = await this.gate(viewer, true);
+    if (closed) return closed;
     if (!SUSPICION_DECISIONS.includes(input.decision as SuspicionDecisionKind)) return { ok: false, rule: null, code: 'bad_decision' };
     if (typeof input.reason !== 'string' || input.reason.trim() === '' || input.reason.length > 4000) return { ok: false, rule: null, code: 'bad_reason' };
     if (typeof input.validatorName !== 'string' || input.validatorName.trim() === '' || input.validatorName.length > 120) return { ok: false, rule: null, code: 'missing_name' };
