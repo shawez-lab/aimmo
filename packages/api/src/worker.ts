@@ -19,10 +19,14 @@ import type { StudioUploadStore } from '../../core/src/studio/depot.ts';
 import { readClesConfig } from './cles.ts';
 import { AdemeDiagnosisFeed } from '../../core/src/veille-dpe/index.ts';
 import { HttpPigeSource, missingPigeSettings, type PigeFetcher, type PigeProviderSettings, type PigeSource } from '../../core/src/pige/index.ts';
-import { liveSocialChannels, runLiveWithdrawals } from './reseaux-reels.ts';
+import { runLiveWithdrawals, socialFromEnv } from './reseaux-reels.ts';
 
-/** AU036 : les vrais Facebook et Instagram du réseau, seulement quand tout est rangé ; sinon null, tout reste d'essai. */
-const socialOf = (env: Env) => liveSocialChannels(env, fetch.bind(globalThis));
+/**
+ * AU036 : les vrais Facebook et Instagram du réseau. Publier seulement quand tout est rangé (sinon tout reste d'essai) ;
+ * retirer tant que le compte et le jeton sont rangés, même une fois les envois coupés [R42].
+ */
+const socialOf = (env: Env) => socialFromEnv(env, fetch.bind(globalThis));
+const socialSettings = (s: ReturnType<typeof socialOf>) => ({ social: s.publish, withdrawals: s.withdraw });
 
 /**
  * Liaisons du Worker, déclarées dans wrangler.toml ; `API_KEYS` et `INTAKE_KEYS` sont des secrets Cloudflare.
@@ -224,7 +228,7 @@ export default {
       // M19 (X10) : photos, originaux, preuves et accords dans `MEDIA`, dont seule l'existence est lue ; absent, fermé.
       // X12 : les fichiers finis rangés tels quels dans `MEDIA` ; sans lui (H25), le dépôt est fermé.
       // AU036 : les vrais Facebook et Instagram du réseau seulement quand tout est rangé (H06, H88) ; sinon, essai.
-      studio: { files: env.MEDIA ? mediaFiles(env.MEDIA) : null, uploads: env.MEDIA ? mediaUploads(env.MEDIA) : null, social: socialOf(env) },
+      studio: { files: env.MEDIA ? mediaFiles(env.MEDIA) : null, uploads: env.MEDIA ? mediaUploads(env.MEDIA) : null, ...socialSettings(socialOf(env)) },
       // M20 complet (G12) : preuves de coût dans `PIECES` ; géocodeur des lettres seulement avec les données publiques
       // de l'estimation ; sans IA branchée (H13), les textes du code. Rien ne part : mode essai.
       gagner: { proofs: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, uploads: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, geocoder: estimation?.geocoder ?? null },
@@ -282,7 +286,7 @@ export default {
     // Le passage de publication (P10), une fois par quart d'heure, hors du planificateur horaire.
     if (env.MODE === TRIAL_MODE) await runListingSync(fromD1(env.DB), undefined, listingOptions(env));
     // AU036 : les vraies publications d'un bien qui ne peut plus être diffusé sont retirées chez le réseau [R42].
-    const social = socialOf(env);
+    const social = socialOf(env).withdraw;
     if (env.MODE === TRIAL_MODE && social) {
       const db = fromD1(env.DB);
       await runLiveWithdrawals(db, new SqlJournalStore(db), () => new Date(), social);

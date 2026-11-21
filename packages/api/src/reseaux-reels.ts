@@ -47,6 +47,24 @@ export function liveSocialChannels(env: SocialEnv, http: MetaChannelsConfig['htt
   return { channels: [...meta, ...SOCIAL_CHANNELS.filter((c) => !real.has(c)).map((c) => trialSocialChannel(c))], live: true };
 }
 
+/**
+ * Les canaux qui retirent les vraies publications déjà faites [R42] : il suffit du compte et du jeton. Couper les
+ * nouveaux envois (`RESEAUX_MODE` remis à `essai`, adresse des photos retirée) ne coupe jamais leur retrait. Ces
+ * canaux ne publient rien : aucune photo n'a d'adresse.
+ */
+export function withdrawalChannels(env: SocialEnv, http: MetaChannelsConfig['http']): { channels: SocialChannel[]; live: true } | null {
+  const pageId = env.META_PAGE_ID?.trim() ?? '';
+  const igUserId = env.META_IG_USER_ID?.trim() ?? '';
+  const token = env.META_PAGE_TOKEN?.trim() ?? '';
+  if (!/^[0-9]{1,32}$/.test(pageId) || !/^[0-9]{1,32}$/.test(igUserId) || token === '') return null;
+  return { channels: metaSocialChannels({ network: { pageId, igUserId, token }, mediaUrl: () => null, http }), live: true };
+}
+
+/** Publier (seulement mis en service) et retirer (tant que le compte est rangé) : les deux réglages du Worker. */
+export function socialFromEnv(env: SocialEnv, http: MetaChannelsConfig['http']): { publish: { channels: SocialChannel[]; live: true } | null; withdraw: { channels: SocialChannel[]; live: true } | null } {
+  return { publish: liveSocialChannels(env, http), withdraw: withdrawalChannels(env, http) };
+}
+
 /** Le stockage des fichiers n'est pas lu par les retraits : aucune pièce n'est demandée. */
 const NO_FILES = { has: async (): Promise<boolean> => false };
 

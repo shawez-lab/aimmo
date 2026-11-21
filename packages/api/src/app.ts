@@ -309,6 +309,8 @@ export interface StudioOptions {
   uploads?: StudioServices['uploads'];
   /** AU036 : les vrais réseaux, faits par `liveSocialChannels` ; absents, tous les réseaux restent d'essai [R26, R134]. */
   social?: { channels: NonNullable<StudioServices['channels']>; live: true } | null;
+  /** AU036 : les canaux qui retirent les vraies publications, rangés tant que le compte l'est, même envois coupés [R42]. */
+  withdrawals?: { channels: NonNullable<StudioServices['channels']>; live: true } | null;
 }
 
 export interface PartenairesOptions {
@@ -2624,7 +2626,8 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
         const done = await retraits.run(viewer.networkId, propertyId, `${String(viewer.role)}:${viewer.userId}`);
         // AU036 · les vraies publications du bien sur les réseaux sont retirées dans le même geste ; ce qui échoue reste
         // dû au passage planifié (`runLiveWithdrawals`) [R42].
-        const reseaux = config.studio?.social ? await withdrawLiveNow(s.db, s.journal, now, config.studio.social, viewer.networkId, propertyId, `${String(viewer.role)}:${viewer.userId}`) : null;
+        const pull = config.studio?.withdrawals ?? config.studio?.social ?? null;
+        const reseaux = pull ? await withdrawLiveNow(s.db, s.journal, now, pull, viewer.networkId, propertyId, `${String(viewer.role)}:${viewer.userId}`) : null;
         const body = (await response.json()) as Record<string, unknown>;
         return json(response.status, { ...body, retraits: { state: done.state, channels: done.channels, portals: done.portals, busy: done.busy, ...(reseaux ? { reseaux } : {}) } });
       }

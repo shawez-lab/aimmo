@@ -109,7 +109,7 @@ describeWithSqlite('AU036 · l’annulation du mandat retire aussi les vraies pu
     });
     const social = { channels: [channel('facebook'), channel('instagram')], live: true as const };
     const apiKeys = JSON.stringify([{ sha256: await sha256Hex(KEY), role: 'direction', userId: 'direction-1', networkId: t.network.id }]);
-    const config: ApiConfig = { db: t.db, apiKeys, mode: 'essai', now: t.now, listing: { channels: t.channels }, studio: { files: { has: async () => false }, social } };
+    const config: ApiConfig = { db: t.db, apiKeys, mode: 'essai', now: t.now, listing: { channels: t.channels }, studio: { files: { has: async () => false }, social: null, withdrawals: social } };
     const res = await handleRequest(
       new Request(`${API}/v1/mandats/${t.mandateId}/annulation`, { method: 'POST', headers: { authorization: `Bearer ${KEY}`, 'content-type': 'application/json' }, body: JSON.stringify({ reason: 'termination' }) }),
       config,

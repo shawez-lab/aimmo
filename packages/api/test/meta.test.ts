@@ -390,7 +390,7 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
               // Les vraies publications du réseau sur Facebook et Instagram (AU036), seulement mises en service quand
               // tout est rangé (R134) ; chaque publication est validée par l'agent, et retirée quand le bien ne peut
               // plus être diffusé (R42). Ce ne sont pas des messages à une personne.
-              'const socialOf = (env: Env) => liveSocialChannels(env, fetch.bind(globalThis));',
+              'const socialOf = (env: Env) => socialFromEnv(env, fetch.bind(globalThis));',
               // Le fournisseur de pige du réseau (AU034), en GET : seule la date de début part, la clé dans l'en-tête.
               'export function pigeSourceOf(settings: PigeProviderSettings, fetcher: PigeFetcher = fetch.bind(globalThis)): { networkId: string; source: PigeSource } | null {',
               'const reader = env.DVF_BASE_URL ? httpDvfReader(fetch.bind(globalThis), env.DVF_BASE_URL) : null;',

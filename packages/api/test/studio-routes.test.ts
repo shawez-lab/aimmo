@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { studioCertificate, studioRoutes, type StudioServices } from '../src/studio.ts';
-import { liveSocialChannels, mediaBase } from '../src/reseaux-reels.ts';
+import { liveSocialChannels, mediaBase, socialFromEnv, withdrawalChannels } from '../src/reseaux-reels.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 
@@ -349,4 +349,16 @@ it('[R26] [R134] sans chaque pièce rangée et bien formée, rien de réel : tou
     { ...full, RESEAUX_MEDIA_BASE: 'pas une adresse' },
   ]) expect(liveSocialChannels(off, fetch), JSON.stringify(off)).toBeNull();
   expect(mediaBase('https://reseau.exemple.test/medias/?x=1')).toBeNull();
+});
+
+it('[R42] envois coupés (mode remis à essai, adresse des photos retirée) : les retraits restent possibles avec le compte rangé', () => {
+  const env = { RESEAUX_MODE: 'essai', META_PAGE_ID: '111', META_IG_USER_ID: '222', META_PAGE_TOKEN: 'jeton-invente' };
+  const s = socialFromEnv(env, fetch);
+  expect(s.publish).toBeNull();
+  expect(s.withdraw?.channels.map((c) => [c.channel, c.mode, typeof c.remove])).toEqual([
+    ['facebook', 'reel', 'function'],
+    ['instagram', 'reel', 'function'],
+  ]);
+  expect(withdrawalChannels({ ...env, META_PAGE_TOKEN: '' }, fetch)).toBeNull();
+  expect(socialFromEnv({ ...env, RESEAUX_MODE: 'reel', RESEAUX_MEDIA_BASE: 'https://reseau.exemple.test/medias/' }, fetch).publish).not.toBeNull();
 });
