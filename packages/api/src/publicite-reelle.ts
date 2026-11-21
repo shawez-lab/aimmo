@@ -14,7 +14,7 @@
  * Une pièce manque ou est mal formée : cette plateforme reste d'essai, l'autre n'en change pas [R587].
  */
 import type { JournalStore, SqlDatabase } from '@aimmo/core';
-import { googleAdsPlatform, metaAdsPlatform, PublicitePayante, trialAdPlatform, type AdPlatform, type AdPlatformName } from '../../core/src/marketing/index.ts';
+import { googleAdsPlatform, metaAdsPlatform, PublicitePayante, trialAdPlatform, type AdPlatform, type AdPlatformName, type GoogleAdsConfig } from '../../core/src/marketing/index.ts';
 
 export interface AdsEnv {
   ADS_MODE?: string | undefined;
@@ -69,7 +69,7 @@ function readPlaces(raw: string | undefined): { google: Record<string, string>; 
 }
 
 /** Les plateformes de la publicité : réelles une à une quand tout est rangé (H63), d'essai sinon. */
-export function adsFromEnv(env: AdsEnv, http: typeof fetch): AdsSettings {
+export function adsFromEnv(env: AdsEnv, http: GoogleAdsConfig['http']): AdsSettings {
   const trial = (): AdsSettings => ({ platforms: { google_ads: trialAdPlatform(), meta: trialAdPlatform() }, realCapCents: undefined });
   if (env.ADS_MODE !== 'reel') return trial();
   const cap = /^[0-9]{1,9}$/.test(env.ADS_PLAFOND_CENTS ?? '') ? Number(env.ADS_PLAFOND_CENTS) : NaN;
