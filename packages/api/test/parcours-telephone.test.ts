@@ -35,8 +35,8 @@ async function setup() {
   }
   for (let b = 0; b < PORTEFEUILLE.biens; b++) property.run(`b-${b}`, `REF-${b}`, 40 + (b % 120), 1 + (b % 6), 90_000 + b * 1_000, at, at);
   raw.exec('COMMIT');
-  // La moitié des biens a un mandat signé, inscrit au registre, hors délai de rétractation : la recherche les montre,
-  // et demande pour chacun la porte de la diffusion, comme sur un vrai portefeuille [R42].
+  // La moitié des biens a un mandat signé, inscrit au registre, hors délai de rétractation ; la moitié de ces mandats
+  // est échue. La recherche montre les biens ouverts et lit la porte de la diffusion pour tout le réseau [R42].
   raw.exec('PRAGMA foreign_keys = OFF');
   raw.exec('BEGIN');
   const signedAt = '2026-06-01T09:00:00.000Z';
@@ -47,7 +47,8 @@ async function setup() {
   for (let b = 0; b < PORTEFEUILLE.biens; b += 2) {
     const n = b / 2 + 1;
     mandate.run(`m-${b}`, `p-${b % PORTEFEUILLE.clients}`, `b-${b}`, signedAt, signedAt);
-    doc.run(`d-${b}`, `p-${b % PORTEFEUILLE.clients}`, `b-${b}`, JSON.stringify({ durationMonths: 12 }), signedAt);
+    // Un mandat sur deux de ceux-là est échu : signé, inscrit, mais fermé par la porte, comme dans un vrai portefeuille.
+    doc.run(`d-${b}`, `p-${b % PORTEFEUILLE.clients}`, `b-${b}`, JSON.stringify({ durationMonths: b % 4 === 0 ? 12 : 3 }), signedAt);
     signedDoc.run(`d-${b}`, signedAt, `mandats/b-${b}.pdf`, `m-${b}`, `T-${n}`, signedAt);
     register.run(n, `m-${b}`, n, `T-${n}`, `b-${b}`, signedAt, signedAt, `h-${b}`);
   }

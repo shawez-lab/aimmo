@@ -760,12 +760,12 @@ export class RechercheLangage {
     // La diffusion se demande en dernier, juste avant de montrer, dans l'ordre où les biens seront montrés et seulement
     // jusqu'à remplir la liste [R42, AU106] : le même résultat qu'en la demandant pour chaque bien, sans le coût.
     // Un bien sans exemplaire signé d'un mandat n'est jamais diffusable : il n'est pas même demandé.
-    const candidates = this.diffusion.diffusionCandidates ? await this.diffusion.diffusionCandidates(networkId) : null;
+    const open = this.diffusion.diffusableProperties ? await this.diffusion.diffusableProperties(networkId, at) : null;
     const shown = async (list: (PhraseResult & { gap: number })[]): Promise<PhraseResult[]> => {
       const out: PhraseResult[] = [];
       for (const r of list.sort(order)) {
         if (out.length >= this.limit) break;
-        if ((candidates === null || candidates.has(r.propertyId)) && (await this.diffusion.canDiffuse(networkId, r.propertyId, at)).allowed) out.push(strip(r));
+        if (open !== null ? open.has(r.propertyId) : (await this.diffusion.canDiffuse(networkId, r.propertyId, at)).allowed) out.push(strip(r));
       }
       return out;
     };

@@ -22,7 +22,7 @@ import type { JournalStore } from '../journal/types.ts';
 import { RegistreMandats } from '../mandats/registre.ts';
 import type { DocumentFacts } from './modeles.ts';
 import { parisDayStart } from '../pilotage/tableau-agent.ts';
-import { mandateEndDay, mandateTerms } from './conditions.ts';
+import { mandateEndDay, mandateTerms, termsFrom, type MandateTerms } from './conditions.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 export const WITHDRAWAL_DAYS = 14;
@@ -61,6 +61,15 @@ export interface DiffusionDecision {
   withdrawalLastDay: string | null;
 }
 
+/** AU106 · ce que la décision d'un mandat lit : dans la base, mandat par mandat, ou déjà lu pour tout le réseau. */
+interface MandateSource {
+  inscription(mandateId: string): Promise<{ seq: number } | null>;
+  withdrawn(mandateId: string): Promise<boolean>;
+  cancelled(networkId: string, seq: number): Promise<boolean>;
+  terms(mandateId: string, at: Date): Promise<MandateTerms | null>;
+  earlyStart(mandateId: string): Promise<{ received_at: string } | null>;
+}
+
 interface SignedMandateRow {
   mandate_id: string;
   network_id: string;
@@ -96,12 +105,74 @@ export class Diffusion {
   }
 
   /** La décision pour un mandat signé : en cours, rétracté, en délai, etc. */
-  private async decideMandate(row: SignedMandateRow, at: Date): Promise<DiffusionDecision> {
+  /** Les lectures d'un mandat dans la base, une requête chacune. */
+  private readonly dbSource: MandateSource = {
+    inscription: (id) => this.db.first<{ seq: number }>(`SELECT seq FROM mandate_register WHERE mandate_id = ? AND kind = 'inscription'`, [id]),
+    withdrawn: async (id) => (await this.db.first('SELECT mandate_id FROM mandate_withdrawals WHERE mandate_id = ?', [id])) !== null,
+    cancelled: async (networkId, seq) => (await this.db.first(`SELECT seq FROM mandate_register WHERE network_id = ? AND kind = 'annulation' AND cancels_seq = ?`, [networkId, seq])) !== null,
+    terms: (id, at) => mandateTerms(this.db, id, at),
+    earlyStart: (id) => this.db.first<{ received_at: string }>('SELECT received_at FROM mandate_early_starts WHERE mandate_id = ?', [id]),
+  };
+
+  /** AU106 · les mêmes lectures pour tous les mandats d'un réseau, en six requêtes. */
+  private async networkSource(networkId: string): Promise<MandateSource> {
+    const inscriptions = new Map(
+      (await this.db.all<{ mandate_id: string; seq: number }>(`SELECT r.mandate_id, r.seq FROM mandate_register r JOIN mandates m ON m.id = r.mandate_id WHERE m.network_id = ? AND r.kind = 'inscription'`, [networkId])).map((r) => [r.mandate_id, { seq: Number(r.seq) }]),
+    );
+    const withdrawals = new Set((await this.db.all<{ mandate_id: string }>('SELECT w.mandate_id FROM mandate_withdrawals w JOIN mandates m ON m.id = w.mandate_id WHERE m.network_id = ?', [networkId])).map((r) => r.mandate_id));
+    const cancels = new Set((await this.db.all<{ cancels_seq: number }>(`SELECT cancels_seq FROM mandate_register WHERE network_id = ? AND kind = 'annulation' AND cancels_seq IS NOT NULL`, [networkId])).map((r) => Number(r.cancels_seq)));
+    const bases = new Map<string, { facts: string | null; kind: string }>();
+    for (const r of await this.db.all<{ mandate_id: string; facts: string | null; kind: string }>(
+      'SELECT s.mandate_id, d.facts, d.kind FROM signed_documents s JOIN documents d ON d.id = s.document_id JOIN mandates m ON m.id = s.mandate_id WHERE m.network_id = ? AND s.copy_content IS NOT NULL',
+      [networkId],
+    )) if (!bases.has(r.mandate_id)) bases.set(r.mandate_id, { facts: r.facts, kind: r.kind });
+    const amendments = new Map<string, { document_id: string; signed_at: string; facts: string | null }[]>();
+    for (const r of await this.db.all<{ mandate_id: string; document_id: string; signed_at: string; facts: string | null }>(
+      'SELECT a.mandate_id, a.document_id, a.signed_at, d.facts FROM signed_amendments a JOIN documents d ON d.id = a.document_id JOIN mandates m ON m.id = a.mandate_id WHERE m.network_id = ? ORDER BY a.signed_at, a.created_at, a.document_id',
+      [networkId],
+    )) amendments.set(r.mandate_id, [...(amendments.get(r.mandate_id) ?? []), r]);
+    const early = new Map((await this.db.all<{ mandate_id: string; received_at: string }>('SELECT e.mandate_id, e.received_at FROM mandate_early_starts e JOIN mandates m ON m.id = e.mandate_id WHERE m.network_id = ?', [networkId])).map((r) => [r.mandate_id, { received_at: r.received_at }]));
+    return {
+      inscription: async (id) => inscriptions.get(id) ?? null,
+      withdrawn: async (id) => withdrawals.has(id),
+      cancelled: async (_n, seq) => cancels.has(seq),
+      terms: async (id, at) => {
+        const base = bases.get(id);
+        return base ? termsFrom(base, amendments.get(id) ?? [], at) : null;
+      },
+      earlyStart: async (id) => early.get(id) ?? null,
+    };
+  }
+
+  /**
+   * AU106 · les biens du réseau que la porte de la diffusion ouvre à cet instant, en huit requêtes pour tout le réseau :
+   * exactement ceux pour lesquels `canDiffuse` répondrait « oui », sans la demander bien par bien [R42].
+   */
+  async diffusableProperties(networkId: string, at: Date = this.now()): Promise<Set<string>> {
+    const rows = await this.db.all<SignedMandateRow & { property_id: string }>(
+      `SELECT m.property_id, s.mandate_id, s.network_id, s.signed_at, s.place, s.number, d.facts FROM signed_documents s
+       JOIN documents d ON d.id = s.document_id JOIN mandates m ON m.id = s.mandate_id
+       WHERE s.network_id = ? AND m.property_id IS NOT NULL AND s.mandate_id IS NOT NULL AND s.copy_content IS NOT NULL
+       ORDER BY s.signed_at DESC`,
+      [networkId],
+    );
+    const source = await this.networkSource(networkId);
+    const day = localTime(at, TIME_ZONE).date;
+    const open = new Set<string>();
+    for (const row of rows) {
+      if (open.has(row.property_id)) continue;
+      if (localTime(new Date(row.signed_at), TIME_ZONE).date > day) continue;
+      if ((await this.decideMandate(row, at, source)).allowed) open.add(row.property_id);
+    }
+    return open;
+  }
+
+  private async decideMandate(row: SignedMandateRow, at: Date, src: MandateSource = this.dbSource): Promise<DiffusionDecision> {
     const decision = (allowed: boolean, reason: DiffusionReason, last: string | null = null): DiffusionDecision => ({ allowed, reason, mandateId: row.mandate_id, withdrawalLastDay: last });
-    const inscription = await this.db.first<{ seq: number }>(`SELECT seq FROM mandate_register WHERE mandate_id = ? AND kind = 'inscription'`, [row.mandate_id]);
+    const inscription = await src.inscription(row.mandate_id);
     if (!inscription || row.number === null) return decision(false, 'no_mandate');
-    if (await this.db.first('SELECT mandate_id FROM mandate_withdrawals WHERE mandate_id = ?', [row.mandate_id])) return decision(false, 'withdrawn');
-    if (await this.db.first(`SELECT seq FROM mandate_register WHERE network_id = ? AND kind = 'annulation' AND cancels_seq = ?`, [row.network_id, Number(inscription.seq)])) return decision(false, 'cancelled');
+    if (await src.withdrawn(row.mandate_id)) return decision(false, 'withdrawn');
+    if (await src.cancelled(row.network_id, Number(inscription.seq))) return decision(false, 'cancelled');
     let facts: DocumentFacts | null = null;
     try {
       facts = row.facts ? (JSON.parse(row.facts) as DocumentFacts) : null;
@@ -110,7 +181,7 @@ export class Diffusion {
     }
     const signedAt = new Date(row.signed_at);
     // La durée en vigueur à cette date : celle du mandat, ou du dernier avenant signé alors qui la change (D07, D10).
-    const terms = await mandateTerms(this.db, row.mandate_id, at);
+    const terms = await src.terms(row.mandate_id, at);
     const duration = terms?.durationMonths ?? facts?.durationMonths ?? null;
     if (duration === null) return decision(false, 'duration_unknown');
     // La fin du mandat se compte en jours de Paris ; un 31 sans équivalent devient le dernier jour du mois [R42].
@@ -118,7 +189,7 @@ export class Diffusion {
     const last = withdrawalLastDay(signedAt, row.place);
     if (last !== null && localTime(at, TIME_ZONE).date <= last) {
       // La demande écrite du vendeur ne compte qu'à partir du jour où elle est reçue (D10).
-      const early = await this.db.first<{ received_at: string }>('SELECT received_at FROM mandate_early_starts WHERE mandate_id = ?', [row.mandate_id]);
+      const early = await src.earlyStart(row.mandate_id);
       if (early && localTime(new Date(early.received_at), TIME_ZONE).date <= localTime(at, TIME_ZONE).date) return decision(true, 'allowed_early_start', last);
       return decision(false, 'withdrawal_period', last);
     }
@@ -129,20 +200,6 @@ export class Diffusion {
    * Le bien peut-il être diffusé maintenant ? La seule porte de toute publication [R42]. Sans droits : c'est le
    * système qui la consulte avant de publier ; la décision ne porte aucune donnée personnelle.
    */
-  /**
-   * AU106 · les biens qui ont au moins un exemplaire signé d'un mandat complet : hors d'eux, `canDiffuse` répond
-   * toujours « pas de mandat ». Une requête pour tout le réseau, au lieu d'une par bien.
-   */
-  async diffusionCandidates(networkId: string): Promise<Set<string>> {
-    const rows = await this.db.all<{ property_id: string }>(
-      `SELECT DISTINCT m.property_id FROM signed_documents s
-       JOIN documents d ON d.id = s.document_id JOIN mandates m ON m.id = s.mandate_id
-       WHERE s.network_id = ? AND m.property_id IS NOT NULL AND s.mandate_id IS NOT NULL AND s.copy_content IS NOT NULL`,
-      [networkId],
-    );
-    return new Set(rows.map((r) => r.property_id));
-  }
-
   async canDiffuse(networkId: string, propertyId: string, at: Date = this.now()): Promise<DiffusionDecision> {
     const rows = await this.db.all<SignedMandateRow>(
       `SELECT s.mandate_id, s.network_id, s.signed_at, s.place, s.number, d.facts FROM signed_documents s

@@ -605,7 +605,7 @@ describeWithSqlite('AU106 · une recherche lit tous les biens en quelques requê
     let asked = 0;
     const gate = (withCandidates: boolean): DiffusionGate => ({
       canDiffuse: async (_n, id) => { asked += 1; return closed.has(id) ? { allowed: false, reason: 'no_mandate' } : { allowed: true, reason: 'allowed' }; },
-      ...(withCandidates ? { diffusionCandidates: async () => new Set(ids.filter((id) => id !== ids[0])) } : {}),
+      ...(withCandidates ? { diffusableProperties: async () => new Set(ids.filter((id) => !closed.has(id))) } : {}),
     });
     const old = new RechercheLangage(t.db, { propertyForMatch: (p) => rapprochement.propertyForMatch(p) }, gate(false), t.journal, { now: t.now });
     const fast = new RechercheLangage(t.db, rapprochement, gate(true), t.journal, { now: t.now });
@@ -616,7 +616,7 @@ describeWithSqlite('AU106 · une recherche lit tous les biens en quelques requê
     expect(after).toEqual(before);
     expect(after).toHaveLength(20);
     expect(after.map((r) => r.propertyId)).not.toContain(ids[3]);
-    // 20 montrés, un refusé en chemin ; le bien hors des candidats n'est pas même demandé.
-    expect(asked).toBe(21);
+    // La porte est lue d'un coup pour tout le réseau : aucune demande bien par bien.
+    expect(asked).toBe(0);
   });
 });

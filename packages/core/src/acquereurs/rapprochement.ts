@@ -270,8 +270,8 @@ export type RapprochementRefusal = { ok: false; rule: 'R16' | 'R42'; code: strin
 /** La porte de toute diffusion, `Diffusion.canDiffuse` de D05 [R42]. */
 export interface DiffusionGate {
   canDiffuse(networkId: string, propertyId: string, at?: Date): Promise<{ allowed: boolean; reason: string }>;
-  /** AU106 · les seuls biens que `canDiffuse` peut ouvrir, en une requête ; les autres sont fermés sans la demander. */
-  diffusionCandidates?(networkId: string): Promise<Set<string>>;
+  /** AU106 · les biens que `canDiffuse` ouvre à cet instant, lus pour tout le réseau en quelques requêtes. */
+  diffusableProperties?(networkId: string, at?: Date): Promise<Set<string>>;
 }
 
 export interface RapprochementOptions {
