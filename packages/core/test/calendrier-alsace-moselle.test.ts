@@ -112,4 +112,29 @@ describeWithSqlite('AU085 · échéancier d’un dossier en Alsace-Moselle', () 
     // La commune de Dijon répond au calendrier national.
     expect(s.ok && s.value.preemptionCalendar).toEqual({ calendar: 'national', reason: null });
   });
+
+  it('[R61] le domicile saisi sur la fiche gardée d’une fusion compte pour l’acquéreur de la fiche réunie', async () => {
+    const t = await setupDossier();
+    await t.startCompromis();
+    t.setClock(PARIS_9H('2027-03-16'));
+    const e = new Echeancier(t.db, t.acces, t.journal, { now: t.now });
+    await e.record(t.agent, t.fileId, { kind: 'compromis_signe', day: '2027-03-10', proofRef: PROOF });
+    await e.record(t.agent, t.fileId, { kind: 'notification_acquereur', day: '2027-03-16', proofRef: PROOF });
+    const buyer = await t.db.first<{ buyer_person_id: string; network_id: string }>('SELECT buyer_person_id, network_id FROM sale_files WHERE id = ?', [t.fileId]);
+    const survivor = (await t.store.createPerson({ networkId: buyer!.network_id, agentId: t.alexId, firstName: 'Gardée', lastName: 'Exemple' })).id;
+    const at = t.now().toISOString();
+    await t.db.run(
+      `INSERT INTO person_domiciles (id, network_id, person_id, version, street, postal_code, city, country, set_by, set_at)
+       VALUES ('domicile-strasbourg', ?, ?, (SELECT COALESCE(MAX(version), 0) + 1 FROM person_domiciles WHERE person_id = ?), '5 rue Inventée', '67000', 'Strasbourg', 'France', 'test', ?)`,
+      [buyer!.network_id, survivor, survivor, at],
+    );
+    expect((await e.schedule(t.agent, t.fileId)).ok && ((await e.schedule(t.agent, t.fileId)) as { value: { lines: { day: string | null }[] } }).value.lines[0]!.day).toBe('2027-03-26');
+    await t.db.run(
+      "INSERT INTO person_merges (id, network_id, agent_id, survivor_id, merged_id, reason, merged_at, undone_at, created_at) VALUES ('fusion-am', ?, NULL, ?, ?, 'même personne', ?, NULL, ?)",
+      [buyer!.network_id, survivor, buyer!.buyer_person_id, at, at],
+    );
+    const s = await e.schedule(t.agent, t.fileId);
+    expect(s.ok && s.value.lines[0]).toMatchObject({ day: '2027-03-30', calendar: 'alsace_moselle' });
+    expect(s.ok && s.value.buyers[0]).toMatchObject({ calendarReason: 'domicile_acquereur' });
+  });
 });

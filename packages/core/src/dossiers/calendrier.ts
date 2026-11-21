@@ -14,7 +14,10 @@
  * prime sur le code postal de sa fiche (AU002). Un domicile hors de France n'est jamais en Alsace-Moselle.
  */
 import type { SqlDatabase } from '../db/sql.ts';
+import { latestDomicile } from '../documents/designation.ts';
 import { frenchHolidays } from '../envoi/horaires.ts';
+import { FicheClient } from '../db/fiche-client.ts';
+import { FicheUnique } from '../fiche/fusion.ts';
 
 export const CALENDARS = ['national', 'alsace_moselle'] as const;
 export type Calendar = (typeof CALENDARS)[number];
@@ -102,13 +105,20 @@ export async function propertyPlaceOf(db: SqlDatabase, propertyId: string): Prom
   return propertyPlace(row?.postal_code ?? null);
 }
 
-/** Le dernier domicile saisi de chaque personne, en Alsace-Moselle ou non. */
+/**
+ * Les acquéreurs dont le dernier domicile saisi est en Alsace-Moselle. Le domicile est cherché sur toutes les fiches
+ * réunies en la sienne, comme pour un mandant (AU002) : une saisie faite sur la fiche gardée compte pour l'acquéreur
+ * d'une fiche fusionnée, et l'inverse.
+ */
 export async function buyersInAlsaceMoselle(db: SqlDatabase, personIds: readonly string[]): Promise<Set<string>> {
   const out = new Set<string>();
+  const unique = new FicheUnique(db, new FicheClient(db));
   for (const id of personIds) {
     if (!id) continue;
-    const d = await db.first<{ postal_code: string | null; country: string | null }>('SELECT postal_code, country FROM person_domiciles WHERE person_id = ? ORDER BY version DESC LIMIT 1', [id]);
-    if (d && domicileInAlsaceMoselle({ postalCode: d.postal_code, country: d.country })) out.add(id);
+    const person = await db.first<{ network_id: string }>('SELECT network_id FROM persons WHERE id = ?', [id]);
+    if (!person) continue;
+    const d = await latestDomicile(db, person.network_id, await unique.membersOf(id));
+    if (d && domicileInAlsaceMoselle({ postalCode: d.postalCode, country: d.country ?? null })) out.add(id);
   }
   return out;
 }
