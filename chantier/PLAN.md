@@ -1170,7 +1170,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU109 · La copie nocturne et son test réel restent conditionnés à une activation humaine non prouvée dans le chantier
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A109 (majeur), endroit : docs/SAUVEGARDE.md ; H50 ; `.github/workflows/copie-nuit.yml`.
 - Constat de l'audit : La copie nocturne et son test réel restent conditionnés à une activation humaine non prouvée dans le chantier.
