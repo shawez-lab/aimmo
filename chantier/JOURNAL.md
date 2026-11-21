@@ -1618,3 +1618,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 21:37 · AU091 · régularisation d'une commission prévue après un avenant d'honoraires (R678, migration 4086), proposition #767 ouverte, Codex sans remarque restante ; vérification GitHub coupée deux fois à 35 min, non fusionnée · prochaine : AU091 (relancer la vérification), puis AU091b
 - 2026-11-21 21:37 · VOIE 2 : relance refusée, question 2 (la séance voie 2 de 16:55 n'a rien produit)
 - 2026-11-21 21:37 · VOIE 2 : AU091, commits sur chantier/AU091 (#767, non fusionnée), relancé non
+- 2026-11-21 22:18 · AU091 · vérification relancée, verte ; fusionnée (#767, c3a41ee9) ; R678 en service · prochaine : AU091b
+- 2026-11-21 22:18 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 19:54 et 20:53 n'ont rien produit)
+- 2026-11-21 22:18 · VOIE 2 : AU091, c3a41ee9 (main), relancé non
