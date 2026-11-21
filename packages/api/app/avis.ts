@@ -229,6 +229,11 @@ globalThis.AIMMO_AVIS = function (t) {
       if (text.value !== r.text) c.text = text.value;
       return c;
     }
+    // Seule la correction envoyée s'efface : une correction plus récente, d'un autre onglet, reste gardée.
+    function dropIfSent(sent) {
+      var stored = drafts.get(key);
+      if (!stored || !stored.value || (stored.value.low === sent.low && stored.value.high === sent.high && stored.value.text === sent.text)) drafts.drop(key);
+    }
     function save(c) {
       return send('/v1/avis/' + encodeURIComponent(r.id) + '/ajustement', 'POST', c);
     }
@@ -242,12 +247,13 @@ globalThis.AIMMO_AVIS = function (t) {
       if (Object.keys(c).length === 0) { state('Rien à enregistrer.'); return Promise.resolve(false); }
       if (Number.isNaN(amount(low)) || Number.isNaN(amount(high))) { state('La fourchette s’écrit en euros, en chiffres seulement.'); return Promise.resolve(false); }
       state('Enregistrement…');
+      var sent = { low: low.value, high: high.value, text: text.value };
       lock(true);
       var mine = ++seq;
       return save(c).then(function (res) {
         if (res.gone || mine !== seq) return false;
         if (!res.ok) { lock(false); state(why(res, 'Rien n’est enregistré : réessayez.')); return false; }
-        drafts.drop(key);
+        dropIfSent(sent);
         return load('Enregistré.');
       });
     }));
@@ -257,12 +263,13 @@ globalThis.AIMMO_AVIS = function (t) {
       if (waiting) { state('Choisissez d’abord : reprendre ou abandonner la correction gardée.'); return Promise.resolve(false); }
       if (Object.keys(change()).length > 0) { state('Enregistrez d’abord vos changements : c’est ce texte qui sera validé.'); return Promise.resolve(false); }
       state('Validation…');
+      var sent = { low: low.value, high: high.value, text: text.value };
       lock(true);
       var mine = ++seq;
       return send('/v1/avis/' + encodeURIComponent(r.id) + '/validation', 'POST', { updatedAt: r.updatedAt }).then(function (res) {
         if (res.gone || mine !== seq) return false;
         if (!res.ok) { lock(false); state(why(res, 'L’avis n’est pas validé : réessayez.')); return false; }
-        drafts.drop(key);
+        dropIfSent(sent);
         return load('Avis validé.');
       });
     }));

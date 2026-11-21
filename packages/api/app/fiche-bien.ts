@@ -328,6 +328,7 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       go.disabled = true;
       // Pendant l'envoi, rien ne se tape : ce qui part est ce qui sera rangé, et le brouillon ne s'efface qu'avec lui.
       lockFields(true);
+      var sentRaw = JSON.stringify(raw());
       said.textContent = 'Envoi…';
       return send(o.base + '/fiche?siVersion=' + version, 'POST', form.sheet).then(function (res) {
         t.sending(false);
@@ -345,7 +346,9 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
             : 'La fiche n’a pas pu être rangée.';
           return false;
         }
-        drafts.drop(key);
+        // Seule la saisie envoyée s'efface : une saisie plus récente, d'un autre onglet, reste gardée.
+        var stored = drafts.get(key);
+        if (!stored || !stored.value || JSON.stringify(stored.value.raw) === sentRaw) drafts.drop(key);
         return t.saved(mine, res.body.data && res.body.data.version);
       });
     });

@@ -481,6 +481,23 @@ describe('AU105 · une saisie de la fiche du bien non enregistrée se retrouve, 
     expect(JSON.parse(t.storage.get('aimmo.brouillons')!)).not.toEqual({});
   });
 
+  it('[R276] une saisie plus récente d’un autre onglet reste gardée quand cet onglet enregistre la sienne', async () => {
+    let answer: (r: Response) => void = () => {};
+    const t = await run({ [POST]: () => new Promise<Response>((r) => { answer = r; }), 'GET /v1/annonces/b1/fiche': ok({ propertyId: 'b1', version: 4, sheet: SHEET }) });
+    await t.open();
+    type(t, 'fiche-bien-bedrooms', '3');
+    void t.click(t.find('Enregistrer la fiche'));
+    await new Promise((r) => setTimeout(r, 0));
+    // L'autre onglet garde entre-temps sa propre saisie.
+    const all = JSON.parse(t.storage.get('aimmo.brouillons')!);
+    const k = Object.keys(all)[0]!;
+    all[k] = { at: 'x', value: { version: 4, raw: { ...all[k].value.raw, 'fiche-bien-bedrooms': '4' } } };
+    t.storage.set('aimmo.brouillons', JSON.stringify(all));
+    answer(Response.json({ ok: true, mode: 'essai', data: { version: 5 } }));
+    for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(JSON.parse(t.storage.get('aimmo.brouillons')!)[k].value.raw['fiche-bien-bedrooms']).toBe('4');
+  });
+
   it('[R13] la sortie efface les brouillons de l’appareil', async () => {
     const t = await run();
     await t.open();
