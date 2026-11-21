@@ -296,6 +296,7 @@ describeWithSqlite('SV09 · une offre qui tombe rend le bien disponible', () => 
     const t = await setup();
     const signalement = new conformite.SignalementSoupcon(t.db, t.acces, t.journal, { now: t.now });
     const responsable = { role: 'compliance', userId: 'conformite-1', networkId: t.network.id } as Parameters<typeof signalement.list>[0];
+    await new conformite.DispositifLcb(t.db, t.journal, { now: t.now }).designate({ role: 'direction', userId: 'direction-1', networkId: t.network.id } as Parameters<typeof signalement.list>[0], 'conformite-1');
     const ref = `sale_file:${t.fileId}`;
     await signalement.report(t.agent, ref, { note: 'Paiement proposé en espèces.' });
     t.setClock(at9('2027-03-10'));

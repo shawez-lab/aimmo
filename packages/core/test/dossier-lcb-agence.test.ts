@@ -72,6 +72,10 @@ async function setup(opts: { fillLcb?: boolean } = {}) {
   const reprise = new RepriseDonneesAgence(db, journal, gate, { now });
   const lacCompliance = as('compliance', 'conformite-lac', lac.licenseeNetworkId);
   const lacDirection = as('direction', 'direction-lac', lac.licenseeNetworkId);
+  // AU089 : dans chaque agence, la direction a nommé son responsable ; lui seul tire le dossier [R94].
+  for (const [net, officer] of [[lac.licenseeNetworkId, 'conformite-lac'], [pres.licenseeNetworkId, 'conformite-pres']] as const) {
+    await db.run('INSERT INTO lcb_officers (network_id, seq, officer_user_id, designated_by, designated_at) VALUES (?, 1, ?, ?, ?)', [net, officer, 'direction:essai', '2028-01-01T08:00:00.000Z']);
+  }
   const events = async (type: string): Promise<Record<string, unknown>[]> => (await db.all<{ data: string; subject: string }>('SELECT data, subject FROM journal WHERE type = ?', [type])).map((e) => ({ ...(JSON.parse(e.data) as Record<string, unknown>), subject: e.subject }));
 
   // Un même jeu dans chaque réseau : une personne, une pièce au coffre, un signalement et sa décision, une version du
@@ -155,6 +159,19 @@ describeWithSqlite('HX76 · Le dossier de la lutte contre le blanchiment de l’
     expect(t.proofs).toEqual([]);
     expect(t.reads).toEqual([]);
     expect((await t.events('conformite.refuse')).map((e) => e.code)).toEqual(['role', 'role', 'pas_de_licence']);
+  });
+
+  it('[R94] AU089 · un compte conformité qui n’est pas le dernier responsable nommé ne tire pas le dossier, rien n’est lu', async () => {
+    const t = await setup();
+    // Un autre compte conformité de l'agence, jamais nommé.
+    expect(await t.dossier.make(t.as('compliance', 'conformite-stagiaire', t.lac.licenseeNetworkId), 'preuve-ok')).toEqual({ ok: false, rule: 'R16', code: 'pas_responsable' });
+    // La direction nomme un nouveau responsable : l'ancien ne tire plus rien.
+    await t.db.run("INSERT INTO lcb_officers (network_id, seq, officer_user_id, designated_by, designated_at) VALUES (?, 2, 'conformite-lac-2', 'direction:essai', '2028-01-05T08:00:00.000Z')", [t.lac.licenseeNetworkId]);
+    expect(await t.dossier.make(t.lacCompliance, 'preuve-ok')).toEqual({ ok: false, rule: 'R16', code: 'pas_responsable' });
+    expect(t.proofs).toEqual([]);
+    expect(t.reads).toEqual([]);
+    const r = await t.dossier.make(t.as('compliance', 'conformite-lac-2', t.lac.licenseeNetworkId), 'preuve-ok');
+    expect(r.ok).toBe(true);
   });
 
   it('[R601] la vraie porte du second facteur accepte le sujet du dossier, et refuse sans preuve', async () => {

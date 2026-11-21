@@ -192,7 +192,28 @@ export class Publication {
     const lease = await this.acquire(propertyId);
     if (!lease) return { version: null, state: null, created: false, pushed: [], failed: [], busy: true };
     try {
-      return await this.syncHeld(networkId, propertyId, property, lease);
+      // AU067 : une rétractation ou une annulation peut tomber pendant les envois. Après un passage qui a écrit ou
+      // poussé quelque chose, ce qui doit être montré est relu sous le même bail : un retrait arrivé entre-temps part
+      // dans ce passage, au lieu d'attendre le suivant [R42]. Trois tours au plus.
+      let r = await this.syncHeld(networkId, propertyId, property, lease);
+      const pushed = new Set(r.pushed);
+      let failed = new Set(r.failed);
+      let created = r.created;
+      for (let round = 1; round < 3 && (r.created || r.pushed.length > 0 || r.failed.length > 0); round++) {
+        const again = await this.db.first<{ network_id: string; reference: string; status: PropertyStatus }>('SELECT network_id, reference, status FROM properties WHERE id = ?', [propertyId]);
+        if (!again || again.network_id !== networkId || !(await this.holds(propertyId, lease))) break;
+        const before = r;
+        r = await this.syncHeld(networkId, propertyId, again, lease, true);
+        if (!r.created) {
+          r = { ...before, version: r.version, state: r.state };
+          break;
+        }
+        created ||= r.created;
+        for (const c of r.pushed) pushed.add(c);
+        // Une nouvelle version : seuls ses échecs restent dus.
+        failed = new Set(r.failed);
+      }
+      return { version: r.version, state: r.state, created, pushed: [...pushed], failed: [...failed] };
     } finally {
       await this.db.run('UPDATE listing_sync_leases SET expires_at = ? WHERE property_id = ? AND token = ?', [new Date(0).toISOString(), propertyId, lease]);
     }
@@ -228,7 +249,7 @@ export class Publication {
     return held?.token === token && held.expires_at > this.now().toISOString();
   }
 
-  private async syncHeld(networkId: string, propertyId: string, property: { reference: string; status: PropertyStatus }, lease: string): Promise<SyncResult> {
+  private async syncHeld(networkId: string, propertyId: string, property: { reference: string; status: PropertyStatus }, lease: string, onlyIfNew = false): Promise<SyncResult> {
     const want = await this.desired(networkId, propertyId, property.reference, property.status);
     const before = await this.latest(propertyId);
     let created = false;
@@ -281,6 +302,8 @@ export class Publication {
     }
     const current = await this.latest(propertyId);
     if (!current) return { version: null, state: null, created, pushed: [], failed: [] };
+    // La relecture d'après envoi ne pousse que ce qui a changé : un canal en panne attend le passage suivant.
+    if (onlyIfNew && !created) return { version: Number(current.seq), state: current.state, created, pushed: [], failed: [] };
     await this.followListing(propertyId, current.state);
     const { pushed, failed } = await this.pushAll(propertyId, current, lease);
     return { version: Number(current.seq), state: current.state, created, pushed, failed };

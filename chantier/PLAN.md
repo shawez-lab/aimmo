@@ -744,7 +744,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU067 · Mon retrait urgent attend le prochain passage périodique au lieu de déclencher immédiatement les retraits…
-- Statut : à faire
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A067 (majeur), endroit : A/worker.ts, passage aux quarts d’heure ; C/annonces/publication.ts.
 - Constat de l'audit : Mon retrait urgent attend le prochain passage périodique au lieu de déclencher immédiatement les retraits disponibles.
@@ -753,7 +753,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU068 · La surveillance portail par portail repose encore sur un lecteur d’annonces simulé, donc je ne sais pas si…
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A068 (majeur), endroit : C/diffusion/surveillance.ts ; H10.
 - Constat de l'audit : La surveillance portail par portail repose encore sur un lecteur d’annonces simulé, donc je ne sais pas si ma baisse de prix est réellement en ligne.
@@ -960,7 +960,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU088 · La carte professionnelle du réseau, l’assurance, le médiateur et les mentions juridiques restent des…
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-21)
+- Reste : fusionnée (#755, cee2438f), migration `4070`, R675 en service, R221 précisée. Constat confirmé (les mentions remplies suffisaient au site réel, sans preuve ni validité). `conformite/mise-en-service.ts`, `MiseEnService` : carte, garantie, assurance RCP, médiateur, relecture des mentions par l'avocat, déclarées par la direction avec numéro, émetteur, référence et dates, en versions ; états valide, manquante, à venir, expirée, retirée, écart, à relire ; fin à 30 jours signalée ; `verified: false`. Fonction fermée : le site en réel (`siteReady`, référencement et pages publiques). Routes `GET/POST /v1/attirer/mise-en-service`. Jamais vu : écart si la carte affichée ou le médiateur proposé aux clients ne sont pas ceux de la preuve ; relecture « à relire » dès qu'une mention, le numéro ou le titulaire de la carte changent après elle. Codex : 3 P0 corrigés (titulaire de la carte, version relue par identifiant, même lecture du numéro affiché), puis rien ; vérification GitHub verte. Restent : écran de la direction (voie 1, `app.ts`) ; fermer aussi diffusion sur les portails, mandats réels et proposition du médiateur (socle, voie 1) ; situation réelle (H09, H47).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M12 Conformité ; audit A088 (majeur), endroit : chantier/HUMAIN.md, H09/H47 ; C/attirer/mentions-site.ts.
 - Constat de l'audit : La carte professionnelle du réseau, l’assurance, le médiateur et les mentions juridiques restent des prérequis non soldés dans le chantier.
@@ -969,7 +970,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H09, H47).
 
 ### AU089 · Le dispositif LCB-FT a du code
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M12 Conformité ; audit A089 (majeur), endroit : chantier/HUMAIN.md, H29 ; C/conformite/identification.ts.
 - Constat de l'audit : Le dispositif LCB-FT a du code, mais pas de preuve fournie de responsable nommé et de procédure validée utilisables au quotidien.
@@ -978,7 +979,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H29).
 
 ### AU090 · L’assistant juridique repose sur une bibliothèque déclarée jamais vérifiée et non relue par l’avocat
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M12 Conformité ; audit A090 (majeur), endroit : chantier/HUMAIN.md, H54 ; C/juridique/bibliotheque.ts.
 - Constat de l'audit : L’assistant juridique repose sur une bibliothèque déclarée jamais vérifiée et non relue par l’avocat.
@@ -1139,7 +1140,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU104 · Même le paquet hors ligne prévu exclut l’adresse et le téléphone
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A104 (majeur), endroit : C/hors-ligne/reception.ts, `OfflinePack`, R278.
 - Constat de l'audit : Même le paquet hors ligne prévu exclut l’adresse et le téléphone : en zone blanche je ne retrouve ni l’entrée ni mon contact.

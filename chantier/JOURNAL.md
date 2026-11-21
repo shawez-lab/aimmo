@@ -1582,3 +1582,10 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 07:55 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 06:54 par une autre séance voie 2, active : push sur chantier/AU088 à 07:48)
 - 2026-11-21 08:18 · AU034 · pige relevée chaque jour à 6 h chez le fournisseur réglé (PIGE_SOURCE_URL, PIGE_SOURCE_TOKEN, PIGE_NETWORK_ID), chaque passage rangé dans pige_runs, panne au journal, date de dernière relève et alerte à l'écran (GET /v1/pige/etat) ; R671 ; Codex 2 P0 et 1 P1 corrigés ; vérification GitHub verte ; fusionnée (#754, e0df09b0) ; réel : H75 · prochaine : AU035
 - 2026-11-21 08:19 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU035
+- 2026-11-21 08:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 06:55 par une autre séance voie 2, active : push sur chantier/AU088 à 08:31)
+- 2026-11-21 09:22 · AU088 · tableau de mise en service : carte, garantie, assurance, médiateur et relecture des mentions déclarées avec preuve datée ; le site réel fermé tant qu'une manque, expire, s'écarte de ce qui est affiché ou reste à relire ; R675 ; Codex 3 P0 corrigés ; vérification GitHub verte ; fusionnée (#755, cee2438f) · prochaine : AU089
+- 2026-11-21 09:22 · VOIE 2 : relance refusée, question 2 (la séance de 05:55 n'a rien produit)
+- 2026-11-21 09:22 · VOIE 2 : AU088, cee2438f (main), relancé non
+- 2026-11-21 09:12 · VOIE 3 : AU090 fusionnée (#756) : un texte non vérifié, vérifié dans le futur ou à une date impossible ne donne qu'une citation à vérifier [R252]
+- 2026-11-21 10:15 · VOIE 3 : AU089 fusionnée (#758) : la direction nomme le responsable LCB-FT et range la procédure approuvée ; sans eux, ni signalement lu, ni décision, ni dossier de l'agence tiré [R94]
+- 2026-11-21 10:40 · VOIE 3 : AU067 fusionnée (#759) : rétractation ou annulation du mandat → retrait immédiat sur chaque canal et portail, accusés dans la réponse ; un passage en cours relit avant de rendre la main ; le passage planifié a les mêmes connecteurs [R42]

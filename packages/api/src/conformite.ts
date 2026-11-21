@@ -172,6 +172,7 @@ const services = (s: ConformiteServices) => {
     risque: new conformite.FicheRisque(s.db, s.acces, coffre, s.journal, { now: s.now }),
     vigilance: new conformite.VigilanceRenforcee(s.db, s.acces, s.journal, { now: s.now }),
     signalement: new conformite.SignalementSoupcon(s.db, s.acces, s.journal, { now: s.now }),
+    dispositif: new conformite.DispositifLcb(s.db, s.journal, { now: s.now }),
     demandes: new conformite.DemandesPersonnes(s.db, s.journal, fiche, s.stop, { now: s.now }),
     durees: new conformite.DureesProspects(s.db, s.journal, fiche, { now: s.now }),
     registre: new conformite.RelectureRegistre(s.db, s.journal, { now: s.now }),
@@ -271,6 +272,10 @@ export function conformiteRoutes(): ConformiteRoute[] {
     route('POST', `/vigilance/${ID}/decider`, 'vigilance_decider', write(['decision', 'reason', 'validatorName'], async (s, v, [id], b) => reply(await services(s).vigilance.decide(v, id!, { decision: b.decision, reason: b.reason, validatorName: b.validatorName })))),
 
     // Le signalement d'un soupçon (L05) : par l'agent, décidé par le responsable seul ; le dossier reste figé.
+    // AU089 : le dispositif anti-blanchiment, un responsable nommé et une procédure approuvée, rangés par la direction [R94].
+    route('GET', '/lcb/dispositif', 'lcb_dispositif', async (s, v) => reply(await services(s).dispositif.status(v))),
+    route('POST', '/lcb/responsable', 'lcb_responsable', write(['officerUserId'], async (s, v, _p, b) => reply(await services(s).dispositif.designate(v, b.officerUserId)))),
+    route('POST', '/lcb/procedure', 'lcb_procedure', write(['documentRef', 'documentSha256', 'approvedBy', 'approvedOn'], async (s, v, _p, b) => reply(await services(s).dispositif.approveProcedure(v, { documentRef: b.documentRef, documentSha256: b.documentSha256, approvedBy: b.approvedBy, approvedOn: b.approvedOn })))),
     route('POST', '/signalements', 'signalement', write(['caseRef', 'note'], async (s, v, _p, b) => reply(await services(s).signalement.report(v, b.caseRef, { note: b.note })))),
     route('GET', '/signalements', 'signalements', async (s, v) => reply(await services(s).signalement.list(v))),
     route('GET', `/signalements/${ID}/fige`, 'signalement_fige', async (s, v, [id]) => reply(await services(s).signalement.checkFrozen(v, id!))),

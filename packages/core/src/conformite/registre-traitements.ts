@@ -282,6 +282,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       card_holders: ['holder_name', 'set_by'],
       agent_title_settings: ['set_by'],
       site_legal_mentions: ['value', 'set_by'],
+      launch_proofs: ['document_number', 'issuer', 'proof_ref', 'set_by'],
       listing_drafts: ['body', 'trace', 'created_by'],
       listing_validations: ['draft_id', 'validated_by'],
       listing_versions: ['draft_id', 'payload', 'payload_hash', 'reason'],
@@ -690,6 +691,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       freeze_match_decisions: ['match_id', 'reason', 'validator_name', 'decided_by'],
       // HX76 : chaque dossier remis au responsable de la conformité d'une agence sous licence, avec qui l'a tiré.
       licence_lcb_exports: ['made_by'],
+      // AU089 : le responsable nommé et la procédure approuvée, avec qui les a rangés.
+      lcb_officers: ['officer_user_id', 'designated_by'],
+      lcb_procedures: ['document_sha256', 'approved_by', 'recorded_by'],
     },
   },
   {
@@ -1240,6 +1244,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   card_holders: ['id', 'network_id', 'set_at'],
   agent_title_settings: ['id', 'network_id', 'title', 'set_at'],
   site_legal_mentions: ['id', 'network_id', 'field', 'set_at'],
+  launch_proofs: ['id', 'network_id', 'prerequisite', 'version', 'withdrawn', 'valid_from', 'valid_until', 'set_at'],
   listing_drafts: ['id', 'property_id', 'network_id', 'seq', 'title', 'origin', 'sheet_version', 'created_at'],
   listing_validations: ['property_id', 'network_id', 'validated_at'],
   listing_versions: ['id', 'property_id', 'network_id', 'seq', 'state', 'price_eur', 'created_at'],
@@ -1553,6 +1558,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   freeze_checks: ['id', 'network_id', 'version_id', 'result', 'checked_at'],
   freeze_matches: ['id', 'network_id', 'check_id', 'created_at'],
   freeze_match_decisions: ['network_id', 'decision', 'decided_on', 'at'],
+  lcb_officers: ['network_id', 'seq', 'designated_at'],
+  lcb_procedures: ['network_id', 'version', 'document_ref', 'approved_on', 'created_at'],
   partners: ['id', 'network_id', 'trade', 'created_at'],
   partner_zones: ['partner_id', 'network_id', 'created_at'],
   partner_credentials: ['id', 'network_id', 'partner_id', 'kind', 'domain', 'version', 'number', 'valid_from', 'valid_until', 'recorded_at'],

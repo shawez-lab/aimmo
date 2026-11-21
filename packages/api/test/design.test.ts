@@ -62,8 +62,8 @@ async function screens(): Promise<{ name: string; html: string; css?: string; js
       budget: BUDGETS.page,
     },
     { name: 'liste des communes', html: renderPricesList(Array.from({ length: 2000 }, (_, i) => { const n = (i * 7919 + 100000).toString(36); return { slug: `v${n}`, name: `Ville ${n}` }; }))!, budget: BUDGETS.page },
-    { name: 'mentions légales', html: withLegalLinks(renderLegalNotice({ values: {}, cardNumber: null, cardHolder: null, missing: ['x'] })), budget: BUDGETS.page },
-    { name: 'données personnelles', html: withLegalLinks(renderPrivacyPage({ values: {}, cardNumber: null, cardHolder: null, missing: ['x'] })), budget: BUDGETS.page },
+    { name: 'mentions légales', html: withLegalLinks(renderLegalNotice({ values: {}, cardNumber: null, cardHolder: null, missing: ['x'], launchClosedBy: [] })), budget: BUDGETS.page },
+    { name: 'données personnelles', html: withLegalLinks(renderPrivacyPage({ values: {}, cardNumber: null, cardHolder: null, missing: ['x'], launchClosedBy: [] })), budget: BUDGETS.page },
     { name: 'estimation en ligne', html: renderEstimationPage({ visitorId: 'visite-0000000000000001', open: true, appointmentHref: '/agents' }), budget: BUDGETS.page },
     {
       name: 'estimation en ligne, sa fourchette',
