@@ -263,10 +263,20 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     var drawOpen = el('button', 'Dessiner sur la carte');
     drawOpen.setAttribute('type', 'button');
     drawOpen.className = 'secondaire';
+    // La carte est celle du projet choisi à son ouverture : elle se referme quand le projet change, et rien de ce qu'elle
+    // range après un changement de projet ne s'affiche ni ne compte sous le nouveau.
     function drawShow() {
       if (drawOpen.parentNode) drawBox.removeChild(drawOpen);
-      areaTool(drawBox, { base: base, ready: function () { return known; }, label: function () { return label.value.trim(); }, current: function () { return current; }, done: function (a) { said(a); state.textContent = 'Secteur rangé.'; } });
+      var mine = seen, url = base();
+      areaTool(drawBox, {
+        base: function () { return url; },
+        ready: function () { return known && mine === seen; },
+        label: function () { return label.value.trim(); },
+        current: function () { return current; },
+        done: function (a) { if (mine !== seen) return; said(a); state.textContent = 'Secteur rangé.'; },
+      });
     }
+    function drawReset() { drawBox.textContent = ''; drawBox.appendChild(drawOpen); }
     drawOpen.addEventListener('click', function () {
       if (areaTool) return drawShow();
       if (areaBusy) return;
@@ -303,7 +313,7 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
         fix.appendChild(retry);
       });
     }
-    if (pick) pick.addEventListener('change', load);
+    if (pick) pick.addEventListener('change', function () { drawReset(); load(); });
     load();
   }
   var onlineTool = null, onlineBusy = false;

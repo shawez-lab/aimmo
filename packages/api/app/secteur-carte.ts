@@ -104,6 +104,10 @@ globalThis.AIMMO_SECTEUR_CARTE = function (t) {
         g.stroke();
       }
     }
+    // Une tuile qui n'arrive pas (réseau, fournisseur en panne) : le fond reste vide là, c'est dit, et « Recharger la
+    // carte » redemande les tuiles manquantes.
+    var warned = false;
+    function failedTiles() { if (!warned) { warned = true; said('Une partie de la carte n’a pas pu être lue : le tracé reste possible ; « Recharger la carte » réessaie.'); } }
     function fetchTile(key) {
       tiles[key] = 'attente';
       t.send('/v1/carte/tuiles/' + key, 'GET').then(function (res) {
@@ -111,10 +115,11 @@ globalThis.AIMMO_SECTEUR_CARTE = function (t) {
         if (!res.ok) {
           tiles[key] = 'absente';
           if (res.body && res.body.code === 'carte_absente') { noTiles = true; said('La carte n’est pas branchée : le tracé reste possible sur un fond vide, ou rangez un rayon autour d’un lieu.'); }
+          else failedTiles();
           return;
         }
         if (typeof createImageBitmap !== 'function') { tiles[key] = 'absente'; return; }
-        createImageBitmap(new Blob([bytesOf(res.body.data.base64)], { type: res.body.data.type })).then(function (img) { tiles[key] = img; paint(); }, function () { tiles[key] = 'absente'; });
+        createImageBitmap(new Blob([bytesOf(res.body.data.base64)], { type: res.body.data.type })).then(function (img) { tiles[key] = img; paint(); }, function () { tiles[key] = 'absente'; failedTiles(); });
       });
     }
     var mode = btn('Déplacer la carte', function () {
@@ -170,7 +175,13 @@ globalThis.AIMMO_SECTEUR_CARTE = function (t) {
     var plus = btn('Rapprocher', function () { zoom(1); });
     var minus = btn('Éloigner', function () { zoom(-1); });
     var erase = btn('Effacer le tracé', function () { stroke = []; said('Tracé effacé.'); paint(); });
-    [plus, minus, erase].forEach(function (b) { b.className = 'secondaire'; tools.appendChild(b); });
+    var reload = btn('Recharger la carte', function () {
+      Object.keys(tiles).forEach(function (k) { if (tiles[k] === 'absente') delete tiles[k]; });
+      warned = false;
+      noTiles = false;
+      paint();
+    });
+    [plus, minus, erase, reload].forEach(function (b) { b.className = 'secondaire'; tools.appendChild(b); });
     box.appendChild(tools);
     box.appendChild(t.accordButton('Ranger ce secteur dessiné', function () {
       if (!ctx.ready()) { said('Le secteur en place n’est pas lu : réessayez de le lire d’abord.'); return Promise.resolve(false); }

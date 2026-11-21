@@ -492,4 +492,75 @@ describe('AU073b · dessiner le secteur au doigt, sur une carte', () => {
     await t.press('Ranger ce secteur dessiné');
     expect((t.posts().at(-1)!.body.points as unknown[]).length).toBe(40);
   });
+  it('[R16] deux projets : changer de projet referme la carte ; un rangement parti avant le changement ne s’affiche pas sous l’autre', async () => {
+    const other = { ...BUY, id: 'projet-achat-2' };
+    const second = `/v1/acquereurs/projets/${other.id}/secteur`;
+    let release!: () => void;
+    const slow = new Promise<void>((r) => (release = r));
+    const t = await opened({
+      projects: [BUY, other],
+      answers: {
+        [`GET ${base}`]: ok(null),
+        [`GET ${second}`]: ok({ shape: 'cercle', center: CENTER, radiusM: 800, label: 'Autre' }),
+        [`GET ${base}/lieu?q=Gare%20de%20Dijon`]: ok(CENTER),
+        [`POST ${base}`]: async () => (await slow, Response.json({ ok: true, mode: 'essai', data: { shape: 'polygone', points: [], label: 'Premier' } })),
+      },
+    });
+    const area = () => t.body.all().find((e) => e.tagName === 'section' && e.children[0]?.textContent === 'Secteur de la recherche')!;
+    t.named(area(), 'Dessiner sur la carte')[0]!.listeners.click!({});
+    await tick();
+    runInNewContext(SECTEUR_CARTE_SCRIPT, t.context);
+    for (const s of area().all().filter((e) => e.tagName === 'script' && e.attributes.src === '/app/secteur-carte.js')) s.listeners.load!({});
+    await tick();
+    const input = (label: string) => {
+      const l = area().all().find((e) => e.tagName === 'label' && e.textContent === label)!;
+      return area().all().find((e) => e.tagName === 'input' && e.attributes.id === l.attributes.for)!;
+    };
+    input('Lieu où centrer la carte (adresse, gare, école…)').value = 'Gare de Dijon';
+    t.named(area(), 'Centrer la carte')[0]!.listeners.click!({});
+    await tick();
+    const c = area().all().find((e) => e.tagName === 'canvas')!;
+    c.listeners.pointerdown!({ offsetX: 100, offsetY: 100 });
+    for (const [x, y] of [[200, 100], [200, 200], [100, 200]]) c.listeners.pointermove!({ offsetX: x, offsetY: y });
+    c.listeners.pointerup!({});
+    input('Nom du secteur, pour vous').value = 'Premier';
+    t.named(area(), 'Ranger ce secteur dessiné')[0]!.listeners.click!({});
+    await tick();
+    // Le rangement part pour le premier projet ; l'agent passe au second avant la réponse.
+    expect(t.posts().at(-1)!.url).toBe(base);
+    const select = area().all().find((e) => e.tagName === 'select')!;
+    select.value = other.id;
+    select.listeners.change!({});
+    await tick();
+    expect(area().all().some((e) => e.tagName === 'canvas')).toBe(false);
+    expect(t.named(area(), 'Dessiner sur la carte')).toHaveLength(1);
+    release();
+    await tick();
+    expect(area().textContent).toContain('Secteur « Autre » : 0,8 km autour du lieu dit.');
+    expect(area().textContent).not.toContain('Premier');
+  });
+  it('une tuile qui n’arrive pas est dite, le tracé reste possible, et « Recharger la carte » la redemande', async () => {
+    const proto = FakeElement.prototype as unknown as { getContext?: () => unknown };
+    const ops: string[] = [];
+    proto.getContext = () => new Proxy({}, { get: (_t, k) => (typeof k === 'string' && !['lineWidth', 'strokeStyle'].includes(k) ? () => ops.push(k) : undefined), set: () => true });
+    try {
+      const t = await drawn();
+      t.input('Lieu où centrer la carte (adresse, gare, école…)').value = 'Gare de Dijon';
+      await t.press('Centrer la carte');
+      const asked = () => t.calls.filter((c) => c.url.startsWith('/v1/carte/tuiles/15/')).length;
+      // Quatre tuiles au plus pour un canevas de 300 px ; toutes en échec (pas de réseau).
+      expect(asked()).toBeGreaterThan(0);
+      expect(t.calls.filter((c) => c.url.startsWith('/v1/carte/tuiles/')).every((c) => /^\/v1\/carte\/tuiles\/15\/\d+\/\d+$/.test(c.url))).toBe(true);
+      expect(t.area().textContent).toContain('Une partie de la carte n’a pas pu être lue : le tracé reste possible ; « Recharger la carte » réessaie.');
+      const first = asked();
+      await t.trace([[100, 100], [200, 100], [200, 200]]);
+      expect(t.area().textContent).toContain('Contour tracé : 3 points.');
+      expect(asked()).toBe(first);
+      await t.press('Recharger la carte');
+      expect(asked()).toBe(2 * first);
+      expect(ops).toContain('stroke');
+    } finally {
+      delete proto.getContext;
+    }
+  });
 });

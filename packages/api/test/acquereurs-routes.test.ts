@@ -286,7 +286,8 @@ describeWithSqlite('AU073b · la carte des secteurs par les routes : un lieu pou
     const t = await setup();
     const apiKeys = JSON.stringify(await Promise.all((['alex', 'sam', 'compliance'] as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), role: w === 'compliance' ? 'compliance' : 'agent', userId: w === 'alex' ? t.alexId : w === 'sam' ? t.sam.userId : 'c-1', networkId: t.network.id }))));
     const r = await handleRequest(new Request(`${BASE}/v1${path.replace('{projet}', t.project.id)}`, { headers: { authorization: `Bearer ${KEYS[who]}` } }), { db: t.db, apiKeys, mode: 'essai', now: t.now, ...config } as never);
-    return { status: r.status, cache: r.headers.get('cache-control'), body: (await r.json()) as { ok: boolean; data?: any; code?: string } };
+    const events = (await t.journal.all()).filter((e) => e.type === 'acces.refuse' || e.type === 'carte.tuile_echec').map((e) => [e.type, e.actor, e.data.code]);
+    return { status: r.status, cache: r.headers.get('cache-control'), body: (await r.json()) as { ok: boolean; data?: any; code?: string }, events };
   }
 
   it('[R16] le lieu qui centre la carte : l’agent de la fiche seul ; un lieu inconnu ou sans géocodeur est dit', async () => {
@@ -305,7 +306,12 @@ describeWithSqlite('AU073b · la carte des secteurs par les routes : un lieu pou
     expect(await run('alex', '/carte/tuiles/15/16841/11706')).toMatchObject({ status: 404, body: { code: 'carte_absente' } });
     expect((await run('alex', '/carte/tuiles/20/1/1', { mapTiles: tiles })).status).toBe(400);
     expect((await run('alex', '/carte/tuiles/12/9999/1', { mapTiles: tiles })).status).toBe(400);
-    expect((await run('compliance', '/carte/tuiles/15/16841/11706', { mapTiles: tiles })).status).toBe(403);
+    const refused = await run('compliance', '/carte/tuiles/15/16841/11706', { mapTiles: tiles });
+    expect(refused.status).toBe(403);
+    expect(refused.events).toEqual([['acces.refuse', 'compliance:c-1', 'role']]);
     expect(asked).toHaveLength(1);
+    // Le fournisseur en panne : 502, et une ligne au journal, sans la tuile.
+    const down = await run('alex', '/carte/tuiles/15/16841/11706', { mapTiles: { tile: async () => { throw new Error('panne'); } } });
+    expect(down).toMatchObject({ status: 502, body: { code: 'tuile_indisponible' }, events: [['carte.tuile_echec', 'system:carte', 'erreur']] });
   });
 });
