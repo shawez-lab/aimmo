@@ -1597,3 +1597,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 12:31 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 07:55 et 08:54 n'ont rien produit)
 - 2026-11-21 12:31 · VOIE 2 : AU104, c7a54416 (main), relancé non
 - 2026-11-21 13:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 12:53 par une autre séance voie 2, active : push sur chantier/AU103 à 13:33)
+- 2026-11-21 13:50 · VOIE 3 : AU068 fusionnée (#761) : lecteur réel des pages d'annonces (schema.org puis texte de l'annonce seule), relecture à 7 h, 12 h, 18 h avec RELECTURE_PORTAILS=oui ; tâche datée sur écart ou annonce retirée encore visible [R473] ; suite AU068b (pages réelles, H10)

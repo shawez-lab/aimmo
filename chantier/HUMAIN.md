@@ -14,7 +14,7 @@ Il n'a pas le droit de taper un mot de passe, un code ou une clé, de créer un 
 | H07 | Accès à l'API Google Business Profile | Shawez | M01 | plus tard |
 | H08 | Modèles juridiques validés par Marion Gravelin et l'avocat | Marion, avocat | M06 | signalé le 2026-10-27 |
 | H09 | Création de la société AIMMO, carte professionnelle, assurance, médiateur | Shawez, Marion | pilote, HX58 réel (médiateur de la consommation proposé aux clients) | signalé le 2026-11-09 |
-| H10 | Comptes et accords de flux avec les portails | Shawez | diffusion sur les portails | plus tard |
+| H10 | Comptes et accords de flux avec les portails ; avec eux, mettre `RELECTURE_PORTAILS=oui` au Worker pour la relecture réelle des annonces en ligne (AU068) | Shawez | diffusion sur les portails | plus tard |
 | H11 | Codex accepte les tâches confiées par un commentaire `@codex` | Shawez | tâches de Codex | fait (2026-10-26) : Codex a pris S07 et l'a faite, mais n'a pas pu pousser son commit (voir H12) |
 | H12 | Ouvrir la tâche Codex de S07 (https://chatgpt.com/s/cd_6adf1954e13c81919c60e12945ec840e) et pousser son commit `89fb138` sur la branche `codex/S07` (bouton de mise à jour de la branche ou de création de la proposition). Pour la suite : dans l'environnement `aimmo` de Codex, vérifier qu'il peut pousser lui-même sur ses branches | Shawez | S07, puis toutes les tâches de Codex | fait (2026-10-26) pour S07 : Shawez a poussé le travail (`18fa3cc`). Pour la suite, l'environnement de Codex n'a pas de remote Git, il ne peut pas pousser : Codex reste relecteur, ses tâches reviennent à Claude |
 | H13 | Ouvrir un compte chez le fournisseur d'IA retenu et ranger sa clé dans les secrets du Worker AIMMO | Shawez | C04 réel, C09 | signalé le 2026-10-26 |

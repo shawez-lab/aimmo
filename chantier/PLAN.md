@@ -754,7 +754,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU068 · La surveillance portail par portail repose encore sur un lecteur d’annonces simulé, donc je ne sais pas si…
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A068 (majeur), endroit : C/diffusion/surveillance.ts ; H10.
 - Constat de l'audit : La surveillance portail par portail repose encore sur un lecteur d’annonces simulé, donc je ne sais pas si ma baisse de prix est réellement en ligne.
