@@ -180,9 +180,11 @@ export class RelancesImpayes {
     let made = 0;
     for (const inv of invoices) {
       if (!inv.person_id) continue;
-      const last = await this.db.first<{ rank: number; status: ReminderStatus; updated_at: string }>('SELECT rank, status, updated_at FROM invoice_reminders WHERE invoice_id = ? ORDER BY rank DESC LIMIT 1', [inv.id]);
+      const last = await this.db.first<{ rank: number; status: ReminderStatus; rule: string | null; updated_at: string }>('SELECT rank, status, rule, updated_at FROM invoice_reminders WHERE invoice_id = ? ORDER BY rank DESC LIMIT 1', [inv.id]);
       if (last) {
-        if (last.status === 'a_valider' || last.status === 'validee' || last.status === 'close') continue;
+        // Fermée par une nouvelle part de paiement (AU094) : le reste dû se relance, avec son montant à jour.
+        const replaced = last.status === 'close' && last.rule === 'paiement_partiel';
+        if (last.status === 'a_valider' || last.status === 'validee' || (last.status === 'close' && !replaced)) continue;
         if (last.rank >= MAX_REMINDERS) continue;
         if (today < addDays(todayInParis(new Date(last.updated_at)), this.gapDays)) continue;
       }

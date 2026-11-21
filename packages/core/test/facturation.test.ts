@@ -432,6 +432,12 @@ describeWithSqlite('HX49 · factures fournisseurs, rapprochement bancaire et rel
     await t.db.run("INSERT INTO bank_lines (id, network_id, day, amount_cents, invoice_refs, imported_by, created_at) VALUES ('ligne-1000', ?, '2027-07-16', 100000, '[]', 'x', 'y')", [t.network.id]);
     expect((await t.banque.allocate(t.direction, 'ligne-1000', [{ invoiceId: t.invoice.id, amountCents: 100_000 }])).ok).toBe(true);
     expect(await t.db.first('SELECT status, rule FROM invoice_reminders WHERE id = ?', [pending!.id])).toEqual({ status: 'close', rule: 'paiement_partiel' });
+    // La relance suivante, au passage d'après l'intervalle, dit le reste à jour.
+    t.setClock(at9('2027-08-05'));
+    await t.banque.importStatement(t.direction, '2027-08-04;VIR AUTRE;1,00\n');
+    expect(await relances.prepare(t.network.id)).toBe(1);
+    const next = await t.db.first<{ text: string; status: string }>("SELECT text, status FROM invoice_reminders WHERE status = 'a_valider' ORDER BY rank DESC LIMIT 1");
+    expect(next?.text).toContain('Nous en avons reçu 7 000,00 € ; 3 000,00 €');
     // La base refuse une ligne d'avant la facture, même écrite à la main.
     await t.db.run("INSERT INTO bank_lines (id, network_id, day, amount_cents, invoice_refs, imported_by, created_at) VALUES ('ligne-avant', ?, '2027-06-01', 100000, '[]', 'x', 'y')", [t.network.id]);
     await expect(t.db.run("INSERT INTO bank_allocations (line_id, invoice_id, network_id, amount_cents, by, created_at) VALUES ('ligne-avant', ?, ?, 1, 'x', 'y')", [t.invoice.id, t.network.id])).rejects.toThrow();
