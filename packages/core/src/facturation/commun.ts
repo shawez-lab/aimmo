@@ -25,9 +25,11 @@ export const LABEL_SQL = (alias = ''): string => {
 export const actorOf = (viewer: Viewer): string => `${String(viewer.role)}:${viewer.userId}`;
 
 /** La direction seule lit et range les chiffres du réseau : factures, banque, relances [R16]. */
-export async function directionRefusal(journal: JournalStore, now: () => Date, viewer: Viewer, kind: string): Promise<Refusal | null> {
+export async function directionRefusal(journal: JournalStore, now: () => Date, viewer: Viewer, kind: string, options: { accountantReads?: boolean } = {}): Promise<Refusal | null> {
   let code: string | null = null;
-  if (viewer.role !== 'direction') code = 'role';
+  // AU107 · le comptable lit ce qu'on lui ouvre, en lecture seule, dans son réseau.
+  if (viewer.role === 'accountant' && options.accountantReads === true) code = null;
+  else if (viewer.role !== 'direction') code = 'role';
   else {
     const d = decideAccess(viewer, { kind: 'figures', networkId: viewer.networkId, agentId: viewer.userId });
     if (!d.allowed) code = d.code;

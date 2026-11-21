@@ -124,7 +124,12 @@ Le secret Cloudflare `API_KEYS` contient seulement l'empreinte SHA-256 de chaque
 [{ "sha256": "<empreinte>", "role": "agent", "userId": "<id de l'agent>", "networkId": "<id du réseau>" }]
 ```
 
-Rôles : `agent`, `direction`, `compliance`, `partner`.
+Rôles : `agent`, `direction`, `compliance`, `partner`, `assistant`, `accountant`.
+
+Les rôles à accès limité (AU107) ont leur propre clé, rangée dans le secret ; ils n'ont ni lien d'invitation ni clé d'appareil. Toute route hors de leur liste répond 403 `limited_role`, au journal, avant toute autre porte [R16] :
+
+- `assistant` (l'assistante) : `GET /v1/biens/<id>`, pour un bien du fichier commun seulement (vue `shared`), sans fiche de client ;
+- `accountant` (le comptable) : `GET /v1/finances/fournisseurs`, `GET /v1/finances/banque/rapprochements`, `GET /v1/finances/banque/fraicheur`, en lecture seule.
 
 Une clé d'agent peut porter `"scope": "mcp"` (agent seulement ; une autre portée, ou sur un autre rôle, ferme l'API) : c'est la clé que l'agent confie à son assistant. Elle n'ouvre que `POST /v1/mcp`, et `POST /v1/mcp` n'accepte qu'elle ; sur toute autre route, 403 `cle_mcp_hors_mcp`, au journal (BR08).
 

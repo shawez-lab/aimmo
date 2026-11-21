@@ -69,6 +69,7 @@ import {
 } from '@aimmo/core';
 import { bearerKey, fromMcpKey, intakeFromRequest, markMcpKey, parseApiKeys, parseIntakeKeys, sha256Hex, viewerFromRequest } from './auth.ts';
 import { assistantKeyViewer } from '../../core/src/securite/index.ts';
+import { LIMITED_ROLE_ROUTES } from '../../core/src/acces/droits.ts';
 import { INVITATION_PATH, handleInvitation, invitedKeys, mergeKeys } from './acces.ts';
 import { ASSISTANT_PATH, handleAssistant, type AssistantLimits } from './assistant.ts';
 import type { ReplyWriter, ReportWriter } from '@aimmo/core';
@@ -2539,6 +2540,12 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       const code = mcpKey ? 'cle_mcp_hors_mcp' : 'cle_mcp_requise';
       await appendEvent(s.journal, { type: 'acces.refuse', actor: `${viewer.role}:${viewer.userId}`, subject: null, data: { rule: 'R590', role: viewer.role, kind: `route.${route.name}`, code } }, now);
       return json(403, { ok: false, rule: 'R590', code });
+    }
+    // AU107 · un rôle à accès limité n'atteint que ses routes nommées : toute autre est refusée avant sa porte [R16].
+    const limited = LIMITED_ROLE_ROUTES[viewer.role];
+    if (limited !== undefined && !limited.includes(route.name)) {
+      await appendEvent(s.journal, { type: 'acces.refuse', actor: `${viewer.role}:${viewer.userId}`, subject: null, data: { rule: 'R16', role: viewer.role, kind: `route.${route.name}`, code: 'limited_role' } }, now);
+      return json(403, { ok: false, rule: 'R16', code: 'limited_role' });
     }
     // Un agent parti ne lit ni n'écrit plus rien, dès minuit le jour de son départ [R86, R16] ; un agent au dossier
     // incomplet n'a que les routes de son intégration [R82]. Le refus est écrit au journal avant toute lecture.

@@ -36,6 +36,8 @@ export interface FinancesServices {
 type Role = Viewer['role'];
 const DIRECTION: readonly Role[] = ['direction'];
 const WORK: readonly Role[] = ['agent', 'direction'];
+/** AU107 · les lectures ouvertes aussi au comptable. */
+const DIRECTION_ACCOUNTANT: readonly Role[] = ['direction', 'accountant'];
 
 export interface FinancesRoute {
   method: 'GET' | 'POST';
@@ -170,7 +172,7 @@ export function financesRoutes(): FinancesRoute[] {
       method: 'GET',
       pattern: new RegExp(`${P}/fournisseurs$`),
       name: 'finances.fournisseurs',
-      roles: DIRECTION,
+      roles: DIRECTION_ACCOUNTANT,
       handle: async (s, v) => reply(await new FacturesFournisseurs(s.db, s.journal, s.lecteur ?? CLOSED_READER, opts(s)).list(v)),
     },
     // Banque (HX49) : relevé déposé tel quel, rapprochement une ligne pour une facture, encaissement prouvé [R551, R552].
@@ -212,7 +214,7 @@ export function financesRoutes(): FinancesRoute[] {
       method: 'GET',
       pattern: new RegExp(`${P}/banque/rapprochements$`),
       name: 'finances.banque.rapprochements',
-      roles: DIRECTION,
+      roles: DIRECTION_ACCOUNTANT,
       handle: async (s, v) => reply(await banque(s).list(v)),
     },
     {
@@ -228,7 +230,7 @@ export function financesRoutes(): FinancesRoute[] {
       method: 'GET',
       pattern: new RegExp(`${P}/banque/fraicheur$`),
       name: 'finances.banque.fraicheur',
-      roles: DIRECTION,
+      roles: DIRECTION_ACCOUNTANT,
       handle: async (s, v) => reply({ ok: true, value: await bankStatementFreshness(s.db, v.networkId, s.now()) }),
     },
     // Relances des impayés (HX49) : préparées par le passage, validées ici, envoyées par le passage en essai [R553].
