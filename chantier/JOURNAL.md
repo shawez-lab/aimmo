@@ -1552,3 +1552,16 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 00:27 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 20:53 et 21:53 n'ont produit ni commit ni tâche finie : verrou occupé)
 - 2026-11-21 00:37 · voie 3 · AU063 (#733) fusionnée : surfaces habitable, Carrez et utile.
 - 2026-11-21 00:50 · voie 3 · AU060 (#737) fusionnée : droits démembrés (usufruit, nue-propriété) et leurs preuves ; AU110 (#738) et AU109 (#740) corrigés après Codex, relecture demandée.
+- 2026-11-21 01:41 · AU083 · chaque étape du financement dit sa demande (banque ou courtier, jamais un numéro) : un refus ne clôt que sa demande, le prêt n'est refusé que si toutes le sont, seule une offre encore vivante éteint l'alerte de la date limite ; R61 précisée ; Codex rien ; vérification GitHub verte ; fusionnée (#741, d0784edb) · prochaine : AU084
+- 2026-11-21 01:41 · VOIE 2 : AU083, d0784edb (main), relancé non
+- 2026-11-21 01:41 · VOIE 2 : relance refusée, question 2 (la séance voie 2 de 23:55 n'a produit ni commit ni tâche finie : verrou occupé)
+- 2026-11-21 01:00 · voie 3 · AU110 (#738) fusionnée : export de reprise autorisé par contrat (clients, coordonnées, projets, pièces, sans orphelin, fermé au dossier incomplet). AU108 proposée (#742).
+- 2026-11-21 01:05 · voie 3 · AU108 (#742) et AU107 (#743) proposées ; AU106 commencée.
+- 2026-11-21 01:15 · voie 3 · AU109 (#740) fusionnée : « copie prouvée » seulement avec une copie à jour et le dernier test de restauration du mois réussi ; alerte mensuelle sinon.
+- 2026-11-21 01:35 · voie 3 · AU106 (#745) et AU105 (#746) proposées ; #742 et #745 corrigés après Codex.
+- 2026-11-21 02:02 · voie 3 · AU093 (#747) proposée ; #742, #745, #746 corrigés après Codex. AU104 et AU103 laissées pour plus tard (téléphone réel, données privées sur l'appareil).
+- 2026-11-21 02:56 · AU032 · les demandes des 8 portails lues dans le corps du mail, une seule fiche même relivrée, alerte à l'agent sans coordonnée, état « vérifiée / non vérifiée » de chaque portail pour la direction ; R669 ; Codex 4 P0 corrigés, 1 réfuté ; fusionnée (#739, 2603c63f) · prochaine : AU033
+- 2026-11-21 02:58 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU033
+- 2026-11-21 02:25 · voie 3 · AU107 (#743) fusionnée : rôles assistante et comptable, chacun sa clé et sa liste fermée de routes.
+- 2026-11-21 02:50 · voie 3 · AU106 (#745) fusionnée : parcours sur téléphone mesuré au 95e centile, recherche ramenée de 1 300 à une quinzaine de requêtes ; AU093 (#747) fusionnée : taux du reversement selon le régime de TVA de l'agent. AU092 proposée (#749).
+- 2026-11-21 02:58 · voie 3 · AU091 laissée : la régularisation d'honoraires demande des parts et des commissions versionnées, lues par une dizaine de modules ; à concevoir d'un bloc. #742 et #746 corrigés après Codex.

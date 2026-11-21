@@ -115,3 +115,19 @@ jour;agent;contacts;rendez_vous_tenus;mandats_signes;ventes;honoraires_eur
 Ses quatre premiers chiffres sont ceux du tableau de bord du réseau pour ce jour (`/v1/pilotage/reseau?du=AAAA-MM-JJ&au=AAAA-MM-JJ`), lus par lui : les tests vérifient que l'export du jour égale le tableau de bord. Les honoraires sont ceux, en euros, des ventes du jour, tels qu'au mandat signé.
 
 4. Chaque écart se note avec sa cause (contact saisi hors d'AIMMO, rendez-vous non marqué « tenu », acte non rapporté…). Le critère est rempli après 10 jours ouvrés de suite sans écart. Le comptage manuel ne vient jamais dans le dépôt.
+
+## Le parcours de l'agent sur téléphone (AU106)
+
+Le poids compressé d'un écran ne dit pas combien de temps l'agent attend. Le test `packages/api/test/parcours-telephone.test.ts` rejoue, à chaque vérification, trois gestes sur un portefeuille chargé et inventé (1 000 clients, 4 messages et 1 rappel chacun, 400 biens en vente) :
+
+| Étape | Geste | Seuil au 95e centile |
+| --- | --- | --- |
+| ouverture | `GET /v1/fiches/<id>/resume` | 1 000 ms |
+| recherche | `POST /v1/recherche/phrase` | 1 500 ms |
+| sauvegarde | `POST /v1/rappels/<id>/fait` | 1 000 ms |
+
+Le temps d'une étape, par 30 échantillons : un aller-retour du réseau, le temps du serveur mesuré, 5 ms par requête à la base (le coût d'une requête D1), l'envoi au débit montant et la réponse compressée au débit descendant. Le réseau modélisé est une « 4G lente » : 150 ms d'aller-retour, 1 600 kbit/s descendant, 750 kbit/s montant (`packages/core/src/design/parcours.ts`). La moitié des biens a un mandat signé et inscrit, dont la moitié échus : la recherche montre les biens que la porte de la diffusion ouvre. Au plus 40 requêtes par geste ; ce plafond ne dépend pas de la taille du portefeuille. Les mesures sont écrites dans le rapport de la vérification (ligne `AU106 · 4G lente : …`).
+
+Ce que la mesure a trouvé : la recherche par phrase faisait environ 1 300 requêtes pour 400 biens (trois lectures par bien, plus la diffusion de chacun), soit plus de 7 secondes sur ce réseau. Elle lit désormais tous les biens en trois requêtes et lit la porte de la diffusion pour tout le réseau en huit requêtes (`Diffusion.diffusableProperties`, mêmes réponses que bien par bien) : une quinzaine de requêtes en tout [R42].
+
+Ce que ce test ne prouve pas : la vitesse sur un vrai téléphone, un vrai réseau et la vraie base D1. C'est un modèle prudent ; une mesure sur l'appareil d'un agent pilote reste à faire.

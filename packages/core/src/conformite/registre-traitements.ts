@@ -76,6 +76,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       send_reservations: ['person_id'],
       inbound_messages: ['agent_id', 'external_id', 'conversation_ref', 'sender_channel_id', 'sender_name', 'sender_identifiers', 'subject', 'body', 'post_ref', 'raw_payload', 'person_id'],
       reception_log: ['agent_id', 'reason'],
+      // AU032 : les autres clés d'un même message reçu, pour qu'une relivraison reste un doublon.
+      inbound_message_keys: [],
       // HX23 : la transcription d'une note vocale et le lien vers son audio chez le canal.
       voice_notes: ['external_id', 'media_ref', 'transcript'],
       // HX21 : l'appel rattaché à la fiche, son enregistrement accepté, sa transcription et ce qui en est tiré.
@@ -549,6 +551,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX62 : rapports enregistrés (nom libre de l'auteur) et empreintes des exports d'un agent.
       custom_reports: ['owner_id', 'owner_role', 'name'],
       agent_exports: ['agent_id'],
+      // AU110 : l'autorisation d'un export de reprise, au vu d'un contrat.
+      agent_export_authorizations: ['agent_id', 'contract_ref', 'granted_by'],
       // AU111 : l'accès de sortie d'un agent parti, gardé par l'empreinte de son lien.
       agent_exit_accesses: ['agent_id', 'token_hash', 'granted_by'],
       agent_exit_access_revocations: ['revoked_by'],
@@ -1053,6 +1057,7 @@ export const TABLES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, string>> = 
   listing_views: 'Nombre de vues d\'une annonce par portail et par jour.',
   property_on_sale: 'Date de mise en vente d\'un bien, datée une fois depuis son mandat.',
   base_copy_alerts: 'Les nuits sans copie réussie : une date et un instant.',
+  base_restore_alerts: 'Les mois sans reçu réussi du test de restauration (AU109) : un mois et des instants.',
   sale_files_recopie: 'La preuve de la recopie des dossiers de vente (SV14) : un instant, un compte de lignes, un drapeau.',
   assistant_calls: 'Compteur d\'appels de l\'assistant du site, par seau de temps.',
   trial_outbox: 'File d\'essai des envois : un identifiant de message et un canal.',
@@ -1124,6 +1129,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   voice_assistant_lines: ['network_id', 'enabled', 'updated_at'],
   calls: ['id', 'network_id', 'provider', 'status', 'failure', 'attach', 'started_at', 'ended_at', 'language', 'confidence', 'category', 'route', 'qualification_source', 'origin_kind', 'created_at'],
   reception_log: ['id', 'network_id', 'inbound_id', 'channel', 'kind', 'outcome', 'occurred_at', 'created_at'],
+  inbound_message_keys: ['network_id', 'dedup_key', 'inbound_id', 'created_at'],
   contact_keys: ['network_id', 'key', 'created_at'],
   attach_log: ['id', 'network_id', 'inbound_id', 'message_id', 'outcome', 'exclusion', 'silenced', 'occurred_at', 'created_at'],
   attach_claims: ['inbound_id', 'claimed_at'],
@@ -1308,6 +1314,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   property_alerts: ['property_id', 'network_id', 'project_id', 'channel', 'status', 'rule', 'message_id', 'created_at', 'updated_at'],
   property_on_sale: ['property_id', 'network_id', 'mandate_id', 'on_sale_at', 'noted_at'],
   base_copy_alerts: ['night', 'last_success_at', 'created_at'],
+  base_restore_alerts: ['month', 'last_receipt_at', 'created_at'],
   base_restore_receipts: ['id', 'tested_at', 'month', 'outcome', 'duration_ms', 'tables_count', 'rows_count', 'digest'],
   journey_receipts: ['id', 'ran_at', 'month', 'outcome', 'step'],
   sale_files_recopie: ['done_at', 'rows_copied', 'complete'],
@@ -1373,7 +1380,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   sale_file_conditions: ['file_id', 'network_id', 'kind', 'version', 'responsible', 'due_day', 'state', 'at'],
   sale_file_condition_tasks: ['file_id', 'network_id', 'kind', 'alert', 'due_day', 'created_at'],
   sale_file_reminders: ['file_id', 'piece', 'day', 'network_id', 'side', 'status', 'rule', 'message_id', 'updated_at'],
-  sale_file_financing: ['file_id', 'seq', 'network_id', 'step', 'day', 'at'],
+  sale_file_financing: ['file_id', 'seq', 'network_id', 'step', 'day', 'at', 'request_label'],
   sale_file_financing_alerts: ['file_id', 'network_id', 'kind', 'due_day', 'step_seq', 'created_at'],
   sale_file_fund_alerts: ['message_id', 'file_id', 'network_id', 'side', 'created_at', 'reminder_status', 'reminder_rule'],
   sale_file_closings: ['file_id', 'network_id', 'signed_on', 'aftersale', 'at'],
@@ -1402,6 +1409,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   commission_shares: ['file_id', 'seq', 'kind'],
   custom_reports: ['id', 'network_id', 'definition', 'created_at'],
   agent_exports: ['id', 'network_id', 'fingerprint', 'row_count', 'made_at'],
+  agent_export_authorizations: ['id', 'network_id', 'scope', 'expires_on', 'granted_at'],
   agent_exit_accesses: ['id', 'network_id', 'expires_on', 'granted_at'],
   agent_exit_access_revocations: ['access_id', 'network_id', 'revoked_at'],
   mcp_drafts: ['id', 'network_id', 'kind', 'property_id', 'status', 'created_at', 'decided_at'],

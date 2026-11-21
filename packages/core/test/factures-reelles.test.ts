@@ -9,6 +9,7 @@ import {
   TRIAL_NOTICE,
   pilotageHourlyJob,
   realMentions,
+  reversementVatBp,
   totauxFacturX,
   type IdentitesFacturation,
   type InvoiceContent,
@@ -410,3 +411,61 @@ describeWithSqlite('AU013 · factures réelles, à côté des factures d’essai
     expect(all.filter((e) => e.type === 'facture.attente' && e.data.code === 'rejetee:FAC-2027-00001')).toHaveLength(1);
   });
 });
+
+it('[R254] AU093 · le taux du reversement suit le régime de l’agent', () => {
+  expect(reversementVatBp({ category: 'S' }, 0)).toBe(2000);
+  expect(reversementVatBp({ category: 'E', exemptionReason: 'TVA non applicable, art. 293 B du CGI' }, 0)).toBe(0);
+  expect(reversementVatBp(null, 0)).toBe(0);
+});
+
+describeWithSqlite('AU093 · le reversement suit le régime de TVA de l’agent qui le facture', () => {
+  const ASSUJETTI = { ...AGENT, name: 'Sam Agent EURL', regime: { category: 'S' as const } };
+  const avec = (agent: typeof AGENT | typeof ASSUJETTI): IdentitesFacturation => ({ emetteur: async (_n, issuer) => (issuer === 'reseau' ? RESEAU : agent), client: async () => CLIENT });
+
+  it('[R254] constat : un agent soumis à la TVA recevait un reversement à 0 %, refusé en Factur-X ; il facture désormais sa part TVA de 20 % comprise', async () => {
+    const t = await deed();
+    const f = t.enReel(avec(ASSUJETTI));
+    await f.prepare(t.network.id);
+    const rv = (await drafts(t, f)).find((x) => x.kind === 'reversement')!;
+    expect(rv).toMatchObject({ amountCents: 700_000, vatBp: 2000 });
+    const r = await f.validate(t.direction, rv.id);
+    if (!r.ok) throw new Error(`reversement ${(r as { code: string }).code}`);
+    expect(r.value.content).toMatchObject({ htCents: 583_333, vatBp: 2000, vatCents: 116_667, ttcCents: 700_000, mode: 'reel' });
+    expect(r.value.content.mentions.join(' ')).not.toMatch(/293 B|non applicable/);
+    expect(r.value.content.mentions).toContain('TVA intracommunautaire de l’émetteur : FR00900000002.');
+    expect(totauxFacturX(t.reelle.xml.get(r.value.content.label)!)).toMatchObject({ ttcCents: 700_000 });
+  });
+
+  it('[R255] AU093 · le jour de l’acte, le reversement d’un agent soumis à la TVA part seul, sa part retrouvée au centime', async () => {
+    const t = await deed();
+    const f = t.enReel(avec(ASSUJETTI));
+    await f.prepare(t.network.id);
+    expect(await f.issueOnDeed(t.network.id)).toBe(2);
+    expect((await t.journal.all()).filter((e) => e.type === 'facture.attente').map((e) => e.data.code)).not.toContain('ecart_dossier:reversement');
+    const list = await f.list(t.direction);
+    expect(list.ok && list.value.find((v) => v.content.kind === 'reversement')?.content).toMatchObject({ htCents: 583_333, vatCents: 116_667, ttcCents: 700_000 });
+  });
+
+  it('[R254] un agent en franchise en base reverse sa part seule, avec la mention de son exonération, en essai comme en réel', async () => {
+    const t = await deed();
+    await t.enEssai.prepare(t.network.id);
+    const rv = (await drafts(t, t.enEssai)).find((x) => x.kind === 'reversement')!;
+    expect(rv).toMatchObject({ amountCents: 700_000, vatBp: 0 });
+    const r = await t.enEssai.validate(t.direction, rv.id);
+    if (!r.ok) throw new Error('reversement');
+    expect(r.value.content).toMatchObject({ htCents: 700_000, vatCents: 0, ttcCents: 700_000 });
+    expect(r.value.content.mentions).toContain('TVA non applicable, art. 293 B du CGI.');
+    expect(r.value.content.mentions.join(' ')).not.toContain('en attente de la validation');
+  });
+
+  it('[R254] sans identité de l’agent, rien n’est deviné : aucune TVA, et la facture d’essai dit qu’elle attend', async () => {
+    const t = await deed();
+    const f = new Factures(t.db, t.acces, t.journal, { now: t.now, plateforme: t.essai });
+    await f.prepare(t.network.id);
+    const rv = (await drafts(t, f)).find((x) => x.kind === 'reversement')!;
+    expect(rv).toMatchObject({ amountCents: 700_000, vatBp: 0 });
+    const r = await f.validate(t.direction, rv.id);
+    expect(r.ok && r.value.content.mentions).toContain('TVA non appliquée en mode essai, en attente de la validation de l’expert-comptable.');
+  });
+});
+

@@ -14,6 +14,7 @@
  *   chaque fichier cité par la base est dans la copie : une copie sans ses fichiers est « non identique » ;
  * - le test passe le 2 du mois : jusqu'au 3 au soir, le mois attendu est encore le mois d'avant. Sans reçu, l'écran le dit.
  */
+import type { ScheduledJob } from '../bascule/planificateur.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
@@ -163,6 +164,23 @@ export class RecusRestauration {
     this.now = options.now ?? (() => new Date());
   }
 
+  /**
+   * AU109 · Un mois sans reçu réussi du test de restauration, une fois passé le jour attendu : une alerte, une seule,
+   * levée par le Worker, qui n'a pas besoin du travail GitHub pour cela. Rend vrai si elle vient d'être levée.
+   */
+  async watch(): Promise<boolean> {
+    const at = this.now();
+    const month = expectedRestoreMonth(at);
+    // Le dernier reçu décide : une réussite suivie d'un échec laisse l'alerte se lever [R232].
+    const latest = await this.db.first<{ outcome: string }>('SELECT outcome FROM base_restore_receipts WHERE month >= ? AND tested_at <= ? ORDER BY tested_at DESC, id DESC LIMIT 1', [month, at.toISOString()]);
+    if (latest?.outcome === 'reussie') return false;
+    const last = await this.db.first<{ at: string | null }>('SELECT MAX(tested_at) AS at FROM base_restore_receipts WHERE tested_at <= ?', [at.toISOString()]);
+    const { changes } = await this.db.run('INSERT INTO base_restore_alerts (month, last_receipt_at, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', [month, last?.at ?? null, at.toISOString()]);
+    if (changes !== 1) return false;
+    await appendEvent(this.journal, { type: 'base.restauration_manquee', actor: 'system:sauvegarde', subject: `copy:mois-${month}`, data: { rule: 'R232', month } }, this.now);
+    return true;
+  }
+
   /** La direction seule [R16]. Sans reçu du mois attendu : « manquant », jamais vert par défaut. */
   async status(viewer: Viewer): Promise<{ ok: true; value: RestoreStatus } | { ok: false; rule: 'R16'; code: 'role' }> {
     const actor = `${String(viewer.role)}:${viewer.userId}`;
@@ -179,4 +197,17 @@ export class RecusRestauration {
     await appendEvent(this.journal, { type: 'pilotage.lecture', actor, subject, data: { kind: 'base_restore' } }, this.now);
     return { ok: true, value: { state, expectedMonth, receipt: latest ? toReceipt(latest) : null } };
   }
+}
+
+export const RESTORE_WATCH_JOB = 'sauvegarde.surveillance_restauration';
+
+/** AU109 · Le passage du planificateur : de 6 h à 8 h, chaque jour ; l'alerte d'un mois ne se lève qu'une fois. */
+export function restoreWatchJob(db: SqlDatabase, journal: JournalStore, options: { now?: () => Date } = {}): ScheduledJob {
+  return {
+    name: RESTORE_WATCH_JOB,
+    hours: [6, 7, 8],
+    run: async () => {
+      await new RecusRestauration(db, journal, options).watch();
+    },
+  };
 }

@@ -33,7 +33,7 @@ export const TABLES_RESEAU: readonly string[] = `
   after_sale_choices after_sale_reminders after_sale_tasks after_sale_unsubscribe_tokens agency_delegations
   agency_fee_statements agency_partner_invoices agency_shares agency_visits agent_absences agent_alerts
   agent_availabilities agent_cost_assignments agent_cost_settings agent_departure_handovers
-  agent_departure_reassignments agent_departures agent_exit_access_revocations agent_exit_accesses agent_exports agent_file_alerts agent_file_pieces
+  agent_departure_reassignments agent_departures agent_exit_access_revocations agent_exit_accesses agent_export_authorizations agent_exports agent_file_alerts agent_file_pieces
   agent_import_contacts agent_import_history agent_import_properties agent_import_property_addresses agent_import_property_pieces agent_import_referrals
   agent_import_reminder_closures agent_import_reminders agent_language_declarations
   agent_legal_mentions agent_likeness_consents agent_notification_settings agent_notifications agent_onboardings
@@ -60,7 +60,7 @@ export const TABLES_RESEAU: readonly string[] = `
   diffusion_portal_tasks diffusion_portal_texts document_checks document_co_mandants document_mandant_rights document_proxies document_templates documents person_domiciles property_designations property_positions property_sanitation local_hazard_orders dpe_alert_items
   dpe_diagnoses dpe_letters dpe_watch_sectors dpe_watch_stops erasure_object_targets exclusions fee_schedules floor_plans 
      gbp_claims gbp_drafts gbp_locations gbp_reviews
-  gbp_sends generated_videos human_replies identity_checks import_keys inbound_messages investment_calculations
+  gbp_sends generated_videos human_replies identity_checks import_keys inbound_message_keys inbound_messages investment_calculations
   investment_notes investor_alerts investor_profiles invoice_drafts invoice_real_numbers invoice_reminders invoices legal_basis_checks
   licence_data_exports licence_tariffs licensed_assets life_tables listing_drafts listing_settings
   listing_translation_validations listing_translations listing_validations listing_versions listing_views translation_reviewers
@@ -131,6 +131,7 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   assistance_alerts: { via: [['request_id', 'assistance_requests', 'id']] },
   attach_claims: { via: [['inbound_id', 'inbound_messages', 'id']] },
   base_copy_alerts: { hors: 'technique', why: 'Alerte de la copie de chaque nuit, pour la base entière : aucun réseau.' },
+  base_restore_alerts: { hors: 'technique', why: 'Alerte du test de restauration de chaque mois, pour la base entière : aucun réseau (AU109).' },
   base_copy_runs: { hors: 'technique', why: 'Passage de la copie de chaque nuit, pour la base entière : aucun réseau.' },
   journey_receipts: { hors: 'technique', why: 'Reçu du parcours complet fictif du mois, pour le logiciel entier : aucun réseau.' },
   base_restore_receipts: { hors: 'technique', why: 'Reçu du test de restauration, pour la base entière : aucun réseau.' },
@@ -302,7 +303,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   agency_delegation_files agency_delegation_steps agency_partner_invoices agency_fee_statements agency_visits_done
   agency_visits commission_agency_shares agency_delegations agency_shares agenda_cursors agent_absences agent_alerts
   agent_availabilities agent_cost_assignments agent_cost_settings agent_departure_reassignments
-  agent_departure_handovers agent_departures agent_exit_access_revocations agent_exit_accesses agent_exports agent_file_alerts agent_file_pieces agent_import_reminder_closures
+  agent_departure_handovers agent_departures agent_exit_access_revocations agent_exit_accesses agent_export_authorizations agent_exports agent_file_alerts agent_file_pieces agent_import_reminder_closures
   agent_import_reminders agent_import_history agent_import_contacts
   agent_import_properties agent_import_property_addresses agent_import_property_pieces agent_import_referrals agent_language_declarations agent_legal_mentions
   agent_likeness_revocations generated_videos agent_likeness_consents agent_notification_settings
@@ -320,7 +321,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   person_request_answers person_request_outputs person_requests erasure_object_targets exclusions gbp_claims gbp_sends gbp_validations
   gbp_drafts gbp_locations gbp_reviews attach_claims attach_log contact_ai_engines contact_origins contact_vitrines
   first_reply_claims callback_tasks contact_scores qualification_corrections qualifications reception_log
-  virtual_tour_contacts inbound_messages mailbox_attachment_links mailbox_attachments mailbox_drafts mailbox_mails
+  virtual_tour_contacts inbound_message_keys inbound_messages mailbox_attachment_links mailbox_attachments mailbox_drafts mailbox_mails
   mandate_tasks mandate_early_starts mandate_register mandate_withdrawals property_on_sale weekly_points mandates
   mcp_drafts message_kinds human_replies message_subjects outbound_refs property_alerts prospecting_sequence_steps
   sale_file_fund_alerts send_log send_reservations trial_outbox value_tracking_alerts messages missed_promise_tasks

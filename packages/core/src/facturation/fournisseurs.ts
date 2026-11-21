@@ -224,7 +224,7 @@ export class FacturesFournisseurs {
 
   /** Les factures fournisseurs rangées du réseau, de la plus ancienne à la plus récente : la direction seule [R16]. */
   async list(viewer: Viewer): Promise<{ ok: true; value: SupplierInvoiceView[] } | Refusal> {
-    const refusal = await directionRefusal(this.journal, this.now, viewer, 'supplier_invoices');
+    const refusal = await directionRefusal(this.journal, this.now, viewer, 'supplier_invoices', { accountantReads: true });
     if (refusal) return refusal;
     const rows = await this.db.all<{ id: string; read_id: string; supplier: string; number: string; issued_on: string; ht_cents: number; vat_cents: number; ttc_cents: number; vat_lines: string; corrected: string }>(
       'SELECT id, read_id, supplier, number, issued_on, ht_cents, vat_cents, ttc_cents, vat_lines, corrected FROM supplier_invoices WHERE network_id = ? ORDER BY issued_on, created_at, id',

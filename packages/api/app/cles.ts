@@ -208,10 +208,15 @@ globalThis.AIMMO_CLES = function (t) {
     return once(function () {
       state('Demande à l’appareil…');
       /* AU108 · la clé d'application cesse dès que la clé de l'appareil est rangée : l'identité se lit avant, tant qu'elle sert. */
+      /* L'identité d'avant revient si la clé n'est pas rangée : une autre clé de l'appareil reste utilisable. */
+      var before = null;
+      try { before = localStorage.getItem(WHO); } catch (e) { before = null; }
+      var settled = false;
+      function restore() { if (settled) return; try { if (before === null) localStorage.removeItem(WHO); else localStorage.setItem(WHO, before); } catch (e) { /* sans mémoire */ } }
       return send('/v1/cles/identite', 'GET').then(function (i) {
         if (i.gone) return false;
         /* Sans identité retenue sur l'appareil, sa clé ne pourrait pas servir à entrer : rien n'est rangé. */
-        if (!keepWho(i)) { state(i.offline ? OFFLINE : NO_MEMORY); return false; }
+        if (!keepWho(i)) { restore(); state(i.offline ? OFFLINE : NO_MEMORY); return false; }
         return send('/v1/cles/enregistrement/debut', 'POST');
       }).then(function (x) {
         if (x === false || x.gone) return false;
@@ -242,6 +247,7 @@ globalThis.AIMMO_CLES = function (t) {
             if (y.offline || !y.body || y.status >= 500) { state(LOST); return false; }
             if (!y.ok) { state(why(y, 'La clé n’est pas rangée.')); return false; }
             var d = y.body.data || {};
+            settled = true;
             return Promise.resolve().then(function () {
               /* AU108 · la clé d'application vient de cesser : l'appareil entre désormais par sa propre clé. */
               if (y.body.handoff === true && typeof t.handoff === 'function') {
@@ -252,7 +258,7 @@ globalThis.AIMMO_CLES = function (t) {
             });
           });
         }, function (e) { state(deviceError(e)); return false; });
-      });
+      }).then(function (r) { restore(); return r; }, function (e) { restore(); throw e; });
     });
   }
 

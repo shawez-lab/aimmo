@@ -11,6 +11,8 @@ import {
   Automatisations,
   OUTBOUND_CHANNELS,
   PaliersBascule,
+  mailIntakeState,
+  type MailIntakeSettings,
   ROLLOUT_INCIDENTS,
   captationAutomation,
   type OutboundChannelName,
@@ -69,6 +71,7 @@ import {
 } from '@aimmo/core';
 import { bearerKey, fromMcpKey, intakeFromRequest, invitationKeyOf, markMcpKey, parseApiKeys, parseIntakeKeys, sha256Hex, viewerFromRequest } from './auth.ts';
 import { assistantKeyViewer } from '../../core/src/securite/index.ts';
+import { LIMITED_ROLE_ROUTES } from '../../core/src/acces/droits.ts';
 import { DEVICE_KEY_ROLES, INVITATION_PATH, handleInvitation, invitedKeys, mergeKeys, retireApplicationKey, retireApplicationKeysOf } from './acces.ts';
 import { localTime as parisLocalTime } from '../../core/src/envoi/horaires.ts';
 import { ASSISTANT_PATH, handleAssistant, type AssistantLimits } from './assistant.ts';
@@ -180,6 +183,8 @@ export interface ApiConfig {
   captationRollout?: { open: boolean; connected: readonly OutboundChannelName[] };
   /** Notifications de Meta (C07) : secrets et variables `META_*`, voir meta.ts. */
   meta?: Omit<MetaConfig, 'db' | 'now'>;
+  /** AU032 : les réglages de la réception des mails (`MAIL_*`), dont l'état se lit sur `/captation/mail`. */
+  mail?: Omit<MailIntakeSettings, 'mode'>;
   /** Limites d'appels de l'assistant du site (C08) ; absentes : les réglages par défaut. */
   assistantLimits?: AssistantLimits;
   /** L'IA qui rédige les réponses de l'assistant du site, une fois branchée (H13). */
@@ -1281,6 +1286,22 @@ function captationRolloutRoutes(rollout: ApiConfig['captationRollout']): RouteDe
         if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: { stage: r.stage } });
         if (r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
         return json(409, { ok: false, rule: r.rule, code: r.code === 'not_open' && open ? 'no_real_channel' : r.code });
+      },
+    },
+  ];
+}
+
+/** AU032 : ce qui manque à la réception des mails, et chaque portail vérifié ou non par un vrai mail reçu [R669]. */
+function mailIntakeRoutes(settings: MailIntakeSettings): RouteDef[] {
+  return [
+    {
+      method: 'GET',
+      pattern: /^\/captation\/mail$/,
+      name: 'captation.mail',
+      handle: async (s, viewer) => {
+        const r = await mailIntakeState(s.db, s.journal, viewer, settings, s.now);
+        if (!r.ok) return refusal({ rule: r.rule, code: r.code });
+        return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
       },
     },
   ];
@@ -2477,6 +2498,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...reseauRoutes(config.reseau ?? {}),
     ...rolloutRoutes(config.automationRolloutOpen === true),
     ...captationRolloutRoutes(config.captationRollout),
+    ...mailIntakeRoutes({ mode: config.mode, networkId: config.mail?.networkId, forwardTo: config.mail?.forwardTo, ownAddresses: config.mail?.ownAddresses }),
     ...m15Routes(config.pieces ?? null, config.location ?? {}),
     ...coproprieteRoutesDef(coproprieteSourcesOf(config)),
     ...avantContratRoutesDef(config.pieces ?? null, config.avantContrat ?? {}),
@@ -2544,6 +2566,12 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       const code = mcpKey ? 'cle_mcp_hors_mcp' : 'cle_mcp_requise';
       await appendEvent(s.journal, { type: 'acces.refuse', actor: `${viewer.role}:${viewer.userId}`, subject: null, data: { rule: 'R590', role: viewer.role, kind: `route.${route.name}`, code } }, now);
       return json(403, { ok: false, rule: 'R590', code });
+    }
+    // AU107 · un rôle à accès limité n'atteint que ses routes nommées : toute autre est refusée avant sa porte [R16].
+    const limited = LIMITED_ROLE_ROUTES[viewer.role];
+    if (limited !== undefined && !limited.includes(route.name)) {
+      await appendEvent(s.journal, { type: 'acces.refuse', actor: `${viewer.role}:${viewer.userId}`, subject: null, data: { rule: 'R16', role: viewer.role, kind: `route.${route.name}`, code: 'limited_role' } }, now);
+      return json(403, { ok: false, rule: 'R16', code: 'limited_role' });
     }
     // Un agent parti ne lit ni n'écrit plus rien, dès minuit le jour de son départ [R86, R16] ; un agent au dossier
     // incomplet n'a que les routes de son intégration [R82]. Le refus est écrit au journal avant toute lecture.

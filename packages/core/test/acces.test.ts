@@ -47,6 +47,9 @@ describe('droits par rôle et par type de donnée', () => {
     direction: ['compliance_vault'],
     compliance: ['figures'],
     partner: KINDS,
+    // AU107 · l'assistante ne lit qu'un bien du fichier commun (un brouillon d'un autre lui est refusé) ; le comptable rien.
+    assistant: KINDS,
+    accountant: KINDS,
   };
 
   for (const role of ROLES) {

@@ -197,6 +197,7 @@ export default {
       // AU073 : les secteurs des recherches et la position des biens, à la Base adresse nationale, même sans DVF.
       secteursGeocoder: new BanGeocoder(fetch.bind(globalThis)),
       copropriete: { geocoder: new BanGeocoder(fetch.bind(globalThis)), urbanism: new GpuUrbanism(fetch.bind(globalThis)) },
+      mail: { networkId: env.MAIL_NETWORK_ID, forwardTo: env.MAIL_FORWARD_TO, ownAddresses: env.MAIL_OWN_ADDRESSES },
       meta: {
         appSecret: env.META_APP_SECRET,
         verifyTokenSha256: env.META_VERIFY_TOKEN_SHA256,

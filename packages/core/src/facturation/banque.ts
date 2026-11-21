@@ -240,7 +240,7 @@ export class Rapprochements {
 
   /** Les rapprochements du réseau : la direction seule [R16]. */
   async list(viewer: Viewer): Promise<{ ok: true; value: Reconciliation[] } | Refusal> {
-    const refusal = await directionRefusal(this.journal, this.now, viewer, 'bank_reconciliations');
+    const refusal = await directionRefusal(this.journal, this.now, viewer, 'bank_reconciliations', { accountantReads: true });
     if (refusal) return refusal;
     const rows = await this.db.all<{ line_id: string; invoice_id: string; label: string; day: string; amount_cents: number; mode: 'auto' | 'direction'; received_at: string | null; payout_due_at: string | null; proof_ref: string | null }>(
       `SELECT r.line_id, r.invoice_id, ${LABEL_SQL('i')} AS label, l.day, l.amount_cents, r.mode, c.received_at, c.payout_due_at, c.proof_ref FROM bank_reconciliations r

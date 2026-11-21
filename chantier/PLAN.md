@@ -407,16 +407,17 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#734, `1d00f18e`), migration `4043` (ajout seul). Décidé : l'adresse de l'export des biens (`Adresse`, `Rue`, `Voie`, `Numéro de voie`), validée par `readAddress`, est gardée une fois dans `agent_import_property_addresses`, jamais dans `properties` ; lue dans le dossier repris (`dossierOf`, `address`) par l'agent du bien ou la direction, au journal sans l'adresse ; bilan `addresses` (`kept`, `known`, `notTakenLines`) à l'aperçu et à l'import ; test de structure : seuls l'import et les cartes de conformité nomment la table. Codex : 1 P2 corrigé (aperçu), puis rien. Pas d'écran ; la désignation du mandat ne reprend pas encore cette adresse (parcelles à saisir).
 
 ### AU032 · La captation par mail dépend encore d’un routage et de variables marqués « plus tard »
-- Statut : en cours
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A032 (majeur), endroit : chantier/HUMAIN.md, H16 ; A/courrier.ts.
 - Constat de l'audit : La captation par mail dépend encore d’un routage et de variables marqués « plus tard » : aucune réception réelle n’est démontrée dans le dossier de livraison.
 - Objectif : Un mail réel de chaque portail souscrit crée un contact unique et une alerte, même après relivraison ; activation actuelle non vérifiée.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien (mise en service réelle : H16).
+- Reste : fusionnée (#739, `2603c63f`), migration `4055` (ajout seul), règle R669. Constat confirmé : une demande de portail sans « répondre à » vers le client ne recevait aucune réponse et ne prévenait personne. Décidé : `readPortalBody` lit les lignes « Libellé : valeur » du corps (mail, téléphone, nom, référence de la demande), s'arrête au message du client et à tout mail cité ; la référence de la demande est la clé de réception, l'identifiant du mail gardé comme autre clé (`inbound_message_keys`) ; une demande de portail sans réponse partie donne une alerte `needs_reply` ; `GET /v1/captation/mail` (direction) dit les réglages `MAIL_*` manquants et chaque portail « vérifiée » après son premier vrai mail. Codex : 4 P0 corrigés ; un cinquième (deux livraisons simultanées du même identifiant lues différemment) réfuté dans la proposition. Les vrais formats des portails restent à confirmer au premier vrai mail (H16).
 
 ### AU033 · Les leads Instagram, Facebook et WhatsApp dépendent d’autorisations Meta encore ouvertes dans le chantier
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A033 (majeur), endroit : chantier/HUMAIN.md, H06/H17 ; A/worker.ts, `meta`.
 - Constat de l'audit : Les leads Instagram, Facebook et WhatsApp dépendent d’autorisations Meta encore ouvertes dans le chantier.
@@ -910,7 +911,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU083 · Quand deux banques travaillent sur le dossier, leurs étapes se mélangent
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A083 (majeur), endroit : C/dossiers/financement.ts, `DeclaredStep`.
 - Constat de l'audit : Quand deux banques travaillent sur le dossier, leurs étapes se mélangent : aucune banque ni demande distincte n’est identifiée.
@@ -919,7 +920,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU084 · La liste demande électricité et gaz selon l’âge du bâtiment, faute de connaître celui des installations
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A084 (majeur), endroit : C/dossiers/pieces.ts, âge des installations.
 - Constat de l'audit : La liste demande électricité et gaz selon l’âge du bâtiment, faute de connaître celui des installations : je cours après des diagnostics parfois inutiles.
@@ -991,7 +992,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU092 · Ma rémunération ne peut pas suivre automatiquement une grille progressive selon mon chiffre d’affaires cumulé
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M13 Pilotage et finances ; audit A092 (majeur), endroit : C/pilotage/commissions.ts, `GridInput`.
 - Constat de l'audit : Ma rémunération ne peut pas suivre automatiquement une grille progressive selon mon chiffre d’affaires cumulé.
@@ -1000,7 +1001,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU093 · Les reversements utilisent un taux de TVA nul par défaut
-- Statut : à faire
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M13 Pilotage et finances ; audit A093 (majeur), endroit : C/pilotage/factures.ts, `DEFAULT_VAT_BP`.
 - Constat de l'audit : Les reversements utilisent un taux de TVA nul par défaut, sans traitement opérationnel démontré des agents soumis à TVA.
@@ -1134,7 +1135,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU105 · Manque
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A105 (majeur), endroit : UI/avis.ts, `wipe`, changement d’écran ; UI/fiche-bien.ts.
 - Constat de l'audit : Manque : la saisie non envoyée n’a pas de brouillon durable ni de garde générale avant de quitter l’écran.
@@ -1143,7 +1144,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU106 · Le budget vérifie des octets compressés, pas le temps réel d’accès à une fiche sur téléphone avec un…
-- Statut : à faire
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A106 (majeur), endroit : C/design/audit.ts, `budgetProblems` ; tests/design.
 - Constat de l'audit : Le budget vérifie des octets compressés, pas le temps réel d’accès à une fiche sur téléphone avec un portefeuille chargé.
@@ -1152,7 +1153,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU107 · Je ne peux pas donner à une assistante ou au comptable un accès limité adapté
-- Statut : à faire
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A107 (majeur), endroit : C/acces/droits.ts, `ROLES`.
 - Constat de l'audit : Je ne peux pas donner à une assistante ou au comptable un accès limité adapté : seuls agent, direction, conformité et partenaire existent.
@@ -1170,7 +1171,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU109 · La copie nocturne et son test réel restent conditionnés à une activation humaine non prouvée dans le chantier
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A109 (majeur), endroit : docs/SAUVEGARDE.md ; H50 ; `.github/workflows/copie-nuit.yml`.
 - Constat de l'audit : La copie nocturne et son test réel restent conditionnés à une activation humaine non prouvée dans le chantier.
@@ -1179,7 +1180,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H50).
 
 ### AU110 · L’export dit complet ne contient les clients que par identifiants et n’emporte pas les fichiers de mon…
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A110 (majeur), endroit : C/rapports/export-agent.ts, `AgentExport`.
 - Constat de l'audit : L’export dit complet ne contient les clients que par identifiants et n’emporte pas les fichiers de mon portefeuille, donc il ne suffit pas à une reprise opérationnelle autorisée.

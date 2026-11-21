@@ -11,7 +11,9 @@
  * L'agent seul tire son export : ni la direction ni un autre rôle ne le tire à sa place [R16].
  */
 import type { Viewer } from '../acces/droits.ts';
+import { agentState } from '../acces/etat-agent.ts';
 import type { SqlDatabase } from '../db/sql.ts';
+import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 
@@ -36,7 +38,64 @@ export interface AgentExport {
     sales: Row[];
     commissionShares: Row[];
     customReports: Row[];
+    /** AU110 · export de reprise autorisé : les fiches de ses clients, avec leurs coordonnées et leurs consentements. */
+    clients?: Row[];
+    clientIdentifiers?: Row[];
+    clientConsents?: Row[];
+    /** AU110 · les projets de ses clients (vendre, acheter…), que ses mandats désignent. */
+    projects?: Row[];
+    /** AU110 · périmètre « avec pièces » : les références des pièces de son portefeuille, chacune avec sa table. */
+    files?: Row[];
   };
+  /** AU110 · le périmètre et le contrat de l'export de reprise ; absent pour l'export de l'agent seul. */
+  authorization?: { id: string; scope: ExportScope; contractRef: string; expiresOn: string };
+  /** AU110 · ce que le périmètre écarte, compté par table : une ligne qui désigne un client hors de ses fiches. */
+  excluded?: Record<string, number>;
+}
+
+export const EXPORT_SCOPES = ['clients', 'clients_pieces'] as const;
+export type ExportScope = (typeof EXPORT_SCOPES)[number];
+/** La durée d'une autorisation d'export de reprise, en jours, au plus. */
+export const EXPORT_AUTHORIZATION_DAYS = 90;
+
+/**
+ * Les références orphelines d'un export (AU110) : chaque client, bien ou mandat désigné par une ligne doit avoir sa ligne
+ * dans l'export. Vide pour un export de reprise : il s'importe dans un environnement de contrôle tel quel.
+ */
+export function exportOrphans(doc: AgentExport): string[] {
+  const t = doc.tables;
+  const persons = new Set((t.contacts ?? []).map((r) => String(r.id)));
+  const props = new Set((t.properties ?? []).map((r) => String(r.id)));
+  const mandates = new Set((t.mandates ?? []).map((r) => String(r.id)));
+  const out: string[] = [];
+  const check = (table: string, rows: Row[] | undefined, column: string, known: Set<string>) => {
+    for (const r of rows ?? []) {
+      const v = r[column];
+      if (v !== null && v !== undefined && !known.has(String(v))) out.push(`${table}.${column}:${String(v)}`);
+    }
+  };
+  check('attributions', t.attributions, 'person_id', persons);
+  check('appointments', t.appointments, 'person_id', persons);
+  check('appointments', t.appointments, 'property_id', props);
+  check('mandates', t.mandates, 'person_id', persons);
+  check('mandates', t.mandates, 'property_id', props);
+  check('sales', t.sales, 'mandate_id', mandates);
+  if (t.clients) {
+    // L'export de reprise : chaque part a sa vente, chaque pièce signée son mandat, chaque photo son bien.
+    const sales = new Set((t.sales ?? []).map((r) => String(r.file_id)));
+    check('commissionShares', t.commissionShares, 'file_id', sales);
+    check('mandates', t.mandates, 'project_id', new Set((t.projects ?? []).map((r) => String(r.id))));
+    check('files', (t.files ?? []).filter((r) => r.mandate_id !== undefined), 'mandate_id', mandates);
+    check('files', (t.files ?? []).filter((r) => r.property_id !== undefined), 'property_id', props);
+  }
+  if (t.clients) {
+    const clients = new Set(t.clients.map((r) => String(r.id)));
+    for (const id of persons) if (!clients.has(id)) out.push(`clients.id:${id}`);
+    check('clientIdentifiers', t.clientIdentifiers, 'person_id', clients);
+    check('clientConsents', t.clientConsents, 'person_id', clients);
+    check('projects', t.projects, 'person_id', clients);
+  }
+  return out.sort();
 }
 
 /** Écriture canonique : clés triées, sans espace, pour que la même donnée donne toujours la même empreinte. */
@@ -59,7 +118,7 @@ export async function fingerprintOf(doc: unknown): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-type Refusal = { ok: false; rule: 'R16' | 'R601'; code: string };
+type Refusal = { ok: false; rule: 'R16' | 'R601' | 'R82'; code: string };
 
 /** La porte du second facteur (HX56, `ClesAppareil.requireSecondFactor`) [R601]. */
 export interface SecondFactorGate {
@@ -81,8 +140,46 @@ export class ExportAgent {
     this.newId = options.newId ?? (() => crypto.randomUUID());
   }
 
-  /** Tire l'export complet de l'agent lecteur, sur la preuve du second facteur, et range son empreinte [R601]. */
-  async make(viewer: Viewer, stepUpId?: unknown): Promise<{ ok: true; value: { document: AgentExport; fingerprint: string } } | Refusal> {
+  /**
+   * AU110 · La direction autorise un export de reprise, au vu d'un contrat : son périmètre (les fiches des clients de
+   * l'agent, et leurs pièces s'il le dit), la référence du contrat, et sa durée, 90 jours au plus [R16].
+   */
+  async authorize(viewer: Viewer, agentId: string, input: { scope: unknown; contractRef: unknown; days?: unknown }): Promise<{ ok: true; value: { id: string; expiresOn: string } } | Refusal | { ok: false; rule: null; code: 'bad_scope' | 'bad_contract' | 'bad_days' | 'unknown_agent' }> {
+    if (viewer.role !== 'direction') {
+      await appendEvent(this.journal, { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `agent:${agentId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'agent_export_authorization', code: 'role' } }, this.now);
+      return { ok: false, rule: 'R16', code: 'role' };
+    }
+    const agent = await this.db.first<{ network_id: string }>('SELECT network_id FROM agents WHERE id = ?', [agentId]);
+    if (!agent || agent.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown_agent' };
+    if (typeof input.scope !== 'string' || !(EXPORT_SCOPES as readonly string[]).includes(input.scope)) return { ok: false, rule: null, code: 'bad_scope' };
+    if (typeof input.contractRef !== 'string' || input.contractRef.trim() === '' || input.contractRef.length > 200) return { ok: false, rule: null, code: 'bad_contract' };
+    const days = input.days === undefined ? 30 : input.days;
+    if (typeof days !== 'number' || !Number.isInteger(days) || days < 1 || days > EXPORT_AUTHORIZATION_DAYS) return { ok: false, rule: null, code: 'bad_days' };
+    const end = new Date(`${localTime(this.now(), 'Europe/Paris').date}T12:00:00.000Z`);
+    end.setUTCDate(end.getUTCDate() + days);
+    const expiresOn = end.toISOString().slice(0, 10);
+    const id = this.newId();
+    await this.db.run('INSERT INTO agent_export_authorizations (id, network_id, agent_id, scope, contract_ref, expires_on, granted_by, granted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
+      id,
+      viewer.networkId,
+      agentId,
+      input.scope,
+      input.contractRef.trim(),
+      expiresOn,
+      `direction:${viewer.userId}`,
+      this.now().toISOString(),
+    ]);
+    await appendEvent(this.journal, { type: 'export.autorise', actor: `direction:${viewer.userId}`, subject: `agent:${agentId}`, data: { authorization: id, scope: input.scope, expiresOn } }, this.now);
+    return { ok: true, value: { id, expiresOn } };
+  }
+
+  /**
+   * Tire l'export complet de l'agent lecteur, sur la preuve du second facteur, et range son empreinte [R601]. Avec une
+   * autorisation de la direction en cours (AU110), l'export de reprise porte aussi les fiches de ses clients et, si le
+   * périmètre le dit, les références de ses pièces ; une ligne qui désigne un client hors de ses fiches est écartée et
+   * comptée, pour qu'il s'importe sans référence orpheline.
+   */
+  async make(viewer: Viewer, stepUpId?: unknown, options: { authorizationId?: string } = {}): Promise<{ ok: true; value: { document: AgentExport; fingerprint: string } } | Refusal> {
     const refuse = async (code: string): Promise<Refusal> => {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: `${String(viewer.role)}:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'agent_export', code } }, this.now);
       return { ok: false, rule: 'R16', code };
@@ -96,6 +193,19 @@ export class ExportAgent {
     const net = viewer.networkId;
     const id = viewer.userId;
     const q = (sql: string, args: string[] = [net, id]) => this.db.all<Row>(sql, args);
+    let auth: { id: string; scope: ExportScope; contract_ref: string; expires_on: string } | null = null;
+    if (options.authorizationId !== undefined) {
+      auth = await this.db.first<{ id: string; scope: ExportScope; contract_ref: string; expires_on: string }>(
+        'SELECT id, scope, contract_ref, expires_on FROM agent_export_authorizations WHERE id = ? AND network_id = ? AND agent_id = ?',
+        [options.authorizationId, net, id],
+      );
+      if (!auth || auth.expires_on < localTime(this.now(), 'Europe/Paris').date) return refuse('no_authorization');
+      // Les fiches de ses clients ne sortent pas d'un dossier d'agent incomplet ou échu, même avec un contrat [R82].
+      if ((await agentState(this.db, net, id, this.now())) !== 'actif') {
+        await appendEvent(this.journal, { type: 'acces.refuse', actor: `agent:${id}`, subject: `network:${net}`, data: { rule: 'R82', role: 'agent', kind: 'agent_export', code: 'agent_file_incomplete' } }, this.now);
+        return { ok: false, rule: 'R82', code: 'agent_file_incomplete' };
+      }
+    }
 
     const tables: AgentExport['tables'] = {
       agent: await q('SELECT id, first_name, last_name, zone, status, created_at, updated_at FROM agents WHERE network_id = ? AND id = ?'),
@@ -111,12 +221,67 @@ export class ExportAgent {
       ),
       customReports: await q("SELECT id, name, definition, created_at FROM custom_reports WHERE network_id = ? AND owner_id = ? AND owner_role = 'agent' ORDER BY created_at, id"),
     };
-    const document: AgentExport = { format: EXPORT_FORMAT, networkId: net, agentId: id, madeAt: this.now().toISOString(), tables };
+    let extra: Pick<AgentExport, 'authorization' | 'excluded'> = {};
+    if (auth) {
+      // Ses fiches seules, avec ce qu'il faut pour reprendre le suivi : nom, coordonnées, consentements.
+      tables.clients = await q('SELECT id, first_name, last_name, created_at FROM persons WHERE network_id = ? AND agent_id = ? ORDER BY created_at, id');
+      const mine = new Set(tables.clients.map((r) => String(r.id)));
+      tables.clientIdentifiers = (await q('SELECT i.person_id, i.kind, i.value FROM person_identifiers i JOIN persons p ON p.id = i.person_id WHERE p.network_id = ? AND p.agent_id = ? ORDER BY i.person_id, i.kind, i.value'));
+      tables.projects = await q('SELECT j.id, j.person_id, j.kind, j.stage, j.deadline, j.budget_min_eur, j.budget_max_eur, j.created_at FROM projects j JOIN persons p ON p.id = j.person_id WHERE p.network_id = ? AND p.agent_id = ? ORDER BY j.created_at, j.id');
+      tables.clientConsents = await q('SELECT c.person_id, c.purpose, c.channel, c.given_at, c.withdrawn_at FROM consents c JOIN persons p ON p.id = c.person_id WHERE p.network_id = ? AND p.agent_id = ? ORDER BY c.person_id, c.given_at, c.id');
+      // Une ligne qui désigne un client hors de ses fiches, ou un bien hors des siens, n'est pas à lui : écartée et comptée.
+      const props = new Set(tables.properties.map((r) => String(r.id)));
+      const projectIds = new Set(tables.projects.map((r) => String(r.id)));
+      const keep = (r: Row) =>
+        (r.person_id === null || r.person_id === undefined || mine.has(String(r.person_id))) &&
+        (r.property_id === null || r.property_id === undefined || props.has(String(r.property_id))) &&
+        (r.project_id === null || r.project_id === undefined || projectIds.has(String(r.project_id)));
+      const excluded: Record<string, number> = {};
+      for (const key of ['attributions', 'appointments', 'mandates'] as const) {
+        const before = tables[key].length;
+        tables[key] = tables[key].filter(keep);
+        if (tables[key].length !== before) excluded[key] = before - tables[key].length;
+      }
+      const mandateIds = new Set(tables.mandates.map((r) => String(r.id)));
+      const sales = tables.sales.length;
+      tables.sales = tables.sales.filter((r) => mandateIds.has(String(r.mandate_id)));
+      if (tables.sales.length !== sales) excluded.sales = sales - tables.sales.length;
+      // Ses parts suivent ses ventes gardées : une part sur une vente hors de l'export est écartée et comptée.
+      const fileIds = new Set(tables.sales.map((r) => String(r.file_id)));
+      const shares = tables.commissionShares.length;
+      tables.commissionShares = tables.commissionShares.filter((r) => fileIds.has(String(r.file_id)));
+      if (tables.commissionShares.length !== shares) excluded.commissionShares = shares - tables.commissionShares.length;
+      if (auth.scope === 'clients_pieces') {
+        // Les pièces de son portefeuille : scans des mandats et avenants signés, et photos de ses biens.
+        const files: Row[] = [
+          ...(await q(`SELECT 'signed_documents' AS "table", s.scan_ref AS ref, s.mandate_id FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE d.network_id = ? AND d.agent_id = ? AND s.scan_ref IS NOT NULL ORDER BY s.scan_ref`)),
+          ...(await q(`SELECT 'signed_amendments' AS "table", a.scan_ref AS ref, a.mandate_id FROM signed_amendments a JOIN documents d ON d.id = a.document_id WHERE d.network_id = ? AND d.agent_id = ? AND a.scan_ref IS NOT NULL ORDER BY a.scan_ref`)),
+        ].filter((r) => {
+          // Le scan d'un mandat gardé seulement : un client confié depuis à un autre agent emporte ses pièces avec lui.
+          const kept = mandateIds.has(String(r.mandate_id));
+          if (!kept) excluded.files = (excluded.files ?? 0) + 1;
+          return kept;
+        });
+        for (const p of tables.properties) {
+          const sheet = await this.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [String(p.id)]);
+          let media: { ref?: unknown }[] = [];
+          try {
+            media = sheet ? ((JSON.parse(sheet.data) as { media?: { ref?: unknown }[] }).media ?? []) : [];
+          } catch {
+            media = [];
+          }
+          for (const m of media) if (typeof m.ref === 'string') files.push({ table: 'property_sheets', ref: m.ref, property_id: String(p.id) });
+        }
+        tables.files = files;
+      }
+      extra = { authorization: { id: auth.id, scope: auth.scope, contractRef: auth.contract_ref, expiresOn: auth.expires_on }, ...(Object.keys(excluded).length > 0 ? { excluded } : {}) };
+    }
+    const document: AgentExport = { format: EXPORT_FORMAT, networkId: net, agentId: id, madeAt: this.now().toISOString(), tables, ...extra };
     const fingerprint = await fingerprintOf(document);
     const rowCount = Object.values(tables).reduce((a, t) => a + t.length, 0);
     await this.db.run('INSERT OR IGNORE INTO agent_exports (id, network_id, agent_id, fingerprint, row_count, made_at) VALUES (?, ?, ?, ?, ?, ?)', [this.newId(), net, id, fingerprint, rowCount, document.madeAt]);
     // Au journal : l'empreinte et les comptes, jamais le contenu [R13].
-    await appendEvent(this.journal, { type: 'export.agent', actor: `agent:${id}`, subject: `agent:${id}`, data: { fingerprint, rows: rowCount } }, this.now);
+    await appendEvent(this.journal, { type: 'export.agent', actor: `agent:${id}`, subject: `agent:${id}`, data: { fingerprint, rows: rowCount, ...(auth ? { authorization: auth.id, scope: auth.scope } : {}) } }, this.now);
     return { ok: true, value: { document, fingerprint } };
   }
 

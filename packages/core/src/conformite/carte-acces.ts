@@ -290,6 +290,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   vitrine: { excluded: 'sans_client', why: 'Un écran de vitrine du réseau ou d\'un agent : sa création, sans donnée d\'un client.' },
   scenario: { excluded: 'sans_client', why: 'Un scénario automatique de la direction : sa composition, ses essais, ses allumages, sans donnée d\'un client.' },
   avis_verifie: { excluded: 'sans_client', why: 'Un avis vérifié publié (HX46) : la remise de sa preuve à la conformité, ou un refus d\'accès, sans donnée d\'un client.' },
+  captation: { excluded: 'pas_un_sujet', why: 'L\'état de la réception des mails (AU032) : un refus de lecture, des réglages et des comptes, jamais une personne.' },
   copy: { excluded: 'pas_un_sujet', why: 'Une copie de la base : des comptes, jamais une donnée d\'une personne.' },
   person: 'journal',
   mandate: 'journal',
@@ -432,6 +433,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   send_reservations: { locate: by('person_id') },
   inbound_messages: { locate: by('person_id') },
   reception_log: { locate: [via('inbound_id', 'inbound_messages')] },
+  inbound_message_keys: { locate: [via('inbound_id', 'inbound_messages')] },
   virtual_tour_contacts: { locate: [via('inbound_id', 'inbound_messages')] },
   // Une note vocale se reconnaît au message reçu qu'elle est devenue : même réseau, même canal, même identifiant.
   voice_notes: { locate: [via('external_id', 'inbound_messages', 'external_id', { alsoMatch: { network_id: 'network_id', channel: 'channel' } })] },
@@ -700,6 +702,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   security_challenges: out('agent', 'Défis envoyés aux appareils des utilisateurs du réseau (HX56) : aucun client ; l\'objet d\'une action sensible n\'est qu\'un identifiant.'),
   security_sessions: out('agent', 'Séances ouvertes par la clé d\'un appareil (HX56) : aucun client.'),
   security_step_ups: out('agent', 'Preuves du second facteur des utilisateurs du réseau (HX56) : aucun client ; l\'objet n\'est qu\'un identifiant.'),
+  agent_export_authorizations: out('agent', 'Autorisation d\'un export de reprise d\'un agent (AU110) : périmètre, contrat, durée, aucun client.'),
   agent_exports: out('agent', 'Empreinte d\'un export complet remis à un agent (HX62) : jamais le contenu, aucun client.'),
   agent_exit_accesses: out('agent', 'Accès de sortie d\'un agent parti (AU111) : l\'empreinte du lien et sa durée, aucun client.'),
   agent_exit_access_revocations: out('agent', 'Retrait d\'un accès de sortie d\'agent (AU111) : qui et quand, aucun client.'),

@@ -26,6 +26,10 @@ Chaque nuit (AU019b), le travail « Copie de nuit » prend la base puis tous les
 
 Le test du mois passe par `restoreExercise` : base et fichiers, et `fileReferences` relève dans toutes les tables (sauf le journal, qui cite des fichiers effacés depuis) chaque valeur, entière ou dans un JSON, qui a la forme d'une clé de stockage (voir `REFERENCE_PREFIXES` : biens, dossiers, preuves, offres, mandats, location, commerces, coffre…), et chaque colonne `storage_ref`. Un fichier cité absent de la copie : « non identique ». Une fausse alerte vaut mieux qu'un faux « restauré ». L'empreinte du reçu couvre la base et les fichiers.
 
+## La preuve de l'allumage (AU109)
+
+Le bloc « La copie de la base » dit « Copie prouvée » seulement quand une copie réussie est arrivée depuis la veille à 6 h et qu'un test de restauration du mois attendu a réussi ; sinon « Copie non prouvée ». L'allumage (H50) n'est donc jamais supposé : tant que les deux reçus manquent, l'écran le dit. De 6 h à 8 h, le Worker lève aussi une alerte, une seule par mois, quand le reçu réussi du mois manque une fois le jour attendu passé (`base_restore_alerts`, `base.restauration_manquee`) : comme pour la copie de chaque nuit, il n'a pas besoin du travail GitHub pour cela.
+
 ## Garde
 
 30 jours pour chaque copie (préfixe `copies/`), par la règle du compartiment (H50) : le logiciel ne supprime rien, et sa clé limitée aux objets ne peut pas lire cette règle. L'écran ne l'affirme donc pas ; à vérifier dans Cloudflare. Le registre des effacements (préfixe `effacements/`) n'expire pas.

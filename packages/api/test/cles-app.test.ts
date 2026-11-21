@@ -166,6 +166,17 @@ describe('BR18 · la clé de cet appareil et la preuve d’une action, à l’é
     expect(t.storage.get('aimmo.appareil')).toBeUndefined();
   });
 
+  it('[R600] AU108 · une clé qui n’est pas rangée rend l’identité d’avant : l’autre clé de l’appareil reste utilisable', async () => {
+    const before = JSON.stringify({ networkId: 'n-1', role: 'agent', userId: 'agent-1' });
+    const t = await run({ 'GET /v1/cles/mes-appareils': ok([]), 'GET /v1/cles/identite': ok({ networkId: 'n-1', role: 'direction', userId: 'dir-1' }), 'POST /v1/cles/enregistrement/fin': () => Promise.reject(new TypeError('coupé')) });
+    t.storage.set('aimmo.appareil', before);
+    await t.voir();
+    t.input('cles-accueil-nom').value = 'Mon téléphone';
+    await t.click(t.find('Ranger la clé de cet appareil'));
+    await settle();
+    expect(t.storage.get('aimmo.appareil')).toBe(before);
+  });
+
   it('[R600] AU108 · la clé d’application cesse en rangeant celle de l’appareil : l’application la quitte et propose l’entrée par l’appareil', async () => {
     const who = { networkId: 'n-1', role: 'agent', userId: 'agent-1' };
     const t = await run({
