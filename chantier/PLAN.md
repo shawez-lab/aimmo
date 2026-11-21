@@ -1153,7 +1153,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU107 · Je ne peux pas donner à une assistante ou au comptable un accès limité adapté
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A107 (majeur), endroit : C/acces/droits.ts, `ROLES`.
 - Constat de l'audit : Je ne peux pas donner à une assistante ou au comptable un accès limité adapté : seuls agent, direction, conformité et partenaire existent.
