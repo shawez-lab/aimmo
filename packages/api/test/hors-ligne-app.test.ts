@@ -210,6 +210,7 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
   const winListeners: Record<string, () => void> = {};
   const calls: string[] = [];
   const bodies: unknown[] = [];
+  const later: (() => unknown)[] = [];
   let uuids = 0;
   const NowDate = class extends Date {
     constructor(...a: unknown[]) {
@@ -235,7 +236,9 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
     TextDecoder,
     atob,
     crypto: { subtle: crypto.subtle, getRandomValues: (a: Uint8Array) => crypto.getRandomValues(a), randomUUID: () => `7d1c2b3a-2222-4a2b-8c3d-${String(Math.floor(Math.random() * 1e6)).padStart(6, '0')}${String(++uuids).padStart(6, '0')}` },
-    setTimeout: (f: () => void, ms: number) => (ms === 0 ? setTimeout(f, 0) : 0),
+    // Les attentes longues sont gardées, pas lancées : le test les déclenche quand il avance l'horloge.
+    setTimeout: (f: () => void, ms: number) => (ms === 0 ? setTimeout(f, 0) : (later.push(f), later.length)),
+    clearTimeout: (id: number) => void (later[id - 1] = () => undefined),
     localStorage: { getItem: () => who.key, setItem: () => undefined, removeItem: () => undefined },
     addEventListener: (n: string, f: () => void) => (winListeners[n] = f),
     navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
@@ -285,7 +288,7 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
     await settle();
   };
   const H = (ctx.AimmoHorsLigne ?? { pending: async () => [], refused: async () => [] }) as { pending: (o?: string) => Promise<unknown[]>; refused: () => Promise<unknown[]> };
-  return { els, ctx, calls, bodies, loads, root, find, click, H, online: async () => (winListeners.online?.(), await settle()) };
+  return { els, ctx, calls, bodies, later, loads, root, find, click, H, online: async () => (winListeners.online?.(), await settle()) };
 }
 
 describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’envoi', () => {
@@ -683,12 +686,14 @@ describeWithSqlite('AU104 · le mode privé de la visite, sur le téléphone', (
     await field.click(field.find('button', 'Ouvrir'));
     await until(() => address(field), 'adresse sans réseau');
     expect(callLink(field)).toBeDefined();
-    // Cinq minutes sans geste : refermé.
-    const o = privOf(idb)!.slice(HORS_LIGNE_DB.prive.length + 1);
-    const api = field.ctx.AimmoHorsLigne as { prive: { visites: (o: string) => Promise<unknown[] | null> } };
-    expect(await api.prive.visites(o)).toHaveLength(1);
+    // Cinq minutes sans geste, personne ne touche l'écran : refermé, et l'adresse quitte l'écran d'elle-même.
     w.setClock(w.clock() + 6 * MIN);
-    expect(await api.prive.visites(o)).toBeNull();
+    expect(field.later.length).toBeGreaterThan(0);
+    for (const f of field.later.splice(0)) await f();
+    await settle();
+    expect(address(field)).toBeUndefined();
+    expect(callLink(field)).toBeUndefined();
+    expect(field.find('button', 'Ouvrir')).toBeDefined();
 
     // Deux heures après la fin de la visite : effacé du téléphone dès l'ouverture, sans même le code.
     w.setClock((await end(w)) + 2 * HOUR + MIN);
@@ -741,6 +746,59 @@ describeWithSqlite('AU104 · le mode privé de la visite, sur le téléphone', (
     w.setClock(Date.parse('2026-12-08T23:00:00.000Z'));
     await phone(w, idb, { network: false });
     await until(() => !privOf(idb), 'effacé à minuit');
+  });
+
+  it('[R676] verrouillé, une visite passée s’efface seule du téléphone, et les autres restent', async () => {
+    const w = await setup();
+    await designate(w);
+    // Une seconde visite le même jour, deux heures plus tard.
+    await w.db.run(
+      `INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, created_at, updated_at)
+       SELECT 'visite-test-2', network_id, agent_id, person_id, property_id, kind, ?, ?, status, 'jeton-test-2', source, created_at, updated_at FROM appointments WHERE id = ?`,
+      [new Date(w.visitStart + 3 * HOUR).toISOString(), new Date(w.visitStart + 4 * HOUR).toISOString(), w.visitId],
+    );
+    const idb = new Map<string, unknown>();
+    w.setClock(w.visitStart - 2 * HOUR);
+    const home = await phone(w, idb, { network: true });
+    await openDay(home);
+    typeCode(home, KEEP, '482913');
+    await home.click(home.find('button', 'Garder pour aujourd’hui'));
+    await until(() => home.find('p', '2 visites gardées, ouvertes.'), 'deux visites');
+    await home.click(home.find('button', 'Verrouiller'));
+    const items = () => ((idb.get(privOf(idb)!) as { items: { id: string }[] } | undefined)?.items ?? []).map((i) => i.id);
+    expect(items()).toEqual([w.visitId, 'visite-test-2']);
+    // Deux heures après la fin de la première, sans le code : elle a quitté le téléphone, la seconde reste.
+    w.setClock((await end(w)) + 2 * HOUR + MIN);
+    await phone(w, idb, { network: false });
+    await until(() => items().length === 1, 'première effacée');
+    expect(items()).toEqual(['visite-test-2']);
+    const field = await phone(w, idb, { network: false });
+    typeCode(field, OPEN, '482913');
+    await field.click(field.find('button', 'Ouvrir'));
+    await until(() => address(field), 'seconde ouverte');
+    expect(field.root().all().filter((e) => e.tagName === 'p' && e.textContent === '12 rue des Vignes, 21240 Talant')).toHaveLength(1);
+  });
+
+  it('[R676] une sortie pendant que le mode privé se prépare : rien n’est écrit ensuite, rien ne reste ouvert', async () => {
+    const w = await setup();
+    await designate(w);
+    const idb = new Map<string, unknown>();
+    w.setClock(w.visitStart - 2 * HOUR);
+    let release: () => void = () => undefined;
+    const net: { network: boolean; hold?: Promise<void> } = { network: true };
+    const p = await phone(w, idb, net);
+    await openDay(p);
+    net.hold = new Promise<void>((r) => (release = r));
+    typeCode(p, KEEP, '482913');
+    p.find('button', 'Garder pour aujourd’hui')!.listeners.click!({});
+    await settle();
+    p.els.sortir!.listeners.click!({});
+    await settle();
+    release();
+    await new Promise((r) => setTimeout(r, 1500));
+    await settle();
+    expect(privOf(idb)).toBeUndefined();
+    expect(JSON.stringify([...idb.values()])).not.toMatch(/items/);
   });
 
   it('[R676] [R16] seul l’agent obtient le mode privé ; un autre rôle est refusé et le refus est au journal', async () => {

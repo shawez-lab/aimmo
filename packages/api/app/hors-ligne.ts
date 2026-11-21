@@ -203,7 +203,7 @@ function tag(key) {
    Chiffré ici sous un code de l'agent qui ne part jamais au serveur ni ne reste sur l'appareil ; refermé après cinq
    minutes sans geste ; chaque visite effacée deux heures après sa fin, tout effacé à minuit, à la sortie, après cinq codes
    faux, ou quand une préparation avec réseau ne rend plus l'une de ses visites. */
-var open_ = null;
+var open_ = null, privGen = 0, idleTimer = null;
 function b64(bytes) { var s = '', a = new Uint8Array(bytes); for (var i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return G.btoa(s); }
 function unb64(t) { var s = G.atob(t), a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; }
 function goodCode(c) { return typeof c === 'string' && new RegExp('^[0-9]{' + P.minDigits + ',12}$').test(c); }
@@ -214,53 +214,88 @@ function keyOf(code, salt) {
   });
 }
 function alive(v) { return v && typeof v.wipeAt === 'string' && Date.parse(v.wipeAt) > Date.now(); }
-/* Rechiffrer les seules visites encore à garder, sous un nouveau tirage : une visite passée disparaît du téléphone. */
-function seal(o, k, salt, visits, tries) {
+/* Chaque visite est chiffrée à part, avec son heure d'effacement en clair : une visite passée s'efface du téléphone sans
+   le code, même verrouillé, et les autres restent. */
+function seal(o, k, salt, visits) {
   visits = visits.filter(alive);
   if (!visits.length) return del(PRIV + ':' + o).then(function () { return []; });
-  var iv = G.crypto.getRandomValues(new Uint8Array(12));
-  return G.crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, k, new G.TextEncoder().encode(JSON.stringify(visits))).then(function (ct) {
-    var until = visits.map(function (v) { return v.wipeAt; }).sort().pop();
-    return put(PRIV + ':' + o, { salt: b64(salt), iv: b64(iv), data: b64(ct), validUntil: until, ids: visits.map(function (v) { return v.appointmentId; }), tries: tries || 0 });
-  }).then(function () { return visits; });
+  return Promise.all(visits.map(function (v) {
+    var iv = G.crypto.getRandomValues(new Uint8Array(12));
+    return G.crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, k, new G.TextEncoder().encode(JSON.stringify(v))).then(function (ct) {
+      return { id: v.appointmentId, wipeAt: v.wipeAt, iv: b64(iv), data: b64(ct) };
+    });
+  })).then(function (items) { return put(PRIV + ':' + o, { salt: b64(salt), items: items, tries: 0 }); }).then(function () { return visits; });
 }
+/* Le mode privé gardé, sans ce qui a passé son heure : retiré du téléphone, d'un seul tenant, dès cette lecture. */
 function readPriv(o) {
   if (!o) return Promise.resolve(null);
-  return get(PRIV + ':' + o).then(function (r) {
-    if (r && typeof r.validUntil === 'string' && Date.parse(r.validUntil) > Date.now() && typeof r.data === 'string') return r;
-    return r ? del(PRIV + ':' + o).then(function () { return null; }) : null;
-  });
+  return update(PRIV + ':' + o, function (r) {
+    if (!r) return { value: null };
+    var items = Array.isArray(r.items) ? r.items.filter(alive) : [];
+    if (!items.length) return { value: 'vide' };
+    if (items.length === r.items.length) return { value: r };
+    r.items = items;
+    return { next: r, value: r };
+  }).then(function (r) { return r === 'vide' ? del(PRIV + ':' + o).then(function () { return null; }) : r; });
 }
 function privWipe(o) {
   if (open_ && (!o || open_.o === o)) open_ = null;
   return o ? del(PRIV + ':' + o) : Promise.resolve();
 }
 function privLock() { open_ = null; }
+/* Une sortie ou une autre session pendant un calcul : ce calcul n'écrit plus rien, et ce qu'il aurait écrit s'efface. */
+function still(gen, o) { return gen === privGen && !!ui && ui.owner === o; }
+function after(gen, o, value) {
+  if (still(gen, o)) return Promise.resolve(value);
+  return privWipe(o).then(function () { throw new Error('session'); });
+}
+/* Cinq minutes sans geste : le mode privé se referme et l'écran l'oublie, même sans personne pour le toucher. */
+function watchIdle() {
+  if (idleTimer !== null && G.clearTimeout) G.clearTimeout(idleTimer);
+  idleTimer = null;
+  if (!open_) return;
+  idleTimer = G.setTimeout(idleCheck, Math.max(1000, open_.at + P.idleMs - Date.now() + 1000));
+}
+function idleCheck() {
+  idleTimer = null;
+  if (!open_) return Promise.resolve(false);
+  if (Date.now() - open_.at < P.idleMs) { watchIdle(); return Promise.resolve(false); }
+  open_ = null;
+  return (ui && ui.owner ? render() : Promise.resolve(false)).then(function () { return true; });
+}
+function opened(o, k, salt, visits) {
+  open_ = visits.length ? { o: o, k: k, salt: salt, visits: visits, at: Date.now() } : null;
+  watchIdle();
+}
 /* Avec du réseau, sur le geste de l'agent : le mode privé du jour, chiffré aussitôt. Rend le nombre de visites gardées. */
 function privKeep(key, o, code) {
   if (!goodCode(code)) return Promise.reject(new Error('code'));
   if (!G.indexedDB) return Promise.reject(new Error(NO_STORE));
+  var gen = privGen;
   return call(key, R_PRIVE, 'POST').then(function (d) {
     if (!d || d.owner !== o || !d.pack || !Array.isArray(d.pack.visits)) throw new Error('réponse');
     var salt = G.crypto.getRandomValues(new Uint8Array(16));
     return keyOf(code, salt).then(function (k) {
-      return seal(o, k, salt, d.pack.visits, 0).then(function (kept) { open_ = { o: o, k: k, salt: salt, visits: kept, at: Date.now() }; return kept.length; });
+      if (!still(gen, o)) throw new Error('session');
+      return seal(o, k, salt, d.pack.visits).then(function (kept) { return after(gen, o, kept); }).then(function (kept) { opened(o, k, salt, kept); return kept.length; });
     });
   });
 }
 /* Ouvrir avec le code : un code faux compte ; au cinquième, tout est effacé. */
 function privOpen(o, code) {
+  var gen = privGen;
   return readPriv(o).then(function (r) {
     if (!r) return { ok: false, code: 'absent' };
     if (!goodCode(code)) return { ok: false, code: 'code' };
     var salt = unb64(r.salt);
     return keyOf(code, salt).then(function (k) {
-      return G.crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(r.iv) }, k, unb64(r.data)).then(function (pt) {
-        var visits = JSON.parse(new G.TextDecoder().decode(pt));
-        return seal(o, k, salt, Array.isArray(visits) ? visits : [], 0).then(function (kept) {
-          open_ = kept.length ? { o: o, k: k, salt: salt, visits: kept, at: Date.now() } : null;
-          return { ok: true, count: kept.length };
-        });
+      return Promise.all(r.items.map(function (it) {
+        return G.crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(it.iv) }, k, unb64(it.data)).then(function (pt) { return JSON.parse(new G.TextDecoder().decode(pt)); });
+      })).then(function (visits) {
+        return update(PRIV + ':' + o, function (now) { if (!now) return { value: null }; now.tries = 0; return { next: now, value: null }; })
+          .then(function () { return readPriv(o); })
+          .then(function (left) { return after(gen, o, left ? visits.filter(alive) : []); })
+          .then(function (kept) { opened(o, k, salt, kept); return { ok: true, count: kept.length }; });
       }, function () {
         // Compté d'un seul tenant : deux essais lancés ensemble comptent pour deux.
         return update(PRIV + ':' + o, function (now) {
@@ -281,9 +316,11 @@ function privVisits(o) {
   if (!open_ || open_.o !== o) return Promise.resolve(null);
   if (Date.now() - open_.at > P.idleMs) { open_ = null; return Promise.resolve(null); }
   open_.at = Date.now();
+  watchIdle();
   var mine = open_;
-  if (mine.visits.every(alive)) return Promise.resolve(mine.visits);
-  return seal(o, mine.k, mine.salt, mine.visits, 0).then(function (kept) { if (open_ === mine) { mine.visits = kept; if (!kept.length) open_ = null; } return kept; });
+  mine.visits = mine.visits.filter(alive);
+  if (!mine.visits.length) open_ = null;
+  return readPriv(o).then(function () { return mine.visits.length ? mine.visits : null; });
 }
 /* Une préparation avec réseau qui ne rend plus l'une des visites gardées (annulée, déplacée, passée à un autre) : tout
    le mode privé s'efface. */
@@ -292,10 +329,9 @@ function privCheck(o, pack) {
     if (!r) return null;
     var ids = {};
     (pack && Array.isArray(pack.appointments) ? pack.appointments : []).forEach(function (a) { ids[a.appointmentId] = true; });
-    return (r.ids || []).every(function (id) { return ids[id]; }) ? null : privWipe(o);
+    return r.items.every(function (it) { return ids[it.id]; }) ? null : privWipe(o);
   });
 }
-
 /* La photo [R277] : les mêmes calculs que le serveur. */
 function figures(img) {
   var w = img.width, h = img.height, l = img.luma, sum = 0, white = 0, i;
@@ -414,6 +450,7 @@ function prepare(key, show, back) {
 function stop() {
   // Le mode privé se referme ; il s'efface à la sortie, plus bas [R676].
   if (ui && ui.owner) last = ui.owner;
+  privGen += 1;
   open_ = null;
   ui = null;
   var root = $('hors-ligne');
@@ -619,7 +656,7 @@ function shotTools(li, a, s, o) {
 }
 /* La sortie efface le mode privé de l'agent qui sort, même si l'écran l'a déjà oublié [R676]. */
 var last = null;
-function sortie() { var o = (ui && ui.owner) || last; last = null; open_ = null; return o ? privWipe(o) : Promise.resolve(); }
+function sortie() { var o = (ui && ui.owner) || last; last = null; privGen += 1; open_ = null; return o ? privWipe(o) : Promise.resolve(); }
 // Au retour du réseau : la boîte part ; une préparation qui n'avait pas abouti est refaite.
 if (G.addEventListener) G.addEventListener('online', function () { if (ui && ui.key) (ui.owner ? sync(ui.key) : prepare(ui.key, ui.show, ui.back)); });
 
@@ -633,7 +670,7 @@ G.AimmoHorsLigne = Object.freeze({
   pending: function (o) { o = o || (ui && ui.owner); return o ? box(o).then(function (s) { return s.pending.slice(); }) : Promise.resolve([]); },
   refused: function (o) { o = o || (ui && ui.owner); return o ? box(o).then(function (s) { return s.refused.slice(); }) : Promise.resolve([]); },
   readPack: readPack,
-  prive: Object.freeze({ garder: privKeep, ouvrir: privOpen, visites: privVisits, verrouiller: privLock, effacer: privWipe, lire: readPriv }),
+  prive: Object.freeze({ garder: privKeep, ouvrir: privOpen, visites: privVisits, verrouiller: privLock, effacer: privWipe, lire: readPriv, veille: idleCheck }),
   photo: Object.freeze({ figures: figures, judge: judge, fuse: fuse, hdr: hdr, encode: encode, reduce: reduce })
 });
 })();
