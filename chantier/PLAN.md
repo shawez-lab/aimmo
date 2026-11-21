@@ -999,7 +999,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H54).
 
 ### AU091 · Une réduction d’honoraires après compromis laisse ma commission prévue bloquée
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M13 Pilotage et finances ; audit A091 (majeur), endroit : C/pilotage/commissions.ts, commission prévue figée.
 - Constat de l'audit : Une réduction d’honoraires après compromis laisse ma commission prévue bloquée, sans parcours de régularisation métier décrit.
@@ -1035,7 +1035,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU094b · Une relance remplacée après un paiement partiel ne consomme pas l'un des trois rangs
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU094
 - Cahier : M13 Pilotage et finances ; relecture Codex de #751 (P2), endroit : C/facturation/relances.ts, `MAX_REMINDERS`.
 - Constat : chaque relance fermée par une nouvelle part (`paiement_partiel`) prend un rang ; après trois remplacements, plus aucune relance ne se prépare, même si un reste dû n'a jamais été relancé.
@@ -1142,12 +1142,21 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU103 · Le HDR reste un calcul sur prises fournies
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-21)
+- Reste : fusionnée (#763, `c0bc3452`). Constat confirmé (HDR calculé sur prises réduites seulement, aucune image entière). `packages/core/src/hors-ligne/image.ts`, `POST /v1/hors-ligne/photos/<appareil>/<saisie>`, migration `4085`, R677 en service, R277 complétée. Caméra : trois lumières prises par l'appli quand `exposureCompensation` existe, sinon deux prises de l'agent ; fusion en couleurs à la taille de la prise (1 280 à 2 048 points), JPEG relu et jugé ; image gardée sur le téléphone jusqu'au rangement ; le serveur rejuge l'image réduite, vérifie la fusion, puis au dépôt lit le JPEG de base jusqu'à ses blocs et refuse un fichier qui ne montre pas l'image jugée. Codex : 3 P0 corrigés (image partagée effacée trop tôt, JPEG non validé, fichier non lié à l'image jugée), puis rien à signaler ; 1 P1 reporté en AU103b (branchement du rangement, socle). Test HX34 rendu sûr (un identifiant tiré au hasard contenait « 0042 »). Jamais vu : la photo HDR contrôlée sur le JPEG réellement gardé, rangée seulement si le fichier reçu montre l'image jugée. Tant que AU103b n'est pas fait, la route répond 503 et les images restent sur le téléphone, sans perte.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A103 (majeur), endroit : chantier/PLAN.md, HX12 ; C/hors-ligne/photo.ts.
 - Constat de l'audit : Le HDR reste un calcul sur prises fournies, sans capture multi-exposition ni dépôt de l’image entière raccordés au téléphone.
 - Objectif : Depuis la caméra réelle, l’agent produit et dépose une image entière exploitable, avec contrôle de qualité sur le résultat conservé.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU103b · Brancher le rangement des images entières des visites
+- Statut : à faire
+- Qui : Claude, voie 1 (socle : `app.ts`, `worker.ts`) · Relecture : normale · Dépend de : AU103
+- Cahier : Le produit (téléphone, hors connexion) ; audit A103.
+- Objectif : `horsLigneRoutesDef()` (`packages/api/src/app.ts`) passe aux routes hors ligne un `images` tiré de `env.MEDIA.put` (comme `mediaUploads` du Studio), pour que `POST /v1/hors-ligne/photos/...` range réellement l'image entière (R677). Sans `MEDIA`, `images` reste `null` (503, l'image reste sur le téléphone).
+- Critères : par l'adaptateur réel de l'application, une image annoncée est rangée dans `MEDIA` sous `visites/` (test) ; sans `MEDIA`, 503 sans rien écrire (test).
 - Attend : rien.
 
 ### AU104 · Même le paquet hors ligne prévu exclut l’adresse et le téléphone

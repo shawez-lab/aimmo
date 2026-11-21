@@ -8,8 +8,12 @@
  * - la boîte d'envoi : chaque note, photo ou pièce dite sans objet, avec son identifiant tiré une fois pour toutes. Une
  *   saisie ne quitte la boîte que sur une réponse du serveur qui la nomme ; fermer et rouvrir l'application ne perd rien,
  *   et le même envoi rejoué ne fait aucun doublon [R276].
- * La photo est faite de deux prises de lumières différentes, réduites, fondues et jugées ici même : trop sombre,
- * brûlée ou floue, elle est refusée avant que l'agent quitte la pièce ; le serveur refait le même calcul [R277].
+ * La photo est faite de deux ou trois prises de lumières différentes, réduites, fondues et jugées ici même : trop
+ * sombre, brûlée ou floue, elle est refusée avant que l'agent quitte la pièce ; le serveur refait le même calcul [R277].
+ * Quand la caméra sait régler sa lumière, l'appli prend elle-même les trois prises, sombre, moyenne et claire, sans que
+ * l'agent bouge ; sinon, l'agent fait deux prises. Les prises sont fondues en couleurs, à leur taille, en un JPEG ; ce
+ * JPEG est relu et c'est lui que le contrôle juge. Il est gardé sur le téléphone jusqu'à ce que le serveur l'ait rangé,
+ * après sa saisie [R677].
  *
  * Les calculs de la photo et la boîte reprennent ceux de `packages/core/src/hors-ligne/` : un test vérifie qu'ils
  * rendent les mêmes verdicts. Pas d'accent grave dans ce texte : il est servi tel quel.
@@ -19,7 +23,9 @@ import { horsLigne as horsLigneCore } from '@aimmo/core';
 export const HORS_LIGNE_PATH = '/app/hors-ligne.js';
 /** La base IndexedDB de l'appareil et ses deux clés. */
 export const HORS_LIGNE_DB = Object.freeze({ name: 'aimmo-hors-ligne', store: 'cles', boite: 'boite', paquet: 'paquet', prive: 'prive' });
-export const HORS_LIGNE_ROUTES = Object.freeze({ paquet: '/v1/hors-ligne/paquet', saisies: '/v1/hors-ligne/saisies', prive: '/v1/hors-ligne/prive' });
+export const HORS_LIGNE_ROUTES = Object.freeze({ paquet: '/v1/hors-ligne/paquet', saisies: '/v1/hors-ligne/saisies', prive: '/v1/hors-ligne/prive', photos: '/v1/hors-ligne/photos' });
+/** L'image entière [R677] : les bornes du serveur, reprises telles quelles. */
+export const IMAGE = Object.freeze({ minLong: horsLigneCore.IMAGE_MIN_LONG_SIDE, maxSide: horsLigneCore.IMAGE_MAX_SIDE, maxBytes: horsLigneCore.IMAGE_MAX_BYTES, type: horsLigneCore.IMAGE_TYPE, maxGap: horsLigneCore.KEPT_MAX_MEAN_GAP });
 /** Le mode privé [R676] : le code de l'agent ne quitte jamais l'appareil ; la clé en est tirée par PBKDF2. */
 export const PRIVE = Object.freeze({ iterations: 310_000, minDigits: horsLigneCore.PRIVATE_CODE_MIN_DIGITS, maxTries: horsLigneCore.PRIVATE_MAX_TRIES, idleMs: horsLigneCore.PRIVATE_IDLE_LOCK_MS });
 
@@ -29,6 +35,7 @@ var G = typeof self !== 'undefined' ? self : globalThis;
 var DB = ${JSON.stringify(HORS_LIGNE_DB.name)}, STORE = ${JSON.stringify(HORS_LIGNE_DB.store)}, BOITE = ${JSON.stringify(HORS_LIGNE_DB.boite)}, PAQUET = ${JSON.stringify(HORS_LIGNE_DB.paquet)};
 var R_PAQUET = ${JSON.stringify(HORS_LIGNE_ROUTES.paquet)}, R_SAISIES = ${JSON.stringify(HORS_LIGNE_ROUTES.saisies)}, R_PRIVE = ${JSON.stringify(HORS_LIGNE_ROUTES.prive)};
 var PRIV = ${JSON.stringify(HORS_LIGNE_DB.prive)}, P = ${JSON.stringify(PRIVE)};
+var R_PHOTOS = ${JSON.stringify(HORS_LIGNE_ROUTES.photos)}, IMG = ${JSON.stringify(IMAGE)};
 var MIN_SIDE = 32, MAX_SIDE = 128, MAX_NOTE = 2000;
 var T = { minBrightness: 60, maxClipped: 0.2, minSharpness: 40, minExposures: 2, minExposureSpread: 25 };
 var ADVICE = {
@@ -40,7 +47,9 @@ var REASONS = [['piece_absente', 'Pièce absente'], ['acces_refuse', 'Accès ref
 var CODES = {
   conflit: 'déjà envoyée avec un autre contenu', heure_invalide: 'heure du téléphone fausse', pas_son_rendez_vous: 'pas votre rendez-vous',
   rendez_vous_annule: 'rendez-vous annulé', bad_note: 'note vide ou trop longue', bad_shot: 'photo hors de la liste', bad_reason: 'raison inconnue',
-  prises_invalides: 'photo incomplète', pas_hdr: 'une seule lumière', trop_sombre: 'trop sombre', brulee: 'brûlée', floue: 'floue', sans_bien: 'sans bien'
+  prises_invalides: 'photo incomplète', pas_hdr: 'une seule lumière', trop_sombre: 'trop sombre', brulee: 'brûlée', floue: 'floue', sans_bien: 'sans bien',
+  image_manquante: 'photo sans image entière', image_invalide: 'image entière incomplète', image_trop_petite: 'image trop petite', image_differente: 'image abîmée en route',
+  photo_inconnue: 'photo inconnue du serveur'
 };
 
 /* Le rangement : IndexedDB, ou la mémoire quand l'appareil n'en a pas (rien ne survit alors à la fermeture). */
@@ -87,19 +96,22 @@ function del(k) {
   return Promise.resolve();
 }
 /* Lire et réécrire d'un seul tenant, dans une seule transaction : deux onglets ou deux fenêtres ne s'écrasent jamais.
-   fn rend { next, value } ; next absent : rien n'est écrit [R276]. */
+   fn rend { next, value, also } ; next absent : rien n'est écrit ; also : d'autres clés écrites dans la même
+   transaction, [clé, valeur] [R276, R677]. */
 function update(k, fn) {
   var p = tx('readwrite', function (s, out) {
     var q = s.get(k);
     q.onsuccess = function () {
       var r = fn(q.result === undefined ? null : clone(q.result));
       if (r.next !== undefined) s.put(clone(r.next), k);
+      (r.also || []).forEach(function (kv) { s.put(kv[1], kv[0]); });
       out.value = r.value;
     };
   });
   if (p) return p;
   var r = fn(clone(mem[k]));
   if (r.next !== undefined) mem[k] = clone(r.next);
+  (r.also || []).forEach(function (kv) { mem[kv[0]] = kv[1]; });
   return Promise.resolve(r.value);
 }
 
@@ -108,12 +120,29 @@ function update(k, fn) {
    lecture et chaque écriture passent par la base, d'un seul tenant. */
 var flushing = {};
 function uuid() { return G.crypto.randomUUID(); }
-function fresh(s) { return s || { deviceId: uuid(), nextSeq: 1, pending: [], refused: [] }; }
-function box(o) { return update(BOITE + ':' + o, function (s) { return s ? { value: s } : (s = fresh(s), { next: s, value: s }); }); }
+function fresh(s) { s = s || { deviceId: uuid(), nextSeq: 1, pending: [], refused: [] }; if (!Array.isArray(s.uploads)) s.uploads = []; return s; }
+/* L'image entière d'une photo, gardée à part sous son empreinte, jusqu'à ce que le serveur l'ait rangée [R677]. */
+function imgKey(o, sha) { return 'image:' + o + ':' + sha; }
+/* Une image n'est effacée que si plus aucune saisie en attente ni aucun envoi ne la nomme : deux photos faites des mêmes
+   prises partagent la même image. La boîte est relue dans la même transaction que l'effacement [R677]. */
+function named(b, sha) {
+  return b.pending.some(function (op) { return op.kind === 'visite.photo' && op.payload && op.payload.image && op.payload.image.sha256 === sha; }) ||
+    b.uploads.some(function (u) { return u.sha256 === sha; });
+}
+function release(o, sha) {
+  var p = tx('readwrite', function (s) {
+    var q = s.get(BOITE + ':' + o);
+    q.onsuccess = function () { if (!named(fresh(q.result === undefined ? null : q.result), sha)) s['delete'](imgKey(o, sha)); };
+  });
+  if (p) return p;
+  if (!named(fresh(clone(mem[BOITE + ':' + o])), sha)) delete mem[imgKey(o, sha)];
+  return Promise.resolve();
+}
+function box(o) { return update(BOITE + ':' + o, function (s) { return s ? { value: fresh(s) } : (s = fresh(s), { next: s, value: s }); }); }
 /* o : la marque de l'agent dont l'écran a reçu le geste, prise avant tout calcul ; une saisie va toujours dans sa boîte à
    lui, même si un autre agent s'est connecté entre-temps [R16, R276]. */
 var NO_STORE = 'Cet appareil ne peut rien garder sans réseau : rien n’a été gardé. Refaites-le quand le réseau revient.';
-function add(o, kind, appointmentId, payload) {
+function add(o, kind, appointmentId, payload, also) {
   if (!o) return Promise.reject(new Error('aucun agent'));
   // Sans IndexedDB, une saisie ne survivrait pas à la fermeture : elle est refusée, jamais dite gardée [R276].
   if (!G.indexedDB) return Promise.reject(new Error(NO_STORE));
@@ -121,7 +150,7 @@ function add(o, kind, appointmentId, payload) {
   return update(BOITE + ':' + o, function (s) {
     s = fresh(s);
     var op = { opId: id, seq: s.nextSeq, kind: kind, appointmentId: appointmentId, writtenAt: at, payload: payload };
-    return { next: { deviceId: s.deviceId, nextSeq: s.nextSeq + 1, pending: s.pending.concat([op]), refused: s.refused }, value: op };
+    return { next: { deviceId: s.deviceId, nextSeq: s.nextSeq + 1, pending: s.pending.concat([op]), refused: s.refused, uploads: s.uploads }, value: op, also: also };
   }).then(function (op) {
     // Gardée : elle part tout de suite si le réseau est là, même s'il est revenu pendant le contrôle de la photo [R276].
     if (ui && ui.owner === o) sync(ui.key);
@@ -151,16 +180,64 @@ function doFlush(o, key, send, limit) {
         // La boîte relue et réécrite d'un seul tenant : une saisie ajoutée pendant l'envoi, ici ou ailleurs, reste dedans.
         return update(BOITE + ':' + o, function (now) {
           now = fresh(now);
-          var keep = [], gone = [];
+          var keep = [], gone = [], ups = now.uploads.slice();
           now.pending.forEach(function (op) {
             var r = by[op.opId];
-            if (r && r.outcome === 'applique') { sent++; applied.push(op); }
+            // Reçue, une photo laisse son image entière à envoyer, à part [R677].
+            if (r && r.outcome === 'applique') { sent++; applied.push(op); if (op.kind === 'visite.photo' && op.payload && op.payload.image) ups.push({ opId: op.opId, sha256: op.payload.image.sha256 }); }
             else if (r && r.outcome === 'refuse') { refused++; gone.push({ opId: op.opId, seq: op.seq, kind: op.kind, appointmentId: op.appointmentId, writtenAt: op.writtenAt, payload: op.payload, code: typeof r.code === 'string' ? r.code : 'refuse', rule: typeof r.rule === 'string' ? r.rule : null }); }
             else keep.push(op);
           });
-          return { next: { deviceId: now.deviceId, nextSeq: now.nextSeq, pending: keep, refused: now.refused.concat(gone) }, value: keep.length };
+          return { next: { deviceId: now.deviceId, nextSeq: now.nextSeq, pending: keep, refused: now.refused.concat(gone), uploads: ups }, value: { left: keep.length, gone: gone } };
+        }).then(function (v) {
+          // Une photo refusée n'ira jamais au serveur : son image entière ne sert plus à rien sur le téléphone.
+          return Promise.all(v.gone.filter(function (g) { return g.kind === 'visite.photo' && g.payload && g.payload.image; }).map(function (g) { return release(o, g.payload.image.sha256); })).then(function () { return v.left; }, function () { return v.left; });
         }).then(function (left) { return named ? step() : done(false, left); });
       });
+    });
+  }
+  return step();
+}
+/* Les images entières des photos reçues, une à une, après la boîte [R677]. Rangée par le serveur : l'image s'efface du
+   téléphone. Refusée (abîmée, inconnue) : elle est dite à l'écran et reste sur le téléphone. Sans réponse, ou le
+   rangement fermé : elle reste et repartira au prochain envoi. */
+var uploading = {};
+function sendImages(o, key) {
+  if (!uploading[o]) uploading[o] = doImages(o, key).then(function (r) { delete uploading[o]; return r; }, function (e) { delete uploading[o]; throw e; });
+  return uploading[o];
+}
+function postImage(key, deviceId, opId, bytes) {
+  var init = { method: 'POST', headers: { authorization: 'Bearer ' + key, 'content-type': IMG.type }, body: bytes, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer' };
+  return G.fetch(R_PHOTOS + '/' + encodeURIComponent(deviceId) + '/' + encodeURIComponent(opId), init).then(function (r) {
+    return r.json().then(function (b) { return { status: r.status, body: b }; }, function () { return { status: r.status, body: null }; });
+  });
+}
+function doImages(o, key) {
+  var sent = 0, refused = 0;
+  function settle(u, outcome) {
+    return update(BOITE + ':' + o, function (now) {
+      now = fresh(now);
+      var gone = outcome && outcome !== 'ok' ? [{ opId: u.opId, kind: 'visite.image', code: outcome, rule: 'R677' }] : [];
+      return { next: { deviceId: now.deviceId, nextSeq: now.nextSeq, pending: now.pending, refused: now.refused.concat(gone), uploads: now.uploads.filter(function (x) { return x.opId !== u.opId; }) }, value: true };
+    }).then(function () {
+      if (outcome === 'ok') { sent++; return release(o, u.sha256).then(function () { return true; }); }
+      if (outcome) refused++;
+      return true;
+    });
+  }
+  function step() {
+    return box(o).then(function (s) {
+      var u = s.uploads[0];
+      if (!u || !live(o, key)) return { sent: sent, refused: refused, left: s.uploads.length };
+      return get(imgKey(o, u.sha256)).then(function (data) {
+        // L'image n'est plus sur le téléphone : rien à envoyer pour elle.
+        if (typeof data !== 'string') return settle(u, null);
+        return postImage(key, s.deviceId, u.opId, unb64(data)).then(function (r) {
+          if (r.status === 200 && r.body && r.body.ok) return settle(u, 'ok');
+          if (r.status === 400 || r.status === 404 || r.status === 409 || r.status === 413 || r.status === 415) return settle(u, (r.body && typeof r.body.code === 'string' && r.body.code) || 'refuse');
+          return false;
+        }, function () { return false; });
+      }).then(function (go) { return go ? step() : box(o).then(function (b) { return { sent: sent, refused: refused, left: b.uploads.length }; }); });
     });
   }
   return step();
@@ -204,7 +281,7 @@ function tag(key) {
    minutes sans geste ; chaque visite effacée deux heures après sa fin, tout effacé à minuit, à la sortie, après cinq codes
    faux, ou quand une préparation avec réseau ne rend plus l'une de ses visites. */
 var open_ = null, privGen = 0, idleTimer = null;
-function b64(bytes) { var s = '', a = new Uint8Array(bytes); for (var i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return G.btoa(s); }
+function b64(bytes) { var s = '', a = new Uint8Array(bytes); for (var i = 0; i < a.length; i += 8192) s += String.fromCharCode.apply(null, a.subarray(i, i + 8192)); return G.btoa(s); }
 function unb64(t) { var s = G.atob(t), a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; }
 function goodCode(c) { return typeof c === 'string' && new RegExp('^[0-9]{' + P.minDigits + ',12}$').test(c); }
 function keyOf(code, salt) {
@@ -423,6 +500,97 @@ function reduce(file, size) {
   });
 }
 
+/* L'image entière [R677] : les prises fondues en couleurs, à leur taille, puis un JPEG relu pour le contrôle. */
+function hex(buf) { var h = '', a = new Uint8Array(buf); for (var i = 0; i < a.length; i++) h += (a[i] < 16 ? '0' : '') + a[i].toString(16); return h; }
+function fitFull(w, h) { var s = Math.min(1, IMG.maxSide / Math.max(w, h, 1)); return { width: Math.max(1, Math.round(w * s)), height: Math.max(1, Math.round(h * s)) }; }
+function canvas(w, h) { var c = G.OffscreenCanvas ? new G.OffscreenCanvas(w, h) : G.document.createElement('canvas'); c.width = w; c.height = h; return c; }
+/* Chaque point : la moyenne des prises, chacune pesée par sa bonne exposition à cet endroit (sa lumière arrondie, comme
+   les prises réduites), comme fuse(). */
+var WEIGHTS = null;
+function fuseColor(layers, n) {
+  if (!WEIGHTS) { WEIGHTS = new Float64Array(256); for (var v = 0; v < 256; v++) WEIGHTS[v] = weight(v); }
+  var out = new Uint8ClampedArray(n * 4);
+  for (var i = 0; i < n; i++) {
+    var j = 4 * i, r = 0, g = 0, b = 0, den = 0;
+    for (var k = 0; k < layers.length; k++) {
+      var d = layers[k], q = WEIGHTS[Math.round(0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2])];
+      r += q * d[j]; g += q * d[j + 1]; b += q * d[j + 2]; den += q;
+    }
+    out[j] = Math.round(r / den); out[j + 1] = Math.round(g / den); out[j + 2] = Math.round(b / den); out[j + 3] = 255;
+  }
+  return out;
+}
+function toJpeg(c, quality) {
+  if (c.convertToBlob) return c.convertToBlob({ type: IMG.type, quality: quality });
+  return new Promise(function (ok, ko) { c.toBlob(function (b) { if (b) ok(b); else ko(new Error('jpeg')); }, IMG.type, quality); });
+}
+function develop(files) {
+  return Promise.all(files.map(function (f) { return G.createImageBitmap(f); })).then(function (bmps) {
+    var d = fitFull(bmps[0].width, bmps[0].height), c = canvas(d.width, d.height), g = c.getContext('2d'), layers = [];
+    bmps.forEach(function (b) { g.drawImage(b, 0, 0, d.width, d.height); layers.push(g.getImageData(0, 0, d.width, d.height).data); if (b.close) b.close(); });
+    var img = g.getImageData(0, 0, d.width, d.height);
+    img.data.set(fuseColor(layers, d.width * d.height));
+    g.putImageData(img, 0, 0);
+    // Trop lourd à 0,9 : une seconde fois, un peu plus compressé.
+    return toJpeg(c, 0.9).then(function (b) { return b.size > IMG.maxBytes ? toJpeg(c, 0.75) : b; }).then(function (blob) { return { blob: blob, width: d.width, height: d.height }; });
+  });
+}
+function gap(a, b) { var s = 0; for (var i = 0; i < a.luma.length; i++) s += Math.abs(a.luma[i] - b.luma[i]); return Math.round((s / a.luma.length) * 100) / 100; }
+/* La photo entière, de prises déjà décodables : rend { ok, payload, bytes, sha } ou { ok: false, advice }. Le contrôle
+   porte sur le JPEG gardé, relu [R677], après celui des prises [R277]. */
+function photo(files) {
+  var whole = 'La photo n’a pas été prise en entier : reprenez-la.';
+  return reduce(files[0]).then(function (one) {
+    return Promise.all(files.slice(1).map(function (f) { return reduce(f, { width: one.width, height: one.height }); })).then(function (rest) { return [one].concat(rest); });
+  }).then(function (list) {
+    var r = hdr(list);
+    if (!r.ok) return { ok: false, advice: r.advice };
+    return develop(files).then(function (d) {
+      if (Math.max(d.width, d.height) < IMG.minLong) return { ok: false, advice: 'Image trop petite : prenez la photo avec l’appareil photo arrière, sans zoom.' };
+      if (d.blob.size > IMG.maxBytes) return { ok: false, advice: whole };
+      return reduce(d.blob, { width: list[0].width, height: list[0].height }).then(function (kept) {
+        var v = judge(kept);
+        if (!v.ok) return { ok: false, advice: v.advice };
+        if (gap(kept, fuse(list)) > IMG.maxGap) return { ok: false, advice: whole };
+        return d.blob.arrayBuffer().then(function (buf) {
+          var bytes = new Uint8Array(buf);
+          return G.crypto.subtle.digest('SHA-256', bytes).then(function (h) {
+            var sha = hex(h);
+            return { ok: true, sha: sha, bytes: bytes, payload: { exposures: list.map(encode), image: { sha256: sha, width: d.width, height: d.height, bytes: bytes.length, kept: encode(kept) } } };
+          });
+        });
+      });
+    });
+  });
+}
+/* Les trois prises par la caméra elle-même, quand elle sait régler sa lumière : sombre, moyenne, claire, sans bouger. */
+var cam = null;
+function canBracket() { var n = G.navigator; return !!(n && n.mediaDevices && n.mediaDevices.getUserMedia && G.ImageCapture); }
+function closeCam() { if (cam) { var c = cam; cam = null; try { c.stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) { /* déjà fermée */ } } }
+function openCam() {
+  closeCam();
+  return G.navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 4032 }, height: { ideal: 3024 } }, audio: false }).then(function (stream) {
+    var track = stream.getVideoTracks()[0], caps = track && track.getCapabilities ? track.getCapabilities() : {}, ec = caps && caps.exposureCompensation;
+    cam = { stream: stream, track: track };
+    if (!track || !ec || !(ec.max > ec.min)) { closeCam(); return null; }
+    var mid = Math.max(ec.min, Math.min(ec.max, 0));
+    cam.steps = [ec.min, mid, ec.max].filter(function (v, i, a) { return a.indexOf(v) === i; });
+    return cam;
+  });
+}
+/* La lumière réglée, attendue jusqu'à ce que la caméra dise l'avoir prise (une seconde au plus). */
+function settled(track, v, tries) {
+  var st = track.getSettings ? track.getSettings() : {};
+  if (typeof st.exposureCompensation !== 'number' || Math.abs(st.exposureCompensation - v) < 0.01 || tries <= 0) return Promise.resolve();
+  return new Promise(function (ok) { G.setTimeout(ok, 100); }).then(function () { return settled(track, v, tries - 1); });
+}
+function bracket(c) {
+  var shots = [], ic = new G.ImageCapture(c.track);
+  return c.steps.reduce(function (p, v) {
+    return p.then(function () { return c.track.applyConstraints({ advanced: [{ exposureCompensation: v }] }); }).then(function () { return settled(c.track, v, 10); }).then(function () { return ic.takePhoto(); }).then(function (b) { shots.push(b); });
+  }, Promise.resolve()).then(function () { return shots; });
+}
+
 /* L'écran. */
 var doc = G.document, ui = null;
 function $(id) { return doc.getElementById(id); }
@@ -438,7 +606,8 @@ function call(key, path, method, body) {
     return r.json().then(function (b) { if (!b || !b.data) throw new Error('réponse'); return b.data; });
   });
 }
-var limit = 10;
+// Le même que BATCH_LIMIT du serveur, tant que le paquet ne l’a pas dit (test).
+var limit = 8;
 function sender(key) { return function (batch) { return call(key, R_SAISIES, 'POST', batch); }; }
 
 function sync(key) {
@@ -447,7 +616,12 @@ function sync(key) {
   var o = ui.owner;
   // Après l'envoi, seul l'état change à l'écran : une note en cours ou une première prise ne sont jamais effacées. Une
   // saisie refusée redessine l'écran, pour qu'elle redevienne à faire.
-  return flush(o, key, sender(key), limit).then(function (r) { return mark(o, r.applied).then(function () { if (ui && ui.owner === o) (r.refused ? render() : status()); return r; }); }).then(null, function () { return null; });
+  return flush(o, key, sender(key), limit).then(function (r) {
+    return mark(o, r.applied).then(function () { return r.offline ? null : sendImages(o, key).then(null, function () { return null; }); }).then(function (im) {
+      if (ui && ui.owner === o) (r.refused || (im && im.refused) ? render() : status());
+      return r;
+    });
+  }).then(null, function () { return null; });
 }
 /** Avec du réseau : le paquet du jour est préparé et gardé, puis la boîte part [R278, R276]. */
 function prepare(key, show, back) {
@@ -480,6 +654,7 @@ function stop() {
   privGen += 1;
   open_ = null;
   ui = null;
+  closeCam();
   var root = $('hors-ligne');
   if (root) clear(root);
 }
@@ -514,9 +689,11 @@ function entry() {
   home.appendChild(b);
 }
 function said(mine, box) {
-  var n = box.pending.length;
-  mine.etat.textContent = n ? n + (n > 1 ? ' saisies attendent' : ' saisie attend') + ' le réseau : elles partiront seules.' : 'Tout est envoyé.';
-  mine.send.hidden = !n;
+  var n = box.pending.length, m = (box.uploads || []).length;
+  var t = n ? n + (n > 1 ? ' saisies attendent' : ' saisie attend') + ' le réseau : elles partiront seules.' : '';
+  if (m) t += (t ? ' ' : '') + m + (m > 1 ? ' images entières attendent' : ' image entière attend') + ' d’être rangées : elles restent sur le téléphone.';
+  mine.etat.textContent = t || 'Tout est envoyé.';
+  mine.send.hidden = !(n || m);
 }
 /* L'état de la boîte seul, sans toucher au reste de l'écran. */
 function status() {
@@ -532,6 +709,7 @@ function render() {
   return Promise.all([readPack(o), box(o), readPriv(o).then(null, function () { return null; }), privVisits(o).then(null, function () { return null; })]).then(function (got) {
     if (ui !== mine) return false;
     var p = got[0], box = got[1];
+    closeCam();
     clear(root);
     mine.slots = {};
     // Un geste de l'agent sur l'écran (toucher, taper) repousse le verrouillage ; rien d'autre ne le fait.
@@ -677,7 +855,48 @@ function card(a, pending, o, mine) {
 }
 function shotTools(li, a, s, o) {
   if (s.advice) li.appendChild(el('p', s.advice, 'doux'));
-  var said = el('p', '', 'doux'), shots = [null, null];
+  var said = el('p', '', 'doux'), shots = [null, null], busy = false;
+  function keep(files) {
+    if (busy) return;
+    busy = true;
+    said.textContent = 'Photo en cours de contrôle…';
+    // Sans IndexedDB, l'image entière ne survivrait pas : rien n'est gardé [R276].
+    if (!G.indexedDB) { busy = false; shots = [null, null]; said.textContent = NO_STORE; return; }
+    photo(files).then(function (r) {
+      if (!r.ok) { busy = false; shots = [null, null]; said.textContent = 'Photo refusée. ' + r.advice; return; }
+      var payload = { shot: s.key, exposures: r.payload.exposures, image: r.payload.image };
+      // L'image et la saisie qui la nomme, écrites d'un seul tenant : jamais l'une sans l'autre [R677].
+      return add(o, 'visite.photo', a.appointmentId, payload, [[imgKey(o, r.sha), b64(r.bytes)]]).then(function () { busy = false; return render(); }, function () {
+        busy = false;
+        shots = [null, null];
+        said.textContent = NO_STORE;
+      });
+    }, function () { busy = false; shots = [null, null]; said.textContent = 'Photo illisible : reprenez-la.'; });
+  }
+  if (canBracket()) {
+    var view = el('div', '', 'camera');
+    li.appendChild(btn('Photo en trois lumières', function () {
+      clear(view);
+      said.textContent = 'Caméra en cours d’ouverture…';
+      openCam().then(function (c) {
+        if (!c) { said.textContent = 'Cette caméra ne règle pas sa lumière : faites les deux prises ci-dessous.'; return; }
+        var v = el('video');
+        v.setAttribute('playsinline', '');
+        v.setAttribute('muted', '');
+        v.setAttribute('autoplay', '');
+        v.setAttribute('aria-label', 'Ce que voit la caméra, ' + s.label);
+        v.srcObject = c.stream;
+        view.appendChild(v);
+        view.appendChild(btn('Déclencher, sans bouger', function () {
+          said.textContent = 'Trois prises en cours : ne bougez pas.';
+          bracket(c).then(function (list) { closeCam(); clear(view); keep(list); }, function () { closeCam(); clear(view); said.textContent = 'La caméra n’a pas pris les trois lumières : faites les deux prises ci-dessous.'; });
+        }));
+        view.appendChild(btn('Fermer la caméra', function () { closeCam(); clear(view); said.textContent = ''; }, 'secondaire'));
+        said.textContent = 'Cadrez la pièce, puis déclenchez.';
+      }, function () { said.textContent = 'Caméra refusée : faites les deux prises ci-dessous.'; });
+    }));
+    li.appendChild(view);
+  }
   function input(i, label) {
     var f = el('input');
     f.setAttribute('type', 'file');
@@ -686,20 +905,10 @@ function shotTools(li, a, s, o) {
     f.setAttribute('aria-label', label + ', ' + s.label);
     f.addEventListener('change', function () {
       shots[i] = f.files && f.files[0] ? f.files[0] : null;
-      if (shots[0] && shots[1]) keep();
+      if (shots[0] && shots[1]) keep(shots.slice());
     });
     li.appendChild(el('span', label));
     li.appendChild(f);
-  }
-  function keep() {
-    said.textContent = 'Photo en cours de contrôle…';
-    reduce(shots[0]).then(function (one) {
-      return reduce(shots[1], { width: one.width, height: one.height }).then(function (two) { return [one, two]; });
-    }).then(function (list) {
-      var r = hdr(list);
-      if (!r.ok) { shots = [null, null]; said.textContent = 'Photo refusée. ' + r.advice; return; }
-      return add(o, 'visite.photo', a.appointmentId, { shot: s.key, exposures: list.map(encode) }).then(render, function () { shots = [null, null]; said.textContent = NO_STORE; });
-    }, function () { said.textContent = 'Photo illisible : reprenez-la.'; });
   }
   input(0, '1re prise, vers la fenêtre');
   input(1, '2e prise, vers le coin sombre');
@@ -731,7 +940,9 @@ G.AimmoHorsLigne = Object.freeze({
   refused: function (o) { o = o || (ui && ui.owner); return o ? box(o).then(function (s) { return s.refused.slice(); }) : Promise.resolve([]); },
   readPack: readPack,
   prive: Object.freeze({ toucher: privTouch, garder: privKeep, ouvrir: privOpen, visites: privVisits, verrouiller: privLock, effacer: privWipe, lire: readPriv, veille: idleCheck }),
-  photo: Object.freeze({ figures: figures, judge: judge, fuse: fuse, hdr: hdr, encode: encode, reduce: reduce })
+  uploads: function (o) { o = o || (ui && ui.owner); return o ? box(o).then(function (s) { return s.uploads.slice(); }) : Promise.resolve([]); },
+  images: function (o) { o = o || (ui && ui.owner); return o ? sendImages(o, ui && ui.key) : Promise.resolve(null); },
+  photo: Object.freeze({ figures: figures, judge: judge, fuse: fuse, hdr: hdr, encode: encode, reduce: reduce, fuseColor: fuseColor, develop: develop, whole: photo, gap: gap })
 });
 })();
 `;

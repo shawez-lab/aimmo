@@ -1603,3 +1603,9 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 15:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 12:53 par une autre séance voie 2, active : push sur chantier/AU103 à 15:30)
 - 2026-11-21 16:10 · AU036 · publications réelles sur Facebook et Instagram du réseau, lien relu, échecs actionnables, issue inconnue jamais refaite, retrait à l'annulation (R134, R42) ; Codex 8 P0 et 2 P1 corrigés, puis rien ; vérification GitHub verte ; fusionnée (#762, 6e701665) · prochaine : AU037
 - 2026-11-21 16:12 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU037
+- 2026-11-21 16:55 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 12:53 par une autre séance voie 2, active : push sur chantier/AU103 à 16:44)
+- 2026-11-21 17:18 · AU103 · photo HDR entière : trois lumières prises par la caméra, fusion en couleurs à la taille de la prise, JPEG relu et jugé, gardé sur le téléphone puis rangé seulement s'il montre l'image jugée ; R677 ; Codex 3 P0 corrigés, 1 P1 reporté en AU103b (socle, voie 1) ; fusionnée (#763, c0bc3452) · prochaine : AU106
+- 2026-11-21 17:18 · VOIE 2 : relance refusée, question 2 (la séance voie 2 de 11:53 n'a rien produit)
+- 2026-11-21 17:18 · VOIE 2 : AU103, c0bc3452 (main), relancé non
+- 2026-11-21 18:05 · VOIE 3 : AU094b fusionnée (#765) : une part de paiement remet la relance à valider à son rang, texte refait au reste dû ; validation liée au texte lu ; envoi lié à la version validée ; une part pendant un envoi la remet à valider [R553]
+- 2026-11-21 18:05 · VOIE 3 : plus de tâche libre ; AU091 est à la voie 2, AU068b/AU103/AU104 attendent un humain (H10, appareil réel, hors ligne), AU075b est à la voie 1

@@ -242,6 +242,8 @@ export function verifyingTarget(): ObjectTarget {
  */
 export const REFERENCE_PREFIXES: Readonly<Record<string, ObjectStorage>> = Object.freeze({
   'biens/': 'MEDIA',
+  // AU103 : l'image entière des photos de visite, à part des médias publiés.
+  'visites/': 'MEDIA',
   'dossiers/': 'PIECES',
   'preuves/': 'PIECES',
   'agents/': 'PIECES',

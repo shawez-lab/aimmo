@@ -24,7 +24,8 @@ import { parisDayStart } from '../pilotage/tableau-agent.ts';
 import { parisDay } from '../studio/bibliotheque.ts';
 import { OP_KINDS, type OpKind, type OpResult } from './boite.ts';
 import { SKIP_REASONS, departureCheck, shotPlan, type DepartureCheck, type Shot } from './cadrage.ts';
-import { decodeLuma, hdrPhoto, PHOTO_THRESHOLDS, type PhotoThresholds } from './photo.ts';
+import { checkKeptImage, fileShowsKept, IMAGE_TYPE, matchesKept } from './image.ts';
+import { decodeLuma, encodeLuma, hdrPhoto, PHOTO_THRESHOLDS, type Luma, type PhotoThresholds } from './photo.ts';
 import { privateVisits, type PrivatePack } from './prive.ts';
 
 export const MAX_OPS_PER_BATCH = 50;
@@ -97,6 +98,21 @@ interface EntityRow {
 }
 
 type Verdict = { ok: true; row: EntityRow } | { ok: false; rule: string | null; code: string };
+
+/** Le rangement des images entières des visites (R2) : à part des médias publiés, rien n'y est servi au public. */
+export interface VisitImageStore {
+  put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
+}
+
+/** L'image réduite gardée à la réception (taille dans le texte : largeur, hauteur, points) et le fichier qui la montre. */
+function keptShown(bytes: Uint8Array, stored: string | null): boolean {
+  if (stored === null) return false;
+  const [w, h, data] = stored.split(':');
+  const kept = decodeLuma({ width: Number(w), height: Number(h), data });
+  return kept !== null && fileShowsKept(bytes, kept);
+}
+
+export type DepositResult = { ok: true; again: boolean } | Refusal | { ok: false; rule: 'R677' | null; code: string };
 
 export class HorsLigne {
   private readonly now: () => Date;
@@ -348,9 +364,61 @@ export class HorsLigne {
     if (!exposures || exposures.some((e) => e === null)) return { ok: false, rule: 'R277', code: 'prises_invalides' };
     const r = hdrPhoto(exposures, this.thresholds);
     if (!r.ok) return { ok: false, rule: 'R277', code: r.code === 'photo_refusee' ? (r.verdict?.problems[0] ?? 'photo_refusee') : r.code };
+    // L'image gardée, celle qui ira à l'annonce : jugée de nouveau ici sur sa version réduite, et reconnue comme la
+    // fusion des prises [R677].
+    const kept = checkKeptImage(payload.image, exposures as Luma[], this.thresholds);
+    if (!kept.ok) return kept;
+    const i = kept.image;
     return {
       ok: true,
-      row: { table: 'visit_photos', columns: ['id', 'network_id', 'appointment_id', 'agent_id', 'shot', 'exposures', 'brightness', 'clipped', 'sharpness', 'taken_at', 'received_at'], values: [entityId, viewer.networkId, appointmentId, viewer.userId, shot, r.exposures, r.verdict.figures.brightness, r.verdict.figures.clipped, r.verdict.figures.sharpness, writtenAt, received] },
+      row: {
+        table: 'visit_photos',
+        columns: ['id', 'network_id', 'appointment_id', 'agent_id', 'shot', 'exposures', 'brightness', 'clipped', 'sharpness', 'taken_at', 'received_at', 'image_sha256', 'image_width', 'image_height', 'image_bytes', 'kept_brightness', 'kept_clipped', 'kept_sharpness', 'kept_luma'],
+        values: [entityId, viewer.networkId, appointmentId, viewer.userId, shot, r.exposures, r.verdict.figures.brightness, r.verdict.figures.clipped, r.verdict.figures.sharpness, writtenAt, received, i.sha256, i.width, i.height, i.bytes, kept.figures.brightness, kept.figures.clipped, kept.figures.sharpness, `${i.kept.width}:${i.kept.height}:${encodeLuma(i.kept).data}`],
+      },
     };
+  }
+
+  /**
+   * Le fichier de l'image gardée, envoyé par le téléphone après sa saisie [R677]. Il n'est rangé que pour une photo
+   * reçue de cet agent et de cet appareil, et seulement s'il est le fichier annoncé (poids, empreinte, vrai JPEG de la
+   * taille dite). Rangé une fois : le même envoi rejoué rend la même réponse. Sans rangement possible, rien n'est
+   * écrit et le téléphone garde le fichier.
+   */
+  async depositImage(viewer: Viewer, deviceId: unknown, opId: unknown, bytes: Uint8Array | null, store: VisitImageStore | null): Promise<DepositResult> {
+    const refused = await this.activeAgent(viewer, `agent:${viewer.userId}`);
+    if (refused) return refused;
+    if (typeof deviceId !== 'string' || !ID.test(deviceId) || typeof opId !== 'string' || !ID.test(opId)) return { ok: false, rule: null, code: 'bad_photo' };
+    const op = await this.db.first<{ appointment_id: string }>(
+      "SELECT appointment_id FROM offline_ops WHERE network_id = ? AND agent_id = ? AND device_id = ? AND op_id = ? AND kind = 'visite.photo' AND outcome = 'applique'",
+      [viewer.networkId, viewer.userId, deviceId, opId],
+    );
+    const photoId = await sha256Of({ n: viewer.networkId, a: viewer.userId, d: deviceId, o: opId });
+    const photo = op
+      ? await this.db.first<{ id: string; appointment_id: string; image_sha256: string | null; image_width: number | null; image_height: number | null; image_bytes: number | null; kept_luma: string | null }>(
+          'SELECT id, appointment_id, image_sha256, image_width, image_height, image_bytes, kept_luma FROM visit_photos WHERE id = ? AND network_id = ? AND agent_id = ?',
+          [photoId, viewer.networkId, viewer.userId],
+        )
+      : null;
+    if (!photo || photo.image_sha256 === null || photo.image_width === null || photo.image_height === null || photo.image_bytes === null) return { ok: false, rule: null, code: 'photo_inconnue' };
+    const done = await this.db.first<{ sha256: string }>('SELECT sha256 FROM visit_photo_files WHERE photo_id = ?', [photo.id]);
+    if (done) return { ok: true, again: true };
+    const expected = { sha256: photo.image_sha256, width: photo.image_width, height: photo.image_height, bytes: photo.image_bytes };
+    // Le fichier est celui annoncé, et il montre bien l'image jugée à sa réception : ses propres blocs, réduits, la
+    // retrouvent [R677].
+    if (!bytes || !(await matchesKept(bytes, expected)) || !keptShown(bytes, photo.kept_luma)) {
+      await appendEvent(this.journal, { type: 'hors_ligne.image_refusee', actor: this.actor(viewer), subject: `appointment:${photo.appointment_id}`, data: { rule: 'R677', code: 'image_differente' } }, this.now);
+      return { ok: false, rule: 'R677', code: 'image_differente' };
+    }
+    if (!store) return { ok: false, rule: null, code: 'depot_indisponible' };
+    const key = `visites/${viewer.networkId}/${photo.appointment_id}/${photo.id}.jpg`;
+    // Une panne du rangement remonte : rien n'est écrit, le téléphone garde le fichier et le renverra.
+    await store.put(key, bytes, IMAGE_TYPE);
+    await this.db.run(
+      'INSERT INTO visit_photo_files (photo_id, network_id, agent_id, media_key, sha256, bytes, deposited_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (photo_id) DO NOTHING',
+      [photo.id, viewer.networkId, viewer.userId, key, expected.sha256, expected.bytes, this.now().toISOString()],
+    );
+    await appendEvent(this.journal, { type: 'hors_ligne.image_rangee', actor: this.actor(viewer), subject: `appointment:${photo.appointment_id}`, data: { rule: 'R677', bytes: expected.bytes } }, this.now);
+    return { ok: true, again: false };
   }
 }

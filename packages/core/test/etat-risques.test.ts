@@ -60,7 +60,8 @@ describeWithSqlite('HX34 · état des risques et déclaration d’intention d’
     expect(await t.etat.prepare(t.agent, t.fileId, facts({ risksAt: '2027-03-02T09:00:00.000Z' }))).toEqual({ ok: false, rule: null, code: 'bad_facts' });
     // Le journal ne porte ni adresse, ni parcelle, ni risque.
     const events = JSON.stringify(await t.db.all("SELECT data FROM journal WHERE type LIKE 'dossier.etat_risques%'"));
-    for (const s of ['Exemple', 'Dijon', '0042', 'Inondation', '21231']) expect(events).not.toContain(s);
+    // Des chaînes qu'un identifiant tiré au hasard ne peut pas contenir par chance (« 0042 » seul l'a pu).
+    for (const s of ['Exemple', 'Dijon', 'AB0042', '"0042"', 'Inondation', '21231000']) expect(events).not.toContain(s);
   });
 
   it('[R445] l’état rangé entre dans le chemin critique : plus de 6 mois au jour de l’acte, il est signalé', async () => {

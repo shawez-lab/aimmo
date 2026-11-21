@@ -174,7 +174,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX12 : l'appli sans réseau ; la note de l'agent pendant la visite, sa saisie, et les chiffres des photos.
       offline_ops: ['agent_id', 'device_id', 'content_hash'],
       visit_field_notes: ['agent_id', 'body'],
-      visit_photos: ['agent_id'],
+      visit_photos: ['agent_id', 'image_sha256'],
+      // AU103 : le fichier de l'image entière, une photo de l'intérieur du bien.
+      visit_photo_files: ['photo_id', 'agent_id', 'media_key', 'sha256'],
       visit_shot_skips: ['agent_id', 'reason'],
       // HX13 : les notes que l'acquéreur donne à chaque pièce, à la fin de la visite.
       presentation_ratings: ['ratings', 'outcome', 'content_hash', 'recorded_by'],
@@ -1300,7 +1302,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   address_score_mandates: ['network_id', 'linked_at'],
   offline_ops: ['network_id', 'op_id', 'seq', 'kind', 'appointment_id', 'outcome', 'rule', 'code', 'written_at', 'received_at'],
   visit_field_notes: ['id', 'network_id', 'appointment_id', 'shot', 'written_at', 'received_at'],
-  visit_photos: ['id', 'network_id', 'appointment_id', 'shot', 'exposures', 'brightness', 'clipped', 'sharpness', 'taken_at', 'received_at'],
+  visit_photos: ['id', 'network_id', 'appointment_id', 'shot', 'exposures', 'brightness', 'clipped', 'sharpness', 'taken_at', 'received_at', 'image_width', 'image_height', 'image_bytes', 'kept_brightness', 'kept_clipped', 'kept_sharpness', 'kept_luma'],
+  visit_photo_files: ['network_id', 'bytes', 'deposited_at'],
   visit_shot_skips: ['id', 'network_id', 'appointment_id', 'shot', 'written_at', 'received_at'],
   presentation_ratings: ['appointment_id', 'network_id', 'property_id', 'rooms', 'rated_at'],
   pige_no_agency: ['network_id', 'fingerprint', 'noted_at'],
