@@ -1,9 +1,12 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { MemoryOutboxStorage, Outbox, type OpResult, type PendingOp, type Transport } from '../src/hors-ligne/boite.ts';
 import { departureCheck, shotPlan } from '../src/hors-ligne/cadrage.ts';
 import { decodeLuma, encodeLuma, fuseExposures, hdrPhoto, judgePhoto, type Luma } from '../src/hors-ligne/photo.ts';
-import { HorsLigne } from '../src/hors-ligne/reception.ts';
+import { boxDown, checkKeptImage, fileShowsKept, IMAGE_MIN_LONG_SIDE, jpegBlockLuma, jpegSize, matchesKept, meanGap } from '../src/hors-ligne/image.ts';
+import { HorsLigne, type VisitImageStore } from '../src/hors-ligne/reception.ts';
 import { Acces, FicheClient, FicheUnique, RendezVous, SqlJournalStore, Visites, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
+import { encodeJpeg, resize } from './jpeg-essai.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -226,7 +229,16 @@ async function setup() {
   return { db, journal, server, store, network, alex, sam, agentAlex, agentSam, direction, property, land, visit, setClock: (t: number) => (clock = t) };
 }
 
-const photoPayload = (shot: string, exposures: Luma[] = [dark, bright]) => ({ shot, exposures: exposures.map(encodeLuma) });
+/** L'image entière qui accompagne la photo [R677] : le fichier, et ce que la saisie en dit. */
+const wholeImage = (exposures: Luma[], o: { width?: number; height?: number; kept?: Luma; file?: Luma } = {}) => {
+  const width = o.width ?? 1280;
+  const height = o.height ?? 1280;
+  const kept = o.kept ?? fuseExposures(exposures);
+  // Le fichier : un vrai JPEG de l'image gardée, agrandie à la taille dite (ou d'une autre image, pour tricher).
+  const bytes = encodeJpeg(resize(o.file ?? kept, width, height));
+  return { bytes, meta: { sha256: createHash('sha256').update(bytes).digest('hex'), width, height, bytes: bytes.length, kept: encodeLuma(kept) } };
+};
+const photoPayload = (shot: string, exposures: Luma[] = [dark, bright]) => ({ shot, exposures: exposures.map(encodeLuma), image: wholeImage(exposures).meta });
 
 describeWithSqlite('HX12 · l’appli sans réseau, côté serveur', () => {
   it('[R276] la même saisie rejouée après une réponse perdue ne fait aucun doublon ; rien n’est perdu', async () => {
@@ -503,5 +515,165 @@ describeWithSqlite('AU104 · le mode privé de la visite, côté serveur', () =>
     expect(rows.map((r) => r.type)).toEqual(['acces.refuse', 'hors_ligne.prive']);
     expect(JSON.parse(rows[1]!.data)).toEqual({ rule: 'R676', day: '2026-12-08', appointments: [a.id], addresses: 1, phones: 1 });
     expect(JSON.stringify(rows)).not.toMatch(/Durandal|Vignes|06 12|\+336/);
+  });
+});
+
+describe('AU103 · l’image entière de la photo HDR, contrôlée', () => {
+  const fused = fuseExposures([dark, bright]);
+  it('[R677] l’image gardée est jugée sur elle-même : trop petite, sombre, brûlée, floue ou étrangère aux prises, elle est refusée', () => {
+    expect(checkKeptImage(wholeImage([dark, bright]).meta, [dark, bright])).toMatchObject({ ok: true, image: { width: 1280, height: 1280 } });
+    expect(checkKeptImage(undefined, [dark, bright])).toEqual({ ok: false, rule: 'R677', code: 'image_manquante' });
+    expect(checkKeptImage(wholeImage([dark, bright], { width: 1000, height: 1000 }).meta, [dark, bright])).toMatchObject({ code: 'image_trop_petite' });
+    expect(IMAGE_MIN_LONG_SIDE).toBe(1280);
+    // De bonnes prises, mais l'image gardée (le JPEG relu) est sombre, brûlée ou floue : refusée quand même.
+    expect(checkKeptImage(wholeImage([dark, bright], { kept: dark }).meta, [dark, bright])).toMatchObject({ code: 'trop_sombre' });
+    expect(checkKeptImage(wholeImage([dark, bright], { kept: scene((v) => v * 4) }).meta, [dark, bright])).toMatchObject({ code: 'brulee' });
+    expect(checkKeptImage(wholeImage([dark, bright], { kept: blur(fused) }).meta, [dark, bright])).toMatchObject({ code: 'floue' });
+    // Une belle image, mais pas le résultat de ces prises.
+    const other = scene((v) => 255 - v);
+    expect(judgePhoto(other).ok).toBe(true);
+    expect(checkKeptImage(wholeImage([dark, bright], { kept: other }).meta, [dark, bright])).toMatchObject({ code: 'image_differente' });
+    // Une annonce mal formée ou d'autres proportions que sa version réduite.
+    const meta = wholeImage([dark, bright]).meta;
+    for (const bad of [{ ...meta, sha256: 'abc' }, { ...meta, width: 4096 }, { ...meta, bytes: 0 }, { ...meta, kept: { width: 64, height: 64, data: 'abc' } }, { ...meta, width: 1920, height: 1080 }])
+      expect(checkKeptImage(bad, [dark, bright])).toMatchObject({ ok: false, code: 'image_invalide' });
+  });
+
+  it('[R677] le fichier se lit jusqu’à ses blocs : il montre l’image gardée, ou non', () => {
+    for (const o of [{}, { color: true }, { color: true, restart: 5 }, { restart: 3 }]) {
+      const file = encodeJpeg(resize(fused, 1280, 960), o);
+      const blocks = jpegBlockLuma(file)!;
+      expect(blocks).toMatchObject({ width: 160, height: 120 });
+      expect(meanGap(boxDown(blocks, 64, 64), fused)).toBeLessThan(12);
+      expect(fileShowsKept(file, fused)).toBe(true);
+    }
+    // Un JPEG bien formé, mais noir : il ne montre pas l'image jugée.
+    const black = { width: 64, height: 64, luma: new Uint8Array(64 * 64) };
+    expect(fileShowsKept(encodeJpeg(resize(black, 1280, 1280)), fused)).toBe(false);
+    // Coupé au milieu des données : illisible.
+    const file = encodeJpeg(resize(fused, 1280, 960));
+    expect(jpegBlockLuma(new Uint8Array([...file.slice(0, 400), 0xff, 0xd9]))).toBeNull();
+  });
+
+  it('[R677] la taille d’un JPEG se lit dans son en-tête ; un fichier coupé ou qui n’est pas un JPEG n’a pas de taille', async () => {
+    const jpg = encodeJpeg(resize(scene(), 1600, 1200));
+    expect(jpegSize(jpg)).toEqual({ width: 1600, height: 1200 });
+    expect(jpegSize(jpg.slice(0, jpg.length - 1))).toBeNull();
+    expect(jpegSize(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xff, 0xd9]))).toBeNull();
+    expect(jpegSize(new Uint8Array([0xff, 0xd8, 0xff, 0xda, 0, 2, 0xff, 0xd9]))).toBeNull();
+    // Un en-tête de trame seul, coupé, entre début et fin : pas un JPEG.
+    expect(jpegSize(new Uint8Array([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x05, 0x00, 0x05, 0x00, 0xff, 0xd9]))).toBeNull();
+    // Sans table de quantification, ou un 0xFF non bourré dans les données : pas un JPEG.
+    const noDqt = jpg.slice(0, 2).toString() + ',' + [...jpg.slice(71)].join(',');
+    expect(jpegSize(new Uint8Array(noDqt.split(',').map(Number)))).toBeNull();
+    expect(jpegSize(new Uint8Array([...jpg.slice(0, jpg.length - 2), 0xff, 0x04, 0xff, 0xd9]))).toBeNull();
+    expect(jpegSize(encodeJpeg(resize(scene(), 1600, 1200), { color: true, restart: 7 }))).toEqual({ width: 1600, height: 1200 });
+    const { bytes, meta } = wholeImage([dark, bright]);
+    expect(await matchesKept(bytes, meta)).toBe(true);
+    const touched = bytes.slice();
+    touched[touched.length - 3] = 9;
+    expect(await matchesKept(touched, meta)).toBe(false);
+    expect(await matchesKept(encodeJpeg(resize(scene(), 1280, 1000)), meta)).toBe(false);
+  });
+});
+
+describeWithSqlite('AU103 · l’image entière de la photo, côté serveur', () => {
+  const memory = () => {
+    const put: { key: string; bytes: Uint8Array; type: string }[] = [];
+    const store: VisitImageStore = { put: async (key, bytes, type) => void put.push({ key, bytes: bytes.slice(), type }) };
+    return { put, store };
+  };
+  async function photoSent() {
+    const t = await setup();
+    const v = await t.visit(t.alex, t.land.id);
+    t.setClock(v.start + 10 * MIN);
+    const at = new Date(v.start).toISOString();
+    const whole = wholeImage([dark, bright]);
+    const r = await t.server.receive(t.agentAlex, {
+      deviceId: 'device-test-1',
+      ops: [{ opId: 'op-photo-01', seq: 1, kind: 'visite.photo', appointmentId: v.id, writtenAt: at, payload: { shot: 'vue-ensemble', exposures: [dark, bright].map(encodeLuma), image: whole.meta } }],
+    });
+    return { t, v, at, whole, r };
+  }
+
+  it('[R677] constat : une photo faite des seules prises réduites, sans image entière, n’est plus reçue', async () => {
+    const t = await setup();
+    const v = await t.visit(t.alex, t.land.id);
+    t.setClock(v.start + 10 * MIN);
+    const r = await t.server.receive(t.agentAlex, {
+      deviceId: 'device-test-1',
+      ops: [{ opId: 'op-photo-01', seq: 1, kind: 'visite.photo', appointmentId: v.id, writtenAt: new Date(v.start).toISOString(), payload: { shot: 'vue-ensemble', exposures: [dark, bright].map(encodeLuma) } }],
+    });
+    expect(r).toMatchObject({ ok: true, results: [{ outcome: 'refuse', code: 'image_manquante', rule: 'R677' }] });
+    expect(await t.db.first('SELECT count(*) AS n FROM visit_photos')).toEqual({ n: 0 });
+  });
+
+  it('[R677] la photo reçue garde l’empreinte, la taille et le contrôle de l’image gardée ; le fichier annoncé est rangé une fois', async () => {
+    const { t, v, whole, r } = await photoSent();
+    expect(r).toMatchObject({ ok: true, results: [{ outcome: 'applique' }] });
+    const row = await t.db.first<Record<string, unknown>>('SELECT image_sha256, image_width, image_height, image_bytes, kept_brightness, kept_sharpness FROM visit_photos');
+    expect(row).toMatchObject({ image_sha256: whole.meta.sha256, image_width: 1280, image_height: 1280, image_bytes: whole.bytes.length });
+    expect(row!.kept_brightness).toBe(judgePhoto(fuseExposures([dark, bright])).figures.brightness);
+    const m = memory();
+    // Sans rangement possible : rien n'est écrit, le téléphone garde le fichier.
+    expect(await t.server.depositImage(t.agentAlex, 'device-test-1', 'op-photo-01', whole.bytes, null)).toEqual({ ok: false, rule: null, code: 'depot_indisponible' });
+    // Un fichier abîmé en route : refusé, au journal, rien de rangé.
+    const touched = whole.bytes.slice();
+    touched[30] = 77;
+    expect(await t.server.depositImage(t.agentAlex, 'device-test-1', 'op-photo-01', touched, m.store)).toEqual({ ok: false, rule: 'R677', code: 'image_differente' });
+    expect(m.put).toEqual([]);
+    expect(await t.db.first('SELECT count(*) AS n FROM visit_photo_files')).toEqual({ n: 0 });
+    // Le bon fichier : rangé hors des médias publiés, sous le rendez-vous.
+    expect(await t.server.depositImage(t.agentAlex, 'device-test-1', 'op-photo-01', whole.bytes, m.store)).toEqual({ ok: true, again: false });
+    expect(m.put).toHaveLength(1);
+    expect(m.put[0]!.key).toMatch(new RegExp(`^visites/${t.network.id}/${v.id}/[0-9a-f]{64}\\.jpg$`));
+    expect(m.put[0]!.type).toBe('image/jpeg');
+    expect(m.put[0]!.bytes).toEqual(whole.bytes);
+    // Rejoué : la même réponse, rien de rangé deux fois.
+    expect(await t.server.depositImage(t.agentAlex, 'device-test-1', 'op-photo-01', whole.bytes, m.store)).toEqual({ ok: true, again: true });
+    expect(m.put).toHaveLength(1);
+    expect(await t.db.first('SELECT media_key, sha256, bytes FROM visit_photo_files')).toEqual({ media_key: m.put[0]!.key, sha256: whole.meta.sha256, bytes: whole.bytes.length });
+    // Rien ne change ni ne s'efface.
+    await expect(t.db.run('DELETE FROM visit_photo_files')).rejects.toThrow(/rien ne s'efface/);
+    const events = await t.db.all<{ type: string; data: string }>("SELECT type, data FROM journal WHERE type LIKE 'hors_ligne.image%' ORDER BY rowid");
+    expect(events.map((e) => e.type)).toEqual(['hors_ligne.image_refusee', 'hors_ligne.image_rangee']);
+    expect(JSON.stringify(events)).not.toContain(whole.meta.sha256);
+  });
+
+  it('[R677] des prises et une image réduite valables ne font pas ranger un autre fichier, même bien formé', async () => {
+    const t = await setup();
+    const v = await t.visit(t.alex, t.land.id);
+    t.setClock(v.start + 10 * MIN);
+    const black = { width: 64, height: 64, luma: new Uint8Array(64 * 64) };
+    // L'agent annonce l'empreinte d'un JPEG noir, avec de bonnes prises et une bonne image réduite.
+    const whole = wholeImage([dark, bright], { file: black });
+    const r = await t.server.receive(t.agentAlex, {
+      deviceId: 'device-test-1',
+      ops: [{ opId: 'op-photo-01', seq: 1, kind: 'visite.photo', appointmentId: v.id, writtenAt: new Date(v.start).toISOString(), payload: { shot: 'vue-ensemble', exposures: [dark, bright].map(encodeLuma), image: whole.meta } }],
+    });
+    expect(r).toMatchObject({ ok: true, results: [{ outcome: 'applique' }] });
+    const m = memory();
+    expect(await t.server.depositImage(t.agentAlex, 'device-test-1', 'op-photo-01', whole.bytes, m.store)).toEqual({ ok: false, rule: 'R677', code: 'image_differente' });
+    expect(m.put).toEqual([]);
+  });
+
+  it('[R677] [R16] le fichier ne se range que pour la photo reçue de cet agent et de cet appareil ; la direction ne dépose rien', async () => {
+    const { t, whole } = await photoSent();
+    const m = memory();
+    expect(await t.server.depositImage(t.agentSam, 'device-test-1', 'op-photo-01', whole.bytes, m.store)).toMatchObject({ ok: false, code: 'photo_inconnue' });
+    expect(await t.server.depositImage(t.agentAlex, 'device-test-2', 'op-photo-01', whole.bytes, m.store)).toMatchObject({ ok: false, code: 'photo_inconnue' });
+    expect(await t.server.depositImage(t.agentAlex, 'device-test-1', 'op-photo-99', whole.bytes, m.store)).toMatchObject({ ok: false, code: 'photo_inconnue' });
+    expect(await t.server.depositImage(t.agentAlex, 'court', 'op-photo-01', whole.bytes, m.store)).toMatchObject({ ok: false, code: 'bad_photo' });
+    expect(await t.server.depositImage(t.direction, 'device-test-1', 'op-photo-01', whole.bytes, m.store)).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+    expect(m.put).toEqual([]);
+  });
+
+  it('[R677] une panne du rangement n’écrit rien : le même fichier renvoyé ensuite est rangé', async () => {
+    const { t, whole } = await photoSent();
+    const broken: VisitImageStore = { put: async () => { throw new Error('panne'); } };
+    await expect(t.server.depositImage(t.agentAlex, 'device-test-1', 'op-photo-01', whole.bytes, broken)).rejects.toThrow('panne');
+    expect(await t.db.first('SELECT count(*) AS n FROM visit_photo_files')).toEqual({ n: 0 });
+    const m = memory();
+    expect(await t.server.depositImage(t.agentAlex, 'device-test-1', 'op-photo-01', whole.bytes, m.store)).toEqual({ ok: true, again: false });
   });
 });
