@@ -3,6 +3,7 @@ import { annonces } from '@aimmo/core';
 import { handleRequest, type ApiConfig } from '../src/app.ts';
 import { sha256Hex } from '../src/index.ts';
 import { runListingSync } from '../src/vitrine.ts';
+import { runLiveWithdrawals } from '../src/reseaux-reels.ts';
 import { setupAnnonce } from '../../core/test/annonces-jeu.ts';
 import { describeWithSqlite } from '../../core/test/sqlite.ts';
 
@@ -77,5 +78,50 @@ describeWithSqlite('AU067 · l’annulation du mandat, par l’API, retire l’a
     expect(portal.received).toEqual(['publier', 'retirer']);
     const ops = await t.db.all<{ outcome: string }>("SELECT outcome FROM portal_operations WHERE portal = 'seloger' AND action = 'retirer' ORDER BY n");
     expect(ops.map((o) => o.outcome)).toContain('accuse');
+  });
+});
+
+describeWithSqlite('AU036 · l’annulation du mandat retire aussi les vraies publications sur les réseaux', () => {
+  it('[R42] la réponse dit chaque publication retirée ; une panne reste due au passage planifié', async () => {
+    const t = await setupAnnonce();
+    t.setClock(new Date('2027-02-12T10:00:00.000Z'));
+    await t.annonces.validate(t.agent, t.draftId);
+    t.setClock(new Date('2027-03-01T08:00:00.000Z'));
+    await t.publication.sync(t.network.id, t.propertyId);
+    // Deux vraies publications déjà faites pour ce bien, rangées comme les range la publication (AU036).
+    await t.db.exec('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO social_posts (id, property_id, network_id, event, text, origin, visuals, created_by, created_at) VALUES ('post-au036', ?, ?, 'nouveau_bien', 'Texte inventé.', 'secours', '[]', 'agent:a', '2027-02-20T08:00:00.000Z')", [t.propertyId, t.network.id]);
+    for (const [n, channel] of [[1, 'facebook'], [2, 'instagram']] as const) {
+      await t.db.run("INSERT INTO social_live_attempts (id, post_id, channel, account, attempt, mode, claimed_by, claimed_at) VALUES (?, 'post-au036', ?, 'reseau', 0, 'reel', 'agent:a', '2027-02-20T08:00:00.000Z')", [`la-${n}`, channel]);
+      await t.db.run("INSERT INTO social_live_sends (attempt_id, outcome, post_ref, url, error_code, action, done_at) VALUES (?, 'envoye', ?, NULL, NULL, NULL, '2027-02-20T08:00:01.000Z')", [`la-${n}`, `${n}000_${n}`]);
+    }
+    await t.db.exec('PRAGMA foreign_keys = ON');
+    const removed: string[] = [];
+    let instagramDown = true;
+    const channel = (name: 'facebook' | 'instagram') => ({
+      channel: name,
+      mode: 'reel' as const,
+      post: async () => ({ postRef: '1' }),
+      remove: async (ref: string) => {
+        if (name === 'instagram' && instagramDown) throw new Error('panne');
+        removed.push(ref);
+      },
+    });
+    const social = { channels: [channel('facebook'), channel('instagram')], live: true as const };
+    const apiKeys = JSON.stringify([{ sha256: await sha256Hex(KEY), role: 'direction', userId: 'direction-1', networkId: t.network.id }]);
+    const config: ApiConfig = { db: t.db, apiKeys, mode: 'essai', now: t.now, listing: { channels: t.channels }, studio: { files: { has: async () => false }, social: null, withdrawals: social } };
+    const res = await handleRequest(
+      new Request(`${API}/v1/mandats/${t.mandateId}/annulation`, { method: 'POST', headers: { authorization: `Bearer ${KEY}`, 'content-type': 'application/json' }, body: JSON.stringify({ reason: 'termination' }) }),
+      config,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { retraits: { reseaux: unknown } };
+    expect(body.retraits.reseaux).toEqual({ removed: [{ channel: 'facebook', account: 'reseau' }], failed: [{ channel: 'instagram', account: 'reseau', code: 'erreur' }], toVerify: [] });
+    expect(removed).toEqual(['1000_1']);
+    // Le passage planifié reprend ce qui reste dû, une seule fois.
+    instagramDown = false;
+    expect(await runLiveWithdrawals(t.db, t.journal, t.now, social)).toBe(1);
+    expect(await runLiveWithdrawals(t.db, t.journal, t.now, social)).toBe(0);
+    expect(removed).toEqual(['1000_1', '2000_2']);
   });
 });
