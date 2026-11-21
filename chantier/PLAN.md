@@ -417,16 +417,17 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#739, `2603c63f`), migration `4055` (ajout seul), règle R669. Constat confirmé : une demande de portail sans « répondre à » vers le client ne recevait aucune réponse et ne prévenait personne. Décidé : `readPortalBody` lit les lignes « Libellé : valeur » du corps (mail, téléphone, nom, référence de la demande), s'arrête au message du client et à tout mail cité ; la référence de la demande est la clé de réception, l'identifiant du mail gardé comme autre clé (`inbound_message_keys`) ; une demande de portail sans réponse partie donne une alerte `needs_reply` ; `GET /v1/captation/mail` (direction) dit les réglages `MAIL_*` manquants et chaque portail « vérifiée » après son premier vrai mail. Codex : 4 P0 corrigés ; un cinquième (deux livraisons simultanées du même identifiant lues différemment) réfuté dans la proposition. Les vrais formats des portails restent à confirmer au premier vrai mail (H16).
 
 ### AU033 · Les leads Instagram, Facebook et WhatsApp dépendent d’autorisations Meta encore ouvertes dans le chantier
-- Statut : en cours
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A033 (majeur), endroit : chantier/HUMAIN.md, H06/H17 ; A/worker.ts, `meta`.
 - Constat de l'audit : Les leads Instagram, Facebook et WhatsApp dépendent d’autorisations Meta encore ouvertes dans le chantier.
 - Objectif : Un message réel sur chacun des trois canaux rejoint la bonne fiche avec son origine et un traitement visible ; activation actuelle non vérifiée.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien (mise en service réelle : H06, H17).
+- Reste : fusionnée (#748, `a46c699e`), règle R670, sans migration. Décidé : `GET /v1/captation/meta` (direction) nomme les réglages `META_*` et `MODE` manquants, signale un autre réseau, et dit chaque canal « vérifiée » seulement après un vrai message rattaché à une fiche et traité : réponse livrée (boîte d'essai, accusé du canal, ou réponse humaine en écho), dans l'ordre des faits, ou alerte ouverte, rouverte ou vue après ce message. Le rattachement à la bonne fiche (téléphone connu, compte chez le canal) et l'origine (`sources`) sont prouvés de bout en bout par une notification signée. Codex : 4 P0 corrigés en 4 tours, puis rien. Pas d'écran.
 
 ### AU034 · La pige a ses règles et son écran
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A034 (majeur), endroit : C/pige/pige.ts, `PigeSource` ; A/worker.ts.
 - Constat de l'audit : La pige a ses règles et son écran, mais aucun fournisseur réel n’est raccordé par le Worker.
@@ -930,7 +931,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU085 · Le calcul annonce explicitement ignorer les jours fériés propres à l’Alsace-Moselle
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-21)
+- Reste : fusionnée (#750, bbffd9e4). Constat confirmé (le commentaire d'`echeancier.ts` disait ignorer ces jours). `dossiers/calendrier.ts` : Vendredi saint et 26 décembre fériés en plus pour les codes postaux 57, 67, 68. Lecture prudente : la commune suit le lieu du bien (dernière désignation, sinon fiche), la rétractation de chaque acquéreur le lieu du bien ou son domicile (cherché sur ses fiches réunies), un bien au lieu inconnu prend ce calendrier ; chaque délai dit son calendrier et pourquoi ; le recommandé (R460) suit. R61 précisée. Codex : 1 P0 corrigé (fiches réunies), puis rien ; vérification GitHub verte. Reste : `documents/retractation.ts` et `commerces/cession.ts` ont leurs propres jours ouvrables, sans ce calendrier.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A085 (majeur), endroit : C/dossiers/echeancier.ts, jours ouvrables.
 - Constat de l'audit : Le calcul annonce explicitement ignorer les jours fériés propres à l’Alsace-Moselle.
@@ -939,7 +941,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU086 · Après sept jours, je ne peux plus enregistrer l’accord de fidélisation d’un client qui le donne réellement…
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M11 Après-vente ; audit A086 (majeur), endroit : C/apres-vente/relances-apres-vente.ts, `CHOICE_GRACE_DAYS`.
 - Constat de l'audit : Après sept jours, je ne peux plus enregistrer l’accord de fidélisation d’un client qui le donne réellement plus tard.
@@ -948,7 +950,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU087 · Les demandes d’avis expirent après sept jours alors que le plafond de deux envois par jour peut empêcher…
-- Statut : à faire
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M11 Après-vente ; audit A087 (majeur), endroit : C/apres-vente/demandes-avis.ts, `REVIEW_WINDOW_DAYS`, R11.
 - Constat de l'audit : Les demandes d’avis expirent après sept jours alors que le plafond de deux envois par jour peut empêcher de solliciter tous les clients.
@@ -957,7 +959,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU088 · La carte professionnelle du réseau, l’assurance, le médiateur et les mentions juridiques restent des…
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M12 Conformité ; audit A088 (majeur), endroit : chantier/HUMAIN.md, H09/H47 ; C/attirer/mentions-site.ts.
 - Constat de l'audit : La carte professionnelle du réseau, l’assurance, le médiateur et les mentions juridiques restent des prérequis non soldés dans le chantier.
@@ -993,7 +995,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU092 · Ma rémunération ne peut pas suivre automatiquement une grille progressive selon mon chiffre d’affaires cumulé
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M13 Pilotage et finances ; audit A092 (majeur), endroit : C/pilotage/commissions.ts, `GridInput`.
 - Constat de l'audit : Ma rémunération ne peut pas suivre automatiquement une grille progressive selon mon chiffre d’affaires cumulé.
@@ -1017,6 +1019,15 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Constat de l'audit : Un règlement partiel ou un virement groupé ne peut pas se rapprocher des factures, même à la main.
 - Objectif : Plusieurs lignes peuvent solder une facture et une ligne peut solder plusieurs factures, avec solde restant et traçabilité au centime.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU094b · Une relance remplacée après un paiement partiel ne consomme pas l'un des trois rangs
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU094
+- Cahier : M13 Pilotage et finances ; relecture Codex de #751 (P2), endroit : C/facturation/relances.ts, `MAX_REMINDERS`.
+- Constat : chaque relance fermée par une nouvelle part (`paiement_partiel`) prend un rang ; après trois remplacements, plus aucune relance ne se prépare, même si un reste dû n'a jamais été relancé.
+- Objectif : seules les relances envoyées comptent dans les trois ; une relance remplacée laisse son rang à la suivante.
+- Critères : un test qui échoue puis passe ; R553 à jour si besoin.
 - Attend : rien.
 
 ### AU095 · Les plafonds locatifs sont restés à 12/10/8 et 3 €/m², donc AIMMO refuse des honoraires pourtant permis en…

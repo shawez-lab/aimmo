@@ -41,8 +41,8 @@ it('[R61] la demande de pièces ou de visite suspend le délai de la commune ; i
   // Une demande après la fin du délai ne le rouvre pas.
   expect(preemptionLastDay('2027-03-15', '2027-05-20', '2027-05-25')).toBe('2027-05-18');
   const facts = { hasLoanCondition: true, isCoownershipLot: true };
-  expect(scheduleLines({ dia_recue: '2027-03-15', dia_suspension: '2027-04-20' }, facts).find((l) => l.deadline === 'reponse_preemption')).toEqual({ deadline: 'reponse_preemption', source: 'calcul', from: 'dia_suspension', day: null, status: 'suspendue' });
-  expect(scheduleLines({ dia_recue: '2027-03-15', dia_suspension: '2027-04-20', dia_reprise: '2027-05-03' }, facts).find((l) => l.deadline === 'reponse_preemption')).toEqual({ deadline: 'reponse_preemption', source: 'calcul', from: 'dia_reprise', day: '2027-06-03', status: 'datee' });
+  expect(scheduleLines({ dia_recue: '2027-03-15', dia_suspension: '2027-04-20' }, facts).find((l) => l.deadline === 'reponse_preemption')).toEqual({ deadline: 'reponse_preemption', source: 'calcul', from: 'dia_suspension', day: null, status: 'suspendue', calendar: 'national' });
+  expect(scheduleLines({ dia_recue: '2027-03-15', dia_suspension: '2027-04-20', dia_reprise: '2027-05-03' }, facts).find((l) => l.deadline === 'reponse_preemption')).toEqual({ deadline: 'reponse_preemption', source: 'calcul', from: 'dia_reprise', day: '2027-06-03', status: 'datee', calendar: 'national' });
 });
 
 it('[R10] [R61] aucune échéance sans sa date : à saisir, ou sans objet, jamais inventée', () => {
