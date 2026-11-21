@@ -5,13 +5,14 @@
  * La couche métier refait ses propres contrôles (agent en activité, zone, auteur du message). Une annonce « pas d'agence »
  * n'entre jamais dans la file [R273] ; l'écart avec le marché ne vient que de la case publiée des prix regroupés [R274] ;
  * le premier message est rendu à l'agent pour qu'il le colle lui-même dans la messagerie de l'annonce, rien ne part
- * d'AIMMO [R275, R26]. Aucune vraie source de pige n'est branchée : sans source donnée par la configuration, la relève
- * répond 400 `source_absente` et rien n'est rangé.
+ * d'AIMMO [R275, R26]. Le vrai fournisseur (AU034) est branché par le Worker quand ses réglages sont là ; sans source,
+ * la relève répond 400 `source_absente` et rien n'est rangé. Chaque relève laisse sa ligne, réussie ou en panne, et
+ * `GET /pige/etat` dit la date de la dernière relève réussie et l'alerte d'une panne [R671].
  */
 import type { JournalStore, SqlDatabase, Viewer } from '@aimmo/core';
 import { appendEvent } from '../../core/src/journal/journal.ts';
 import { PrixRegroupes, type PriceSalesSource } from '../../core/src/attirer/prix-versions.ts';
-import { Pige, type PigeSource } from '../../core/src/pige/index.ts';
+import { Pige, pigeCollectState, runPigeCollect, type PigeProviderSettings, type PigeSource } from '../../core/src/pige/index.ts';
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 2_048;
@@ -23,6 +24,8 @@ export interface PigeServices {
   now: () => Date;
   /** Le fournisseur des annonces de particuliers ; absent tant qu'aucun n'est branché. */
   source: PigeSource | null;
+  /** AU034 : les réglages du fournisseur ; absents, la relève reste celle de la source donnée, pour tout réseau. */
+  provider?: PigeProviderSettings | null;
 }
 
 export interface PigeRoute {
@@ -38,10 +41,11 @@ const json = (status: number, body: unknown): Response => new Response(JSON.stri
 
 type Outcome = { ok: true; value?: unknown } | { ok: false; rule?: string | null; code: string; [k: string]: unknown };
 
-/** 200 ; 403 pour un refus de droits ou hors zone ; 404 inconnu ; 409 pour une règle ; 400 sinon. */
+/** 200 ; 403 pour un refus de droits ou hors zone ; 404 inconnu ; 502 pour une panne du fournisseur ; 409 pour une règle ; 400 sinon. */
 function reply(result: Outcome): Response {
   if (result.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: result.value ?? null });
   const { ok: _ok, rule = null, ...rest } = result;
+  if (result.code === 'fournisseur_en_panne') return json(502, { ok: false, rule, ...rest });
   if (/^unknown/.test(result.code)) return json(404, { ok: false, rule, ...rest });
   if (rule === 'R16' || result.code === 'hors_zone') return json(403, { ok: false, rule, ...rest });
   return json(rule ? 409 : 400, { ok: false, rule, ...rest });
@@ -101,7 +105,16 @@ const NO_SALES: PriceSalesSource = {
   within: async () => [],
 };
 
-const pige = (s: PigeServices) => new Pige(s.db, s.journal, new PrixRegroupes(s.db, s.journal, NO_SALES, { now: s.now }), { now: s.now });
+/** La source de ce réseau : avec les réglages du fournisseur, seul son réseau la reçoit. */
+function sourceFor(s: PigeServices, networkId: string): PigeSource | null {
+  if (!s.source) return null;
+  const owner = s.provider?.networkId?.trim();
+  return s.provider && owner !== networkId ? null : s.source;
+}
+
+const NO_PROVIDER: PigeProviderSettings = { url: undefined, token: undefined, networkId: undefined };
+
+export const pige = (s: PigeServices) => new Pige(s.db, s.journal, new PrixRegroupes(s.db, s.journal, NO_SALES, { now: s.now }), { now: s.now });
 
 type Role = 'agent' | 'direction';
 
@@ -182,12 +195,24 @@ export function pigeRoutes(): PigeRoute[] {
       }),
     },
     {
+      method: 'GET',
+      pattern: /^\/pige\/etat$/,
+      name: 'pige.etat',
+      handle: bare(BOTH, async (s, v) => {
+        const r = await pigeCollectState(s.db, s.journal, v, s.provider ?? NO_PROVIDER, s.now);
+        return r.ok ? { ok: true, value: r.value } : r;
+      }),
+    },
+    {
       method: 'POST',
       pattern: /^\/pige\/releve$/,
       name: 'pige.releve',
       handle: bare(DIRECTION, async (s, v) => {
-        if (!s.source) return { ok: false, rule: null, code: 'source_absente' };
-        return { ok: true, value: await pige(s).collect(v.networkId, s.source) };
+        const source = sourceFor(s, v.networkId);
+        if (!source) return { ok: false, rule: null, code: 'source_absente' };
+        const r = await runPigeCollect(s.db, s.journal, pige(s), v.networkId, source, s.now);
+        if (r.outcome === 'panne') return { ok: false, rule: 'R671', code: 'fournisseur_en_panne', reason: r.reason };
+        return { ok: true, value: { added: r.added, noAgency: r.noAgency, outside: r.outside, unreadable: r.unreadable } };
       }),
     },
   ];

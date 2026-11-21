@@ -18,6 +18,10 @@ import { ControleGels, complaintsJob } from '../../core/src/securite/index.ts';
 import { signPickupsJob } from '../../core/src/panneaux/index.ts';
 import { dpeWatchJob, type DiagnosisFeed } from '../../core/src/veille-dpe/index.ts';
 import { facturationJobs } from '../../core/src/facturation/index.ts';
+import { Pige, pigeCollectJob, type PigeSource } from '../../core/src/pige/index.ts';
+
+/** La pige ne lit que les cases déjà publiées des prix regroupés : jamais une source de ventes [R274]. */
+const NO_SALES: PriceSalesSource = { coverage: async () => null, within: async () => [] };
 
 export interface SchedulerConfig {
   db: SqlDatabase;
@@ -49,6 +53,8 @@ export interface SchedulerConfig {
   studioFiles?: { has(ref: string): Promise<boolean> } | null;
   /** Le lien de désinscription de la lettre, vérifié par `letterUnsubscribeBase` ; absent, aucune lettre ne part [R584]. */
   letterUnsubscribeBase?: string | null;
+  /** AU034 : le vrai fournisseur de la pige et son réseau ; absent, la relève quotidienne ne lit rien [R671]. */
+  pigeProvider?: { networkId: string; source: PigeSource } | null;
   now?: () => Date;
 }
 
@@ -166,6 +172,9 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Veille des diagnostics énergétiques (HX16, BR26), à 7 h : les diagnostics nouveaux des secteurs ouverts, rangés
       // une seule fois par réseau, dans l'alerte du jour ; seuls le code postal et le jour partent, rien n'est envoyé [R288, R289].
       dpeWatchJob(config.db, config.dpeFeed ?? null, journal, { now }),
+      // Pige (AU034), à 6 h : les annonces du fournisseur réglé, par la même porte que toute relève ; chaque passage
+      // laisse sa ligne, une panne va au journal et à l'écran [R671, R273].
+      pigeCollectJob(config.db, journal, new Pige(config.db, journal, new PrixRegroupes(config.db, journal, NO_SALES, { now }), { now }), config.pigeProvider ?? null, { now }),
       // Séquences de prospection (HX20, BR31), de 9 h à 19 h du lundi au samedi : arrêt sur tous les canaux à la première
       // réponse ou opposition, puis les mails et SMS dus remis au contrôle central, canaux du mode essai seulement ;
       // Bloctel n'est pas branché (H61) [R300, R301, R26].
