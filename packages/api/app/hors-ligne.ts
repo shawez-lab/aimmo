@@ -262,10 +262,16 @@ function privOpen(o, code) {
           return { ok: true, count: kept.length };
         });
       }, function () {
-        var tries = (r.tries || 0) + 1;
-        if (tries >= P.maxTries) return privWipe(o).then(function () { return { ok: false, code: 'efface' }; });
-        r.tries = tries;
-        return put(PRIV + ':' + o, r).then(function () { return { ok: false, code: 'faux', left: P.maxTries - tries }; });
+        // Compté d'un seul tenant : deux essais lancés ensemble comptent pour deux.
+        return update(PRIV + ':' + o, function (now) {
+          if (!now) return { value: P.maxTries };
+          var t = (now.tries || 0) + 1;
+          now.tries = t;
+          return { next: now, value: t };
+        }).then(function (tries) {
+          if (tries >= P.maxTries) return privWipe(o).then(function () { return { ok: false, code: 'efface' }; });
+          return { ok: false, code: 'faux', left: P.maxTries - tries };
+        });
       });
     });
   });
@@ -398,12 +404,16 @@ function prepare(key, show, back) {
       entry();
       return sync(key);
     });
-  }, function () { return null; });
+  }, function (e) {
+    // La clé refusée (appareil retiré, agent parti) : le mode privé de son agent s'efface [R676].
+    if (e && /^refus 40[13]$/.test(e.message) && mine.owner) return privWipe(mine.owner).then(function () { return null; });
+    return null;
+  });
 }
 /** La session finie (sortie, clé refusée, autre clé) : l'écran oublie la clé et l'agent ; rien n'est effacé de la boîte. */
 function stop() {
-  // Le mode privé ne survit pas à la sortie [R676].
-  if (ui && ui.owner) privWipe(ui.owner);
+  // Le mode privé se referme ; il s'efface à la sortie, plus bas [R676].
+  if (ui && ui.owner) last = ui.owner;
   open_ = null;
   ui = null;
   var root = $('hors-ligne');
@@ -418,7 +428,8 @@ function stop() {
 function start(key, show, back, alive, none) {
   return tag(key).then(get).then(function (o) {
     if (typeof o !== 'string') return null;
-    return readPack(o).then(function (p) { return { o: o, p: p }; });
+    // Le mode privé passé sa fin est effacé dès l'ouverture, même sans visite à montrer [R676].
+    return readPack(o).then(function (p) { return readPriv(o).then(null, function () { return null; }).then(function () { return { o: o, p: p }; }); });
   }).then(null, function () { return null; }).then(function (got) {
     if (alive && !alive()) return null;
     if (got && got.p) {
@@ -508,10 +519,15 @@ function privTools(mine, o, rec, visits) {
     s.appendChild(btn('Ouvrir', function () {
       var v = String(c.value || '');
       c.value = '';
+      // Un essai à la fois : un second geste pendant le calcul de la clé est ignoré.
+      if (mine.privBusy) return;
+      mine.privBusy = true;
+      said.textContent = 'Ouverture…';
       privOpen(o, v).then(function (r) {
+        mine.privBusy = false;
         if (r.ok) return again(r.count ? '' : 'Plus aucune visite à garder : tout est effacé.');
         return again(r.code === 'faux' ? 'Code faux. ' + (r.left > 1 ? 'Encore ' + r.left + ' essais' : 'Dernier essai') + ' avant l’effacement.' : PRIV_SAID[r.code] || 'Refusé.');
-      }, function () { return again('Ouverture impossible : réessayez.'); });
+      }, function () { mine.privBusy = false; return again('Ouverture impossible : réessayez.'); });
     }));
     s.appendChild(wipe);
   } else {
@@ -601,6 +617,9 @@ function shotTools(li, a, s, o) {
   REASONS.forEach(function (r) { li.appendChild(btn(r[1], function () { add(o, 'visite.sans_objet', a.appointmentId, { shot: s.key, reason: r[0] }).then(render, function () { said.textContent = NO_STORE; }); }, 'secondaire')); });
   li.appendChild(said);
 }
+/* La sortie efface le mode privé de l'agent qui sort, même si l'écran l'a déjà oublié [R676]. */
+var last = null;
+function sortie() { var o = (ui && ui.owner) || last; last = null; open_ = null; return o ? privWipe(o) : Promise.resolve(); }
 // Au retour du réseau : la boîte part ; une préparation qui n'avait pas abouti est refaite.
 if (G.addEventListener) G.addEventListener('online', function () { if (ui && ui.key) (ui.owner ? sync(ui.key) : prepare(ui.key, ui.show, ui.back)); });
 
@@ -610,6 +629,7 @@ G.AimmoHorsLigne = Object.freeze({
   sync: sync,
   add: add,
   stop: stop,
+  sortie: sortie,
   pending: function (o) { o = o || (ui && ui.owner); return o ? box(o).then(function (s) { return s.pending.slice(); }) : Promise.resolve([]); },
   refused: function (o) { o = o || (ui && ui.owner); return o ? box(o).then(function (s) { return s.refused.slice(); }) : Promise.resolve([]); },
   readPack: readPack,

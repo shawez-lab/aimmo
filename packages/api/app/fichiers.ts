@@ -2391,6 +2391,8 @@ ${LOUER_JS}
       session += 1;
       currentKey = null;
       forgetKey();
+      // AU104 : la sortie efface le mode privé de la visite [R676].
+      if (OFF && OFF.sortie) OFF.sortie();
       try { localStorage.removeItem('aimmo.brouillons'); } catch (e) { /* rien */ }
       $('bonjour').textContent = '';
       wipe();

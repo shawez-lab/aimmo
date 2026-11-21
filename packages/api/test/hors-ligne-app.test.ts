@@ -209,6 +209,7 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
   const winListeners: Record<string, () => void> = {};
   const calls: string[] = [];
+  const bodies: unknown[] = [];
   let uuids = 0;
   const NowDate = class extends Date {
     constructor(...a: unknown[]) {
@@ -231,7 +232,9 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
     ...camera,
     createImageBitmap: async (file: { luma: Luma }) => (net.decode && (await net.decode), camera.createImageBitmap(file)),
     TextEncoder,
-    crypto: { subtle: crypto.subtle, randomUUID: () => `7d1c2b3a-2222-4a2b-8c3d-${String(Math.floor(Math.random() * 1e6)).padStart(6, '0')}${String(++uuids).padStart(6, '0')}` },
+    TextDecoder,
+    atob,
+    crypto: { subtle: crypto.subtle, getRandomValues: (a: Uint8Array) => crypto.getRandomValues(a), randomUUID: () => `7d1c2b3a-2222-4a2b-8c3d-${String(Math.floor(Math.random() * 1e6)).padStart(6, '0')}${String(++uuids).padStart(6, '0')}` },
     setTimeout: (f: () => void, ms: number) => (ms === 0 ? setTimeout(f, 0) : 0),
     localStorage: { getItem: () => who.key, setItem: () => undefined, removeItem: () => undefined },
     addEventListener: (n: string, f: () => void) => (winListeners[n] = f),
@@ -241,6 +244,7 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
       // Seuls les appels qui atteignent le réseau sont comptés.
       if (!net.network) throw new TypeError('hors ligne');
       calls.push(`${method} ${url}`);
+      bodies.push(init.body);
       expect(init.headers?.authorization).toBe(`Bearer ${who.key}`);
       if (url.startsWith('/v1/hors-ligne/')) {
         if (net.dropPack) throw new TypeError('hors ligne');
@@ -281,7 +285,7 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
     await settle();
   };
   const H = (ctx.AimmoHorsLigne ?? { pending: async () => [], refused: async () => [] }) as { pending: (o?: string) => Promise<unknown[]>; refused: () => Promise<unknown[]> };
-  return { els, ctx, calls, loads, root, find, click, H, online: async () => (winListeners.online?.(), await settle()) };
+  return { els, ctx, calls, bodies, loads, root, find, click, H, online: async () => (winListeners.online?.(), await settle()) };
 }
 
 describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’envoi', () => {
@@ -306,7 +310,7 @@ describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’e
     expect(field.els.connexion!.hidden).toBe(true);
     expect(field.els.erreur!.hidden).toBe(true);
     expect(field.root().hidden).toBe(false);
-    expect(field.find('h3')!.textContent).toMatch(/^Visite à 10:30 · B1, Talant$/);
+    expect(field.find('h3', /^Visite/)!.textContent).toMatch(/^Visite à 10:30 · B1, Talant$/);
     expect(field.find('p', /^Avant de repartir, il manque : Vue d’ensemble, Accès, Limites/)).toBeDefined();
     // Une note.
     field.find('textarea')!.value = '  Terrain en pente douce, accès par le chemin communal.  ';
@@ -601,6 +605,156 @@ describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’e
     expect(await (await w.call(w.agent, 'POST', '/v1/hors-ligne/saisies', JSON.stringify({ deviceId: 'appareil-1', ops: [], autre: 1 }))).json()).toMatchObject({ code: 'unexpected_field' });
     expect((await w.call(w.agent, 'POST', '/v1/hors-ligne/saisies', JSON.stringify({ deviceId: 'x', ops: [] }))).status).toBe(400);
     expect(await w.count('offline_ops')).toBe(0);
+  });
+});
+
+/** Attendre, en temps réel, que la clé tirée du code soit prête : PBKDF2 prend du temps. */
+const until = async (ok: () => unknown, what: string) => {
+  for (let i = 0; i < 600; i++) {
+    if (ok()) return;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  throw new Error(`jamais vu : ${what}`);
+};
+const privOf = (idb: Map<string, unknown>) => [...idb.keys()].find((k) => k.startsWith(`${HORS_LIGNE_DB.prive}:`));
+
+describeWithSqlite('AU104 · le mode privé de la visite, sur le téléphone', () => {
+  const designate = async (w: World) => {
+    const p = (await w.db.first<{ id: string; network_id: string }>("SELECT id, network_id FROM properties WHERE reference = 'B1'"))!;
+    await w.db.run(
+      'INSERT INTO property_designations (id, network_id, property_id, version, street, postal_code, city, parcels, set_by, set_at) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)',
+      ['des-test-1', p.network_id, p.id, '12 rue des Vignes', '21240', 'Talant', '[{"prefix":null,"section":"AB","number":"12"}]', 'agent:test', new Date(MONDAY_9H).toISOString()],
+    );
+  };
+  const end = async (w: World) => Date.parse((await w.db.first<{ end_at: string }>('SELECT end_at FROM appointments WHERE id = ?', [w.visitId]))!.end_at);
+  type Phone = Awaited<ReturnType<typeof phone>>;
+  const openDay = async (p: Phone) => p.click(p.els.accueil!.all().find((e) => e.textContent === 'Mes visites sans réseau'));
+  const typeCode = (p: Phone, label: RegExp, code: string) => {
+    const f = p.root().all().find((e) => e.tagName === 'input' && label.test(e.attributes['aria-label'] ?? ''));
+    if (!f) throw new Error(`champ du code absent : ${JSON.stringify(p.root().all().filter((e) => e.tagName === 'input').map((e) => e.attributes))}`);
+    expect(f.attributes).toMatchObject({ type: 'password', inputmode: 'numeric', autocomplete: 'off' });
+    f.value = code;
+  };
+  const address = (p: Phone) => p.root().all().find((e) => e.tagName === 'p' && e.textContent === '12 rue des Vignes, 21240 Talant');
+  const callLink = (p: Phone) => p.root().all().find((e) => e.tagName === 'a' && /^Appeler /.test(e.textContent));
+  const KEEP = /^Choisissez un code/;
+  const OPEN = /^Code des adresses/;
+
+  it('[R676] gardés sous un code, l’adresse et le numéro s’ouvrent en zone blanche ; chiffrés sur le téléphone, refermés seuls, effacés après la visite', async () => {
+    const w = await setup();
+    await designate(w);
+    const idb = new Map<string, unknown>();
+    w.setClock(w.visitStart - 2 * HOUR);
+    const home = await phone(w, idb, { network: true });
+    await openDay(home);
+    // Le constat d'avant : sans le mode privé, ni l'entrée ni le contact.
+    expect(address(home)).toBeUndefined();
+    expect(callLink(home)).toBeUndefined();
+    // Un code trop court est refusé sur place, sans rien demander au serveur.
+    typeCode(home, KEEP, '1234');
+    await home.click(home.find('button', 'Garder pour aujourd’hui'));
+    expect(home.find('p', 'Un code de 6 à 12 chiffres.')).toBeDefined();
+    expect(home.calls).not.toContain('POST /v1/hors-ligne/prive');
+    typeCode(home, KEEP, '482913');
+    await home.click(home.find('button', 'Garder pour aujourd’hui'));
+    await until(() => address(home), 'adresse');
+    expect(home.find('p', '1 visite gardée, ouvertes.')).toBeDefined();
+    expect(callLink(home)!.textContent).toBe('Appeler Inès Durandal · +33612345678');
+    expect(callLink(home)!.attributes.href).toBe('tel:+33612345678');
+    // Le code ne part jamais : la demande n'a aucun corps. Sur le téléphone, rien en clair.
+    const i = home.calls.indexOf('POST /v1/hors-ligne/prive');
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(home.bodies[i]).toBeUndefined();
+    const stored = JSON.stringify([...idb.entries()]);
+    for (const secret of ['Vignes', 'Durandal', 'Inès', '33612', '0612', '482913']) expect(stored).not.toContain(secret);
+    expect(privOf(idb)).toBeDefined();
+    await home.click(home.find('button', 'Verrouiller'));
+    expect(address(home)).toBeUndefined();
+
+    // Dans la cour, sans réseau : fermé ; un code faux compte, le bon ouvre.
+    w.setClock(w.visitStart - 5 * MIN);
+    const field = await phone(w, idb, { network: false });
+    expect(address(field)).toBeUndefined();
+    typeCode(field, OPEN, '000000');
+    await field.click(field.find('button', 'Ouvrir'));
+    await until(() => field.find('p', /^Code faux/), 'code faux');
+    expect(field.find('p', 'Code faux. Encore 4 essais avant l’effacement.')).toBeDefined();
+    typeCode(field, OPEN, '482913');
+    await field.click(field.find('button', 'Ouvrir'));
+    await until(() => address(field), 'adresse sans réseau');
+    expect(callLink(field)).toBeDefined();
+    // Cinq minutes sans geste : refermé.
+    const o = privOf(idb)!.slice(HORS_LIGNE_DB.prive.length + 1);
+    const api = field.ctx.AimmoHorsLigne as { prive: { visites: (o: string) => Promise<unknown[] | null> } };
+    expect(await api.prive.visites(o)).toHaveLength(1);
+    w.setClock(w.clock() + 6 * MIN);
+    expect(await api.prive.visites(o)).toBeNull();
+
+    // Deux heures après la fin de la visite : effacé du téléphone dès l'ouverture, sans même le code.
+    w.setClock((await end(w)) + 2 * HOUR + MIN);
+    const late = await phone(w, idb, { network: false });
+    expect(late.root().hidden).toBe(false);
+    expect(late.find('button', 'Ouvrir')).toBeUndefined();
+    expect(late.find('button', 'Garder pour aujourd’hui')).toBeDefined();
+    expect(privOf(idb)).toBeUndefined();
+  });
+
+  it('[R676] cinq codes faux, la sortie, une visite annulée, une clé refusée ou minuit effacent le mode privé du téléphone', async () => {
+    const w = await setup();
+    await designate(w);
+    const idb = new Map<string, unknown>();
+    w.setClock(w.visitStart - 2 * HOUR);
+    const keep = async () => {
+      const p = await phone(w, idb, { network: true });
+      await openDay(p);
+      typeCode(p, KEEP, '482913');
+      await p.click(p.find('button', 'Garder pour aujourd’hui'));
+      await until(() => privOf(idb) && address(p), 'gardé');
+      return p;
+    };
+    // Cinq codes faux.
+    await keep();
+    const thief = await phone(w, idb, { network: false });
+    for (let n = 1; n <= 5; n++) {
+      typeCode(thief, OPEN, `11111${n}`);
+      await thief.click(thief.find('button', 'Ouvrir'));
+      const said = n < 4 ? `Code faux. Encore ${5 - n} essais avant l’effacement.` : n === 4 ? 'Code faux. Dernier essai avant l’effacement.' : 'Cinq codes faux : adresses et numéros sont effacés du téléphone.';
+      await until(() => thief.find('p', said), `essai ${n}`);
+    }
+    expect(privOf(idb)).toBeUndefined();
+    // La sortie.
+    const out = await keep();
+    out.els.sortir!.listeners.click!({});
+    await until(() => !privOf(idb), 'effacé à la sortie');
+    // La visite annulée : la préparation suivante, avec du réseau, efface tout.
+    await keep();
+    await w.db.run("UPDATE appointments SET status = 'cancelled' WHERE id = ?", [w.visitId]);
+    await phone(w, idb, { network: true });
+    await until(() => !privOf(idb), 'effacé après annulation');
+    // Minuit : même sans ouvrir, la lecture efface ce qui a passé sa fin.
+    await w.db.run("UPDATE appointments SET status = 'booked' WHERE id = ?", [w.visitId]);
+    // La clé refusée par le serveur (appareil retiré, agent parti) : effacé à la préparation suivante.
+    await keep();
+    await phone(w, idb, { network: true }, { key: KEY, viewer: { ...w.agent, role: 'compliance' } as Viewer });
+    await until(() => !privOf(idb), 'effacé avec la clé refusée');
+    await keep();
+    w.setClock(Date.parse('2026-12-08T23:00:00.000Z'));
+    await phone(w, idb, { network: false });
+    await until(() => !privOf(idb), 'effacé à minuit');
+  });
+
+  it('[R676] [R16] seul l’agent obtient le mode privé ; un autre rôle est refusé et le refus est au journal', async () => {
+    const w = await setup();
+    w.setClock(w.visitStart - HOUR);
+    const r = await w.call({ ...w.direction, role: 'compliance' } as Viewer, 'POST', '/v1/hors-ligne/prive');
+    expect(r.status).toBe(403);
+    expect(await r.json()).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+    const ok = await w.call(w.agent, 'POST', '/v1/hors-ligne/prive');
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get('cache-control')).toBe('no-store');
+    const body = (await ok.json()) as { data: { pack: { visits: { contact: { phone: string } }[] } } };
+    expect(body.data.pack.visits[0]?.contact.phone).toBe('+33612345678');
+    expect(JSON.stringify(body)).not.toContain('example.test');
   });
 });
 
