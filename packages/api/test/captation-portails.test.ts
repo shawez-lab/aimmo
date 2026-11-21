@@ -146,6 +146,16 @@ describeWithSqlite('AU032 · captation par mail, portail par portail', () => {
     expect(await w.persons()).toBe(1);
   });
 
+  it('[R669] [R18] une demande rangée sous sa référence, relivrée sous le même identifiant de mail sans référence lisible, reste un doublon', async () => {
+    const w = await world();
+    const withRef = new TextDecoder().decode(portalLead('figaroimmo.fr', 7));
+    const withoutRef = withRef.replace(/Référence de la demande : [^\r]+\r\n/, '');
+    expect(withoutRef).not.toBe(withRef);
+    expect((await handleEmail(message(enc(withRef)), w.mailConfig))[0]).toMatchObject({ status: 'replied' });
+    expect((await handleEmail(message(enc(withoutRef)), w.mailConfig))[0]).toMatchObject({ status: 'duplicate' });
+    expect(await w.outbox()).toBe(1);
+  });
+
   it('[R669] [R12] une demande de portail sans coordonnée lisible n’est jamais un silence : l’agent est alerté, rien ne part', async () => {
     const w = await world();
     const [r] = await handleEmail(message(portalLead('bienici.com', 4, { withCoords: false })), w.mailConfig);

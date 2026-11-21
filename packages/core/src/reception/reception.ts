@@ -128,7 +128,9 @@ export class Reception {
     // Déjà rangé sous une autre clé du même message (AU032) : un doublon, jamais traité une seconde fois ; chaque clé
     // connue est gardée, pour qu'une relivraison sous l'une ou l'autre le reste [R18, R669].
     const others = [...new Set((message.previousExternalIds ?? []).map((previous) => dedupKey({ ...message, externalId: previous })))].filter((k) => k !== key);
-    if (others.length > 0) {
+    // Un mail peut être connu sous cette clé sans y être rangé (une demande de portail rangée sous sa référence) : la
+    // table des autres clés est toujours lue pour lui, même sans autre clé fournie.
+    if (others.length > 0 || message.channel === 'email') {
       const known = await this.byAnyKey(networkId, [key, ...others]);
       if (known) {
         await this.rememberKeys(networkId, known.id, [key, ...others], at);
