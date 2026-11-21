@@ -96,6 +96,15 @@ describe('AU068 · la lecture d’une page d’annonce', () => {
     expect(parseListingPage(graph + '<p>x</p>', page)).toMatchObject({ found: true, priceEur: 210000 });
   });
 
+  it('[R473] l’en-tête de l’annonce elle-même est lu ; une annonce dont l’@id absolu porte une ancre est bien la page', () => {
+    const r = parseListingPage('<header>Menu</header><main><article><header><h1>Maison</h1><p>Classe énergie F, classe climat E.</p></header><p>Prix : 210 000 €</p></article></main>');
+    expect(r).toMatchObject({ found: true, priceEur: 210000, energyClass: 'F', climateClass: 'E' });
+    const ld = (o: unknown) => `<script type="application/ld+json">${JSON.stringify(o)}</script>`;
+    const page = 'https://www.seloger.com/a/1.htm';
+    const html = ld({ '@type': 'RealEstateListing', url: 'https://www.seloger.com/a/2.htm', offers: { price: 99000, availability: 'https://schema.org/SoldOut' } }) + ld({ '@type': 'RealEstateListing', '@id': `${page}#annonce`, offers: { price: 210000, availability: 'https://schema.org/InStock' } }) + '<p>x</p>';
+    expect(parseListingPage(html, page)).toMatchObject({ found: true, priceEur: 210000 });
+  });
+
   it('[R473] 404 et 410 : plus en ligne ; une redirection, une autre réponse ou une page qui n’est pas du HTML : illisible ; jamais de redirection suivie', async () => {
     const f = fakeFetch();
     const reader = new HttpListingReader(f.fetch);

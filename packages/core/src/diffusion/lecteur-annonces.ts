@@ -88,8 +88,11 @@ const sameUrl = (a: unknown, b: string): boolean => typeof a === 'string' && lis
 export function mainListing(data: readonly Record<string, unknown>[], pageUrl?: string): Record<string, unknown> | null {
   const candidates = data.filter((o) => typesOf(o).some((t) => LISTING_TYPES.has(t)) || o.offers !== undefined || o.price !== undefined);
   if (pageUrl) {
-    // Un `@id` à ancre (« #offre-recommandee ») nomme un nœud de la page, jamais la page elle-même.
-    const own = candidates.find((o) => sameUrl(o.url, pageUrl) || (typeof o['@id'] === 'string' && !o['@id'].includes('#') && sameUrl(o['@id'], pageUrl)));
+    // Un `@id` relatif (« #offre-recommandee ») nomme un nœud de la page, jamais la page elle-même ; un `@id` absolu
+    // (« https://…/1.htm#annonce ») désigne la page quand c'est celui d'une annonce, pas d'une simple offre.
+    const ownId = (o: Record<string, unknown>): boolean =>
+      typeof o['@id'] === 'string' && !o['@id'].startsWith('#') && /^https:\/\//i.test(o['@id']) && typesOf(o).some((t) => t !== 'Offer' && LISTING_TYPES.has(t)) && sameUrl(o['@id'], pageUrl);
+    const own = candidates.find((o) => sameUrl(o.url, pageUrl)) ?? candidates.find(ownId);
     if (own) return own;
   }
   return candidates[0] ?? null;
@@ -160,7 +163,9 @@ export function listingHtml(html: string): string {
       continue;
     }
     const selfClosing = VOID_TAGS.has(name) || /\/\s*$/.test(attrs);
-    if (skipAt < 0 && !selfClosing && (AROUND.test(name) || OTHER_LISTINGS.test(attrs))) {
+    // L'en-tête et le pied d'une annonce (`<article><header>`) sont à elle : seuls ceux de la page sont écartés.
+    const around = name === 'nav' || name === 'dialog' || (AROUND.test(name) && !stack.includes('article'));
+    if (skipAt < 0 && !selfClosing && (around || OTHER_LISTINGS.test(attrs))) {
       skipAt = stack.length;
       stack.push(name);
       continue;
