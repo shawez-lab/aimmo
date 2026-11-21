@@ -266,7 +266,7 @@ describe('assistant juridique (HX03)', () => {
     const old = await askLegal('Quand retirer le panneau ?', { library: [{ ...LIB[1]!, checkedOn: '2025-10-01', validatedBy: 'avocat:essai' }], now });
     expect(old.status).toBe('a_verifier');
     // Une date de vérification à venir ou mal écrite ne prouve rien.
-    for (const checkedOn of ['2099-01-01', '2026-12-09', 'hier']) {
+    for (const checkedOn of ['2099-01-01', '2026-12-09', 'hier', '2026-02-30', '2025-13-01']) {
       const bad = await askLegal('Quand retirer le panneau ?', { library: [{ ...LIB[1]!, checkedOn, validatedBy: 'avocat:essai' }], now });
       expect(bad.status === 'a_verifier' && bad.citations[0]!.warnings, checkedOn).toEqual([UNCHECKED]);
     }

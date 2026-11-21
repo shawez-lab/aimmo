@@ -249,7 +249,7 @@ export function citationOf(s: LegalSource, now: Date): Citation {
   const warnings: string[] = [];
   const checked = s.checkedOn === null ? Number.NaN : Date.parse(`${s.checkedOn}T00:00:00.000Z`);
   // Une date mal écrite ou à venir ne prouve aucune vérification (AU090).
-  if (Number.isNaN(checked) || !/^\d{4}-\d{2}-\d{2}$/.test(s.checkedOn ?? '') || checked > now.getTime()) warnings.push(UNCHECKED);
+  if (Number.isNaN(checked) || !/^\d{4}-\d{2}-\d{2}$/.test(s.checkedOn ?? '') || new Date(checked).toISOString().slice(0, 10) !== s.checkedOn || checked > now.getTime()) warnings.push(UNCHECKED);
   else if (now.getTime() - checked > LEGAL_CHECK_MAX_AGE_DAYS * DAY) warnings.push(STALE);
   if (s.validatedBy === null || s.validatedBy.trim() === '') warnings.push(NOT_VALIDATED);
   return {
