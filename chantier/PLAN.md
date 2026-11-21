@@ -979,7 +979,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H29).
 
 ### AU090 · L’assistant juridique repose sur une bibliothèque déclarée jamais vérifiée et non relue par l’avocat
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M12 Conformité ; audit A090 (majeur), endroit : chantier/HUMAIN.md, H54 ; C/juridique/bibliotheque.ts.
 - Constat de l'audit : L’assistant juridique repose sur une bibliothèque déclarée jamais vérifiée et non relue par l’avocat.

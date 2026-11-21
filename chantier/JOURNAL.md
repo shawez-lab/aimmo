@@ -1586,3 +1586,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 09:22 · AU088 · tableau de mise en service : carte, garantie, assurance, médiateur et relecture des mentions déclarées avec preuve datée ; le site réel fermé tant qu'une manque, expire, s'écarte de ce qui est affiché ou reste à relire ; R675 ; Codex 3 P0 corrigés ; vérification GitHub verte ; fusionnée (#755, cee2438f) · prochaine : AU089
 - 2026-11-21 09:22 · VOIE 2 : relance refusée, question 2 (la séance de 05:55 n'a rien produit)
 - 2026-11-21 09:22 · VOIE 2 : AU088, cee2438f (main), relancé non
+- 2026-11-21 09:12 · VOIE 3 : AU090 fusionnée (#756) : un texte non vérifié, vérifié dans le futur ou à une date impossible ne donne qu'une citation à vérifier [R252]
