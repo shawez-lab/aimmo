@@ -132,16 +132,21 @@ const fakeJpeg = (width: number, height: number, gray: Uint8Array): Uint8Array =
   const sos = [0xff, 0xda, 0x00, 0x0c, 0x03, 1, 0x00, 2, 0x00, 3, 0x00, 0x00, 0x3f, 0x00];
   const data: number[] = [];
   for (const b of gray) b === 0xff ? data.push(0xff, 0x00) : data.push(b);
-  return new Uint8Array([0xff, 0xd8, ...dqt, ...sof, ...dht, ...sos, ...data, 0xff, 0xd9]);
+  const head = [0xff, 0xd8, ...dqt, ...sof, ...dht, ...sos];
+  const out = new Uint8Array(head.length + data.length + 2);
+  out.set(head, 0);
+  out.set(data, head.length);
+  out.set([0xff, 0xd9], head.length + data.length);
+  return out;
 };
 
 /**
- * L'appareil photo inventé : un « fichier » porte son image (et sa taille, 1 280 points de côté par défaut) ; la toile
+ * L'appareil photo inventé : un « fichier » porte son image (et sa taille, 1 280 points sur 960 par défaut) ; la toile
  * la rend en couleurs, point pour point, et en fait un JPEG inventé qui garde son image.
  */
 type Shot = { luma: Luma; width?: number; height?: number };
 const camera = {
-  createImageBitmap: async (file: Shot) => ({ width: file.width ?? 1280, height: file.height ?? 1280, src: file.luma, close: () => undefined }),
+  createImageBitmap: async (file: Shot) => ({ width: file.width ?? 1280, height: file.height ?? 960, src: file.luma, close: () => undefined }),
   OffscreenCanvas: class {
     px: Uint8ClampedArray;
     constructor(
@@ -157,11 +162,18 @@ const camera = {
         drawImage: (b: { src: Luma }) => void (src = b.src),
         getImageData: (_x: number, _y: number, w: number, h: number) => {
           const data = new Uint8ClampedArray(w * h * 4);
-          for (let y = 0; y < h; y++)
-            for (let x = 0; x < w; x++) {
-              const v = src!.luma[Math.floor((y * src!.height) / h) * src!.width + Math.floor((x * src!.width) / w)]!;
-              data.set([v, v, v, 255], (y * w + x) * 4);
+          const l = src!.luma;
+          const cols = Array.from({ length: w }, (_, x) => Math.floor((x * src!.width) / w));
+          for (let y = 0, k = 0; y < h; y++) {
+            const row = Math.floor((y * src!.height) / h) * src!.width;
+            for (let x = 0; x < w; x++, k += 4) {
+              const v = l[row + cols[x]!]!;
+              data[k] = v;
+              data[k + 1] = v;
+              data[k + 2] = v;
+              data[k + 3] = 255;
             }
+          }
           return { data };
         },
         putImageData: (img: { data: Uint8ClampedArray }) => void c.px.set(img.data),
@@ -294,6 +306,14 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
       return w.clock();
     }
   };
+  // Les calculs de chiffrement et d'empreinte sont réels et prennent leur temps : l'attente des tests les attend.
+  let inflight = 0;
+  const subtle = new Proxy(crypto.subtle, {
+    get: (t, k) => {
+      const f = (t as unknown as Record<string | symbol, unknown>)[k];
+      return typeof f === 'function' ? (...a: unknown[]) => (inflight++, (f.apply(t, a) as Promise<unknown>).finally(() => inflight--)) : f;
+    },
+  });
   const stub = (data: unknown) => Response.json({ ok: true, mode: 'essai', data });
   const ctx: Record<string, unknown> = {
     document,
@@ -308,7 +328,7 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
     TextEncoder,
     TextDecoder,
     atob,
-    crypto: { subtle: crypto.subtle, getRandomValues: (a: Uint8Array) => crypto.getRandomValues(a), randomUUID: () => `7d1c2b3a-2222-4a2b-8c3d-${String(Math.floor(Math.random() * 1e6)).padStart(6, '0')}${String(++uuids).padStart(6, '0')}` },
+    crypto: { subtle, getRandomValues: (a: Uint8Array) => crypto.getRandomValues(a), randomUUID: () => `7d1c2b3a-2222-4a2b-8c3d-${String(Math.floor(Math.random() * 1e6)).padStart(6, '0')}${String(++uuids).padStart(6, '0')}` },
     // Les attentes longues sont gardées, pas lancées : le test les déclenche quand il avance l'horloge.
     setTimeout: (f: () => void, ms: number) => (ms === 0 ? setTimeout(f, 0) : (later.push({ f, done: false }), later.length)),
     clearTimeout: (id: number) => void (later[id - 1] && (later[id - 1]!.done = true)),
@@ -341,14 +361,19 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
   // La page ne charge pas la visite sans réseau : l'application la demande quand elle sert, et l'appareil la sert.
   const loads: string[] = [];
   const settle = async () => {
-    for (let i = 0; i < 40; i++) {
-      await new Promise((r) => setTimeout(r, 0));
-      for (const e of els['hors-ligne']!.all()) {
-        if (e.tagName !== 'script' || e.attributes['data-lu']) continue;
-        e.setAttribute('data-lu', '1');
-        loads.push(e.attributes.src!);
-        if (!ctx.AimmoHorsLigne) runInNewContext(OFFLINE, ctx);
-        e.listeners.load!({});
+    // Quarante tours, puis de nouveau quarante tant qu'un calcul réel était en cours pendant les précédents.
+    for (let round = 0, again = true; again && round < 200; round++) {
+      again = false;
+      for (let i = 0; i < 40; i++) {
+        if (inflight > 0) again = true;
+        await new Promise((r) => setTimeout(r, inflight > 0 ? 2 : 0));
+        for (const e of els['hors-ligne']!.all()) {
+          if (e.tagName !== 'script' || e.attributes['data-lu']) continue;
+          e.setAttribute('data-lu', '1');
+          loads.push(e.attributes.src!);
+          if (!ctx.AimmoHorsLigne) runInNewContext(OFFLINE, ctx);
+          e.listeners.load!({});
+        }
       }
     }
   };

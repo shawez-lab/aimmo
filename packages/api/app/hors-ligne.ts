@@ -281,7 +281,7 @@ function tag(key) {
    minutes sans geste ; chaque visite effacée deux heures après sa fin, tout effacé à minuit, à la sortie, après cinq codes
    faux, ou quand une préparation avec réseau ne rend plus l'une de ses visites. */
 var open_ = null, privGen = 0, idleTimer = null;
-function b64(bytes) { var s = '', a = new Uint8Array(bytes); for (var i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return G.btoa(s); }
+function b64(bytes) { var s = '', a = new Uint8Array(bytes); for (var i = 0; i < a.length; i += 8192) s += String.fromCharCode.apply(null, a.subarray(i, i + 8192)); return G.btoa(s); }
 function unb64(t) { var s = G.atob(t), a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; }
 function goodCode(c) { return typeof c === 'string' && new RegExp('^[0-9]{' + P.minDigits + ',12}$').test(c); }
 function keyOf(code, salt) {
@@ -504,13 +504,16 @@ function reduce(file, size) {
 function hex(buf) { var h = '', a = new Uint8Array(buf); for (var i = 0; i < a.length; i++) h += (a[i] < 16 ? '0' : '') + a[i].toString(16); return h; }
 function fitFull(w, h) { var s = Math.min(1, IMG.maxSide / Math.max(w, h, 1)); return { width: Math.max(1, Math.round(w * s)), height: Math.max(1, Math.round(h * s)) }; }
 function canvas(w, h) { var c = G.OffscreenCanvas ? new G.OffscreenCanvas(w, h) : G.document.createElement('canvas'); c.width = w; c.height = h; return c; }
-/* Chaque point : la moyenne des prises, chacune pesée par sa bonne exposition à cet endroit, comme fuse(). */
+/* Chaque point : la moyenne des prises, chacune pesée par sa bonne exposition à cet endroit (sa lumière arrondie, comme
+   les prises réduites), comme fuse(). */
+var WEIGHTS = null;
 function fuseColor(layers, n) {
+  if (!WEIGHTS) { WEIGHTS = new Float64Array(256); for (var v = 0; v < 256; v++) WEIGHTS[v] = weight(v); }
   var out = new Uint8ClampedArray(n * 4);
   for (var i = 0; i < n; i++) {
     var j = 4 * i, r = 0, g = 0, b = 0, den = 0;
     for (var k = 0; k < layers.length; k++) {
-      var d = layers[k], q = weight(0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2]);
+      var d = layers[k], q = WEIGHTS[Math.round(0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2])];
       r += q * d[j]; g += q * d[j + 1]; b += q * d[j + 2]; den += q;
     }
     out[j] = Math.round(r / den); out[j + 1] = Math.round(g / den); out[j + 2] = Math.round(b / den); out[j + 3] = 255;

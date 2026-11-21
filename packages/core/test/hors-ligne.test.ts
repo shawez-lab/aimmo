@@ -239,7 +239,12 @@ const fakeJpeg = (width: number, height: number, body: Uint8Array = new Uint8Arr
   const sos = [0xff, 0xda, 0x00, 0x0c, 0x03, 1, 0x00, 2, 0x00, 3, 0x00, 0x00, 0x3f, 0x00];
   const data: number[] = [];
   for (const b of body) b === 0xff ? data.push(0xff, 0x00) : data.push(b);
-  return new Uint8Array([0xff, 0xd8, ...dqt, ...sof, ...dht, ...sos, ...data, 0xff, 0xd9]);
+  const head = [0xff, 0xd8, ...dqt, ...sof, ...dht, ...sos];
+  const out = new Uint8Array(head.length + data.length + 2);
+  out.set(head, 0);
+  out.set(data, head.length);
+  out.set([0xff, 0xd9], head.length + data.length);
+  return out;
 };
 /** L'image entière qui accompagne la photo [R677] : le fichier, et ce que la saisie en dit. */
 const wholeImage = (exposures: Luma[], o: { width?: number; height?: number; kept?: Luma; body?: Uint8Array } = {}) => {
