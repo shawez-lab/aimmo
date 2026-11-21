@@ -173,7 +173,7 @@ export interface CommissionRevision {
 export type RegularizationProblem = {
   ok: false;
   rule: 'R678' | null;
-  code: 'unknown' | 'bad_reason' | 'not_planned' | 'already_due' | 'nothing_to_fix' | 'partage_invalide' | 'stale';
+  code: 'unknown' | 'bad_reason' | 'not_planned' | 'already_due' | 'nothing_to_fix' | 'partage_invalide' | 'partage_inconnu' | 'agence_partenaire' | 'stale';
 };
 
 /** Une vente que le passage n'arrive pas à faire avancer : la direction tranche [R63, R67]. Sans montant ni nom [R13]. */
@@ -401,15 +401,14 @@ export class Commissions {
       [fileId],
     );
     const shares = rows.map((s): CommissionShare => ({ kind: s.kind, beneficiaryId: s.beneficiary_id, reason: s.reason, amountCents: Number(s.amount_cents) }));
-    const agency = await this.db.first<{ delegation_id: string; amount_cents: number }>('SELECT delegation_id, amount_cents FROM commission_agency_shares WHERE file_id = ?', [fileId]);
-    if (agency) shares.push({ kind: 'agence', beneficiaryId: `delegation:${agency.delegation_id}`, reason: null, amountCents: Number(agency.amount_cents) });
     return shares;
   }
 
   /**
    * AU091 · la régularisation d'une commission prévue après un avenant d'honoraires signé après le compromis [R678].
    * La direction seule l'approuve, avec son motif ; le code recalcule les honoraires (ceux de l'avenant), les parts (au
-   * même taux, palier compris, avec partages et parrainage de M14) et la part d'une agence partenaire. En une seule
+   * même taux, palier compris, avec partages et parrainage de M14 ; un partage ou une prime rangés sans leur source
+   * branchée refusent, jamais effacés). Une vente avec une agence partenaire attend AU091b. En une seule
    * écriture : la version, qui garde les parts d'avant et d'après, puis les nouvelles parts et les honoraires. Seulement
    * tant que la commission n'est pas due : aucune facture ni aucun versement n'existe encore, donc rien n'est payé deux
    * fois ; les factures se préparent ensuite sur les montants régularisés. Aucun montant n'est reçu [R63, R67].
@@ -431,14 +430,14 @@ export class Commissions {
     // L'écran dit la dernière version qu'il a montrée (0 sans régularisation) : une autre entre-temps refuse celle-ci.
     const seen = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM commission_revisions WHERE file_id = ?', [fileId]);
     if (input.expectedVersion !== undefined && input.expectedVersion !== (seen?.v ?? 0)) return { ok: false, rule: null, code: 'stale' };
+    // Une vente avec une agence partenaire : sa part et son relevé suivent les honoraires du compromis, hors d'ici (AU091b).
+    if (await this.db.first('SELECT 1 FROM agency_delegation_files WHERE file_id = ?', [fileId])) return { ok: false, rule: 'R678', code: 'agence_partenaire' };
     const pending = await this.pendingTerms(fileId, c);
     if (!pending) return { ok: false, rule: 'R678', code: 'nothing_to_fix' };
-    const agency = await this.db.first<{ delegation_id: string; partner_share_bp: number }>(
-      'SELECT d.id AS delegation_id, d.partner_share_bp FROM agency_delegation_files f JOIN agency_delegations d ON d.id = f.delegation_id WHERE f.file_id = ?',
-      [fileId],
-    );
-    const agencyCents = agency ? Math.floor((pending.feeCents * agency.partner_share_bp) / 10_000) : 0;
-    const base = pending.feeCents - agencyCents;
+    const before = await this.sharesOf(fileId);
+    // Un partage ou une prime déjà rangés ne s'effacent jamais faute de savoir les recalculer : sans la source de M14, rien.
+    if ((before.some((x) => x.kind === 'partage') && !this.partages) || (before.some((x) => x.kind === 'parrainage') && !this.primes)) return { ok: false, rule: null, code: 'partage_inconnu' };
+    const base = pending.feeCents;
     // Le taux de la vente ne change pas : celui gardé au compromis (taux propre, palier rangé, ou taux de la grille).
     const rate = await this.rateFor(c.network_id, fileId, c);
     let shares: CommissionShare[];
@@ -450,8 +449,7 @@ export class Commissions {
     } catch {
       return { ok: false, rule: null, code: 'partage_invalide' };
     }
-    const before = await this.sharesOf(fileId);
-    const after: CommissionShare[] = [...shares, ...(agency ? [{ kind: 'agence' as const, beneficiaryId: `delegation:${agency.delegation_id}`, reason: null, amountCents: agencyCents }] : [])];
+    const after = shares;
     // La somme des parts fait les honoraires, au centime [R69].
     if (after.reduce((a, x) => a + x.amountCents, 0) !== pending.feeCents) return { ok: false, rule: null, code: 'partage_invalide' };
     const version = (seen?.v ?? 0) + 1;
@@ -465,15 +463,11 @@ export class Commissions {
           params: [fileId, c.network_id, version, Number(c.fee_cents), pending.feeCents, c.fee_charge, pending.feeCharge, pending.amendmentId, reason, JSON.stringify(before), JSON.stringify(after), this.actor(viewer), at],
         },
         { sql: 'DELETE FROM commission_shares WHERE file_id = ?', params: [fileId] },
-        { sql: 'DELETE FROM commission_agency_shares WHERE file_id = ?', params: [fileId] },
         { sql: 'UPDATE commissions SET fee_cents = ?, fee_charge = ? WHERE file_id = ? AND fee_cents = ?', params: [pending.feeCents, pending.feeCharge, fileId, Number(c.fee_cents)] },
         {
           sql: `INSERT INTO commission_shares (file_id, seq, kind, beneficiary_id, reason, amount_cents) SELECT column1, column2, column3, column4, column5, column6 FROM (VALUES ${values})`,
           params: shares.flatMap((sh, i) => [fileId, i + 1, sh.kind, sh.beneficiaryId, sh.reason, sh.amountCents]),
         },
-        ...(agency
-          ? [{ sql: 'INSERT INTO commission_agency_shares (file_id, delegation_id, partner_share_bp, amount_cents, created_at) VALUES (?, ?, ?, ?, ?)', params: [fileId, agency.delegation_id, agency.partner_share_bp, agencyCents, at] }]
-          : []),
       ]);
     } catch {
       // Une autre régularisation ou l'acte devenu dû entre-temps : les gardes de la base ont tout refusé, rien n'est écrit.

@@ -89,6 +89,8 @@ describeWithSqlite('HX59 · la part de l’agence partenaire déduite de la comm
     expect(mine.ok && mine.value[0]!.shares).toEqual([{ kind: 'agent', beneficiaryId: t.alexId, reason: null, amountCents: 420_000 }]);
     // La part de l'agence ne se saisit pas, ni ne change, par la base.
     await expect(t.db.run('UPDATE commission_agency_shares SET amount_cents = 1')).rejects.toThrow(/rien ne change/);
+    // AU091 · une régularisation d'honoraires n'y touche pas : la part et le relevé de l'agence restent ceux du compromis [R678].
+    expect(await t.c.regularize(t.direction, t.fileId, { reason: 'Avenant de baisse signé avec le vendeur.' })).toEqual({ ok: false, rule: 'R678', code: 'agence_partenaire' });
     await t.acte();
     // Le relevé de l'acte retrouve la même part.
     expect(await t.p.statement(t.agency, t.shareId)).toMatchObject({ ok: true, value: { partnerCents: 400_000, ownCents: 600_000 } });

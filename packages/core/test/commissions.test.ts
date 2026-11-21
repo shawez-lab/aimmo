@@ -462,7 +462,12 @@ describeWithSqlite('AU091 · une baisse d’honoraires signée après le comprom
     ]);
     const sam = await c.list(t.sam);
     expect(sam.ok && sam.value[0]).toMatchObject({ feeCents: null, revisions: [], shares: [{ kind: 'partage', amountCents: 280_000 }] });
+    // Un partage ou une prime rangés ne s'effacent jamais faute de leur source : sans M14 branché, rien ne change.
+    t.setClock(at9('2027-04-21'));
+    await avenant(t, 7000, '2027-04-20T09:00:00.000Z', 3);
+    expect(await t.commissions().regularize(t.direction, t.fileId, { reason: 'Troisième avenant : 7 000 € signés.' })).toEqual({ ok: false, rule: null, code: 'partage_inconnu' });
+    expect((await t.db.all<{ kind: string }>('SELECT kind FROM commission_shares WHERE file_id = ? ORDER BY seq', [t.fileId])).map((x) => x.kind)).toEqual(['reseau', 'agent', 'partage', 'parrainage']);
     // Une vue d'écran ancienne ne rejoue rien.
-    expect(await c.regularize(t.direction, t.fileId, { reason: 'Second avenant : 8 000 € à la charge du vendeur.', expectedVersion: 1 })).toEqual({ ok: false, rule: null, code: 'stale' });
+    expect(await c.regularize(t.direction, t.fileId, { reason: 'Troisième avenant : 7 000 € signés.', expectedVersion: 1 })).toEqual({ ok: false, rule: null, code: 'stale' });
   });
 });
