@@ -773,7 +773,15 @@ export class Pige {
         }
       }
       const o = byKey.get(d.ref_key);
-      if (o) for (const f of await fpsOf(o.source, o.source_ref)) out.push(f.fingerprint);
+      if (o) {
+        // Revue ouverte depuis : c'est sa relève rangée qui dit ce qu'elle est, plus cette description.
+        const last = await this.db.first<{ at: string | null }>('SELECT max(collected_at) AS at FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ?', [networkId, o.source, o.source_ref]);
+        if (last?.at && last.at > d.noted_at) {
+          out.pop();
+          continue;
+        }
+        for (const f of await fpsOf(o.source, o.source_ref)) out.push(f.fingerprint);
+      }
     }
     return out;
   }
@@ -801,7 +809,10 @@ export class Pige {
    * [R672]. `marks` ajoute le doute, tiré de la relève en cours de chaque annonce, sauf de `current`, dont le doute est
    * donné par `doubtSeeds`.
    */
-  private async linked(networkId: string, fingerprint: string, seeds: readonly string[] = [], doubtSeeds: readonly string[] = [], current: AdRef | null = null): Promise<{ keys: string[]; marks: string[]; complete: boolean }> {
+  private async linked(networkId: string, fingerprint: string, seeds: readonly string[] = [], doubtSeeds: readonly string[] = [], current: AdRef | null = null): Promise<{ keys: string[]; marks: string[]; complete: boolean; refusedSince: boolean }> {
+    // Vrai quand une annonce du bien a été revue et refusée après sa dernière relève rangée : ses vieilles relèves ne
+    // rouvrent rien [R672, R273].
+    let refusedSince = false;
     const start = [...new Set([fingerprint, ...seeds])];
     const fps = new Set<string>(start);
     const refs = new Set<string>();
@@ -833,27 +844,33 @@ export class Pige {
         const latest = ref !== lastRef;
         lastRef = ref;
         const fresh = !refs.has(ref);
+        const isCurrent = current !== null && r.source === current.source && r.source_ref === current.sourceRef;
         if (fresh) {
           refs.add(ref);
-          keys.add(await refKey(r.source, r.source_ref));
+          const k = await refKey(r.source, r.source_ref);
+          keys.add(k);
+          if (!isCurrent && !refusedSince) {
+            const said = await this.db.first<{ noted_at: string }>('SELECT max(noted_at) AS noted_at FROM pige_closed_descriptions WHERE network_id = ? AND ref_key = ?', [networkId, k]);
+            if (said?.noted_at && said.noted_at >= r.collected_at) refusedSince = true;
+          }
         }
         add(r.fingerprint);
         const property = { kind: r.kind, postalCode: r.postal_code, commune: r.commune, surfaceM2: r.surface_m2, rooms: r.rooms };
         // Une relève qui dit ses pièces relie le bien prouvé ; une relève sans pièces ne relie que sa propre annonce : ses
         // fermetures se rangent sur elle, et les autres les lisent dans le doute tant qu'elle tait ses pièces.
         if (r.rooms !== null) for (const f of await nearFingerprints(property)) add(f);
-        const isCurrent = current !== null && r.source === current.source && r.source_ref === current.sourceRef;
         if (latest && fresh && !isCurrent) for (const f of await this.doubtsOf(networkId, property, { source: r.source, sourceRef: r.source_ref })) doubts.add(f);
       }
       frontier = next;
     }
-    return { keys: [...keys], marks: [...new Set([...keys, ...doubts])], complete: frontier.length === 0 };
+    return { keys: [...keys], marks: [...new Set([...keys, ...doubts])], complete: frontier.length === 0, refusedSince };
   }
 
   private async closedReason(networkId: string, fingerprint: string): Promise<Problem | null> {
     const l = await this.linked(networkId, fingerprint);
     // Un bien relié à trop d'annonces pour être suivi en entier : fermé, jamais supposé ouvert.
     if (!l.complete) return { ok: false, rule: 'R273', code: 'bien_trop_relie' };
+    if (l.refusedSince) return { ok: false, rule: 'R273', code: 'revue_fermee' };
     // Prouvé ou dans le doute, ce qui ferme l'un ferme l'autre [R672].
     const marks = JSON.stringify(l.marks);
     if (await this.db.first(`SELECT 1 AS x FROM pige_no_agency WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?))`, [networkId, marks])) return { ok: false, rule: 'R273', code: 'pas_agence' };

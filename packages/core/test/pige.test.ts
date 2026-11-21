@@ -809,4 +809,27 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     const five = (await s.db.first<{ id: string }>("SELECT id FROM pige_ads WHERE source = 'Site C'"))!.id;
     expect(await s.pige.prepare(s.agentAlex, five)).toMatchObject({ ok: false, rule: 'R05' });
   });
+
+  it('[R672] une annonce revue et refusée dans le doute n’a plus de message par sa vieille relève ; revue ouverte, son doute s’efface', async () => {
+    const s = await setup();
+    const a = s.ad({ ...flat, rooms: 3 });
+    await s.pige.ingest(s.network.id, [a]);
+    const old = (await s.db.first<{ id: string }>('SELECT id FROM pige_ads'))!.id;
+    await s.pige.ingest(s.network.id, [s.ad({ ...flat, source: 'Site B', rooms: 4, noAgency: true })]);
+    s.at(MONDAY_10H + 3_600_000);
+    expect(await s.pige.ingest(s.network.id, [{ ...a, rooms: undefined }])).toMatchObject({ added: 0, noAgency: 1 });
+    expect(await s.pige.prepare(s.agentAlex, old)).toMatchObject({ ok: false, rule: 'R273' });
+    let q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value).toEqual([]);
+    // Revue en 5 pièces : elle entre, et son message n'empêche pas celui d'un 6 pièces.
+    s.at(MONDAY_10H + 7_200_000);
+    expect(await s.pige.ingest(s.network.id, [{ ...a, rooms: 5 }])).toMatchObject({ added: 1 });
+    q = await s.pige.queue(s.agentAlex);
+    if (!q.ok) throw new Error('file');
+    expect(q.value.map((e) => e.rooms)).toEqual([5]);
+    expect(await s.pige.prepare(s.agentAlex, q.value[0]!.adId)).toMatchObject({ ok: true });
+    await s.pige.ingest(s.network.id, [s.ad({ ...flat, source: 'Site C', rooms: 6 })]);
+    const six = (await s.db.first<{ id: string }>("SELECT id FROM pige_ads WHERE source = 'Site C'"))!.id;
+    expect(await s.pige.prepare(s.agentAlex, six)).toMatchObject({ ok: true });
+  });
 });
