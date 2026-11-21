@@ -1609,3 +1609,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 17:18 · VOIE 2 : AU103, c0bc3452 (main), relancé non
 - 2026-11-21 18:05 · VOIE 3 : AU094b fusionnée (#765) : une part de paiement remet la relance à valider à son rang, texte refait au reste dû ; validation liée au texte lu ; envoi lié à la version validée ; une part pendant un envoi la remet à valider [R553]
 - 2026-11-21 18:05 · VOIE 3 : plus de tâche libre ; AU091 est à la voie 2, AU068b/AU103/AU104 attendent un humain (H10, appareil réel, hors ligne), AU075b est à la voie 1
+- 2026-11-21 18:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 17:53 par une autre séance voie 2, active : push sur chantier/AU091 à 18:30)
