@@ -228,7 +228,7 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     var labels = {};
     projects.forEach(function (q, n) { labels[q.id] = 'Projet d’achat ' + (n + 1); });
     var pick = projects.length > 1 ? t.cSelect(section, id + '-projet', 'Le projet', labels, projects[0].id) : null;
-    var seen = 0, known = false;
+    var seen = 0, known = false, picked = 0;
     // Sans le secteur en place lu, rien ne se range ni ne se retire : on ne remplace pas ce qu'on n'a pas vu.
     var retry = el('button', 'Réessayer de lire le secteur');
     retry.setAttribute('type', 'button');
@@ -267,13 +267,13 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     // range après un changement de projet ne s'affiche ni ne compte sous le nouveau.
     function drawShow() {
       if (drawOpen.parentNode) drawBox.removeChild(drawOpen);
-      var mine = seen, url = base();
+      var mine = picked, url = base();
       areaTool(drawBox, {
         base: function () { return url; },
-        ready: function () { return known && mine === seen; },
+        ready: function () { return known && mine === picked; },
         label: function () { return label.value.trim(); },
         current: function () { return current; },
-        done: function (a) { if (mine !== seen) return; said(a); state.textContent = 'Secteur rangé.'; },
+        done: function (a) { if (mine !== picked) return; said(a); state.textContent = 'Secteur rangé.'; },
       });
     }
     function drawReset() { drawBox.textContent = ''; drawBox.appendChild(drawOpen); }
@@ -313,7 +313,8 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
         fix.appendChild(retry);
       });
     }
-    if (pick) pick.addEventListener('change', function () { drawReset(); load(); });
+    // Un changement de projet referme la carte ; une nouvelle lecture du même projet la laisse utilisable.
+    if (pick) pick.addEventListener('change', function () { picked++; drawReset(); load(); });
     load();
   }
   var onlineTool = null, onlineBusy = false;

@@ -68,7 +68,9 @@ globalThis.AIMMO_SECTEUR_CARTE = function (t) {
     canvas.setAttribute('width', String(SIZE));
     canvas.setAttribute('height', String(SIZE));
     canvas.setAttribute('aria-label', 'Carte du secteur : tracez le contour du doigt');
-    canvas.className = 'carte-secteur';
+    // Le doigt trace, il ne fait pas défiler la page ; la carte tient dans la colonne. Posé par le script, chargé au
+    // geste, pour ne rien ajouter au cœur de l'application.
+    if (canvas.style) { canvas.style.touchAction = 'none'; canvas.style.display = 'block'; canvas.style.width = '100%'; canvas.style.maxWidth = SIZE + 'px'; }
     var g = canvas.getContext ? canvas.getContext('2d') : null;
     function said(text) { state.textContent = text; }
     function why(res, fallback) { return res.offline ? OFFLINE : REFUSALS[res.body && res.body.code] || fallback; }

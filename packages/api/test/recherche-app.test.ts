@@ -563,4 +563,19 @@ describe('AU073b · dessiner le secteur au doigt, sur une carte', () => {
       delete proto.getContext;
     }
   });
+  it('le secteur en place relu après un échec : la carte ouverte entre-temps range quand même', async () => {
+    const t = await drawn({ [`GET ${base}`]: no(500, { ok: false }), [`POST ${base}`]: ok({ shape: 'polygone', points: [], label: 'Relu' }) });
+    t.input('Lieu où centrer la carte (adresse, gare, école…)').value = 'Gare de Dijon';
+    await t.press('Centrer la carte');
+    await t.trace([[100, 100], [200, 100], [200, 200]]);
+    t.input('Nom du secteur, pour vous').value = 'Relu';
+    await t.press('Ranger ce secteur dessiné');
+    expect(t.posts()).toEqual([]);
+    expect(t.area().textContent).toContain('Le secteur en place n’est pas lu');
+    t.table[`GET ${base}`] = ok(null);
+    await t.press('Réessayer de lire le secteur');
+    await t.press('Ranger ce secteur dessiné');
+    expect(t.posts().at(-1)).toMatchObject({ url: base, body: { shape: 'polygone', label: 'Relu' } });
+    expect(t.area().textContent).toContain('Secteur « Relu » dessiné.');
+  });
 });
