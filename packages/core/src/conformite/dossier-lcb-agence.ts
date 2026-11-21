@@ -25,6 +25,7 @@
  */
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
+import { DispositifLcb } from './dispositif-lcb.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { masquerTexte, tablesLcbFt } from '../licences/reprise.ts';
@@ -191,6 +192,9 @@ export class DossierLcbAgences {
     const licenceId = await this.licenceOf(viewer);
     // Le réseau qui donne les licences garde son dossier chez lui : seule l'agence sous licence le reprend [R662].
     if (licenceId === null) return this.refuse(viewer, 'R662', 'pas_de_licence');
+    // Le dossier porte les signalements : seul le responsable nommé, le dernier, le tire (AU089) [R94].
+    const gate = await new DispositifLcb(this.db, this.journal, { now: this.now }).officerGate(viewer, false);
+    if (gate !== null) return this.refuse(viewer, 'R16', gate);
     // Avant toute lecture : sans preuve pour ce dossier, rien n'est lu (la porte écrit son refus au journal) [R601].
     const proof = await this.secondFactor.requireSecondFactor(viewer, 'export_complet', `licence_lcb:${licenceId}`, stepUpId);
     if (!proof.ok) return { ok: false, rule: 'R601', code: proof.code };

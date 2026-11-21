@@ -68,6 +68,10 @@ async function setup() {
     { sha256: await sha256Hex(KEYS.conformite), expiresOn: "2099-12-31", networkId: lac.licenseeNetworkId, role: 'compliance', userId: 'conformite-lac' },
     { sha256: await sha256Hex(KEYS.conformiteAutre), expiresOn: "2099-12-31", networkId: pres.licenseeNetworkId, role: 'compliance', userId: 'conformite-pres' },
   ]);
+  // AU089 : dans chaque agence, la direction a nommé son responsable ; lui seul tire le dossier [R94].
+  for (const [net, officer] of [[lac.licenseeNetworkId, 'conformite-lac'], [pres.licenseeNetworkId, 'conformite-pres']] as const) {
+    await db.run('INSERT INTO lcb_officers (network_id, seq, officer_user_id, designated_by, designated_at) VALUES (?, 1, ?, ?, ?)', [net, officer, 'direction:essai', '2028-01-01T08:00:00.000Z']);
+  }
   // Dans chaque réseau, une pièce au coffre et un signalement : rien d'un autre réseau ne doit sortir.
   const at = '2028-01-09T08:00:00.000Z';
   for (const [net, tag] of [[lac.licenseeNetworkId, 'lac'], [pres.licenseeNetworkId, 'pres'], [network.id, 'reseau']] as const) {
