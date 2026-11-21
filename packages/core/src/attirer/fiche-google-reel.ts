@@ -199,6 +199,8 @@ export function googleBusinessClient(config: GoogleBusinessConfig): GbpClient {
       const prefix = `accounts/${account}/locations/${location}/localPosts/`;
       // Sans la référence de la publication rangée, l'issue est inconnue : la publication n'est jamais refaite.
       if (typeof b.name !== 'string' || !b.name.startsWith(prefix) || !REVIEW_ID.test(b.name.slice(prefix.length))) throw new GbpError('incertain');
+      // La référence est la preuve de l'envoi ; le lien public n'est rendu que lorsque Google l'a déjà (il peut manquer
+      // pendant le traitement de la publication) : son absence ne fait pas douter d'une publication rangée.
       return { ref: b.name, url: typeof b.searchUrl === 'string' ? b.searchUrl : null };
     },
 
