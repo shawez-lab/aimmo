@@ -14,11 +14,15 @@ import { R2VaultStorage, type R2VaultBucket } from './conformite.ts';
 import { R2PartnerFiles, type R2PartnerBucket } from './partenaires.ts';
 import { R2DossierStorage, type R2DossierBucket } from './commerces.ts';
 import { R2FichiersPlages, plagesBucket } from './reprise-fichiers.ts';
-import { BanGeocoder, DvfSiteSales, EstimationEnLigne, GpuUrbanism, httpDvfReader } from '@aimmo/core';
+import { BanGeocoder, DvfSiteSales, EstimationEnLigne, GpuUrbanism, httpDvfReader, SqlJournalStore } from '@aimmo/core';
 import type { StudioUploadStore } from '../../core/src/studio/depot.ts';
 import { readClesConfig } from './cles.ts';
 import { AdemeDiagnosisFeed } from '../../core/src/veille-dpe/index.ts';
 import { HttpPigeSource, missingPigeSettings, type PigeFetcher, type PigeProviderSettings, type PigeSource } from '../../core/src/pige/index.ts';
+import { liveSocialChannels, runLiveWithdrawals } from './reseaux-reels.ts';
+
+/** AU036 : les vrais Facebook et Instagram du réseau, seulement quand tout est rangé ; sinon null, tout reste d'essai. */
+const socialOf = (env: Env) => liveSocialChannels(env, fetch.bind(globalThis));
 
 /**
  * Liaisons du Worker, déclarées dans wrangler.toml ; `API_KEYS` et `INTAKE_KEYS` sont des secrets Cloudflare.
@@ -42,6 +46,12 @@ export interface Env {
   META_NETWORK_ID?: string;
   META_OWN_IDS?: string;
   META_APP_IDS?: string;
+  /** AU036 : `reel` met en service les vrais réseaux, avec `META_PAGE_ID`, `META_IG_USER_ID`, `META_PAGE_TOKEN` (un secret) et `RESEAUX_MEDIA_BASE`. */
+  RESEAUX_MODE?: string;
+  META_PAGE_ID?: string;
+  META_IG_USER_ID?: string;
+  META_PAGE_TOKEN?: string;
+  RESEAUX_MEDIA_BASE?: string;
   /** Adresse publique des fichiers DVF du site, lus en lecture seule (E05), par exemple `https://…/donnees-dvf/`. */
   DVF_BASE_URL?: string;
   /** L'adresse du fichier JSON du registre des gels (BR85) ; absente, celle de la documentation de la DG Trésor. */
@@ -213,7 +223,8 @@ export default {
       },
       // M19 (X10) : photos, originaux, preuves et accords dans `MEDIA`, dont seule l'existence est lue ; absent, fermé.
       // X12 : les fichiers finis rangés tels quels dans `MEDIA` ; sans lui (H25), le dépôt est fermé.
-      studio: { files: env.MEDIA ? mediaFiles(env.MEDIA) : null, uploads: env.MEDIA ? mediaUploads(env.MEDIA) : null },
+      // AU036 : les vrais Facebook et Instagram du réseau seulement quand tout est rangé (H06, H88) ; sinon, essai.
+      studio: { files: env.MEDIA ? mediaFiles(env.MEDIA) : null, uploads: env.MEDIA ? mediaUploads(env.MEDIA) : null, social: socialOf(env) },
       // M20 complet (G12) : preuves de coût dans `PIECES` ; géocodeur des lettres seulement avec les données publiques
       // de l'estimation ; sans IA branchée (H13), les textes du code. Rien ne part : mode essai.
       gagner: { proofs: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, uploads: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, geocoder: estimation?.geocoder ?? null },
@@ -270,6 +281,12 @@ export default {
     });
     // Le passage de publication (P10), une fois par quart d'heure, hors du planificateur horaire.
     if (env.MODE === TRIAL_MODE) await runListingSync(fromD1(env.DB), undefined, listingOptions(env));
+    // AU036 : les vraies publications d'un bien qui ne peut plus être diffusé sont retirées chez le réseau [R42].
+    const social = socialOf(env);
+    if (env.MODE === TRIAL_MODE && social) {
+      const db = fromD1(env.DB);
+      await runLiveWithdrawals(db, new SqlJournalStore(db), () => new Date(), social);
+    }
   },
   async email(message: InboundEmail, env: Env): Promise<void> {
     await handleEmail(message, {

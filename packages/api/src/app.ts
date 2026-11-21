@@ -144,6 +144,7 @@ import {
 import type { FeeSettings } from '../../core/src/partenaires/index.ts';
 import { Annuaire, MiseEnRelation } from '../../core/src/partenaires/index.ts';
 import { investirRoutes, type InvestirRoute, type InvestirServices } from './investir.ts';
+import { withdrawLiveNow } from './reseaux-reels.ts';
 import { readCapped, studioRoutes, type StudioRoute, type StudioServices } from './studio.ts';
 import { accordsRoutes, type AccordsRoute } from './accords.ts';
 import { biensFicheRoutes, type BiensFicheRoute } from './biens-fiche.ts';
@@ -306,6 +307,8 @@ export interface StudioOptions {
   writer?: StudioServices['writer'];
   /** X12 : le stockage où les fichiers finis sont rangés tels quels (R2, `MEDIA`) ; absent, le dépôt est fermé. */
   uploads?: StudioServices['uploads'];
+  /** AU036 : les vrais réseaux, faits par `liveSocialChannels` ; absents, tous les réseaux restent d'essai [R26, R134]. */
+  social?: { channels: NonNullable<StudioServices['channels']>; live: true } | null;
 }
 
 export interface PartenairesOptions {
@@ -1748,8 +1751,8 @@ function m16Routes(options: ApiConfig['commerces']): RouteDef[] {
 
 /**
  * Les routes de M19 (X10) : chacune contrôle son rôle avant de lire le corps et écrit le refus au journal [R16] ; sans
- * stockage des fichiers, elles sont fermées. Les réseaux ne sont jamais passés d'ici : la couche métier ne reçoit que
- * ses canaux du mode essai, et la porte de diffusion de D05 [R26, R42, R134].
+ * stockage des fichiers, elles sont fermées. Les réseaux sont ceux du mode essai, sauf les vrais canaux mis en service
+ * par le Worker (AU036) ; la porte de diffusion de D05 est relue par la couche métier [R26, R42, R134].
  */
 function m19Routes(options: StudioOptions | null): RouteDef[] {
   return studioRoutes().map((r: StudioRoute) => ({
@@ -1758,7 +1761,8 @@ function m19Routes(options: StudioOptions | null): RouteDef[] {
     name: r.name,
     handle: (s, viewer, params, request) => {
       if (!options?.files) return Promise.resolve(failure(503, 'studio_files_not_configured', 'Studio fermé : aucun stockage des fichiers.'));
-      return r.handle({ db: s.db, journal: s.journal, now: s.now, files: options.files, writer: options.writer ?? null, uploads: options.uploads ?? null }, viewer, params, request);
+      const social = options.social ? { channels: options.social.channels, live: true as const } : {};
+      return r.handle({ db: s.db, journal: s.journal, now: s.now, files: options.files, writer: options.writer ?? null, uploads: options.uploads ?? null, ...social }, viewer, params, request);
     },
   }));
 }
@@ -2618,8 +2622,11 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       const propertyId = await retraits.propertyOfMandate(viewer.networkId, params[0]);
       if (propertyId !== null) {
         const done = await retraits.run(viewer.networkId, propertyId, `${String(viewer.role)}:${viewer.userId}`);
+        // AU036 · les vraies publications du bien sur les réseaux sont retirées dans le même geste ; ce qui échoue reste
+        // dû au passage planifié (`runLiveWithdrawals`) [R42].
+        const reseaux = config.studio?.social ? await withdrawLiveNow(s.db, s.journal, now, config.studio.social, viewer.networkId, propertyId, `${String(viewer.role)}:${viewer.userId}`) : null;
         const body = (await response.json()) as Record<string, unknown>;
-        return json(response.status, { ...body, retraits: { state: done.state, channels: done.channels, portals: done.portals, busy: done.busy } });
+        return json(response.status, { ...body, retraits: { state: done.state, channels: done.channels, portals: done.portals, busy: done.busy, ...(reseaux ? { reseaux } : {}) } });
       }
     }
     if (route.name === 'cles.appareils.retrait' && response.ok && params[0]) await retireApplicationKeysOf(s.db, s.journal, params[0], `${viewer.role}:${viewer.userId}`, now);
