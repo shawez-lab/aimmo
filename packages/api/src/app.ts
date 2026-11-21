@@ -84,6 +84,7 @@ import { ESTIMATION_PATH, handleEstimation, type EstimationLimits } from './esti
 import { BOOKING_PATH, BOOKING_SLOTS_PATH, handleBooking, type BookingLimits } from './rendezvous.ts';
 import type { DetailedSales, Geocoder } from '@aimmo/core';
 import { m08Routes } from './acquereurs.ts';
+import type { TileSource } from './carte.ts';
 import { annonceRoutes, type AnnonceOptions } from './annonces.ts';
 import { offreRoutes } from './offres.ts';
 import { dossierRoutes, type DossierRoute, type PieceStore } from './dossiers.ts';
@@ -202,6 +203,8 @@ export interface ApiConfig {
   estimation?: { geocoder: Geocoder; sales: DetailedSales };
   /** AU073 : la Base adresse nationale pour les secteurs des recherches et la position des biens, sans lien avec DVF. */
   secteursGeocoder?: Geocoder;
+  /** AU073b : le fournisseur des tuiles de la carte des secteurs ; absent, la carte n'est pas branchée. */
+  mapTiles?: TileSource | null;
   /** Les données publiques d'un bien (E09), en lecture seule ; absentes, aucun avis ne se prépare. */
   fetchPublicData?: Fetcher;
   /** Les sources du score par adresse (BR27) ; absentes, celles de `estimation` et de `fetchPublicData`, sinon aucune. */
@@ -2510,7 +2513,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // clients (EC07), fermée sans espace configuré.
   const routes: RouteDef[] = [
     ...ROUTES,
-    ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null, geocoder: config.secteursGeocoder ?? config.estimation?.geocoder ?? null, ...(config.reportWriter ? { reportWriter: config.reportWriter } : {}) }),
+    ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null, geocoder: config.secteursGeocoder ?? config.estimation?.geocoder ?? null, tiles: config.mapTiles ?? null, ...(config.reportWriter ? { reportWriter: config.reportWriter } : {}) }),
     ...annonceRoutes(config.listing ?? {}),
     ...offreRoutes(config.pieces ?? null),
     ...m10Routes(config.pieces ?? null),

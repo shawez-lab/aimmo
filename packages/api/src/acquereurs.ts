@@ -41,6 +41,7 @@
  * Chaque route passe par les droits de la couche métier, qui écrit chaque refus au journal [R16]. Aucune route
  * n'envoie elle-même : tout envoi passe par le contrôle central des envois, en mode essai [R26].
  */
+import { base64Of, validTile, type TileSource } from './carte.ts';
 import {
   APPOINTMENT_KINDS,
   AlerteWhatsApp,
@@ -93,6 +94,8 @@ export interface M08Options {
   notifier?: DirectionNotifier;
   /** La Base adresse nationale, pour situer un bien et le centre d'un rayon (AU073) ; absente, rien n'est géocodé. */
   geocoder?: Geocoder | null;
+  /** AU073b · le fournisseur des tuiles de la carte des secteurs (`CARTE_TUILES_URL`) ; absent, la carte n'est pas branchée. */
+  tiles?: TileSource | null;
 }
 
 export interface M08Route {
@@ -197,6 +200,25 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
     get('acquereurs.secteur', `/acquereurs/projets/${ID}/secteur`, async (s, v, [p]) => reply(await secteurs(s).read(v, p!))),
     post('acquereurs.secteur.ranger', `/acquereurs/projets/${ID}/secteur`, async (s, v, [p], body) => reply(await secteurs(s).set(v, p!, body))),
     post('biens.position', `/biens/${ID}/position`, async (s, v, [b]) => reply(await secteurs(s).locate(v, b!))),
+    // AU073b · centrer la carte sur un lieu dit, puis ses tuiles, par le Worker : rien du client ne part.
+    get('acquereurs.secteur.lieu', `/acquereurs/projets/${ID}/secteur/lieu`, async (s, v, [p], request) => reply(await secteurs(s).place(v, p!, new URL(request.url).searchParams.get('q')))),
+    get('carte.tuile', '/carte/tuiles/(\\d{1,2})/(\\d{1,6})/(\\d{1,6})', async (s, v, [z, x, y]) => {
+      if (v.role !== 'agent' && v.role !== 'direction') {
+        // Le refus est écrit au journal avant la réponse, sans donnée [R16].
+        await appendEvent(s.journal, { type: 'acces.refuse', actor: `${String(v.role)}:${v.userId}`, subject: null, data: { rule: 'R16', role: String(v.role), kind: 'carte_tuile', code: 'role' } }, s.now);
+        return json(403, { ok: false, rule: 'R16', code: 'role' });
+      }
+      if (!options.tiles) return json(404, { ok: false, rule: null, code: 'carte_absente' });
+      if (!validTile(Number(z), Number(x), Number(y))) return json(400, { ok: false, rule: null, code: 'tuile' });
+      let failure: string | null = null;
+      const t = await options.tiles.tile(Number(z), Number(x), Number(y)).catch(() => ((failure = 'erreur'), null));
+      if (!t) {
+        // Une panne du fournisseur ne s'avale pas : une ligne au journal, sans la tuile ni le lecteur [R13].
+        await appendEvent(s.journal, { type: 'carte.tuile_echec', actor: 'system:carte', subject: null, data: { code: failure ?? 'reponse' } }, s.now);
+        return json(502, { ok: false, rule: null, code: 'tuile_indisponible' });
+      }
+      return new Response(JSON.stringify({ ok: true, data: { type: t.type, base64: base64Of(t.bytes) } }), { status: 200, headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'private, max-age=86400' } });
+    }),
     get('acquereurs.bien', `/acquereurs/biens/${ID}`, async (s, v, [b]) => reply(await rapprochement(s).propose(s.acces, v, b!))),
     get('acquereurs.carte', `/acquereurs/biens/${ID}/carte`, async (s, v, [b]) => reply(await rapprochement(s).demandMap(s.acces, v, b!))),
     post('acquereurs.whatsapp', `/acquereurs/biens/${ID}/whatsapp/${ID}`, async (s, v, [b, p]) => reply(await whatsapp(s).prepare(v, b!, p!))),

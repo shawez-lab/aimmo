@@ -156,6 +156,20 @@ export class Secteurs {
   }
 
   /**
+   * AU073b · Le point d'un lieu dit, pour centrer la carte où l'agent dessine le secteur : géocodé par le serveur,
+   * jamais deviné ; rien n'est rangé.
+   */
+  async place(viewer: Viewer, projectId: string, query: unknown): Promise<{ ok: true; value: GeoPoint } | SecteurRefusal> {
+    const p = await this.project(viewer, projectId);
+    if ('ok' in p) return p;
+    if (typeof query !== 'string' || query.trim().length < 3 || query.length > 200) return { ok: false, rule: null, code: 'centre' };
+    if (!this.geocoder) return { ok: false, rule: null, code: 'geocodage_absent' };
+    const g = await this.geocoder.geocode(query.trim());
+    if (!g) return { ok: false, rule: null, code: 'lieu_introuvable' };
+    return { ok: true, value: { lat: g.lat, lon: g.lon } };
+  }
+
+  /**
    * Range le secteur d'une recherche, en nouvelle version : un rayon autour d'un point ou d'un lieu dit (géocodé), un
    * secteur dessiné, ou « aucun » pour le retirer. Rien de libre au-delà du nom privé du secteur.
    */
