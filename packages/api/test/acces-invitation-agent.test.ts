@@ -280,11 +280,29 @@ describeWithSqlite('AU023 · une invitation nominative mène à une connexion pa
     expect(handoff).toBe(false);
     expect((await t.call('GET', '/moi', { bearer: agentKey })).status).toBe(200);
     expect((await t.call('GET', '/moi', { bearer: directionKey })).status).toBe(200);
-    // Ni l'une ni l'autre ne cesse au bout de 7 jours : c'est la limite dite, pour la personne aux deux rôles.
-    const later: ApiConfig = { ...t.config, now: () => new Date(t.now().getTime() + 8 * 86_400_000) };
+    // Ni l'une ni l'autre ne cesse au bout de 7 jours, pour passer d'un rôle à l'autre ; au bout de 90 jours, si.
+    const at = (days: number): ApiConfig => ({ ...t.config, now: () => new Date(t.now().getTime() + days * 86_400_000) });
+    const status = async (key: string, days: number) => (await handleRequest(new Request('https://aimmo-api.example.test/v1/moi', { headers: { authorization: `Bearer ${key}` } }), at(days))).status;
     for (const key of [agentKey, directionKey]) {
-      expect((await handleRequest(new Request('https://aimmo-api.example.test/v1/moi', { headers: { authorization: `Bearer ${key}` } }), later)).status).toBe(200);
+      expect(await status(key, 8)).toBe(200);
+      expect(await status(key, 91)).toBe(401);
     }
+  });
+
+  it('[R600] AU108 · un appareil perdu de la personne aux deux rôles : retirer sa clé coupe aussi ses deux clés d’application', async () => {
+    const t = await setup();
+    const token = randomToken(32);
+    const grants = JSON.stringify([{ role: 'agent', userId: t.sam.userId }, { role: 'direction', userId: t.direction.userId }]);
+    await t.db.run('INSERT INTO access_invitations (id, network_id, token_sha256, grants, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)', ['inv-perdu', t.network.id, await sha256Hex(token), grants, new Date(t.now().getTime() + 86_400_000).toISOString(), t.now().toISOString()]);
+    const keys = (await t.call('POST', '/acces/invitation', { body: { jeton: token } })).body.data.cles as { role: string; cle: string }[];
+    const agentKey = keys.find((k) => k.role === 'agent')!.cle;
+    const directionKey = keys.find((k) => k.role === 'direction')!.cle;
+    const phone = await t.enroll(agentKey, 81);
+    expect((await t.call('POST', `/cles/appareils/${phone.id}/retrait`, { bearer: DIRECTION_KEY })).status).toBe(200);
+    expect((await t.call('GET', '/moi', { bearer: agentKey })).status).toBe(401);
+    expect((await t.call('GET', '/moi', { bearer: directionKey })).status).toBe(401);
+    // La direction du secret, elle, garde son accès.
+    expect((await t.call('GET', '/moi', { bearer: DIRECTION_KEY })).status).toBe(200);
   });
 
   it('[R600] AU108 · un échange repris après une panne ne fait pas passer une invitation à un rôle pour une invitation à deux rôles', async () => {

@@ -69,7 +69,7 @@ import {
 } from '@aimmo/core';
 import { bearerKey, fromMcpKey, intakeFromRequest, invitationKeyOf, markMcpKey, parseApiKeys, parseIntakeKeys, sha256Hex, viewerFromRequest } from './auth.ts';
 import { assistantKeyViewer } from '../../core/src/securite/index.ts';
-import { DEVICE_KEY_ROLES, INVITATION_PATH, handleInvitation, invitedKeys, mergeKeys, retireApplicationKey } from './acces.ts';
+import { DEVICE_KEY_ROLES, INVITATION_PATH, handleInvitation, invitedKeys, mergeKeys, retireApplicationKey, retireApplicationKeysOf } from './acces.ts';
 import { localTime as parisLocalTime } from '../../core/src/envoi/horaires.ts';
 import { ASSISTANT_PATH, handleAssistant, type AssistantLimits } from './assistant.ts';
 import type { ReplyWriter, ReportWriter } from '@aimmo/core';
@@ -2560,6 +2560,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     // AU108 · la clé de cet appareil rangée par une clé d'application : celle-ci cesse ; l'appareil entre désormais par
     // ses séances, qu'on coupe en retirant sa seule clé, sans toucher aux autres appareils [R600].
     const appKey = invitationKeyOf(request);
+    if (route.name === 'cles.appareils.retrait' && response.ok && params[0]) await retireApplicationKeysOf(s.db, s.journal, params[0], `${viewer.role}:${viewer.userId}`, now);
     if (appKey !== null && route.name === 'cles.enregistrement.fin' && response.ok) {
       if (await retireApplicationKey(s.db, s.journal, appKey, `${viewer.role}:${viewer.userId}`, now)) {
         // L'application le sait : elle quitte la clé retirée et propose l'entrée par la clé de l'appareil.
