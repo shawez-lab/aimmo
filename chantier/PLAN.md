@@ -1021,6 +1021,15 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
 
+### AU094b · Une relance remplacée après un paiement partiel ne consomme pas l'un des trois rangs
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU094
+- Cahier : M13 Pilotage et finances ; relecture Codex de #751 (P2), endroit : C/facturation/relances.ts, `MAX_REMINDERS`.
+- Constat : chaque relance fermée par une nouvelle part (`paiement_partiel`) prend un rang ; après trois remplacements, plus aucune relance ne se prépare, même si un reste dû n'a jamais été relancé.
+- Objectif : seules les relances envoyées comptent dans les trois ; une relance remplacée laisse son rang à la suivante.
+- Critères : un test qui échoue puis passe ; R553 à jour si besoin.
+- Attend : rien.
+
 ### AU095 · Les plafonds locatifs sont restés à 12/10/8 et 3 €/m², donc AIMMO refuse des honoraires pourtant permis en…
 - Statut : fait (2026-11-18)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
