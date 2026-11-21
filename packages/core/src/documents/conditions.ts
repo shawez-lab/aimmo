@@ -66,16 +66,30 @@ export async function mandateTerms(
     [mandateId],
   );
   if (!base) return null;
+  const rows = await db.all<{ document_id: string; signed_at: string; facts: string | null }>(
+    'SELECT a.document_id, a.signed_at, d.facts FROM signed_amendments a JOIN documents d ON d.id = a.document_id WHERE a.mandate_id = ? ORDER BY a.signed_at, a.created_at, a.document_id',
+    [mandateId],
+  );
+  return termsFrom(base, rows, asOf, candidate);
+}
+
+/**
+ * AU106 · les conditions en vigueur, depuis le mandat signé et ses avenants déjà lus (dans l'ordre de leur signature) :
+ * le même calcul que `mandateTerms`, sans requête, pour lire tout un réseau d'un coup.
+ */
+export function termsFrom(
+  base: { facts: string | null; kind: string },
+  signedRows: readonly { document_id: string; signed_at: string; facts: string | null }[],
+  asOf?: Date,
+  candidate?: { documentId: string; signedAt: string; facts: DocumentFacts },
+): MandateTerms {
   const facts = readFacts(base.facts);
   let priceEur = facts?.priceEur ?? null;
   let durationMonths = facts?.durationMonths ?? null;
   let feeEur = facts?.feeEur ?? null;
   let feeCharge = facts?.feeCharge ?? null;
   let mandateType: MandateType = base.kind === 'mandat_vente_exclusif' ? 'exclusif' : 'simple';
-  const rows = await db.all<{ document_id: string; signed_at: string; facts: string | null }>(
-    'SELECT a.document_id, a.signed_at, d.facts FROM signed_amendments a JOIN documents d ON d.id = a.document_id WHERE a.mandate_id = ? ORDER BY a.signed_at, a.created_at, a.document_id',
-    [mandateId],
-  );
+  const rows = [...signedRows];
   if (candidate && !rows.some((r) => r.document_id === candidate.documentId)) {
     // Après les avenants signés au même instant : il est enregistré le dernier.
     const at = rows.findIndex((r) => r.signed_at > candidate.signedAt);

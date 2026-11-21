@@ -646,6 +646,8 @@ export function judge(
 /** Ce qu'il faut du rapprochement : la lecture d'un bien pour le rapprocher. */
 export interface PropertyReader {
   propertyForMatch(p: Property): Promise<MatchProperty>;
+  /** AU106 · tous les biens d'une recherche lus d'un coup, en quelques requêtes ; à défaut, bien par bien. */
+  propertiesForMatch?(networkId: string, rows: readonly Property[]): Promise<Map<string, MatchProperty>>;
 }
 
 export type RechercheRefusal = { ok: false; rule: 'R16' | 'R50' | 'R420' | 'R422' | 'R424'; code: string };
@@ -724,17 +726,16 @@ export class RechercheLangage {
     const rows = await this.db.all<Property>("SELECT * FROM properties WHERE network_id = ? AND status = 'available' ORDER BY reference, id", [networkId]);
     const found: (PhraseResult & { gap: number })[] = [];
     const near: (PhraseResult & { gap: number })[] = [];
-    for (const p of rows) {
-      if (search.refusedPropertyIds.includes(p.id)) continue;
+    const kept = rows.filter((p) => !search.refusedPropertyIds.includes(p.id));
+    const matches = this.reader.propertiesForMatch ? await this.reader.propertiesForMatch(networkId, kept) : null;
+    for (const p of kept) {
       const inNeighbour = p.city !== null && neighbourOf.has(p.city) && must.communes.length > 0;
-      const match = await this.reader.propertyForMatch(p);
+      const match = matches?.get(p.id) ?? (await this.reader.propertyForMatch(p));
       // Un bien d'une commune voisine se juge comme si sa commune était cherchée, puis se marque à part.
       const judged = inNeighbour
         ? judge({ ...search, criteria: [...search.criteria, { field: 'communes', value: p.city!, strength: 'must', source: { kind: 'voisine', of: neighbourOf.get(p.city!)! } }] }, match, this.tolerances)
         : judge(search, match, this.tolerances);
       if (!judged) continue;
-      // La diffusion se demande en dernier, juste avant de montrer [R42].
-      if (!(await this.diffusion.canDiffuse(networkId, p.id, at)).allowed) continue;
       const result = {
         propertyId: p.id,
         reference: p.reference,
@@ -756,10 +757,22 @@ export class RechercheLangage {
     const order = (a: PhraseResult & { gap: number }, b: PhraseResult & { gap: number }): number =>
       (a.status === b.status ? 0 : a.status === 'match' ? -1 : 1) || b.preferencesMet - a.preferencesMet || a.gap - b.gap || (a.priceEur ?? Infinity) - (b.priceEur ?? Infinity) || a.reference.localeCompare(b.reference);
     const strip = ({ gap: _gap, ...r }: PhraseResult & { gap: number }): PhraseResult => r;
+    // La diffusion se demande en dernier, juste avant de montrer, dans l'ordre où les biens seront montrés et seulement
+    // jusqu'à remplir la liste [R42, AU106] : le même résultat qu'en la demandant pour chaque bien, sans le coût.
+    // Un bien sans exemplaire signé d'un mandat n'est jamais diffusable : il n'est pas même demandé.
+    const open = this.diffusion.diffusableProperties ? await this.diffusion.diffusableProperties(networkId, at) : null;
+    const shown = async (list: (PhraseResult & { gap: number })[]): Promise<PhraseResult[]> => {
+      const out: PhraseResult[] = [];
+      for (const r of list.sort(order)) {
+        if (out.length >= this.limit) break;
+        if (open !== null ? open.has(r.propertyId) : (await this.diffusion.canDiffuse(networkId, r.propertyId, at)).allowed) out.push(strip(r));
+      }
+      return out;
+    };
     return {
       search,
-      results: found.sort(order).slice(0, this.limit).map(strip),
-      neighbours: near.sort(order).slice(0, this.limit).map(strip),
+      results: await shown(found),
+      neighbours: await shown(near),
       proposedNeighbours: proposals,
     };
   }

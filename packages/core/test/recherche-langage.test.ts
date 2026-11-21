@@ -264,7 +264,7 @@ async function setup() {
     );
     return id;
   };
-  return { db, journal, acces, acquereurs, recherche, network, alex, sam, as, property, buyer, consent, blocked };
+  return { db, journal, acces, acquereurs, recherche, network, alex, sam, as, property, buyer, consent, blocked, now };
 }
 
 const PHRASE = 'Maison 4 pièces à Dijon, 100 m² mini, budget 350 000 €, si possible un garage';
@@ -578,5 +578,45 @@ describe('AU072 · les forces et les sources de chaque borne', () => {
     const s = base('Appartement à Dijon, pas de rez-de-chaussée, si possible 3e étage maximum');
     expect(judge(s, flat(4))).toMatchObject({ status: 'match', preferencesMet: 0 });
     expect(judge(s, flat(0))).toBeNull();
+  });
+});
+
+describeWithSqlite('AU106 · une recherche lit tous les biens en quelques requêtes, et ne demande la diffusion que pour ceux qu’elle montre', () => {
+  it('[R42] même résultat qu’en lisant bien par bien ; la diffusion n’est demandée qu’aux biens montrés, dans l’ordre', async () => {
+    const t = await setup();
+    const ids: string[] = [];
+    for (let i = 0; i < 60; i++) ids.push((await t.property(`AU106-${String(i).padStart(2, '0')}`, { city: 'Dijon', price: 150_000 + i * 1_000, surface: 60 + i, rooms: 3 })).id);
+    // Une fiche plus récente, un prix publié : la lecture groupée les voit comme la lecture d'un bien.
+    await t.db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES ('ps-1', ?, ?, 1, ?, 'agent', '2027-01-01'), ('ps-2', ?, ?, 2, ?, 'agent', '2027-01-02')", [
+      ids[0]!, t.network.id, JSON.stringify({ characteristics: { bedrooms: 1 } }), ids[0]!, t.network.id, JSON.stringify({ characteristics: { bedrooms: 2, elevator: true } }),
+    ]);
+    await t.db.run('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO listing_versions (id, property_id, network_id, seq, state, draft_id, price_eur, payload, payload_hash, reason, created_at) VALUES ('lv-1', ?, ?, 1, 'en_vente', 'd-1', 149000, '{}', 'h', 'test', '2027-01-03')", [ids[1]!, t.network.id]);
+    await t.db.run('PRAGMA foreign_keys = ON');
+    const rapprochement = new Rapprochement(t.db, new FicheUnique(t.db, new FicheClient(t.db), {}), { canDiffuse: async () => ({ allowed: true, reason: 'allowed' }) }, t.journal, {});
+    const rows = await t.db.all<Parameters<Rapprochement['propertyForMatch']>[0]>("SELECT * FROM properties WHERE network_id = ? AND status = 'available' ORDER BY reference, id", [t.network.id]);
+    const grouped = await rapprochement.propertiesForMatch(t.network.id, rows);
+    for (const p of rows) expect(grouped.get(p.id), p.reference).toEqual(await rapprochement.propertyForMatch(p));
+    expect(grouped.get(ids[0]!)).toMatchObject({ bedrooms: 2, features: ['elevator'] });
+    expect(grouped.get(ids[1]!)?.priceEur).toBe(149000);
+
+    // Tous diffusables sauf deux : la liste montrée est la même, la diffusion demandée seulement jusqu'à la remplir.
+    const closed = new Set([ids[0]!, ids[3]!]);
+    let asked = 0;
+    const gate = (withCandidates: boolean): DiffusionGate => ({
+      canDiffuse: async (_n, id) => { asked += 1; return closed.has(id) ? { allowed: false, reason: 'no_mandate' } : { allowed: true, reason: 'allowed' }; },
+      ...(withCandidates ? { diffusableProperties: async () => new Set(ids.filter((id) => !closed.has(id))) } : {}),
+    });
+    const old = new RechercheLangage(t.db, { propertyForMatch: (p) => rapprochement.propertyForMatch(p) }, gate(false), t.journal, { now: t.now });
+    const fast = new RechercheLangage(t.db, rapprochement, gate(true), t.journal, { now: t.now });
+    const phrase = 'maison à Dijon moins de 300 000 euros';
+    const before = (await old.search(t.network.id, phrase)).results;
+    asked = 0;
+    const after = (await fast.search(t.network.id, phrase)).results;
+    expect(after).toEqual(before);
+    expect(after).toHaveLength(20);
+    expect(after.map((r) => r.propertyId)).not.toContain(ids[3]);
+    // La porte est lue d'un coup pour tout le réseau : aucune demande bien par bien.
+    expect(asked).toBe(0);
   });
 });
