@@ -155,6 +155,24 @@ globalThis.AIMMO_AVIS = function (t) {
     }));
     body().appendChild(box);
   }
+  /*
+   * AU105 · les corrections gardées sur cet appareil pour un avis qui n'est plus celui qu'on corrige (validé depuis
+   * ailleurs, ou remplacé par un avis plus récent) : lisibles, pour un nouvel avis, jusqu'à ce que l'agent les abandonne.
+   */
+  function lateNotes(box, list, editingId) {
+    list.forEach(function (x) {
+      if (!x || !ID.test(String(x.id)) || x.id === editingId) return;
+      var late = drafts.get('avis:' + x.id);
+      if (!late || !late.value || typeof late.value.text !== 'string') return;
+      var note = el('div', null, 'retard');
+      note.setAttribute('role', 'status');
+      note.appendChild(el('p', 'Une correction d’un avis précédent n’a pas été enregistrée sur cet appareil, et cet avis ne se corrige plus : la voici, pour l’avis en cours.'));
+      note.appendChild(el('p', 'Fourchette : ' + late.value.low + ' à ' + late.value.high + ' €.', 'doux'));
+      note.appendChild(el('p', late.value.text, 'brouillon'));
+      note.appendChild(button('Abandonner cette correction', function () { drafts.drop('avis:' + x.id); box.removeChild(note); }));
+      box.insertBefore(note, box.firstChild);
+    });
+  }
   function draw(r, list) {
     var box = el('section', null, 'bloc');
     box.appendChild(el('h3', r.status === 'validated' ? 'Avis validé' : 'Brouillon à relire'));
@@ -166,16 +184,7 @@ globalThis.AIMMO_AVIS = function (t) {
       box.appendChild(button('Préparer un nouvel avis', function () { seq += 1; clear(body()); state(''); form(); }));
       // AU105 · une correction gardée sur cet appareil, l'avis validé depuis ailleurs : elle reste lisible, pour la
       // reporter dans un nouvel avis, jusqu'à ce que l'agent dise l'abandonner.
-      var late = drafts.get('avis:' + r.id);
-      if (late && late.value && typeof late.value.text === 'string') {
-        var note = el('div', null, 'retard');
-        note.setAttribute('role', 'status');
-        note.appendChild(el('p', 'Une correction de cet avis n’a pas été enregistrée sur cet appareil, et l’avis a été validé depuis : elle ne s’y ajoute plus. La voici, pour un nouvel avis.'));
-        note.appendChild(el('p', 'Fourchette : ' + late.value.low + ' à ' + late.value.high + ' €.', 'doux'));
-        note.appendChild(el('p', late.value.text, 'brouillon'));
-        note.appendChild(button('Abandonner la correction', function () { drafts.drop('avis:' + r.id); box.removeChild(note); }));
-        box.insertBefore(note, box.firstChild);
-      }
+      lateNotes(box, list, null);
       body().appendChild(box);
       return;
     }
@@ -199,6 +208,7 @@ globalThis.AIMMO_AVIS = function (t) {
       else if (!drafts.set(key, { updatedAt: r.updatedAt, low: low.value, high: high.value, text: text.value })) state('Cet appareil ne peut pas garder cette correction : enregistrez-la avant de quitter l’écran.');
     }
     [low, high, text].forEach(function (f) { f.addEventListener('input', keep); });
+    lateNotes(box, list, r.id);
     var kept = drafts.get(key);
     if (kept && kept.value && typeof kept.value.text === 'string') {
       var note = el('div', null, 'retard');

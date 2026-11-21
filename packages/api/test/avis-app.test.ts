@@ -240,10 +240,20 @@ describe('AU105 · une correction de l’avis non enregistrée se retrouve, ou s
     const kept = JSON.stringify({ 'avis:r1': { at: 'x', value: { updatedAt: DRAFT.updatedAt, low: '180000', high: '210000', text: 'Texte corrigé ici' } } });
     const t = await run({ 'GET /v1/biens/b1/avis': ok([{ ...DRAFT, status: 'validated', validatedAt: '2026-11-03T08:00:00.000Z' }]) }, { 'aimmo.brouillons': kept });
     await t.open();
-    expect(t.body().textContent).toContain('l’avis a été validé depuis');
+    expect(t.body().textContent).toContain('cet avis ne se corrige plus');
     expect(t.body().textContent).toContain('Texte corrigé ici');
-    await t.click(t.byText('Abandonner la correction'));
+    await t.click(t.byText('Abandonner cette correction'));
     expect(t.body().textContent).not.toContain('Texte corrigé ici');
+    expect(JSON.parse(t.storage.get('aimmo.brouillons')!)).toEqual({});
+  });
+
+  it('[R276] un avis plus récent préparé depuis : la correction gardée de l’ancien reste lisible à côté', async () => {
+    const kept = JSON.stringify({ 'avis:r1': { at: 'x', value: { updatedAt: DRAFT.updatedAt, low: '180000', high: '210000', text: 'Ancienne correction' } } });
+    const t = await run({ 'GET /v1/biens/b1/avis': ok([{ ...DRAFT, id: 'r2', updatedAt: '2026-11-04T08:00:00.000Z' }, DRAFT]) }, { 'aimmo.brouillons': kept });
+    await t.open();
+    expect(t.body().textContent).toContain('Ancienne correction');
+    expect(t.input('avis-texte').value).toBe(DRAFT.text);
+    await t.click(t.byText('Abandonner cette correction'));
     expect(JSON.parse(t.storage.get('aimmo.brouillons')!)).toEqual({});
   });
 
