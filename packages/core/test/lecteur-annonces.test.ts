@@ -57,6 +57,11 @@ describe('AU068 · la lecture d’une page d’annonce', () => {
     // La recommandation avant l'annonce : l'adresse de la page désigne la bonne.
     expect(parseListingPage(ld(other) + ld(main) + body, 'https://www.seloger.com/a/1.htm?xtor=1')).toMatchObject({ found: true, priceEur: 210000 });
     expect(parseListingPage(ld(other) + ld(main) + body, 'https://www.seloger.com/a/2.htm')).toEqual({ found: false });
+    // Une annonce désignée par un paramètre : l'autre identifiant n'est pas elle ; le suivi ne compte pas.
+    const byId = (id: number, price: number, availability: string) => ({ '@type': 'RealEstateListing', url: `https://www.portail.example/detail?id=${id}`, offers: { price, availability } });
+    const twin = ld(byId(2, 99000, 'https://schema.org/SoldOut')) + ld(byId(1, 210000, 'https://schema.org/InStock')) + body;
+    expect(parseListingPage(twin, 'https://www.portail.example/detail?id=1&utm_source=lettre')).toMatchObject({ found: true, priceEur: 210000 });
+    expect(parseListingPage(twin, 'https://www.portail.example/detail?id=2')).toEqual({ found: false });
     // Un fil d'Ariane ou une organisation ne sont pas une annonce.
     expect(parseListingPage(ld({ '@type': 'Organization', name: 'Portail' }) + ld({ '@type': 'BreadcrumbList' }) + body)).toMatchObject({ priceEur: 210000 });
   });

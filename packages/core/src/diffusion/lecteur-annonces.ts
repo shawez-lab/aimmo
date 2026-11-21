@@ -65,16 +65,21 @@ export function structuredData(html: string): Record<string, unknown>[] {
 
 const LISTING_TYPES = new Set(['RealEstateListing', 'Offer', 'Product', 'Residence', 'House', 'Apartment', 'SingleFamilyResidence', 'Accommodation']);
 const typesOf = (o: Record<string, unknown>): string[] => (Array.isArray(o['@type']) ? o['@type'] : [o['@type']]).filter((t): t is string => typeof t === 'string');
-const sameUrl = (a: unknown, b: string): boolean => {
-  if (typeof a !== 'string') return false;
+/** Les paramètres de suivi d'une adresse, qui ne désignent jamais l'annonce. */
+const TRACKING = /^(?:utm_.*|xtor|gclid|fbclid|msclkid|at_.*|cmp|origin|from)$/i;
+
+/** La clé d'une adresse d'annonce : hôte, chemin et paramètres qui la désignent, triés ; le suivi et l'ancre ôtés. */
+export function listingKey(url: string, base?: string): string | null {
   try {
-    const x = new URL(a, b);
-    const y = new URL(b);
-    return x.host === y.host && x.pathname.replace(/\/$/, '') === y.pathname.replace(/\/$/, '');
+    const u = new URL(url, base);
+    const params = [...u.searchParams.entries()].filter(([k]) => !TRACKING.test(k)).sort(([a, x], [b, y]) => (a === b ? (x < y ? -1 : x > y ? 1 : 0) : a < b ? -1 : 1));
+    return `${u.host.toLowerCase()}${u.pathname.replace(/\/+$/, '')}?${new URLSearchParams(params).toString()}`;
   } catch {
-    return false;
+    return null;
   }
-};
+}
+
+const sameUrl = (a: unknown, b: string): boolean => typeof a === 'string' && listingKey(a, b) !== null && listingKey(a, b) === listingKey(b);
 
 /**
  * L'annonce relue parmi les données de la page : celle dont l'adresse est la page lue, sinon la première annonce de la
