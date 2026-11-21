@@ -437,7 +437,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#754, e0df09b0). Fournisseur HTTP (`PIGE_SOURCE_URL`, `PIGE_SOURCE_TOKEN`, `PIGE_NETWORK_ID`), relève à 6 h, table `pige_runs`, `GET /v1/pige/etat`, date et alerte à l'écran ; R671. Codex : 2 P0 et 1 P1 corrigés, puis rien.
 
 ### AU035 · Deux appartements de même surface dans la même commune peuvent être pris pour le même bien, y compris pour…
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A035 (majeur), endroit : C/pige/pige.ts, reconnaissance du bien.
 - Constat de l'audit : Deux appartements de même surface dans la même commune peuvent être pris pour le même bien, y compris pour propager « pas d’agence ».
