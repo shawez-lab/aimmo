@@ -88,7 +88,8 @@ const sameUrl = (a: unknown, b: string): boolean => typeof a === 'string' && lis
 export function mainListing(data: readonly Record<string, unknown>[], pageUrl?: string): Record<string, unknown> | null {
   const candidates = data.filter((o) => typesOf(o).some((t) => LISTING_TYPES.has(t)) || o.offers !== undefined || o.price !== undefined);
   if (pageUrl) {
-    const own = candidates.find((o) => sameUrl(o.url, pageUrl) || sameUrl(o['@id'], pageUrl));
+    // Un `@id` à ancre (« #offre-recommandee ») nomme un nœud de la page, jamais la page elle-même.
+    const own = candidates.find((o) => sameUrl(o.url, pageUrl) || (typeof o['@id'] === 'string' && !o['@id'].includes('#') && sameUrl(o['@id'], pageUrl)));
     if (own) return own;
   }
   return candidates[0] ?? null;
@@ -130,6 +131,47 @@ export function decodeEntities(text: string): string {
   });
 }
 
+const VOID_TAGS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
+const AROUND = /^(?:aside|nav|header|footer|dialog)$/i;
+const OTHER_LISTINGS = /(?:recommand|similai|similar|suggest|related|autres?[-_ ]?annonces|carousel|carrousel|vous[-_ ]aimerez|you[-_ ]may)/i;
+
+/**
+ * La partie de la page qui porte l'annonce relue : le contenu de `<main>` s'il y en a un, sans les encadrés autour
+ * (`aside`, `nav`, en-tête, pied) ni les blocs d'autres annonces (recommandées, similaires, carrousel) [R473].
+ */
+export function listingHtml(html: string): string {
+  const cleaned = html.replace(/<(script|style|noscript|template)[^>]*>[\s\S]*?<\/\1>/gi, ' ').replace(/<!--[\s\S]*?-->/g, '');
+  const main = /<main\b[^>]*>([\s\S]*)<\/main>/i.exec(cleaned);
+  const scope = main ? main[1]! : cleaned;
+  const stack: string[] = [];
+  let skipAt = -1;
+  let out = '';
+  let last = 0;
+  for (const m of scope.matchAll(/<(\/?)([a-zA-Z][a-zA-Z0-9-]*)\b([^>]*)>/g)) {
+    if (skipAt < 0) out += scope.slice(last, m.index);
+    last = m.index! + m[0].length;
+    const [, closing, rawName, attrs] = m as unknown as [string, string, string, string];
+    const name = rawName.toLowerCase();
+    if (closing) {
+      const at = stack.lastIndexOf(name);
+      if (at >= 0) stack.length = at;
+      if (skipAt < 0) out += m[0];
+      else if (stack.length <= skipAt) skipAt = -1;
+      continue;
+    }
+    const selfClosing = VOID_TAGS.has(name) || /\/\s*$/.test(attrs);
+    if (skipAt < 0 && !selfClosing && (AROUND.test(name) || OTHER_LISTINGS.test(attrs))) {
+      skipAt = stack.length;
+      stack.push(name);
+      continue;
+    }
+    if (!selfClosing) stack.push(name);
+    if (skipAt < 0) out += m[0];
+  }
+  if (skipAt < 0) out += scope.slice(last);
+  return out;
+}
+
 /** Le texte visible de la page, sans balises, scripts ni styles, références de caractères décodées. */
 export function visibleText(html: string): string {
   // Une balise de mise en forme (« <strong>D</strong> ») ne coupe pas le texte ; une balise de bloc le sépare.
@@ -152,7 +194,8 @@ export function parseListingPage(html: string, pageUrl?: string): OnlineListing 
   const main = mainListing(data, pageUrl);
   const offers = main ? offersOf(main, data) : [];
   if (offers.some((d) => typeof d.availability === 'string' && GONE.test(d.availability))) return { found: false };
-  const text = visibleText(html);
+  // Le texte de la seule annonce relue : les classes et les mentions d'une annonce recommandée ne comptent pas.
+  const text = visibleText(listingHtml(html));
   // Le premier prix lisible de l'annonce relue ; un prix vide ou illisible laisse la place au texte.
   let priceEur: number | null = null;
   for (const d of offers) {

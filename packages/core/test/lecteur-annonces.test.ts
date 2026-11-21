@@ -82,6 +82,20 @@ describe('AU068 · la lecture d’une page d’annonce', () => {
     expect(parseListingPage(`<script type="application/ld+json">${JSON.stringify({ '@graph': [{ '@type': 'RealEstateListing', offers: '#o' }, { '@id': '#o', price: '199000' }] })}</script><p>x</p>`)).toMatchObject({ priceEur: 199000 });
   });
 
+  it('[R473] les classes et les mentions sont lues dans l’annonce seule, pas dans les annonces recommandées ; un @id à ancre n’est pas la page', () => {
+    const html = `<html><body><header><p>Classe énergie A</p></header><main>
+      <section class="annonces-similaires"><div><p>Prix : 99 000 €</p><p>Classe énergie D, classe climat C.</p></div></section>
+      <article><h1>Maison</h1><p>Prix : 210 000 € honoraires inclus.</p><p>Classe énergie F, classe climat E.</p></article>
+      <aside><p>Classe énergie B</p></aside></main><footer>Classe climat A</footer></body></html>`;
+    const r = parseListingPage(html);
+    expect(r).toMatchObject({ found: true, priceEur: 210000, energyClass: 'F', climateClass: 'E' });
+    expect(r.found && r.text).not.toContain('99 000');
+    const ld = (o: unknown) => `<script type="application/ld+json">${JSON.stringify(o)}</script>`;
+    const page = 'https://www.seloger.com/a/1.htm';
+    const graph = ld({ '@graph': [{ '@id': '#offre-recommandee', '@type': 'Offer', price: 99000, availability: 'https://schema.org/SoldOut' }, { '@type': 'RealEstateListing', url: page, offers: { price: 210000, availability: 'https://schema.org/InStock' } }] });
+    expect(parseListingPage(graph + '<p>x</p>', page)).toMatchObject({ found: true, priceEur: 210000 });
+  });
+
   it('[R473] 404 et 410 : plus en ligne ; une redirection, une autre réponse ou une page qui n’est pas du HTML : illisible ; jamais de redirection suivie', async () => {
     const f = fakeFetch();
     const reader = new HttpListingReader(f.fetch);
