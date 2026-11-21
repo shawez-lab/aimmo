@@ -21,6 +21,8 @@ export const GOOGLE_ADS_VERSION = 'v21';
 export const META_GRAPH_VERSION = 'v23.0';
 /** Chez Meta, une annonce de logement vise un rayon d'au moins 15 miles autour d'une ville : 25 km, arrondi au-dessus. */
 export const META_HOUSING_MIN_RADIUS_KM = 25;
+/** Le plus petit plafond de dépense d'une campagne admis par Meta, en centimes. */
+export const META_MIN_SPEND_CAP_CENTS = 10_000;
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const DIGITS = /^[0-9]{1,30}$/;
@@ -308,14 +310,15 @@ export function metaAdsPlatform(config: MetaAdsConfig): AdPlatform {
       if (launch.radiusKm === null || launch.radiusKm < META_HOUSING_MIN_RADIUS_KM) throw new AdPlatformError('rayon');
       const places = placesOf(launch, config.places);
       const name = platformName(launch.code);
-      // La catégorie spéciale « logement », toujours ; le budget total en plafond de dépense de la campagne.
+      // La catégorie spéciale « logement », toujours ; le budget total en plafond de dépense de la campagne, quand Meta
+      // l'admet (100 unités de la monnaie du compte au moins). En dessous, l'arrêt au budget de HX54 tient seul [R588].
       const campaign = await created(`${account}/campaigns`, {
         name,
         objective: 'OUTCOME_TRAFFIC',
         status: 'PAUSED',
         special_ad_categories: ['HOUSING'],
         special_ad_category_country: ['FR'],
-        spend_cap: launch.totalBudgetCents,
+        ...(launch.totalBudgetCents >= META_MIN_SPEND_CAP_CENTS ? { spend_cap: launch.totalBudgetCents } : {}),
       });
       // Les villes et leur rayon, pour tous les adultes : aucun autre critère [R589].
       const adset = await created(`${account}/adsets`, {
