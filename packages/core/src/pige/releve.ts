@@ -2,7 +2,7 @@
  * AU034 · La relève quotidienne de la pige par un vrai fournisseur d'annonces de particuliers [R671].
  *
  * Le fournisseur est celui que le réseau a choisi et dont il a le contrat : il expose les annonces de son secteur en
- * JSON, derrière une clé. AIMMO ne lui envoie que la date depuis laquelle il veut les annonces : ni le réseau, ni une
+ * JSON, derrière une clé. Une relève qui dépasse ses limites (20 pages, 5 000 annonces) est une panne, rien n'est rangé. AIMMO ne lui envoie que la date depuis laquelle il veut les annonces : ni le réseau, ni une
  * commune, ni un nom. Chaque passage laisse une ligne dans `pige_runs`, réussi ou en panne, avec une raison d'une liste
  * fermée ; une panne est écrite au journal et dite à la direction et aux agents, jamais avalée [R13]. Les annonces
  * reçues passent par la même porte que toute relève : « pas d'agence » écarté, hors zone écarté, aucun texte gardé
@@ -26,7 +26,7 @@ export const PIGE_ADS_LIMIT = 5_000;
 const HOUR = 3_600_000;
 
 /** Les raisons d'une panne, en liste fermée : jamais le texte d'une erreur, qui pourrait porter une adresse ou une clé. */
-export const PIGE_FAILURE_REASONS = ['acces_refuse', 'fournisseur_indisponible', 'reponse_illisible', 'reseau', 'autre'] as const;
+export const PIGE_FAILURE_REASONS = ['acces_refuse', 'fournisseur_indisponible', 'reponse_illisible', 'releve_incomplete', 'reseau', 'autre'] as const;
 export type PigeFailureReason = (typeof PIGE_FAILURE_REASONS)[number];
 
 /** Une panne du fournisseur, avec sa raison de la liste fermée. */
@@ -119,12 +119,12 @@ export class HttpPigeSource implements PigeSource {
       const record = body as Record<string, unknown>;
       const ads = record['ads'];
       if (!Array.isArray(ads)) throw new PigeSourceError('reponse_illisible');
-      for (const ad of ads) {
-        if (out.length >= PIGE_ADS_LIMIT) return out;
-        out.push((ad !== null && typeof ad === 'object' && !Array.isArray(ad) ? ad : {}) as RawAd);
-      }
+      // Au-delà des limites, la relève n'est pas complète : c'est une panne, jamais une réussie sur une partie [R671].
+      if (out.length + ads.length > PIGE_ADS_LIMIT) throw new PigeSourceError('releve_incomplete');
+      for (const ad of ads) out.push((ad !== null && typeof ad === 'object' && !Array.isArray(ad) ? ad : {}) as RawAd);
       url = this.nextPage(record['next']);
     }
+    if (url !== null) throw new PigeSourceError('releve_incomplete');
     return out;
   }
 

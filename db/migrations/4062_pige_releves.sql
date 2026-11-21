@@ -12,7 +12,7 @@ CREATE TABLE IF NOT EXISTS pige_runs (
   no_agency INTEGER NOT NULL DEFAULT 0 CHECK (no_agency >= 0),
   outside INTEGER NOT NULL DEFAULT 0 CHECK (outside >= 0),
   unreadable INTEGER NOT NULL DEFAULT 0 CHECK (unreadable >= 0),
-  reason TEXT CHECK (reason IS NULL OR reason IN ('acces_refuse', 'fournisseur_indisponible', 'reponse_illisible', 'reseau', 'autre')),
+  reason TEXT CHECK (reason IS NULL OR reason IN ('acces_refuse', 'fournisseur_indisponible', 'reponse_illisible', 'releve_incomplete', 'reseau', 'autre')),
   CHECK ((outcome = 'ok' AND reason IS NULL) OR (outcome = 'panne' AND reason IS NOT NULL))
 );
 CREATE INDEX IF NOT EXISTS pige_runs_network ON pige_runs (network_id, ran_at);

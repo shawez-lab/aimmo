@@ -214,6 +214,28 @@ describeWithSqlite('AU034 · la pige relevée chaque jour chez un vrai fournisse
     expect(() => new HttpPigeSource(fetcher, { url: 'http://pige.example.test/', token: PROVIDER_TOKEN })).toThrow();
   });
 
+  it('[R671] une relève coupée par ses limites est une panne : rien n’est rangé, la date ne bouge pas', async () => {
+    // Plus de 20 pages : la suivante reste à lire.
+    let pages = 0;
+    const endless: PigeFetcher = async () => {
+      pages += 1;
+      return { ok: true, status: 200, json: async () => ({ ads: [], next: `${PROVIDER_URL}?page=${pages + 1}` }) };
+    };
+    await expect(new HttpPigeSource(endless, { url: PROVIDER_URL, token: PROVIDER_TOKEN }).ads('n', new Date())).rejects.toEqual(new PigeSourceError('releve_incomplete'));
+    expect(pages).toBe(20);
+    // Plus de 5 000 annonces.
+    const big: PigeFetcher = async () => ({ ok: true, status: 200, json: async () => ({ ads: Array.from({ length: 5_001 }, () => ({})) }) });
+    await expect(new HttpPigeSource(big, { url: PROVIDER_URL, token: PROVIDER_TOKEN }).ads('n', new Date())).rejects.toEqual(new PigeSourceError('releve_incomplete'));
+    // Par le planificateur : une panne rangée, aucune annonce, la date de la dernière relève reste vide.
+    const t = await setup();
+    const wired = pigeSourceOf({ url: PROVIDER_URL, token: PROVIDER_TOKEN, networkId: t.net.id }, endless)!;
+    await runScheduler({ db: t.db, mode: 'essai', now: () => new Date(MONDAY_6H), pigeProvider: wired });
+    expect(await t.runs()).toEqual([{ outcome: 'panne', reason: 'releve_incomplete', received: 0, added: 0, no_agency: 0, outside: 0 }]);
+    expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM pige_ads'))!.n).toBe(0);
+    const etat = await t.http('direction', 'GET', '/pige/etat');
+    expect(etat.body.data).toMatchObject({ lastCollectedAt: null, alert: 'panne' });
+  });
+
   it('[R671] [R16] la direction voit les réglages manquants, l’agent seulement l’alerte ; un autre rôle est refusé', async () => {
     const t = await setup({ provider: { token: undefined } });
     const d = await t.http('direction', 'GET', '/pige/etat');
