@@ -920,7 +920,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU084 · La liste demande électricité et gaz selon l’âge du bâtiment, faute de connaître celui des installations
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-21)
+- Reste : fusionnée (#744, a948a5a2). Constat reproduit (maison de 1965 rénovée, sans gaz : les deux diagnostics demandés). `dossiers/installations.ts` : présence et année (pose ou dernière rénovation complète) de l'électricité et du gaz, déclarées par l'agent du bien ou la direction avec le genre et la référence de leur preuve, en versions (migration 4051, `property_installations`, aux cartes d'accès, des fichiers, de reprise et au registre). Une installation récente ne retire le diagnostic que sur certificat de conformité ou facture ; gaz déclaré absent : plus demandé ; sans déclaration, l'âge du bâtiment. Âge jugé l'année de l'acte, avec les seules déclarations rangées au plus tard ce jour-là ; un diagnostic que le bâtiment ferait demander se range toujours. Route `POST /v1/dossiers/:id/installations`. R60 précisée. Codex : 3 P0 et 1 P2 corrigés, puis rien ; vérification GitHub verte. Reste : l'écran du dossier ne propose pas encore la saisie.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A084 (majeur), endroit : C/dossiers/pieces.ts, âge des installations.
 - Constat de l'audit : La liste demande électricité et gaz selon l’âge du bâtiment, faute de connaître celui des installations : je cours après des diagnostics parfois inutiles.
