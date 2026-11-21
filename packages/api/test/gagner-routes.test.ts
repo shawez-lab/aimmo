@@ -44,6 +44,8 @@ async function setup() {
     direction: { role: 'direction', userId: 'dir-1', networkId: network.id },
     compliance: { role: 'compliance', userId: 'c-1', networkId: network.id },
     partner: { role: 'partner', userId: 'p-inconnu', networkId: network.id },
+    assistant: { role: 'assistant', userId: 'as-1', networkId: network.id },
+    accountant: { role: 'accountant', userId: 'cpt-1', networkId: network.id },
   };
   const day = (d = 0): string => new Date(clock + d * DAY).toISOString().slice(0, 10);
   const added = await annuaire.addPartner(viewers.direction, { trade: 'notaire', businessName: 'Étude Essai', postcodes: ['21000'] });
