@@ -39,6 +39,10 @@ describe('P07 · format d’essai des portails', () => {
     // Les portails étrangers reçoivent le même diagnostic, tel quel.
     const abroad = INTERNATIONAL_TRIAL_FORMAT.render([{ ...L, language: 'en', dpe: { ademeNumber: '2321E0123456J', primaryEnergyKwhM2: 212, ghgKgM2: 41, energyClass: 'D', climateClass: 'D', diagnosedOn: '2027-01-15' } } as TranslatedListingPayload]);
     expect(abroad).toContain('<dpe numero="2321E0123456J" energie_primaire="212" ges="41" classe_energie="D" classe_climat="D" date="2027-01-15"/>');
+    // AU063 · les surfaces nommées partent dans les deux flux, au même endroit.
+    const surfaces = [{ kind: 'habitable' as const, m2: 64, source: null }, { kind: 'carrez' as const, m2: 61.35, source: 'mesurage' as const }];
+    expect(TRIAL_FORMAT.render([{ ...L, surfaces }])).toContain('<surfaces><surface type="habitable" m2="64"/><surface type="carrez" m2="61.35" source="mesurage"/></surfaces>');
+    expect(INTERNATIONAL_TRIAL_FORMAT.render([{ ...L, language: 'en', surfaces } as TranslatedListingPayload])).toContain('<surface type="carrez" m2="61.35" source="mesurage"/>');
   });
 });
 
@@ -69,6 +73,15 @@ describeWithSqlite('P07 · flux depuis les versions publiées', () => {
     expect((await t.annonces.validate(t.agent, again.value.id)).ok).toBe(true);
     await t.publication.sync(t.network.id, t.propertyId);
     expect((await exporter.feed(t.network.id)).body).toContain(`<dpe numero="2321E0123456J" energie_primaire="212" ges="41" classe_energie="${String(sheet.energy.energyClass)}" classe_climat="${String(sheet.energy.climateClass)}" date="${String(sheet.energy.diagnosedOn)}"/>`);
+    expect((await exporter.feed(t.network.id)).body).not.toContain('<surfaces>');
+    // AU063 · une surface Carrez rangée dans la fiche part aux portails, nommée, avec sa source.
+    const withCarrez = { ...sheet, characteristics: { ...(sheet as unknown as { characteristics: Record<string, unknown> }).characteristics, carrezM2: 61.35, surfaceSources: { carrez: 'mesurage' } } };
+    await t.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', ['fiche-carrez', t.propertyId, row!.network_id, Number(row!.version) + 2, JSON.stringify(withCarrez), row!.created_by, t.now().toISOString()]);
+    const third = await t.annonces.propose(t.agent, t.propertyId);
+    if (!third.ok) throw new Error(third.code);
+    expect((await t.annonces.validate(t.agent, third.value.id)).ok).toBe(true);
+    await t.publication.sync(t.network.id, t.propertyId);
+    expect((await exporter.feed(t.network.id)).body).toMatch(/<surfaces><surface type="habitable" m2="[0-9.]+"\/><surface type="carrez" m2="61.35" source="mesurage"\/><\/surfaces>/);
     // Un avenant de prix : le flux suit la nouvelle version.
     await t.amend(190000);
     await t.publication.sync(t.network.id, t.propertyId);

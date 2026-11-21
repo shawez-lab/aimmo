@@ -162,6 +162,22 @@ describe('X19 · la fiche du bien à l’écran', () => {
     expect(t.posts()[0]!.body.characteristics).toEqual({ ...SHEET.characteristics, amenities: ['piscine', 'cheminee'], condition: 'travaux_a_prevoir' });
   });
 
+  it('AU063 · surfaces Carrez et utile, avec la virgule, et la source de chaque surface partent avec la fiche', async () => {
+    const t = await run({ [POST]: ok({ version: 5 }) });
+    await t.open();
+    t.f('fiche-bien-carrez').value = '61,35';
+    t.f('fiche-bien-source-carrez').value = 'mesurage';
+    t.f('fiche-bien-source-habitable').value = 'acte';
+    await t.save();
+    expect(t.posts()[0]!.body.characteristics).toEqual({ ...SHEET.characteristics, carrezM2: 61.35, surfaceSources: { habitable: 'acte', carrez: 'mesurage' } });
+    // Une surface mal écrite n'est jamais rangée comme « je ne sais pas ».
+    const bad = await run({ [POST]: ok({ version: 5 }) });
+    await bad.open();
+    bad.f('fiche-bien-utile').value = '70,555';
+    await bad.save();
+    expect(bad.posts()).toEqual([]);
+  });
+
   it('sans fiche : un formulaire vide à la version 0, où un champ vide reste « je ne sais pas »', async () => {
     const t = await run({ [GET]: no(404, { ok: false, rule: null, code: 'no_sheet' }), 'POST /v1/annonces/b1/fiche?siVersion=0': ok({ version: 1 }) });
     await t.open();

@@ -171,6 +171,9 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'dossier.date': 'partage',
   'dossier.date_a_saisir': 'partage',
   'dossier.echeance': 'partage',
+  // Les conditions suspensives sont celles du compromis, signé par les deux parties (AU082).
+  'dossier.condition': 'partage',
+  'dossier.condition_alerte': 'partage',
   'dossier.piece_recue': 'partage',
   'dossier.depot': INTERNE('Fichier déposé par l\'agent, pas encore rangé comme pièce : sa référence, sans donnée d\'un client.'),
   'dossier.depot.refuse': INTERNE('Dépôt refusé pour un motif technique, sans donnée d\'un client.'),
@@ -534,6 +537,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // AU001 : un autre mandant d'un mandat, par sa fiche.
   document_co_mandants: { locate: [...by('person_id')] },
   // AU059 : le mandant comme son représentant y trouvent la ligne qui les nomme.
+  document_mandant_rights: { locate: [...by('person_id')] },
   document_proxies: { locate: [...by('mandant_person_id'), ...by('proxy_person_id')], foreignPersons: ['mandant_person_id', 'proxy_person_id'] },
   signature_session_proxies: { locate: [...by('mandant_person_id'), ...by('proxy_person_id')], foreignPersons: ['mandant_person_id', 'proxy_person_id'] },
   // AU002 : le domicile du mandant, par sa fiche ; la désignation du bien, par le bien.
@@ -648,6 +652,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // La notification d'un coacquéreur est la sienne (AU009).
   sale_file_buyer_notices: { locate: by('person_id') },
   sale_file_tasks: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
+  // Les conditions suspensives du dossier et leurs alertes (AU082).
+  sale_file_conditions: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
+  sale_file_condition_tasks: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
   sale_file_reminders: { locate: by('person_id') },
   // Le financement est celui de l'acquéreur : le vendeur ne le voit pas.
   sale_file_financing: { locate: [via('file_id', 'sale_files', 'id', { onlyMatchedBy: 'buyer_person_id' })] },
@@ -694,6 +701,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   security_challenges: out('agent', 'Défis envoyés aux appareils des utilisateurs du réseau (HX56) : aucun client ; l\'objet d\'une action sensible n\'est qu\'un identifiant.'),
   security_sessions: out('agent', 'Séances ouvertes par la clé d\'un appareil (HX56) : aucun client.'),
   security_step_ups: out('agent', 'Preuves du second facteur des utilisateurs du réseau (HX56) : aucun client ; l\'objet n\'est qu\'un identifiant.'),
+  agent_export_authorizations: out('agent', 'Autorisation d\'un export de reprise d\'un agent (AU110) : périmètre, contrat, durée, aucun client.'),
   agent_exports: out('agent', 'Empreinte d\'un export complet remis à un agent (HX62) : jamais le contenu, aucun client.'),
   agent_exit_accesses: out('agent', 'Accès de sortie d\'un agent parti (AU111) : l\'empreinte du lien et sa durée, aucun client.'),
   agent_exit_access_revocations: out('agent', 'Retrait d\'un accès de sortie d\'agent (AU111) : qui et quand, aucun client.'),

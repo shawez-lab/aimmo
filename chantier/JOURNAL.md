@@ -1547,3 +1547,12 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-20 23:40 · voie 3 · AU059b (#736) fusionnée ; AU060 ouverte (#737) ; AU063 (#733) corrigée, relecture en cours.
 - 2026-11-20 23:55 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 22:55 par une autre séance voie 2, active : push sur chantier/AU082 à 23:51)
 - 2026-11-21 00:15 · voie 3 · AU110 ouverte (#738) : export de reprise autorisé par contrat ; AU060 (#737) relu sans remarque, main fusionné ; AU063 (#733) relu sans remarque, vérifications en cours.
+- 2026-11-21 00:27 · AU082 · chaque condition suspensive autre que le prêt a responsable, date limite, état et justificatif, en versions, avec ses propres alertes ; condition ajoutée par le compromis dite ; Codex 1 P0 déjà corrigé ; fusionnée (#735, 3ddaecb4) · prochaine : AU083
+- 2026-11-21 00:27 · VOIE 2 : AU082, 3ddaecb4 (main), relancé non
+- 2026-11-21 00:27 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 20:53 et 21:53 n'ont produit ni commit ni tâche finie : verrou occupé)
+- 2026-11-21 00:37 · voie 3 · AU063 (#733) fusionnée : surfaces habitable, Carrez et utile.
+- 2026-11-21 00:50 · voie 3 · AU060 (#737) fusionnée : droits démembrés (usufruit, nue-propriété) et leurs preuves ; AU110 (#738) et AU109 (#740) corrigés après Codex, relecture demandée.
+- 2026-11-21 01:41 · AU083 · chaque étape du financement dit sa demande (banque ou courtier, jamais un numéro) : un refus ne clôt que sa demande, le prêt n'est refusé que si toutes le sont, seule une offre encore vivante éteint l'alerte de la date limite ; R61 précisée ; Codex rien ; vérification GitHub verte ; fusionnée (#741, d0784edb) · prochaine : AU084
+- 2026-11-21 01:41 · VOIE 2 : AU083, d0784edb (main), relancé non
+- 2026-11-21 01:41 · VOIE 2 : relance refusée, question 2 (la séance voie 2 de 23:55 n'a produit ni commit ni tâche finie : verrou occupé)
+- 2026-11-21 01:00 · voie 3 · AU110 (#738) fusionnée : export de reprise autorisé par contrat (clients, coordonnées, projets, pièces, sans orphelin, fermé au dossier incomplet). AU108 proposée (#742).

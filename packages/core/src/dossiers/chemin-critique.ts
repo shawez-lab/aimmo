@@ -35,7 +35,7 @@ import type { JournalStore } from '../journal/types.ts';
 import { gateSaleFile, type FileRefusal, type FileUnknown } from './acces-dossier.ts';
 import { expiredPieces } from './acte.ts';
 import { Echeancier, addDays, type ScheduleLine } from './echeancier.ts';
-import { FinancementDossier, type DeclaredStep } from './financement.ts';
+import { FinancementDossier, byRequest, type DeclaredStep } from './financement.ts';
 import { PiecesDossier, type FileStatus, type PieceStore } from './pieces.ts';
 
 const TIME_ZONE = 'Europe/Paris';
@@ -89,7 +89,28 @@ export interface PathInput {
   plannedActDay: string | null;
   pieces: Pick<FileStatus, 'lines' | 'missing' | 'unknown' | 'identity'>;
   hasLoanCondition: boolean;
-  financing: Pick<DeclaredStep, 'step' | 'day'>[];
+  financing: Pick<DeclaredStep, 'step' | 'day' | 'demande'>[];
+}
+
+interface LoanState {
+  kind: 'acceptee' | 'acceptation_attendue' | 'reflexion' | 'refus' | 'attendue';
+  notBefore: string | null;
+}
+
+/** L'état d'une seule demande de financement, d'après ses étapes dans l'ordre où elles ont été déclarées. */
+function loanState(steps: readonly Pick<DeclaredStep, 'step' | 'day'>[], today: string): LoanState {
+  // Le jour d'une offre de prêt est celui où l'acquéreur l'a reçue. Seules comptent les étapes après le dernier refus
+  // de cette demande : une demande qui repart repart de zéro.
+  if (steps.at(-1)?.step === 'refus') return { kind: 'refus', notBefore: null };
+  const tail = steps.slice(steps.map((x) => x.step).lastIndexOf('refus') + 1);
+  const offerAt = tail.map((x) => x.step).lastIndexOf('offre_pret_emise');
+  if (offerAt < 0) return { kind: 'attendue', notBefore: null };
+  const acceptable = addDays(tail[offerAt]!.day, LOAN_REFLECTION_DAYS + 1);
+  // Une acceptation ne compte qu'après cette offre, au onzième jour après sa réception au plus tôt.
+  if (tail.slice(offerAt + 1).some((x) => x.step === 'offre_pret_acceptee' && x.day >= acceptable)) return { kind: 'acceptee', notBefore: null };
+  if (acceptable > today) return { kind: 'reflexion', notBefore: acceptable };
+  // La réflexion est finie et l'acceptation n'est pas déclarée : elle reste à faire, sans date.
+  return { kind: 'acceptation_attendue', notBefore: null };
 }
 
 const max = (a: string, b: string) => (a > b ? a : b);
@@ -106,22 +127,16 @@ export function criticalPath(fileId: string, input: PathInput): CriticalPath {
   else if (c?.status === 'suspendue') lines.push({ reason: 'delai_commune_suspendu', item: 'reponse_preemption', who: 'commune', notBefore: null });
   else if (c?.status === 'a_saisir') lines.push({ reason: 'date_a_saisir', item: 'reponse_preemption', who: 'agent', notBefore: null });
   if (input.hasLoanCondition) {
-    // Les étapes dans l'ordre où elles ont été déclarées ; le jour d'une offre de prêt est celui où l'acquéreur l'a reçue.
-    const steps = input.financing;
-    const last = steps.at(-1);
-    // Seules comptent les étapes après le dernier refus : un financement qui repart repart de zéro.
-    const tail = steps.slice(steps.map((x) => x.step).lastIndexOf('refus') + 1);
-    const offerAt = tail.map((x) => x.step).lastIndexOf('offre_pret_emise');
-    const offer = offerAt >= 0 ? tail[offerAt]! : null;
-    const acceptable = offer ? addDays(offer.day, LOAN_REFLECTION_DAYS + 1) : null;
-    // Une acceptation ne compte qu'après cette offre, au onzième jour après sa réception au plus tôt.
-    const accepted = offer !== null && tail.slice(offerAt + 1).some((x) => x.step === 'offre_pret_acceptee' && x.day >= acceptable!);
-    if (last?.step === 'refus') lines.push({ reason: 'refus_de_pret', item: 'pret', who: 'acquereur', notBefore: null });
-    else if (accepted) {
+    // Chaque demande de financement (banque ou courtier) a sa propre suite d'étapes (AU083) : un refus ne clôt que sa
+    // demande. Le prêt tient le dossier par la demande la plus avancée ; il n'est refusé que si toutes le sont.
+    const states = byRequest(input.financing).map((steps) => loanState(steps, input.today));
+    const best = (k: LoanState['kind']) => states.filter((x) => x.kind === k);
+    const reflecting = best('reflexion').sort((x, y) => (x.notBefore! < y.notBefore! ? -1 : 1))[0];
+    if (best('acceptee').length) {
       // Rien : la condition de prêt est levée.
-    } else if (offer && acceptable! > input.today) lines.push({ reason: 'reflexion_offre_pret', item: 'pret', who: 'acquereur', notBefore: acceptable });
-    // La réflexion est finie et l'acceptation n'est pas déclarée : elle reste à faire, sans date.
-    else if (offer) lines.push({ reason: 'acceptation_offre_attendue', item: 'pret', who: 'acquereur', notBefore: null });
+    } else if (best('acceptation_attendue').length) lines.push({ reason: 'acceptation_offre_attendue', item: 'pret', who: 'acquereur', notBefore: null });
+    else if (reflecting) lines.push({ reason: 'reflexion_offre_pret', item: 'pret', who: 'acquereur', notBefore: reflecting.notBefore });
+    else if (states.length && states.every((x) => x.kind === 'refus')) lines.push({ reason: 'refus_de_pret', item: 'pret', who: 'acquereur', notBefore: null });
     else lines.push({ reason: 'offre_pret_attendue', item: 'pret', who: 'banque', notBefore: addDays(input.today, LOAN_REFLECTION_DAYS + 1) });
   }
   const e = at('etat_date');

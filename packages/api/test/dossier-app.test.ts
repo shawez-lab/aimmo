@@ -307,6 +307,25 @@ describe('N13 · faire avancer le dossier depuis l’écran', () => {
     for (const id of ['dossier-pret-montant', 'dossier-pret-taux']) expect(t.body().all().some((e) => e.attributes.id === id)).toBe(false);
   });
 
+  it('AU083 · deux banques : les étapes se lisent par demande, et la banque dite part avec l’étape', async () => {
+    const steps = [
+      { step: 'offre_pret_emise', day: '2027-04-02', declaredBy: 'courtier', recordedAt: 'x', demande: 'Banque A' },
+      { step: 'refus', day: '2027-04-03', declaredBy: 'acquereur', recordedAt: 'x', demande: 'Banque B' },
+    ];
+    const t = await signed({ 'GET /v1/dossiers/f1/financement': ok({ fileId: 'f1', hasLoanCondition: true, steps }), 'POST /v1/dossiers/f1/financement': no(400, 'bad_request') });
+    await t.open();
+    const text = t.body().textContent;
+    expect(text).toContain('Demande : Banque A');
+    expect(text).toContain('Demande : Banque B');
+    t.input('dossier-pret-etape').value = 'accord_principe';
+    t.input('dossier-pret-jour').value = '2027-04-05';
+    t.input('dossier-pret-qui').value = 'courtier';
+    t.input('dossier-pret-demande').value = '  Banque B ';
+    await t.click(t.find(t.body(), 'Ranger l’étape'));
+    expect(t.posts().at(-1)).toMatchObject({ url: '/v1/dossiers/f1/financement', body: { step: 'accord_principe', day: '2027-04-05', declaredBy: 'courtier', demande: 'Banque B' } });
+    expect(t.state()).toBe('Dites le nom de la banque ou du courtier, sans numéro de compte ni de dossier.');
+  });
+
   it('[R14] sans condition de prêt, aucun suivi à remplir', async () => {
     const t = await signed({ 'GET /v1/dossiers/f1/financement': ok({ fileId: 'f1', hasLoanCondition: false, steps: [] }) });
     await t.open();

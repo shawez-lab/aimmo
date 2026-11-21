@@ -40,6 +40,8 @@ const HEATING: Record<(typeof HEATING_KINDS)[number], string> = {
 const OUTDOOR: Record<(typeof OUTDOOR_KINDS)[number], string> = { balcon: 'Balcon', terrasse: 'Terrasse', jardin: 'Jardin', cour: 'Cour' };
 /** AU061 · équipements et état, que l'annonce ne nomme que s'ils sont dits ici. */
 const AMENITY: Record<(typeof AMENITIES)[number], string> = { piscine: 'Piscine', cave: 'Cave', cheminee: 'Cheminée', grenier: 'Grenier ou combles', veranda: 'Véranda', climatisation: 'Climatisation' };
+/** AU063 · d'où vient chaque surface. */
+const SURFACE_SOURCE: Record<string, string> = { mesurage: 'Mesurage d’un professionnel', acte: 'Acte de propriété', vendeur: 'Dite par le vendeur' };
 const CONDITION: Record<string, string> = { '': 'Je ne sais pas', neuf: 'Neuf', refait_a_neuf: 'Refait à neuf', bon_etat: 'Bon état', travaux_a_prevoir: 'Travaux à prévoir', a_renover: 'À rénover' };
 
 /** [clé rangée, libellé, groupe] des nombres de la fiche. */
@@ -62,6 +64,9 @@ const LABELS: Record<string, string> = {
   'characteristics.dwelling': 'Logement : maison ou appartement',
   'characteristics.amenities': 'Équipements du bien',
   'characteristics.condition': 'État du bien',
+  'characteristics.carrezM2': 'Surface Carrez : en m², au centième au plus',
+  'characteristics.usableM2': 'Surface utile : en m², au centième au plus',
+  'characteristics.surfaceSources': 'Source d’une surface : elle se dit pour une surface remplie',
   'energy.energyClass': 'Classe énergie du diagnostic',
   'energy.climateClass': 'Classe climat du diagnostic',
   'energy.annualCostMinEur': 'Coût annuel le plus bas du diagnostic, qui ne dépasse pas le plus haut',
@@ -80,7 +85,7 @@ const LABELS: Record<string, string> = {
 export const FICHE_BIEN_SCRIPT = `'use strict';
 globalThis.AIMMO_FICHE_BIEN = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, checkbox = t.checkbox;
-  var HEATING = ${JSON.stringify(HEATING)}, OUTDOOR = ${JSON.stringify(OUTDOOR)}, AMENITY = ${JSON.stringify(AMENITY)}, CONDITION = ${JSON.stringify(CONDITION)}, NUMBERS = ${JSON.stringify(NUMBERS)}, LABELS = ${JSON.stringify(LABELS)}, CLASSES = ${JSON.stringify(ENERGY_CLASSES)}, SUBJECTS = ${JSON.stringify(SUBJECTS)};
+  var HEATING = ${JSON.stringify(HEATING)}, OUTDOOR = ${JSON.stringify(OUTDOOR)}, AMENITY = ${JSON.stringify(AMENITY)}, CONDITION = ${JSON.stringify(CONDITION)}, SURFACE_SOURCE = ${JSON.stringify(SURFACE_SOURCE)}, NUMBERS = ${JSON.stringify(NUMBERS)}, LABELS = ${JSON.stringify(LABELS)}, CLASSES = ${JSON.stringify(ENERGY_CLASSES)}, SUBJECTS = ${JSON.stringify(SUBJECTS)};
   var YES_NO = { oui: 'Oui', non: 'Non' };
   var DWELLING = { house: 'Maison', apartment: 'Appartement' };
   function select(box, id, label, options, value) {
@@ -127,6 +132,22 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       ams[kind].checked = (c.amenities || []).indexOf(kind) >= 0;
     });
     var condition = select(zone, 'fiche-bien-etat', 'État du bien', CONDITION, c.condition || '');
+    // AU063 · les surfaces Carrez et utile, à côté de la surface habitable, chacune avec sa source.
+    zone.appendChild(el('h4', 'Surfaces'));
+    var srcs = c.surfaceSources || {};
+    var surfaces = {
+      carrez: field(zone, 'fiche-bien-carrez', 'Surface Carrez (lot de copropriété), en m²'),
+      utile: field(zone, 'fiche-bien-utile', 'Surface utile (local, bureau), en m²'),
+    };
+    surfaces.carrez.setAttribute('inputmode', 'decimal');
+    surfaces.utile.setAttribute('inputmode', 'decimal');
+    surfaces.carrez.value = text(c.carrezM2).replace('.', ',');
+    surfaces.utile.value = text(c.usableM2).replace('.', ',');
+    var surfaceSrc = {
+      habitable: select(zone, 'fiche-bien-source-habitable', 'Source de la surface habitable', SURFACE_SOURCE, srcs.habitable),
+      carrez: select(zone, 'fiche-bien-source-carrez', 'Source de la surface Carrez', SURFACE_SOURCE, srcs.carrez),
+      utile: select(zone, 'fiche-bien-source-utile', 'Source de la surface utile', SURFACE_SOURCE, srcs.utile),
+    };
     zone.appendChild(el('h4', 'Diagnostic énergétique'));
     var classes = {};
     CLASSES.forEach(function (x) { classes[x] = x; });
@@ -198,6 +219,18 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       var am = Object.keys(AMENITY).filter(function (x) { return ams[x].checked; });
       if (am.length) out.amenities = am;
       if (condition.value) out.condition = condition.value;
+      function m2(f, label) {
+        var v = String(f.value || '').trim().replace(/\\s/g, '').replace(',', '.');
+        if (v === '') return null;
+        if (!/^\\d+(\\.\\d{1,2})?$/.test(v) || Number(v) <= 0) { bad = bad || label; return null; }
+        return Number(v);
+      }
+      var carrez = m2(surfaces.carrez, 'Surface Carrez'), utile = m2(surfaces.utile, 'Surface utile');
+      if (carrez !== null) out.carrezM2 = carrez;
+      if (utile !== null) out.usableM2 = utile;
+      var ss = {};
+      ['habitable', 'carrez', 'utile'].forEach(function (k) { if (surfaceSrc[k].value) ss[k] = surfaceSrc[k].value; });
+      if (Object.keys(ss).length) out.surfaceSources = ss;
       NUMBERS.forEach(function (n) { out[n[0]] = int(nums[n[0]], n[1]); });
       var en = null;
       // AU064 · le numéro ADEME ou une valeur saisis seuls ouvrent aussi le diagnostic : il est contrôlé, jamais perdu.

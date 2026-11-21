@@ -677,7 +677,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU060 · Le questionnaire ne modélise pas les titulaires de droits démembrés ni leurs pouvoirs
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M06 Mandats et documents ; audit A060 (majeur), endroit : C/documents/modeles.ts ; C/mandat-questionnaire/questionnaire.ts.
 - Constat de l'audit : Le questionnaire ne modélise pas les titulaires de droits démembrés ni leurs pouvoirs : ma vente avec usufruitier repart sur papier séparé.
@@ -705,7 +705,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU063 · Je ne peux pas distinguer la surface habitable, la surface Carrez et la surface utile dans la fiche d’annonce
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A063 (majeur), endroit : C/annonces/fiche-bien.ts, `Characteristics`.
 - Constat de l'audit : Je ne peux pas distinguer la surface habitable, la surface Carrez et la surface utile dans la fiche d’annonce.
@@ -900,7 +900,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU082 · Les conditions « vente d’un autre bien », permis ou autre condition n’ont pas chacune leur échéance et…
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-21)
+- Reste : fusionnée (#735, 3ddaecb4). Constat confirmé (l'échéancier ne suivait que le prêt). `dossiers/conditions.ts` : vente d'un autre bien, permis, certificat d'urbanisme, autre condition, chacune avec responsable, date limite, état (en attente, réalisée, défaillie, renoncée) et justificatif rangé, en versions [R17] ; alertes à part (à saisir, 10 jours avant, échue en attente), une condition levée n'éteint pas les autres ; une condition que seul le compromis porte est dite `compromis` (Jamais vu). Migration 4034, routes `GET/POST /v1/dossiers/:id/conditions`, alertes dans `/dossiers/alertes`, étape du passage. R61 précisée. Codex : 1 P0 (preuve à la carte des fichiers) déjà corrigé, puis rien ; vérification GitHub verte. Reste : l'écran du dossier ne montre pas encore les conditions.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A082 (majeur), endroit : C/dossiers/echeancier.ts, `DATE_KINDS`.
 - Constat de l'audit : Les conditions « vente d’un autre bien », permis ou autre condition n’ont pas chacune leur échéance et leur preuve de réalisation.
@@ -909,7 +910,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU083 · Quand deux banques travaillent sur le dossier, leurs étapes se mélangent
-- Statut : à faire
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A083 (majeur), endroit : C/dossiers/financement.ts, `DeclaredStep`.
 - Constat de l'audit : Quand deux banques travaillent sur le dossier, leurs étapes se mélangent : aucune banque ni demande distincte n’est identifiée.
@@ -918,7 +919,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU084 · La liste demande électricité et gaz selon l’âge du bâtiment, faute de connaître celui des installations
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M10 Compromis et acte ; audit A084 (majeur), endroit : C/dossiers/pieces.ts, âge des installations.
 - Constat de l'audit : La liste demande électricité et gaz selon l’âge du bâtiment, faute de connaître celui des installations : je cours après des diagnostics parfois inutiles.
@@ -1151,7 +1152,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU107 · Je ne peux pas donner à une assistante ou au comptable un accès limité adapté
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A107 (majeur), endroit : C/acces/droits.ts, `ROLES`.
 - Constat de l'audit : Je ne peux pas donner à une assistante ou au comptable un accès limité adapté : seuls agent, direction, conformité et partenaire existent.
@@ -1160,7 +1161,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU108 · La clé API permanente reste un accès parallèle aux sessions par appareil et ne porte pas d’expiration propre
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A108 (majeur), endroit : A/auth.ts, `parseApiKeys` ; UI/fichiers.ts, `localStorage`.
 - Constat de l'audit : La clé API permanente reste un accès parallèle aux sessions par appareil et ne porte pas d’expiration propre.
@@ -1169,7 +1170,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU109 · La copie nocturne et son test réel restent conditionnés à une activation humaine non prouvée dans le chantier
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A109 (majeur), endroit : docs/SAUVEGARDE.md ; H50 ; `.github/workflows/copie-nuit.yml`.
 - Constat de l'audit : La copie nocturne et son test réel restent conditionnés à une activation humaine non prouvée dans le chantier.
@@ -1178,7 +1179,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H50).
 
 ### AU110 · L’export dit complet ne contient les clients que par identifiants et n’emporte pas les fichiers de mon…
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Architecture technique ; Conformité ; audit A110 (majeur), endroit : C/rapports/export-agent.ts, `AgentExport`.
 - Constat de l'audit : L’export dit complet ne contient les clients que par identifiants et n’emporte pas les fichiers de mon portefeuille, donc il ne suffit pas à une reprise opérationnelle autorisée.

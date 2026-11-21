@@ -216,6 +216,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       document_co_mandants: ['person_id'],
       // AU059 : le mandant représenté et son représentant, la procuration rangée par sa référence.
       document_proxies: ['mandant_person_id', 'proxy_person_id', 'power_ref', 'recorded_by'],
+      // AU060 : le droit de chaque mandant sur le bien et son justificatif.
+      document_mandant_rights: ['person_id', 'proof_ref', 'recorded_by'],
       // AU002 : l'adresse et les parcelles du bien, le domicile du mandant, repris par le mandat.
       property_designations: ['street', 'postal_code', 'city', 'parcels', 'set_by'],
       property_positions: ['lat', 'lon', 'set_by'],
@@ -437,6 +439,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       sale_file_buyer_notices: ['person_id', 'proof_ref', 'by'],
       offer_co_buyers: ['person_id'],
       sale_file_tasks: ['agent_id'],
+      sale_file_conditions: ['proof_ref', 'by'],
+      sale_file_condition_tasks: ['agent_id'],
       sale_file_reminders: ['person_id'],
       sale_file_financing: ['declared_by', 'by'],
       sale_file_financing_alerts: ['agent_id'],
@@ -545,6 +549,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX62 : rapports enregistrés (nom libre de l'auteur) et empreintes des exports d'un agent.
       custom_reports: ['owner_id', 'owner_role', 'name'],
       agent_exports: ['agent_id'],
+      // AU110 : l'autorisation d'un export de reprise, au vu d'un contrat.
+      agent_export_authorizations: ['agent_id', 'contract_ref', 'granted_by'],
       // AU111 : l'accès de sortie d'un agent parti, gardé par l'empreinte de son lien.
       agent_exit_accesses: ['agent_id', 'token_hash', 'granted_by'],
       agent_exit_access_revocations: ['revoked_by'],
@@ -1182,6 +1188,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   documents: ['id', 'network_id', 'template_id', 'template_version', 'template_hash', 'kind', 'mode', 'status', 'missing', 'property_id', 'created_at', 'mandate_id'],
   document_co_mandants: ['document_id', 'network_id', 'position', 'added_at'],
   document_proxies: ['document_id', 'network_id', 'power_kind', 'granted_on', 'recorded_at'],
+  document_mandant_rights: ['document_id', 'network_id', 'right_kind', 'recorded_at'],
   property_designations: ['id', 'network_id', 'property_id', 'version', 'set_at'],
   property_positions: ['id', 'network_id', 'property_id', 'version', 'source', 'designation_version', 'set_at'],
   person_domiciles: ['id', 'network_id', 'version', 'set_at'],
@@ -1365,8 +1372,10 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   sale_file_buyer_notices: ['file_id', 'network_id', 'version', 'day', 'at'],
   offer_co_buyers: ['offer_id', 'network_id', 'position'],
   sale_file_tasks: ['file_id', 'network_id', 'deadline', 'due_day', 'created_at'],
+  sale_file_conditions: ['file_id', 'network_id', 'kind', 'version', 'responsible', 'due_day', 'state', 'at'],
+  sale_file_condition_tasks: ['file_id', 'network_id', 'kind', 'alert', 'due_day', 'created_at'],
   sale_file_reminders: ['file_id', 'piece', 'day', 'network_id', 'side', 'status', 'rule', 'message_id', 'updated_at'],
-  sale_file_financing: ['file_id', 'seq', 'network_id', 'step', 'day', 'at'],
+  sale_file_financing: ['file_id', 'seq', 'network_id', 'step', 'day', 'at', 'request_label'],
   sale_file_financing_alerts: ['file_id', 'network_id', 'kind', 'due_day', 'step_seq', 'created_at'],
   sale_file_fund_alerts: ['message_id', 'file_id', 'network_id', 'side', 'created_at', 'reminder_status', 'reminder_rule'],
   sale_file_closings: ['file_id', 'network_id', 'signed_on', 'aftersale', 'at'],
@@ -1395,6 +1404,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   commission_shares: ['file_id', 'seq', 'kind'],
   custom_reports: ['id', 'network_id', 'definition', 'created_at'],
   agent_exports: ['id', 'network_id', 'fingerprint', 'row_count', 'made_at'],
+  agent_export_authorizations: ['id', 'network_id', 'scope', 'expires_on', 'granted_at'],
   agent_exit_accesses: ['id', 'network_id', 'expires_on', 'granted_at'],
   agent_exit_access_revocations: ['access_id', 'network_id', 'revoked_at'],
   mcp_drafts: ['id', 'network_id', 'kind', 'property_id', 'status', 'created_at', 'decided_at'],

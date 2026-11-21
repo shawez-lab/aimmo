@@ -696,8 +696,10 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer, _params, request) => {
       const body = await readJson(request);
       if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
-      if (Object.keys(body).some((k) => !['kind', 'personId', 'propertyId', 'inputs', 'mandateId', 'coMandantIds', 'proxies'].includes(k))) return failure(400, 'unexpected_field', 'Seuls kind, personId, propertyId, inputs, mandateId, coMandantIds, proxies sont admis.');
-      const { kind, personId, propertyId, inputs, mandateId, coMandantIds, proxies } = body;
+      if (Object.keys(body).some((k) => !['kind', 'personId', 'propertyId', 'inputs', 'mandateId', 'coMandantIds', 'proxies', 'rights'].includes(k))) return failure(400, 'unexpected_field', 'Seuls kind, personId, propertyId, inputs, mandateId, coMandantIds, proxies, rights sont admis.');
+      const { kind, personId, propertyId, inputs, mandateId, coMandantIds, proxies, rights } = body;
+      // AU060 : les droits des mandants, contrôlés par la couche métier ; ici, seulement une liste courte d'objets.
+      if (rights !== undefined && (!Array.isArray(rights) || rights.length > MAX_CO_MANDANTS + 1 || rights.some((r) => r === null || typeof r !== 'object' || Array.isArray(r)))) return failure(400, 'invalid_rights', 'rights : une liste de droits.');
       // AU059 : les procurations, chacune contrôlée par la couche métier ; ici, seulement une liste courte d'objets.
       if (proxies !== undefined && (!Array.isArray(proxies) || proxies.length > MAX_CO_MANDANTS + 1 || proxies.some((p) => p === null || typeof p !== 'object' || Array.isArray(p)))) return failure(400, 'invalid_proxies', 'proxies : une liste de procurations.');
       // Les autres mandants (couple, indivision) : une liste d'identifiants de fiches (AU001).
@@ -707,7 +709,7 @@ const ROUTES: RouteDef[] = [
         return failure(400, 'invalid_ids', 'personId et propertyId attendus.');
       }
       if (inputs !== undefined && (inputs === null || typeof inputs !== 'object' || Array.isArray(inputs))) return failure(400, 'invalid_inputs', 'inputs : un objet.');
-      const r = await modeles(s).generate(viewer, { kind: kind as never, personId, propertyId, ...(inputs ? { inputs: inputs as never } : {}), ...(mandateId ? { mandateId } : {}), ...(coMandantIds !== undefined ? { coMandantIds: coMandantIds as string[] } : {}), ...(proxies !== undefined ? { proxies: proxies as never } : {}) });
+      const r = await modeles(s).generate(viewer, { kind: kind as never, personId, propertyId, ...(inputs ? { inputs: inputs as never } : {}), ...(mandateId ? { mandateId } : {}), ...(coMandantIds !== undefined ? { coMandantIds: coMandantIds as string[] } : {}), ...(proxies !== undefined ? { proxies: proxies as never } : {}), ...(rights !== undefined ? { rights: rights as never } : {}) });
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.document });
       return r.rule === 'R16' ? refusal(r) : json(r.code === 'no_template' ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
     },

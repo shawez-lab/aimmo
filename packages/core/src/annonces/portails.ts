@@ -37,6 +37,12 @@ export function dpeXml(d: ListingDpe | undefined): string {
   return `<dpe${d.ademeNumber ? ` numero="${xml(d.ademeNumber)}"` : ''}${d.primaryEnergyKwhM2 !== null ? ` energie_primaire="${d.primaryEnergyKwhM2}"` : ''}${d.ghgKgM2 !== null ? ` ges="${d.ghgKgM2}"` : ''} classe_energie="${xml(d.energyClass)}" classe_climat="${xml(d.climateClass)}" date="${xml(d.diagnosedOn)}"/>`;
 }
 
+/** AU063 · les surfaces que les portails reçoivent, chacune nommée, en m² au centième, avec sa source quand elle est dite. */
+export function surfacesXml(list: ListingPayload['surfaces']): string {
+  if (!list || list.length === 0) return '';
+  return `<surfaces>${list.map((x) => `<surface type="${xml(x.kind)}" m2="${x.m2}"${x.source ? ` source="${xml(x.source)}"` : ''}/>`).join('')}</surfaces>`;
+}
+
 /** Le format d'essai AIMMO, décrit dans `docs/PORTAILS.md`. */
 export const TRIAL_FORMAT: PortalFormat = {
   name: 'aimmo-essai-1',
@@ -53,6 +59,7 @@ export const TRIAL_FORMAT: PortalFormat = {
         `<texte>${xml(l.body ?? '')}</texte>` +
         `<mentions>${xml(l.mentions ?? '')}</mentions>` +
         dpeXml(l.dpe) +
+        surfacesXml(l.surfaces) +
         `<medias>${media}</medias>` +
         `</annonce>`
       );
