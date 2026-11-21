@@ -10,8 +10,8 @@
  *
  * Jamais vu : une preuve ne vaut que si elle dit la même chose que ce que le réseau montre. Le numéro de carte de la
  * preuve doit être celui écrit sur les annonces et le site, le médiateur de la preuve celui proposé aux clients qui se
- * plaignent, et la relecture de l'avocat doit être postérieure au dernier changement des mentions du site : une mention
- * changée après la relecture la rend « à relire ».
+ * plaignent, et la relecture de l'avocat doit être postérieure au dernier changement de ce que montre la page des
+ * mentions (ses réglages, le numéro et le titulaire de la carte) : un changement après la relecture la rend « à relire ».
  */
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
@@ -87,6 +87,7 @@ interface Row {
 }
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/;
 const isDay = (v: unknown): v is string => {
   if (typeof v !== 'string' || !DAY.test(v)) return false;
   const d = new Date(`${v}T00:00:00Z`);
@@ -192,8 +193,15 @@ export class MiseEnService {
     );
     const card = await this.db.first<{ card_number: string }>('SELECT card_number FROM listing_settings WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
     const mediator = await this.db.first<{ mediator_name: string }>('SELECT mediator_name FROM complaint_settings WHERE network_id = ? ORDER BY version DESC LIMIT 1', [networkId]);
-    const mentionChange = await this.db.first<{ at: string | null }>('SELECT MAX(set_at) AS at FROM site_legal_mentions WHERE network_id = ?', [networkId]);
-    const lines = PREREQUISITES.map((p) => this.line(p, rows.filter((r) => r.prerequisite === p), day, { card: card?.card_number?.trim() || null, mediator: mediator?.mediator_name ?? null, mentionChange: mentionChange?.at ?? null }));
+    // Tout ce que la page des mentions montre : ses réglages, et le numéro et le titulaire de la carte, lus ailleurs.
+    const changes = await this.db.all<{ at: string | null }>(
+      `SELECT MAX(CASE WHEN set_at GLOB '[0-9][0-9][0-9][0-9]-*' THEN set_at END) AS at FROM site_legal_mentions WHERE network_id = ?
+       UNION ALL SELECT MAX(CASE WHEN set_at GLOB '[0-9][0-9][0-9][0-9]-*' THEN set_at END) FROM card_holders WHERE network_id = ?
+       UNION ALL SELECT MAX(CASE WHEN set_at GLOB '[0-9][0-9][0-9][0-9]-*' THEN set_at END) FROM listing_settings WHERE network_id = ?`,
+      [networkId, networkId, networkId],
+    );
+    const mentionChange = changes.map((c) => c.at).filter((at): at is string => typeof at === 'string' && ISO.test(at) && !Number.isNaN(Date.parse(at))).sort().at(-1) ?? null;
+    const lines = PREREQUISITES.map((p) => this.line(p, rows.filter((r) => r.prerequisite === p), day, { card: card?.card_number?.trim() || null, mediator: mediator?.mediator_name ?? null, mentionChange }));
     const byId = new Map(lines.map((l) => [l.prerequisite, l]));
     const features = (Object.keys(LAUNCH_FEATURES) as LaunchFeature[]).map((feature) => {
       const closedBy = LAUNCH_FEATURES[feature].needs.filter((p) => byId.get(p)!.state !== 'valide');

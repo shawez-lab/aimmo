@@ -158,6 +158,13 @@ describeWithSqlite('AU088 · le tableau de mise en service du réseau', () => {
     // Relue de nouveau, après ce changement : valide.
     expect((await t.launch.declare(direction, { prerequisite: 'mentions', documentNumber: 'RELECTURE-0001', issuer: 'Cabinet inventé', proofRef: 'p2', validFrom: '2026-11-21' })).ok).toBe(true);
     expect(await lineOf(t, 'mentions')).toMatchObject({ state: 'valide', proof: { version: 2 } });
+    // Le titulaire de la carte, écrit sur la page des mentions mais réglé ailleurs, change : à relire aussi.
+    await t.db.exec('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO card_holders (id, network_id, holder_name, set_by, set_at) VALUES ('h2', 'net-1', 'Autre société', 'direction:dir-1', ?)", [t.now().toISOString()]);
+    await t.db.exec('PRAGMA foreign_keys = ON');
+    expect(await lineOf(t, 'mentions')).toMatchObject({ state: 'a_relire' });
+    expect((await t.launch.declare(direction, { prerequisite: 'mentions', documentNumber: 'RELECTURE-0001b', issuer: 'Cabinet inventé', proofRef: 'p2b', validFrom: '2026-11-21' })).ok).toBe(true);
+    expect(await lineOf(t, 'mentions')).toMatchObject({ state: 'valide', proof: { version: 3 } });
     // Une relecture datée d'avant le dernier changement ne vaut pas, même déclarée après.
     t.setDay('2026-11-23');
     expect(await t.mentions.set(direction, { garant: 'Autre garant inventé' })).toEqual({ ok: true });
