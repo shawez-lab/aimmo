@@ -122,17 +122,18 @@ function fakeIndexedDb(data: Map<string, unknown>) {
 }
 
 /**
- * Un JPEG inventé : un vrai en-tête (début, trame à la taille dite, fin), et les points gris au milieu. Le décodeur
- * inventé ci-dessous le relit sans perte.
+ * Un JPEG inventé, bien formé de bout en bout : début, table de quantification, trame à la taille dite, table de
+ * Huffman, balayage des trois composantes, données (chaque 0xFF bourré d'un 0x00), fin.
  */
-function fakeJpeg(width: number, height: number, gray: Uint8Array): Uint8Array {
-  const head = [0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, height >> 8, height & 255, width >> 8, width & 255, 0x03, 1, 0x11, 0, 2, 0x11, 1, 3, 0x11, 1, 0xff, 0xda, 0x00, 0x02];
-  const out = new Uint8Array(head.length + gray.length + 2);
-  out.set(head, 0);
-  out.set(gray, head.length);
-  out.set([0xff, 0xd9], head.length + gray.length);
-  return out;
-}
+const fakeJpeg = (width: number, height: number, gray: Uint8Array): Uint8Array => {
+  const dqt = [0xff, 0xdb, 0x00, 0x43, 0x00, ...new Array<number>(64).fill(1)];
+  const sof = [0xff, 0xc0, 0x00, 0x11, 0x08, height >> 8, height & 255, width >> 8, width & 255, 0x03, 1, 0x11, 0, 2, 0x11, 0, 3, 0x11, 0];
+  const dht = [0xff, 0xc4, 0x00, 0x14, 0x00, 1, ...new Array<number>(15).fill(0), 0];
+  const sos = [0xff, 0xda, 0x00, 0x0c, 0x03, 1, 0x00, 2, 0x00, 3, 0x00, 0x00, 0x3f, 0x00];
+  const data: number[] = [];
+  for (const b of gray) b === 0xff ? data.push(0xff, 0x00) : data.push(b);
+  return new Uint8Array([0xff, 0xd8, ...dqt, ...sof, ...dht, ...sos, ...data, 0xff, 0xd9]);
+};
 
 /**
  * L'appareil photo inventé : un « fichier » porte son image (et sa taille, 1 280 points de côté par défaut) ; la toile
@@ -1108,6 +1109,25 @@ describeWithSqlite('AU103 · la photo entière, de la caméra au rangement', () 
     await shoot(t, { luma: dark }, { luma: bright });
     expect(t.find('p', /^Photo refusée\. Trop sombre/)).toBeDefined();
     expect(await t.H.pending()).toEqual([]);
+    expect(images(idb)).toEqual([]);
+  });
+
+  it('[R677] deux photos faites des mêmes prises partagent leur image : elle reste jusqu’à ce que les deux soient rangées', async () => {
+    const w = await setup();
+    const idb = new Map<string, unknown>();
+    const net = { network: false };
+    const t = await field(w, idb, net);
+    await shoot(t, { luma: dark }, { luma: bright });
+    await shoot(t, { luma: dark }, { luma: bright });
+    const ops = (await t.H.pending()) as { payload: { shot: string; image: { sha256: string } } }[];
+    expect(ops.map((o) => o.payload.shot)).toEqual(['vue-ensemble', 'acces']);
+    expect(ops[0]!.payload.image.sha256).toBe(ops[1]!.payload.image.sha256);
+    expect(images(idb)).toHaveLength(1);
+    net.network = true;
+    await t.online();
+    for (let i = 0; i < 5 && (await w.count('visit_photo_files')) < 2; i++) await t.tick();
+    expect(t.calls.filter((c) => c.startsWith('POST /v1/hors-ligne/photos/'))).toHaveLength(2);
+    expect(await w.count('visit_photo_files')).toBe(2);
     expect(images(idb)).toEqual([]);
   });
 

@@ -228,14 +228,18 @@ async function setup() {
   return { db, journal, server, store, network, alex, sam, agentAlex, agentSam, direction, property, land, visit, setClock: (t: number) => (clock = t) };
 }
 
-/** Un JPEG inventé : un vrai en-tête (début, trame à la taille dite, fin), et des octets au milieu. */
+/**
+ * Un JPEG inventé, bien formé de bout en bout : début, table de quantification, trame à la taille dite, table de
+ * Huffman, balayage des trois composantes, données (chaque 0xFF bourré d'un 0x00), fin.
+ */
 const fakeJpeg = (width: number, height: number, body: Uint8Array = new Uint8Array([1, 2, 3, 4])): Uint8Array => {
-  const head = [0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, height >> 8, height & 255, width >> 8, width & 255, 0x03, 1, 0x11, 0, 2, 0x11, 1, 3, 0x11, 1, 0xff, 0xda, 0x00, 0x02];
-  const out = new Uint8Array(head.length + body.length + 2);
-  out.set(head, 0);
-  out.set(body, head.length);
-  out.set([0xff, 0xd9], head.length + body.length);
-  return out;
+  const dqt = [0xff, 0xdb, 0x00, 0x43, 0x00, ...new Array<number>(64).fill(1)];
+  const sof = [0xff, 0xc0, 0x00, 0x11, 0x08, height >> 8, height & 255, width >> 8, width & 255, 0x03, 1, 0x11, 0, 2, 0x11, 0, 3, 0x11, 0];
+  const dht = [0xff, 0xc4, 0x00, 0x14, 0x00, 1, ...new Array<number>(15).fill(0), 0];
+  const sos = [0xff, 0xda, 0x00, 0x0c, 0x03, 1, 0x00, 2, 0x00, 3, 0x00, 0x00, 0x3f, 0x00];
+  const data: number[] = [];
+  for (const b of body) b === 0xff ? data.push(0xff, 0x00) : data.push(b);
+  return new Uint8Array([0xff, 0xd8, ...dqt, ...sof, ...dht, ...sos, ...data, 0xff, 0xd9]);
 };
 /** L'image entière qui accompagne la photo [R677] : le fichier, et ce que la saisie en dit. */
 const wholeImage = (exposures: Luma[], o: { width?: number; height?: number; kept?: Luma; body?: Uint8Array } = {}) => {
@@ -551,12 +555,19 @@ describe('AU103 · l’image entière de la photo HDR, contrôlée', () => {
     expect(jpegSize(jpg.slice(0, jpg.length - 1))).toBeNull();
     expect(jpegSize(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0xff, 0xd9]))).toBeNull();
     expect(jpegSize(new Uint8Array([0xff, 0xd8, 0xff, 0xda, 0, 2, 0xff, 0xd9]))).toBeNull();
+    // Un en-tête de trame seul, coupé, entre début et fin : pas un JPEG.
+    expect(jpegSize(new Uint8Array([0xff, 0xd8, 0xff, 0xc0, 0x00, 0x11, 0x08, 0x05, 0x00, 0x05, 0x00, 0xff, 0xd9]))).toBeNull();
+    // Sans table de quantification, ou un 0xFF non bourré dans les données : pas un JPEG.
+    const noDqt = jpg.slice(0, 2).toString() + ',' + [...jpg.slice(71)].join(',');
+    expect(jpegSize(new Uint8Array(noDqt.split(',').map(Number)))).toBeNull();
+    expect(jpegSize(fakeJpeg(1600, 1200).map((b, i, a) => (i === a.length - 4 ? 0xff : b)))).toBeNull();
+    expect(jpegSize(fakeJpeg(1600, 1200, new Uint8Array([0xff, 0xff, 7])))).toEqual({ width: 1600, height: 1200 });
     const { bytes, meta } = wholeImage([dark, bright]);
     expect(await matchesKept(bytes, meta)).toBe(true);
     const touched = bytes.slice();
     touched[touched.length - 3] = 9;
     expect(await matchesKept(touched, meta)).toBe(false);
-    expect(await matchesKept(fakeJpeg(1280, 1000, bytes.subarray(25, bytes.length - 2)), meta)).toBe(false);
+    expect(await matchesKept(fakeJpeg(1280, 1000), meta)).toBe(false);
   });
 });
 

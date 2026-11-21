@@ -96,19 +96,22 @@ function del(k) {
   return Promise.resolve();
 }
 /* Lire et réécrire d'un seul tenant, dans une seule transaction : deux onglets ou deux fenêtres ne s'écrasent jamais.
-   fn rend { next, value } ; next absent : rien n'est écrit [R276]. */
+   fn rend { next, value, also } ; next absent : rien n'est écrit ; also : d'autres clés écrites dans la même
+   transaction, [clé, valeur] [R276, R677]. */
 function update(k, fn) {
   var p = tx('readwrite', function (s, out) {
     var q = s.get(k);
     q.onsuccess = function () {
       var r = fn(q.result === undefined ? null : clone(q.result));
       if (r.next !== undefined) s.put(clone(r.next), k);
+      (r.also || []).forEach(function (kv) { s.put(kv[1], kv[0]); });
       out.value = r.value;
     };
   });
   if (p) return p;
   var r = fn(clone(mem[k]));
   if (r.next !== undefined) mem[k] = clone(r.next);
+  (r.also || []).forEach(function (kv) { mem[kv[0]] = kv[1]; });
   return Promise.resolve(r.value);
 }
 
@@ -120,11 +123,26 @@ function uuid() { return G.crypto.randomUUID(); }
 function fresh(s) { s = s || { deviceId: uuid(), nextSeq: 1, pending: [], refused: [] }; if (!Array.isArray(s.uploads)) s.uploads = []; return s; }
 /* L'image entière d'une photo, gardée à part sous son empreinte, jusqu'à ce que le serveur l'ait rangée [R677]. */
 function imgKey(o, sha) { return 'image:' + o + ':' + sha; }
+/* Une image n'est effacée que si plus aucune saisie en attente ni aucun envoi ne la nomme : deux photos faites des mêmes
+   prises partagent la même image. La boîte est relue dans la même transaction que l'effacement [R677]. */
+function named(b, sha) {
+  return b.pending.some(function (op) { return op.kind === 'visite.photo' && op.payload && op.payload.image && op.payload.image.sha256 === sha; }) ||
+    b.uploads.some(function (u) { return u.sha256 === sha; });
+}
+function release(o, sha) {
+  var p = tx('readwrite', function (s) {
+    var q = s.get(BOITE + ':' + o);
+    q.onsuccess = function () { if (!named(fresh(q.result === undefined ? null : q.result), sha)) s['delete'](imgKey(o, sha)); };
+  });
+  if (p) return p;
+  if (!named(fresh(clone(mem[BOITE + ':' + o])), sha)) delete mem[imgKey(o, sha)];
+  return Promise.resolve();
+}
 function box(o) { return update(BOITE + ':' + o, function (s) { return s ? { value: fresh(s) } : (s = fresh(s), { next: s, value: s }); }); }
 /* o : la marque de l'agent dont l'écran a reçu le geste, prise avant tout calcul ; une saisie va toujours dans sa boîte à
    lui, même si un autre agent s'est connecté entre-temps [R16, R276]. */
 var NO_STORE = 'Cet appareil ne peut rien garder sans réseau : rien n’a été gardé. Refaites-le quand le réseau revient.';
-function add(o, kind, appointmentId, payload) {
+function add(o, kind, appointmentId, payload, also) {
   if (!o) return Promise.reject(new Error('aucun agent'));
   // Sans IndexedDB, une saisie ne survivrait pas à la fermeture : elle est refusée, jamais dite gardée [R276].
   if (!G.indexedDB) return Promise.reject(new Error(NO_STORE));
@@ -132,7 +150,7 @@ function add(o, kind, appointmentId, payload) {
   return update(BOITE + ':' + o, function (s) {
     s = fresh(s);
     var op = { opId: id, seq: s.nextSeq, kind: kind, appointmentId: appointmentId, writtenAt: at, payload: payload };
-    return { next: { deviceId: s.deviceId, nextSeq: s.nextSeq + 1, pending: s.pending.concat([op]), refused: s.refused, uploads: s.uploads }, value: op };
+    return { next: { deviceId: s.deviceId, nextSeq: s.nextSeq + 1, pending: s.pending.concat([op]), refused: s.refused, uploads: s.uploads }, value: op, also: also };
   }).then(function (op) {
     // Gardée : elle part tout de suite si le réseau est là, même s'il est revenu pendant le contrôle de la photo [R276].
     if (ui && ui.owner === o) sync(ui.key);
@@ -173,7 +191,7 @@ function doFlush(o, key, send, limit) {
           return { next: { deviceId: now.deviceId, nextSeq: now.nextSeq, pending: keep, refused: now.refused.concat(gone), uploads: ups }, value: { left: keep.length, gone: gone } };
         }).then(function (v) {
           // Une photo refusée n'ira jamais au serveur : son image entière ne sert plus à rien sur le téléphone.
-          return Promise.all(v.gone.filter(function (g) { return g.kind === 'visite.photo' && g.payload && g.payload.image; }).map(function (g) { return del(imgKey(o, g.payload.image.sha256)); })).then(function () { return v.left; }, function () { return v.left; });
+          return Promise.all(v.gone.filter(function (g) { return g.kind === 'visite.photo' && g.payload && g.payload.image; }).map(function (g) { return release(o, g.payload.image.sha256); })).then(function () { return v.left; }, function () { return v.left; });
         }).then(function (left) { return named ? step() : done(false, left); });
       });
     });
@@ -202,7 +220,7 @@ function doImages(o, key) {
       var gone = outcome && outcome !== 'ok' ? [{ opId: u.opId, kind: 'visite.image', code: outcome, rule: 'R677' }] : [];
       return { next: { deviceId: now.deviceId, nextSeq: now.nextSeq, pending: now.pending, refused: now.refused.concat(gone), uploads: now.uploads.filter(function (x) { return x.opId !== u.opId; }) }, value: true };
     }).then(function () {
-      if (outcome === 'ok') { sent++; return del(imgKey(o, u.sha256)).then(function () { return true; }); }
+      if (outcome === 'ok') { sent++; return release(o, u.sha256).then(function () { return true; }); }
       if (outcome) refused++;
       return true;
     });
@@ -843,13 +861,12 @@ function shotTools(li, a, s, o) {
     if (!G.indexedDB) { busy = false; shots = [null, null]; said.textContent = NO_STORE; return; }
     photo(files).then(function (r) {
       if (!r.ok) { busy = false; shots = [null, null]; said.textContent = 'Photo refusée. ' + r.advice; return; }
-      var k = imgKey(o, r.sha), payload = { shot: s.key, exposures: r.payload.exposures, image: r.payload.image };
-      // L'image d'abord, puis la saisie qui la nomme : une saisie n'est jamais gardée sans son image [R677].
-      return put(k, b64(r.bytes)).then(function () { return add(o, 'visite.photo', a.appointmentId, payload); }).then(function () { busy = false; return render(); }, function () {
+      var payload = { shot: s.key, exposures: r.payload.exposures, image: r.payload.image };
+      // L'image et la saisie qui la nomme, écrites d'un seul tenant : jamais l'une sans l'autre [R677].
+      return add(o, 'visite.photo', a.appointmentId, payload, [[imgKey(o, r.sha), b64(r.bytes)]]).then(function () { busy = false; return render(); }, function () {
         busy = false;
         shots = [null, null];
         said.textContent = NO_STORE;
-        return del(k).then(null, function () { return null; });
       });
     }, function () { busy = false; shots = [null, null]; said.textContent = 'Photo illisible : reprenez-la.'; });
   }

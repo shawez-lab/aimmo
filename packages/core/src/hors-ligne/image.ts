@@ -77,32 +77,105 @@ export function checkKeptImage(raw: unknown, exposures: readonly Luma[], t: Phot
   return { ok: true, image, figures: verdict.figures };
 }
 
+const u16 = (b: Uint8Array, i: number): number => (((b[i] as number) << 8) | (b[i + 1] as number)) >>> 0;
+const SOF_MARKERS: ReadonlySet<number> = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+const ARITHMETIC: ReadonlySet<number> = new Set([0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+
+/** Des tables de quantification bien formées : chacune 64 valeurs, sur 8 ou 16 bits, numéro 0 à 3. */
+function goodDqt(b: Uint8Array, p: number, end: number): boolean {
+  while (p < end) {
+    const pq = (b[p] as number) >> 4;
+    if (pq > 1 || ((b[p] as number) & 15) > 3) return false;
+    p += 1 + (pq ? 128 : 64);
+  }
+  return p === end;
+}
+/** Des tables de Huffman bien formées : classe et numéro valables, 16 longueurs, puis autant de valeurs. */
+function goodDht(b: Uint8Array, p: number, end: number): boolean {
+  while (p < end) {
+    if (p + 17 > end || (b[p] as number) >> 4 > 1 || ((b[p] as number) & 15) > 3) return false;
+    let sum = 0;
+    for (let k = 1; k <= 16; k++) sum += b[p + k] as number;
+    if (sum === 0 || sum > 256) return false;
+    p += 17 + sum;
+  }
+  return p === end;
+}
+
 /**
- * La taille d'un JPEG, lue dans son en-tête de trame (SOF), sans le décoder : `null` si ce n'est pas un JPEG entier
- * (début, trame, fin).
+ * Un JPEG entier, lu de bout en bout sans le décoder : début, tables de quantification et de Huffman, une seule trame
+ * (SOF) à la taille dite, au moins un balayage (SOS) dont les composantes sont celles de la trame, des données codées
+ * sans marqueur parasite, et la fin, au dernier octet. Rend la taille de la trame, ou `null` [R677].
  */
 export function jpegSize(bytes: Uint8Array): { width: number; height: number } | null {
   const n = bytes.length;
-  if (n < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8 || bytes[n - 2] !== 0xff || bytes[n - 1] !== 0xd9) return null;
+  if (n < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) return null;
   let i = 2;
-  while (i + 4 <= n) {
+  let dqt = false;
+  let dht = false;
+  let sof: { width: number; height: number; marker: number; components: Set<number> } | null = null;
+  let scans = 0;
+  while (i + 2 <= n) {
     if (bytes[i] !== 0xff) return null;
+    while (i + 1 < n && bytes[i + 1] === 0xff) i++;
     const marker = bytes[i + 1] as number;
-    if (marker === 0xff) {
-      i++;
+    i += 2;
+    if (marker === 0xd9) return scans > 0 && sof && i === n ? { width: sof.width, height: sof.height } : null;
+    if (marker === 0x00 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd8)) return null;
+    if (i + 2 > n) return null;
+    const len = u16(bytes, i);
+    if (len < 2 || i + len > n) return null;
+    const p = i + 2;
+    const end = i + len;
+    if (marker === 0xdb) {
+      if (!goodDqt(bytes, p, end)) return null;
+      dqt = true;
+    } else if (marker === 0xc4) {
+      if (!goodDht(bytes, p, end)) return null;
+      dht = true;
+    } else if (marker === 0xdd) {
+      if (len !== 4) return null;
+    } else if (SOF_MARKERS.has(marker)) {
+      if (sof || len < 8) return null;
+      const nc = bytes[p + 5] as number;
+      const precision = bytes[p] as number;
+      if ((precision !== 8 && precision !== 12) || (nc !== 1 && nc !== 3 && nc !== 4) || len !== 8 + 3 * nc) return null;
+      const height = u16(bytes, p + 1);
+      const width = u16(bytes, p + 3);
+      if (width === 0 || height === 0) return null;
+      const components = new Set<number>();
+      for (let k = 0; k < nc; k++) components.add(bytes[p + 6 + 3 * k] as number);
+      if (components.size !== nc) return null;
+      sof = { width, height, marker, components };
+    } else if (marker === 0xda) {
+      if (!sof || !dqt || (!dht && !ARITHMETIC.has(sof.marker))) return null;
+      const ns = bytes[p] as number;
+      if (ns < 1 || ns > 4 || len !== 6 + 2 * ns) return null;
+      for (let k = 0; k < ns; k++) if (!sof.components.has(bytes[p + 1 + 2 * k] as number)) return null;
+      // Les données codées : un 0xFF n'y est suivi que de 0x00 (octet bourré) ou d'une reprise (RST0 à RST7).
+      let j = end;
+      while (j < n) {
+        if (bytes[j] !== 0xff) {
+          j++;
+          continue;
+        }
+        const next = bytes[j + 1];
+        if (next === undefined) return null;
+        if (next === 0x00 || (next >= 0xd0 && next <= 0xd7)) {
+          j += 2;
+          continue;
+        }
+        break;
+      }
+      if (j === end || j >= n) return null;
+      scans++;
+      i = j;
       continue;
+    } else if (!((marker >= 0xe0 && marker <= 0xef) || marker === 0xfe)) {
+      // Tout autre marqueur (hiérarchique, réservé) : pas un JPEG que l'on range.
+      return null;
     }
-    if (marker === 0xd9 || marker === 0xda) return null;
-    const len = ((bytes[i + 2] as number) << 8) | (bytes[i + 3] as number);
-    if (len < 2 || i + 2 + len > n) return null;
-    const sof = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
-    if (sof) {
-      if (len < 7) return null;
-      const height = ((bytes[i + 5] as number) << 8) | (bytes[i + 6] as number);
-      const width = ((bytes[i + 7] as number) << 8) | (bytes[i + 8] as number);
-      return width > 0 && height > 0 ? { width, height } : null;
-    }
-    i += 2 + len;
+    i = end;
   }
   return null;
 }
