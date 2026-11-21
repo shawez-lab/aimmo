@@ -892,9 +892,9 @@ export class FicheGoogle {
   }
 
   /**
-   * La liaison avec Google, lue sur le dernier envoi réel qui a une réponse de Google : un refus de connexion demande de
-   * reconnecter le compte, un refus de droits ou une fiche introuvable demande de la relier ; tout autre résultat la
-   * laisse prête (AU037).
+   * La liaison avec Google, lue sur les envois réels depuis le dernier qu'il a confirmé : un refus de connexion demande de
+   * reconnecter le compte, un refus de droits ou une fiche introuvable demande de la relier, et cela tient jusqu'au
+   * prochain envoi confirmé, même si une panne vient après (AU037).
    */
   private link(sends: readonly { kind: string; sent_at: string; ack_ref: string | null; error_code: GbpErrorCode | null; action: GbpAction | null }[]): GbpLink {
     const infos = sends.filter((x) => x.kind === 'informations');
@@ -902,10 +902,14 @@ export class FicheGoogle {
     const info = this.mode === 'reel' && lastInfo ? { at: lastInfo.sent_at, ackRef: lastInfo.ack_ref, error: lastInfo.error_code, action: lastInfo.action } : null;
     if (this.mode === 'essai') return { state: 'essai', action: null, info: null };
     if (!this.client) return { state: 'sans_service', action: null, info };
-    const answered = sends.filter((x) => x.ack_ref !== null || x.error_code !== null);
-    const last = answered[answered.length - 1];
+    let lastAck = -1;
+    sends.forEach((x, i) => {
+      if (x.ack_ref !== null) lastAck = i;
+    });
+    const blocking = sends.slice(lastAck + 1).filter((x) => x.error_code === 'connexion' || x.error_code === 'droits' || x.error_code === 'fiche_introuvable');
+    const last = blocking[blocking.length - 1];
     if (last?.error_code === 'connexion') return { state: 'a_reconnecter', action: 'reconnecter', info };
-    if (last?.error_code === 'droits' || last?.error_code === 'fiche_introuvable') return { state: 'a_relier', action: 'relier', info };
+    if (last) return { state: 'a_relier', action: 'relier', info };
     return { state: 'pret', action: null, info };
   }
 

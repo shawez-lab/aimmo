@@ -775,6 +775,22 @@ describeWithSqlite('AU037 · l’accusé réel de Google et l’échec qui dit q
     expect((await view(s)).reviews[0]!.draft).toMatchObject({ state: 'envoye', error: null, action: null });
   });
 
+  it('« reconnecter » tient jusqu’au prochain envoi confirmé, même si une panne vient après', async () => {
+    const s = await setup({ mode: 'reel' });
+    const draftId = await validReply(s);
+    s.client.error = new GbpError('connexion');
+    await s.fiche.publish(agent, draftId);
+    s.client.error = new GbpError('panne');
+    expect(await s.fiche.publish(agent, draftId)).toMatchObject({ error: 'panne', action: 'reessayer' });
+    expect((await view(s)).link).toMatchObject({ state: 'a_reconnecter', action: 'reconnecter' });
+    s.client.error = new GbpError('droits');
+    await s.fiche.sendInfo(direction, 'ag-1');
+    expect((await view(s)).link).toMatchObject({ state: 'a_relier', action: 'relier' });
+    s.client.error = null;
+    expect(await s.fiche.publish(agent, draftId)).toEqual({ ok: true, mode: 'reel' });
+    expect((await view(s)).link.state).toBe('pret');
+  });
+
   it('une mise à jour autorisée de la fiche remonte son accusé réel ; un refus de droits demande de la relier', async () => {
     const s = await setup({ mode: 'reel' });
     expect(await s.fiche.sendInfo(agent, 'ag-1')).toEqual({ ok: false, rule: 'R16', code: 'role' });

@@ -101,6 +101,29 @@ describe('AU037 · le vrai client de la fiche Google', () => {
     expect(await t.client.listReviews(LOC)).toEqual([{ reviewRef: `${LOC}/reviews/r1`, rating: 4, comment: 'Bien', authorName: 'Personne Inventée', reviewedAt: '2026-11-20T09:00:00Z' }]);
   });
 
+  it('les avis sont lus page après page, jusqu’à la dernière', async () => {
+    const base = `GET https://mybusiness.googleapis.com/v4/${LOC}/reviews`;
+    const r = (n: number) => ({ name: `${LOC}/reviews/r${n}`, starRating: 'FIVE', createTime: '2026-11-20T09:00:00Z' });
+    const t = make({ [base]: [{ status: 200, body: { reviews: [r(1), r(2)], nextPageToken: 'page 2' } }, { status: 200, body: { reviews: [r(3)] } }] });
+    expect((await t.client.listReviews(LOC)).map((x) => x.reviewRef)).toEqual([1, 2, 3].map((n) => `${LOC}/reviews/r${n}`));
+    expect(t.calls.slice(1).map((c) => c.url.split('?')[1])).toEqual(['pageSize=50', 'pageSize=50&pageToken=page%202']);
+  });
+
+  it('une réponse dont le corps traîne est perdue au bout du délai, jamais attendue sans fin', async () => {
+    const http = (async (input: string | URL | Request, init: RequestInit = {}) => {
+      if (String(input).includes('oauth2')) return new Response(JSON.stringify({ access_token: ACCESS, expires_in: 3600 }), { status: 200 });
+      const body = new ReadableStream({
+        start(c) {
+          init.signal?.addEventListener('abort', () => c.error(new Error('coupé')));
+        },
+      });
+      return new Response(body, { status: 200 });
+    }) as typeof fetch;
+    const client = googleBusinessClient({ credentials: { clientId: 'x.apps.googleusercontent.com', clientSecret: SECRET, refreshToken: REFRESH }, http, timeoutMs: 30 });
+    expect(await codeOf(client.createPost(LOC, { text: 'Maison', linkUri: 'https://reseau.exemple.test/biens/x' }))).toBe('incertain');
+    expect(await codeOf(client.updateInfo(LOC, { title: 'Camille', phone: null, websiteUri: 'https://camille.exemple.test' }))).toBe('panne');
+  });
+
   it('chaque erreur de Google devient un code fermé, avec le geste qui la règle', async () => {
     expect(googleError(401, null).code).toBe('connexion');
     expect(googleError(403, { error: { status: 'PERMISSION_DENIED', message: 'texte de Google' } }).code).toBe('droits');

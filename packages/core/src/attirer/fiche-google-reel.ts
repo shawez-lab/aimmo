@@ -28,6 +28,7 @@ const INFO = 'https://mybusinessbusinessinformation.googleapis.com/v1';
 /** Une fiche chez Google : `accounts/<compte>/locations/<lieu>`, en chiffres ; le compte manque dans l'ancien réglage. */
 const LOCATION = /^(?:accounts\/([0-9]{1,30})\/)?locations\/([0-9]{1,30})$/;
 const REVIEW_ID = /^[A-Za-z0-9_-]{1,200}$/;
+const MAX_REVIEW_PAGES = 20;
 const STARS: Readonly<Record<string, number>> = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 };
 
 export interface GoogleCredentials {
@@ -84,22 +85,30 @@ export function googleBusinessClient(config: GoogleBusinessConfig): GbpClient {
   async function call(url: string, init: RequestInit): Promise<{ status: number; body: unknown }> {
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    let res: Response;
     try {
-      res = await doFetch(url, { ...init, signal: ctrl.signal, redirect: 'error' });
-    } catch {
-      throw new GbpError('incertain');
+      let res: Response;
+      try {
+        res = await doFetch(url, { ...init, signal: ctrl.signal, redirect: 'error' });
+      } catch {
+        throw new GbpError('incertain');
+      }
+      // Le délai court jusqu'à la fin du corps : une réponse qui traîne est perdue, jamais attendue sans fin.
+      let text: string;
+      try {
+        text = await res.text();
+      } catch {
+        throw new GbpError('incertain');
+      }
+      let body: unknown = null;
+      try {
+        body = text === '' ? null : JSON.parse(text);
+      } catch {
+        body = null;
+      }
+      return { status: res.status, body };
     } finally {
       clearTimeout(timer);
     }
-    let body: unknown = null;
-    try {
-      const text = await res.text();
-      body = text === '' ? null : JSON.parse(text);
-    } catch {
-      body = null;
-    }
-    return { status: res.status, body };
   }
 
   async function accessToken(): Promise<string> {
@@ -143,8 +152,16 @@ export function googleBusinessClient(config: GoogleBusinessConfig): GbpClient {
   return {
     async listReviews(locationRef: string): Promise<GbpReview[]> {
       const { account, location } = parts(locationRef);
-      const b = await api('GET', `${V4}/accounts/${account}/locations/${location}/reviews?pageSize=50`, undefined, true);
-      const list = Array.isArray(b.reviews) ? (b.reviews as Json[]) : [];
+      // Toutes les pages, 50 avis chacune, jusqu'à MAX_REVIEW_PAGES : au-delà, les plus anciens attendent.
+      const list: Json[] = [];
+      let pageToken: string | null = null;
+      for (let page = 0; page < MAX_REVIEW_PAGES; page++) {
+        const query = `pageSize=50${pageToken ? `&pageToken=${encodeURIComponent(pageToken)}` : ''}`;
+        const b = await api('GET', `${V4}/accounts/${account}/locations/${location}/reviews?${query}`, undefined, true);
+        if (Array.isArray(b.reviews)) list.push(...(b.reviews as Json[]));
+        pageToken = typeof b.nextPageToken === 'string' && b.nextPageToken !== '' && b.nextPageToken.length <= 500 ? b.nextPageToken : null;
+        if (!pageToken) break;
+      }
       const out: GbpReview[] = [];
       for (const r of list) {
         const rating = typeof r.starRating === 'string' ? STARS[r.starRating] : undefined;
