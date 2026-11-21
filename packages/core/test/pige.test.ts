@@ -832,4 +832,21 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     const six = (await s.db.first<{ id: string }>("SELECT id FROM pige_ads WHERE source = 'Site C'"))!.id;
     expect(await s.pige.prepare(s.agentAlex, six)).toMatchObject({ ok: true });
   });
+
+  it('[R672] une annonce revenue, après un refus dans le doute, à sa relève déjà rangée rentre dans la file', async () => {
+    const s = await setup();
+    const a = s.ad({ ...flat, rooms: 4 });
+    await s.pige.ingest(s.network.id, [a]);
+    await s.pige.ingest(s.network.id, [s.ad({ ...flat, source: 'Site B', rooms: 3, noAgency: true })]);
+    s.at(MONDAY_10H + 3_600_000);
+    expect(await s.pige.ingest(s.network.id, [{ ...a, rooms: undefined }])).toMatchObject({ added: 0, noAgency: 1 });
+    let q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value).toEqual([]);
+    s.at(MONDAY_10H + 7_200_000);
+    expect(await s.pige.ingest(s.network.id, [a])).toMatchObject({ added: 1 });
+    q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value.map((e) => e.rooms)).toEqual([4]);
+    // Relevée encore, inchangée : rien ne double.
+    expect(await s.pige.ingest(s.network.id, [a])).toMatchObject({ added: 0 });
+  });
 });

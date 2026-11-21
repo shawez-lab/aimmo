@@ -476,11 +476,15 @@ export class Pige {
             AND (coalesce((SELECT price_eur FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), -1) <> ?
               OR coalesce((SELECT published_at || '|' || fingerprint || '|' || coalesce(rooms, '') FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ? ORDER BY collected_at DESC, rowid DESC LIMIT 1), '') <> ?
               -- Une classe ou une date de diagnostic changée est aussi une nouvelle relève (HX18).
-              OR coalesce((SELECT coalesce(e.energy_class, '') || '|' || coalesce(e.diagnosed_on, '') FROM pige_ads b LEFT JOIN pige_ad_energy e ON e.ad_id = b.id WHERE b.network_id = ? AND b.source = ? AND b.source_ref = ? ORDER BY b.collected_at DESC, b.rowid DESC LIMIT 1), '|') <> ?)`,
+              OR coalesce((SELECT coalesce(e.energy_class, '') || '|' || coalesce(e.diagnosed_on, '') FROM pige_ads b LEFT JOIN pige_ad_energy e ON e.ad_id = b.id WHERE b.network_id = ? AND b.source = ? AND b.source_ref = ? ORDER BY b.collected_at DESC, b.rowid DESC LIMIT 1), '|') <> ?
+              -- Revue ouverte après un refus noté depuis sa dernière relève : la relève se range, même inchangée [R672].
+              OR EXISTS (SELECT 1 FROM pige_closed_descriptions d WHERE d.network_id = ? AND d.ref_key = ?
+                          AND d.noted_at >= (SELECT max(c.collected_at) FROM pige_ads c WHERE c.network_id = ? AND c.source = ? AND c.source_ref = ?)))`,
         [
           adId, networkId, ad.source, ad.sourceRef, fingerprint, ad.kind, commune, ad.postalCode, ad.surfaceM2, ad.rooms, ad.priceEur, ad.publishedAt, now.toISOString(),
           networkId, fingerprint, networkId, ad.source, ad.sourceRef, ad.priceEur, networkId, ad.source, ad.sourceRef, `${ad.publishedAt}|${fingerprint}|${ad.rooms ?? ''}`,
           networkId, ad.source, ad.sourceRef, `${ad.energyClass ?? ''}|${ad.diagnosedOn ?? ''}`,
+          networkId, await refKey(ad.source, ad.sourceRef), networkId, ad.source, ad.sourceRef,
         ],
       );
       added += r.changes;
