@@ -1566,4 +1566,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 02:50 · voie 3 · AU106 (#745) fusionnée : parcours sur téléphone mesuré au 95e centile, recherche ramenée de 1 300 à une quinzaine de requêtes ; AU093 (#747) fusionnée : taux du reversement selon le régime de TVA de l'agent. AU092 proposée (#749).
 - 2026-11-21 02:58 · voie 3 · AU091 laissée : la régularisation d'honoraires demande des parts et des commissions versionnées, lues par une dizaine de modules ; à concevoir d'un bloc. #742 et #746 corrigés après Codex.
 - 2026-11-21 04:04 · AU084 · électricité et gaz demandés selon l'âge prouvé de chaque installation (certificat ou facture), gaz absent non demandé, âge jugé à l'acte avec les déclarations d'avant lui ; R60 précisée ; Codex 3 P0 et 1 P2 corrigés ; fusionnée (#744, a948a5a2) · prochaine : AU085
-- 2026-11-21 04:04 · VOIE 2 : AU084, a948a5a2 (main), relancé oui
+- 2026-11-21 04:04 · VOIE 2 : AU084, a948a5a2 (main), relancé non (relance refusée par le contrôle des permissions ; reprise au prochain passage horaire avec AU085)
