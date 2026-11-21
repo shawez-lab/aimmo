@@ -133,12 +133,15 @@ describeWithSqlite('AU032 · captation par mail, portail par portail', () => {
     expect((await w.identifiers()).map((f) => f.value)).not.toContain('abc123@messagerie.leboncoin.fr');
   });
 
-  it('[R669] [R18] un mail déjà rangé sous son identifiant de mail reste un doublon quand il revient avec sa référence de demande', async () => {
+  it('[R669] [R18] un mail déjà rangé sous son identifiant de mail reste un doublon quand il revient avec sa référence de demande, puis sous un autre identifiant', async () => {
     const w = await world();
     const before = new TextDecoder().decode(portalLead('pap.fr', 6, { ref: null }));
     const withRef = before.replace('Message : ', 'Référence de la demande : PAP-0006\r\nMessage : ');
     expect((await handleEmail(message(enc(before)), w.mailConfig))[0]).toMatchObject({ status: 'replied' });
     expect((await handleEmail(message(enc(withRef)), w.mailConfig))[0]).toMatchObject({ status: 'duplicate' });
+    // Puis le portail relivre la même demande sous un nouvel identifiant de mail : toujours un doublon.
+    const resent = withRef.replace(/Message-ID: <[^>]+>/, 'Message-ID: <relivre-6@mail.pap.fr>');
+    expect((await handleEmail(message(enc(resent)), w.mailConfig))[0]).toMatchObject({ status: 'duplicate' });
     expect(await w.outbox()).toBe(1);
     expect(await w.persons()).toBe(1);
   });

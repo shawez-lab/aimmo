@@ -125,15 +125,15 @@ export class Reception {
     const id = this.newId();
     const at = this.now().toISOString();
     const key = dedupKey(message);
-    // Déjà rangé sous un autre identifiant du même message (AU032) : un doublon, jamais traité une seconde fois [R18].
-    for (const previous of message.previousExternalIds ?? []) {
-      const row = await this.db.first<{ id: string; status: InboundStatus }>('SELECT id, status FROM inbound_messages WHERE network_id = ? AND dedup_key = ?', [
-        networkId,
-        dedupKey({ ...message, externalId: previous }),
-      ]);
-      if (row) {
-        await this.log(networkId, row.id, message.channel, message.kind, 'duplicate', 'message déjà reçu, non traité une seconde fois');
-        return { inboundId: row.id, outcome: 'duplicate', toProcess: row.status === 'received' };
+    // Déjà rangé sous une autre clé du même message (AU032) : un doublon, jamais traité une seconde fois ; chaque clé
+    // connue est gardée, pour qu'une relivraison sous l'une ou l'autre le reste [R18, R669].
+    const others = [...new Set((message.previousExternalIds ?? []).map((previous) => dedupKey({ ...message, externalId: previous })))].filter((k) => k !== key);
+    if (others.length > 0) {
+      const known = await this.byAnyKey(networkId, [key, ...others]);
+      if (known) {
+        await this.rememberKeys(networkId, known.id, [key, ...others], at);
+        await this.log(networkId, known.id, message.channel, message.kind, 'duplicate', 'message déjà reçu, non traité une seconde fois');
+        return { inboundId: known.id, outcome: 'duplicate', toProcess: known.status === 'received' };
       }
     }
     const { changes } = await this.db.run(
@@ -165,10 +165,12 @@ export class Reception {
       ],
     );
     if (changes === 1) {
+      if (others.length > 0) await this.rememberKeys(networkId, id, others, at);
       await this.log(networkId, id, message.channel, message.kind, 'stored', 'message reçu et rangé');
       return { inboundId: id, outcome: 'stored', toProcess: true };
     }
     const existing = await this.existing(networkId, key);
+    if (others.length > 0) await this.rememberKeys(networkId, existing.id, others, at);
     await this.log(networkId, existing.id, message.channel, message.kind, 'duplicate', 'message déjà reçu, non traité une seconde fois');
     // Un message rangé mais jamais pris (coupure avant `claim`) peut encore être traité ; `claim` garantit qu'il ne l'est qu'une fois.
     return { inboundId: existing.id, outcome: 'duplicate', toProcess: existing.status === 'received' };
@@ -249,6 +251,30 @@ export class Reception {
     return this.db.all<ReceptionLogRow>('SELECT * FROM reception_log WHERE inbound_id = ? ORDER BY occurred_at, rowid', [
       inboundId,
     ]);
+  }
+
+  /** Le message rangé sous l'une de ces clés, ou connu sous l'une d'elles. */
+  private async byAnyKey(networkId: string, keys: readonly string[]): Promise<{ id: string; status: InboundStatus } | null> {
+    for (const k of keys) {
+      const row = await this.db.first<{ id: string; status: InboundStatus }>(
+        `SELECT m.id, m.status FROM inbound_messages m WHERE m.network_id = ? AND m.dedup_key = ?
+         UNION ALL
+         SELECT m.id, m.status FROM inbound_message_keys k JOIN inbound_messages m ON m.id = k.inbound_id WHERE k.network_id = ? AND k.dedup_key = ?
+         LIMIT 1`,
+        [networkId, k, networkId, k],
+      );
+      if (row) return row;
+    }
+    return null;
+  }
+
+  /** Garde les autres clés d'un message rangé ; une clé déjà connue ne change jamais de message. */
+  private async rememberKeys(networkId: string, inboundId: string, keys: readonly string[], at: string): Promise<void> {
+    for (const k of keys) {
+      const stored = await this.db.first<{ id: string }>('SELECT id FROM inbound_messages WHERE network_id = ? AND dedup_key = ?', [networkId, k]);
+      if (stored) continue;
+      await this.db.run('INSERT INTO inbound_message_keys (network_id, dedup_key, inbound_id, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (network_id, dedup_key) DO NOTHING', [networkId, k, inboundId, at]);
+    }
   }
 
   private async existing(networkId: string, key: string): Promise<{ id: string; status: InboundStatus }> {
