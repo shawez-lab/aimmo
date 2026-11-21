@@ -350,9 +350,16 @@ describe('BR33 · écran de la pige des annonces de particuliers', () => {
     text = t.pigePart().textContent;
     expect(text).toContain('Annonces jamais relevées.');
     expect(text).toContain(PIGE_ALERTS.non_reglee);
-    // Sans réponse de l'état, la file reste lisible.
+    // Sans réponse de l'état, la file reste lisible, et l'écran dit que la relève n'a pas pu être vérifiée.
     t = await run({ 'GET /v1/pige/etat': no(500, { ok: false, code: 'erreur' }) });
     await t.openPige();
     expect(t.items()).toHaveLength(3);
+    expect(t.pigePart().textContent).toContain('La dernière relève des annonces n’a pas pu être vérifiée');
+    expect(t.pigePart().textContent).not.toMatch(/Annonces relevées le /);
+    // Hors ligne pour l'état seulement : dit aussi.
+    t = await run({ 'GET /v1/pige/etat': async () => Promise.reject(new TypeError('hors ligne')) });
+    await t.openPige();
+    expect(t.items()).toHaveLength(3);
+    expect(t.pigePart().textContent).toContain('n’a pas pu être vérifiée');
   });
 });

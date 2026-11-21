@@ -85,8 +85,13 @@ globalThis.AIMMO_PIGE = function (t) {
   /** La date de la dernière relève réussie et, s'il y en a une, l'alerte de panne [R671]. */
   function freshness(res) {
     var e = res.ok && res.body.data;
-    if (!e) return null;
     var box = el('div', null, 'releve');
+    if (!e) {
+      var u = el('p', res.offline ? 'Pas de réseau : la date de la dernière relève des annonces n’a pas pu être vérifiée.' : 'La dernière relève des annonces n’a pas pu être vérifiée : la file peut manquer des annonces récentes.', 'alerte');
+      u.setAttribute('role', 'status');
+      box.appendChild(u);
+      return box;
+    }
     box.appendChild(el('p', e.lastCollectedAt ? 'Annonces relevées le ' + day(e.lastCollectedAt) + '.' : 'Annonces jamais relevées.', 'doux'));
     if (e.alert && ALERTS[e.alert]) {
       var a = el('p', ALERTS[e.alert], 'alerte');
@@ -198,8 +203,7 @@ globalThis.AIMMO_PIGE = function (t) {
       if (box !== root || mine !== load || all.some(function (r) { return r.gone; })) return false;
       if (all.every(function (r) { return r.offline; })) { note.textContent = 'Pas de réseau. Réessayez dans un moment.'; return false; }
       note.textContent = message || '';
-      var fresh = freshness(all[2]);
-      if (fresh) box.appendChild(fresh);
+      box.appendChild(freshness(all[2]));
       box.appendChild(report(all[0]));
       var q = all[1];
       var items = q.ok && Array.isArray(q.body.data) ? q.body.data : null;
