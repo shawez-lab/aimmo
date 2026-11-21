@@ -173,13 +173,15 @@ export class MiseEnService {
       values = [0, documentNumber, issuer, proofRef, b.validFrom, validUntil];
     }
     const at = this.now().toISOString();
+    const id = this.newId();
     await this.db.run(
       `INSERT INTO launch_proofs (id, network_id, prerequisite, version, withdrawn, document_number, issuer, proof_ref, valid_from, valid_until, set_by, set_at)
        SELECT ?, ?, ?, COALESCE(MAX(version), 0) + 1, ?, ?, ?, ?, ?, ?, ?, ? FROM launch_proofs WHERE network_id = ? AND prerequisite = ?`,
-      [this.newId(), viewer.networkId, prerequisite, ...values, `direction:${viewer.userId}`, at, viewer.networkId, prerequisite],
+      [id, viewer.networkId, prerequisite, ...values, `direction:${viewer.userId}`, at, viewer.networkId, prerequisite],
     );
-    const row = await this.db.first<{ version: number }>('SELECT MAX(version) AS version FROM launch_proofs WHERE network_id = ? AND prerequisite = ?', [viewer.networkId, prerequisite]);
-    const version = row?.version ?? 1;
+    // La version de cette déclaration-ci, relue par son identifiant : une autre déclaration simultanée ne la change pas.
+    const row = await this.db.first<{ version: number }>('SELECT version FROM launch_proofs WHERE id = ?', [id]);
+    const version = row!.version;
     await appendEvent(this.journal, { type: 'conformite.mise_en_service', actor: `direction:${viewer.userId}`, subject: `network:${viewer.networkId}`, data: { rule: 'R675', prerequisite, version, withdrawn: values[0] === 1 } }, this.now);
     return { ok: true, version };
   }
