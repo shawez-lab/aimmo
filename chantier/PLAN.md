@@ -477,7 +477,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#768, 9083dc81), migration `4090` (mode au lancement, accusés, échecs, demandes arrivées). Vrais Google Ads (v26) et Meta (catégorie « logement ») dans `publicite-reelle.ts`, mis en réel plateforme par plateforme par le Worker seulement quand tout est rangé, avec un plafond du budget total relu à la validation et au lancement (H63). Accusé rangé avant la réponse ; échec en code et geste ; une campagne partie en réel n'a jamais sa pause confirmée par l'essai. Passage du quart d'heure : demandes `?o=<code>` rapprochées des fiches, dépense des trois derniers jours lue, seuil contrôlé ; R587 et R588 mises à jour. Codex : 2 P0 et 2 P1 corrigés, puis rien. Restent : les lieux des communes se règlent à la main dans `ADS_LIEUX` ; chez Google, le rayon n'est pas envoyé (communes seules) ; textes des annonces réglés au Worker, pas encore à l'écran.
 
 ### AU039 · La qualification et la recherche restent bornées par défaut aux communes du pilote dijonnais
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A039 (majeur), endroit : C/qualification/regles.ts, `DEFAULT_COMMUNES` ; A/app.ts.
 - Constat de l'audit : La qualification et la recherche restent bornées par défaut aux communes du pilote dijonnais : « Lyon » ressort inconnu.
