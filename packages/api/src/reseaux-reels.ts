@@ -8,7 +8,7 @@
  * Google, TikTok, YouTube) restent d'essai tant qu'ils n'ont pas leur propre canal.
  */
 import { appendEvent, type JournalStore, type SqlDatabase } from '@aimmo/core';
-import { metaSocialChannels, SOCIAL_CHANNELS, trialSocialChannel, type LiveWithdrawal, type SocialChannel } from '../../core/src/studio/index.ts';
+import { metaSocialChannels, SOCIAL_CHANNELS, trialSocialChannel, type LiveWithdrawal, type MetaChannelsConfig, type SocialChannel } from '../../core/src/studio/index.ts';
 import { studioCore } from './studio.ts';
 
 export interface SocialEnv {
@@ -31,7 +31,7 @@ export function mediaBase(raw: string | undefined): string | null {
 }
 
 /** Les canaux de la publication et leur mise en service ; null quand rien de réel n'est rangé. */
-export function liveSocialChannels(env: SocialEnv, doFetch: typeof fetch = fetch.bind(globalThis)): { channels: SocialChannel[]; live: true } | null {
+export function liveSocialChannels(env: SocialEnv, http: MetaChannelsConfig['http']): { channels: SocialChannel[]; live: true } | null {
   if (env.RESEAUX_MODE !== 'reel') return null;
   const base = mediaBase(env.RESEAUX_MEDIA_BASE);
   const pageId = env.META_PAGE_ID?.trim() ?? '';
@@ -41,7 +41,7 @@ export function liveSocialChannels(env: SocialEnv, doFetch: typeof fetch = fetch
   const meta = metaSocialChannels({
     network: { pageId, igUserId, token },
     mediaUrl: (ref) => (/^[A-Za-z0-9/_.-]{1,300}$/.test(ref) && !ref.split('/').some((s) => s === '' || s === '.' || s === '..') ? base + ref.split('/').map(encodeURIComponent).join('/') : null),
-    fetch: doFetch,
+    http,
   });
   const real = new Set(meta.map((c) => c.channel));
   return { channels: [...meta, ...SOCIAL_CHANNELS.filter((c) => !real.has(c)).map((c) => trialSocialChannel(c))], live: true };

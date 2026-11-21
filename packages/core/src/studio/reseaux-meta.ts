@@ -43,7 +43,8 @@ export interface MetaChannelsConfig {
   network: MetaAccount;
   /** L'adresse publique d'une photo certifiée, en https, lue par Meta pour la publier. */
   mediaUrl(ref: string): string | null;
-  fetch?: typeof fetch;
+  /** L'appel HTTP vers l'API Graph et vers les photos, donné par le Worker seul. */
+  http: typeof fetch;
   timeoutMs?: number;
 }
 
@@ -73,7 +74,7 @@ export function caption(payload: SocialPayload, withLink: boolean): string {
 export function metaSocialChannels(config: MetaChannelsConfig): SocialChannel[] {
   const { network } = config;
   if (!ID.test(network.pageId) || !ID.test(network.igUserId) || network.token.trim() === '') throw new Error('Compte Meta incomplet');
-  const doFetch = config.fetch ?? fetch;
+  const doFetch = config.http;
   const timeoutMs = config.timeoutMs ?? 15_000;
 
   /**

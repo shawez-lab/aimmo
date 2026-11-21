@@ -326,7 +326,7 @@ describeWithSqlite('AU036 · la vraie route d’envoi avec les réseaux mis en s
 
 it('[R26] [R134] sans chaque pièce rangée et bien formée, rien de réel : tous les réseaux restent d’essai', () => {
   const full = { RESEAUX_MODE: 'reel', META_PAGE_ID: '111', META_IG_USER_ID: '222', META_PAGE_TOKEN: 'jeton-invente', RESEAUX_MEDIA_BASE: 'https://reseau.exemple.test/medias/' };
-  const on = liveSocialChannels(full)!;
+  const on = liveSocialChannels(full, fetch)!;
   expect(on.live).toBe(true);
   expect(on.channels.map((c) => [c.channel, c.mode])).toEqual([
     ['facebook', 'reel'],
@@ -347,6 +347,6 @@ it('[R26] [R134] sans chaque pièce rangée et bien formée, rien de réel : tou
     { ...full, RESEAUX_MEDIA_BASE: 'https://reseau.exemple.test/photos/' },
     { ...full, RESEAUX_MEDIA_BASE: 'https://moi:secret@reseau.exemple.test/medias/' },
     { ...full, RESEAUX_MEDIA_BASE: 'pas une adresse' },
-  ]) expect(liveSocialChannels(off), JSON.stringify(off)).toBeNull();
+  ]) expect(liveSocialChannels(off, fetch), JSON.stringify(off)).toBeNull();
   expect(mediaBase('https://reseau.exemple.test/medias/?x=1')).toBeNull();
 });
