@@ -14,7 +14,7 @@ Chaque règle a un numéro. Une règle « en service » a au moins un test qui p
 | R08 | Ton. Tutoiement sur Instagram, vouvoiement avec le prénom ailleurs. Pas de « Salut » à chaque message. Ni parenthèses ni formules administratives. | oui | S06 |
 | R09 | Contenu public. Jamais le nom d'un client ni une adresse exacte dans un contenu public. | oui | S06 |
 | R10 | Chiffres. Aucun prix, aucune surface, aucune date inventés : chaque chiffre d'un message vient de la base ou d'une source publique citée. | oui | S06 |
-| R11 | Plafonds. Au plus 2 demandes d'avis par jour, entre 9 h et 19 h, jamais à un collègue, un associé ou un proche. Au plus 5 messages aux partenaires par jour ouvré. | oui | S05 |
+| R11 | Plafonds. Au plus 2 demandes d'avis par jour, entre 9 h et 19 h, jamais à un collègue, un associé ou un proche. Au plus 5 messages aux partenaires par jour ouvré. Une demande d'avis retenue par le seul plafond du jour attend le lendemain et n'est jamais close par le délai de 7 jours : chaque client finit par recevoir la sienne, les plus anciens d'abord (AU087). | oui | S05, AU087 |
 | R12 | Jamais de silence. Si l'IA ne répond pas ou si son plafond de coût est atteint, un texte de secours part à sa place, dans le respect de R01 à R04. | oui | S06 |
 | R13 | Journal. Chaque envoi et chaque refus d'envoi sont écrits au journal avec la règle appliquée, sans donnée personnelle en clair. | oui | S06, S07 |
 | R14 | Aucune décision sur les personnes. Aucune note ni aucun tri automatique des candidats à un poste ou à une location, de la solvabilité d'un acquéreur ou d'un locataire, ni de la performance d'un agent. Les contacts sont attribués aux agents par des règles fixes. | non | M03, M14, M15 |
