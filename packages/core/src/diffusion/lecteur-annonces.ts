@@ -165,7 +165,9 @@ export function listingHtml(html: string): string {
     const selfClosing = VOID_TAGS.has(name) || /\/\s*$/.test(attrs);
     // L'en-tête et le pied d'une annonce (`<article><header>`) sont à elle : seuls ceux de la page sont écartés.
     const around = name === 'nav' || name === 'dialog' || (AROUND.test(name) && !stack.includes('article'));
-    if (skipAt < 0 && !selfClosing && (around || OTHER_LISTINGS.test(attrs))) {
+    // Ce que l'acquéreur ne voit pas (`hidden`, `aria-hidden`, `display: none`) n'est pas l'annonce en ligne.
+    const hidden = /(?:^|\s)hidden(?:[\s="']|$)|aria-hidden\s*=\s*["']?true|display\s*:\s*none|visibility\s*:\s*hidden/i.test(attrs);
+    if (skipAt < 0 && !selfClosing && (around || hidden || OTHER_LISTINGS.test(attrs))) {
       skipAt = stack.length;
       stack.push(name);
       continue;
@@ -189,7 +191,8 @@ export function visibleText(html: string): string {
 }
 
 const classIn = (text: string, words: RegExp): string | null => {
-  const m = text.match(new RegExp(`${words.source}[^A-Za-z]{0,20}\\b([A-G])\\b`, 'i'));
+  // Une lettre seule, entourée d'autre chose que des lettres, accents compris : le D de « Dépenses » n'est pas une classe.
+  const m = text.match(new RegExp(`${words.source}[^\\p{L}]{0,20}(?<!\\p{L})([A-G])(?!\\p{L})`, 'iu'));
   return m && CLASS.test(m[1]!.toUpperCase()) ? m[1]!.toUpperCase() : null;
 };
 

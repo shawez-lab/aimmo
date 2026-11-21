@@ -105,6 +105,12 @@ describe('AU068 · la lecture d’une page d’annonce', () => {
     expect(parseListingPage(html, page)).toMatchObject({ found: true, priceEur: 210000 });
   });
 
+  it('[R473] ce qui est caché n’est pas lu ; une classe est une lettre seule, accents compris', () => {
+    const r = parseListingPage('<main><article><p hidden>Classe énergie D, classe climat C.</p><div aria-hidden="true">Classe énergie B</div><div style="display: none">Classe énergie A</div><p>DPE : Dépenses annuelles estimées.</p><p>Classe énergie F, classe climat E.</p><p>Prix : 210 000 €</p></article></main>');
+    expect(r).toMatchObject({ found: true, energyClass: 'F', climateClass: 'E' });
+    expect(r.found && r.text).not.toContain('climat C');
+  });
+
   it('[R473] 404 et 410 : plus en ligne ; une redirection, une autre réponse ou une page qui n’est pas du HTML : illisible ; jamais de redirection suivie', async () => {
     const f = fakeFetch();
     const reader = new HttpListingReader(f.fetch);
