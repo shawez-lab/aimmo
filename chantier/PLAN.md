@@ -427,7 +427,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#748, `a46c699e`), règle R670, sans migration. Décidé : `GET /v1/captation/meta` (direction) nomme les réglages `META_*` et `MODE` manquants, signale un autre réseau, et dit chaque canal « vérifiée » seulement après un vrai message rattaché à une fiche et traité : réponse livrée (boîte d'essai, accusé du canal, ou réponse humaine en écho), dans l'ordre des faits, ou alerte ouverte, rouverte ou vue après ce message. Le rattachement à la bonne fiche (téléphone connu, compte chez le canal) et l'origine (`sources`) sont prouvés de bout en bout par une notification signée. Codex : 4 P0 corrigés en 4 tours, puis rien. Pas d'écran.
 
 ### AU034 · La pige a ses règles et son écran
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A034 (majeur), endroit : C/pige/pige.ts, `PigeSource` ; A/worker.ts.
 - Constat de l'audit : La pige a ses règles et son écran, mais aucun fournisseur réel n’est raccordé par le Worker.
