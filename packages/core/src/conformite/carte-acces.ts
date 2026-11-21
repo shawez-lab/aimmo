@@ -694,6 +694,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   sale_commissions: out('agent', 'Honoraires et rémunération de l\'agent.'),
   commission_grids: out('sans_client', 'Grille de rémunération des agents.'),
   commission_tier_picks: out('agent', 'Palier retenu pour la rémunération d’une vente.'),
+  commission_revisions: out('agent', 'Versions d’une commission régularisée après un avenant d’honoraires.'),
   commissions: out('agent', 'Rémunération de l\'agent.'),
   commission_shares: out('agent', 'Partage de la rémunération entre agents.'),
   custom_reports: out('agent', 'Rapports sur mesure enregistrés par un agent ou la direction (HX62) : des mesures et un regroupement, aucun client.'),
