@@ -477,19 +477,22 @@ const TOKEN = 'jeton-invente-' + 'x'.repeat(24);
 const ACCOUNT = { pageId: '111', igUserId: '222', token: TOKEN };
 
 /** Une API Graph simulée : chaque appel est noté ; `fail` rend une erreur de Meta pour un chemin donné. */
-function fakeGraph(opts: { fail?: Record<string, { status: number; code: number | null }>; noPermalink?: boolean; down?: string[] } = {}) {
+function fakeGraph(opts: { fail?: Record<string, { status: number; code: number | null }>; noPermalink?: boolean; down?: string[]; unserved?: string[]; deleteFail?: { status: number; code: number }; absent?: boolean } = {}) {
   const calls: { method: string; path: string; params: Record<string, string> }[] = [];
   let n = 0;
   const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? 'GET';
+    // Les photos, lues à leur adresse publique avant l'envoi : servies, sauf celles que `unserved` retient.
+    if (url.hostname !== 'graph.facebook.com') return new Response(null, { status: opts.unserved?.some((u) => url.pathname.endsWith(u)) ? 404 : 200, headers: { 'content-type': 'image/jpeg' } });
     const params = Object.fromEntries(method !== 'POST' ? url.searchParams : new URLSearchParams(String(init?.body ?? '')));
     const path = url.pathname.replace(/^\/v[0-9.]+\//, '');
     calls.push({ method, path, params });
     if (opts.down?.some((d) => path.endsWith(d))) throw new TypeError('réseau coupé');
     const failing = Object.entries(opts.fail ?? {}).find(([k]) => path.endsWith(k));
     if (failing) return new Response(failing[1].code === null ? 'panne' : JSON.stringify({ error: { message: 'texte du réseau à ne jamais garder', code: failing[1].code } }), { status: failing[1].status });
-    if (method === 'DELETE') return Response.json({ success: true });
+    if (method === 'DELETE') return opts.deleteFail ? new Response(JSON.stringify({ error: { code: opts.deleteFail.code } }), { status: opts.deleteFail.status }) : Response.json({ success: true });
+    if (method === 'GET' && params.fields === 'id') return opts.absent ? new Response(JSON.stringify({ error: { code: 100, error_subcode: 33 } }), { status: 400 }) : Response.json({ id: path });
     if (method === 'GET') {
       if (opts.noPermalink) return new Response('{}', { status: 500 });
       const field = params.fields!;
@@ -633,6 +636,12 @@ describeWithSqlite('AU036 · une publication validée part vraiment sur les comp
     const t2 = await setup({ live: () => metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: g.fetch }) });
     const id2 = await t2.ready();
     expect(await t2.pubs.publish(t2.alexV, id2, [{ channel: 'facebook', account: 'reseau' }])).toMatchObject({ ok: true, value: { sends: [{ outcome: 'envoye', url: null, code: null }] } });
+    // Une photo que le site ne sert pas encore : rien n'est envoyé à Meta, à réessayer quand elle sera servie.
+    const g3 = fakeGraph({ unserved: ['2-0000-4000-8000-000000000000.jpg'] });
+    const t3 = await setup({ live: () => metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: g3.fetch }) });
+    const id3 = await t3.ready();
+    expect(await t3.pubs.publish(t3.alexV, id3, both)).toMatchObject({ ok: true, value: { sends: [{ outcome: 'echec', code: 'visuel_non_servi', action: 'reessayer' }, { outcome: 'echec', code: 'visuel_non_servi', action: 'reessayer' }] } });
+    expect(g3.calls).toEqual([]);
   });
 
   it('[R134] un envoi réel sans issue rangée n’est jamais doublé : en cours, puis à vérifier ; sans référence, à vérifier aussi', async () => {
@@ -731,13 +740,25 @@ describeWithSqlite('AU036 · une publication validée part vraiment sur les comp
     expect(JSON.stringify(ev)).not.toMatch(/111_3|9007|jeton/);
   });
 
-  it('[R42] une publication déjà absente chez le réseau est retirée ; un envoi d’issue inconnue est dit à vérifier', async () => {
+  it('[R42] une publication dont la relecture établit l’absence est retirée ; un refus de retrait reste dû ; une issue inconnue est à vérifier', async () => {
+    {
+      // Un refus de retrait (368, blocage temporaire) alors que la publication existe encore : rien n'est tenu pour retiré.
+      const g = fakeGraph();
+      const t = await setup({ live: () => metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: g.fetch }) });
+      const id = await t.ready();
+      await t.pubs.publish(t.alexV, id, [both[0]]);
+      t.state.diffusable = false;
+      const blocked = fakeGraph({ deleteFail: { status: 400, code: 368 } });
+      const pubs2 = new Publications(t.db, (t.pubs as unknown as { acces: never }).acces, t.journal, { ...(t.pubs as unknown as { deps: ConstructorParameters<typeof Publications>[3] }).deps, channels: metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: blocked.fetch }) }, { live: true });
+      expect(await pubs2.withdrawLive(t.network.id, t.p.id)).toEqual({ removed: [], failed: [{ channel: 'facebook', account: 'reseau', code: 'contenu_refuse' }], toVerify: [] });
+      expect(await pubs2.withdrawAllLive(t.network.id)).toHaveLength(1);
+    }
     const g = fakeGraph({ down: ['media_publish'] });
     const t = await setup({ live: () => metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: g.fetch }) });
     const id = await t.ready();
     await t.pubs.publish(t.alexV, id, both);
     t.state.diffusable = false;
-    const gone = fakeGraph({ fail: { '111_3': { status: 400, code: 100 } } });
+    const gone = fakeGraph({ deleteFail: { status: 400, code: 100 }, absent: true });
     const pubs2 = new Publications(t.db, (t.pubs as unknown as { acces: never }).acces, t.journal, { ...(t.pubs as unknown as { deps: ConstructorParameters<typeof Publications>[3] }).deps, channels: metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: gone.fetch }) }, { live: true });
     expect(await pubs2.withdrawLive(t.network.id, t.p.id)).toEqual({ removed: [{ channel: 'facebook', account: 'reseau' }], failed: [], toVerify: [{ channel: 'instagram', account: 'reseau' }] });
   });
@@ -783,7 +804,7 @@ describe('AU036 · les codes de Meta et la légende', () => {
   it('un compte Meta incomplet ne fait aucun canal ; un réseau injoignable se réessaie', async () => {
     expect(() => metaSocialChannels({ network: { ...ACCOUNT, token: ' ' }, mediaUrl })).toThrow(/incomplet/);
     expect(() => metaSocialChannels({ network: { ...ACCOUNT, pageId: 'page' }, mediaUrl })).toThrow(/incomplet/);
-    const [fb] = metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: (async () => { throw new TypeError('réseau'); }) as typeof fetch });
+    const [fb] = metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: (async (input: string | URL | Request) => { if (new URL(String(input)).hostname !== 'graph.facebook.com') return new Response(null, { status: 200, headers: { 'content-type': 'image/jpeg' } }); throw new TypeError('réseau'); }) as typeof fetch });
     await expect(fb!.post({ postId: 'p', account: 'reseau', text: 't', visuals: [{ ref: 'a', overlay: null, certificatePath: '/c' }], link: null })).rejects.toMatchObject({ code: 'reseau_indisponible', action: 'reessayer' });
   });
 });

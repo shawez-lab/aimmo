@@ -287,6 +287,7 @@ describeWithSqlite('AU036 · la vraie route d’envoi avec les réseaux mis en s
     let n = 0;
     const fakeFetch = (async (input: string | URL | Request, init?: RequestInit) => {
       const url = new URL(String(input));
+      if ((init?.method ?? 'GET') === 'HEAD') return new Response(null, { status: 200, headers: { 'content-type': 'image/jpeg' } });
       calls.push(`${init?.method ?? 'GET'} ${url.pathname}`);
       if ((init?.method ?? 'GET') === 'GET') return Response.json({ permalink_url: 'https://www.facebook.com/p/1', permalink: 'https://www.instagram.com/p/2' });
       return Response.json({ id: String(100 + ++n) });

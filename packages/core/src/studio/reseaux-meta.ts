@@ -81,9 +81,9 @@ export function metaSocialChannels(config: MetaChannelsConfig): SocialChannel[] 
    * réseau, réponse illisible) ne dit pas si la publication est faite : l'issue est inconnue, à vérifier, jamais refaite.
    * Seul un refus clair de Meta (une erreur 4xx avec son code) dit qu'elle ne l'est pas.
    */
-  const call = async (method: 'GET' | 'POST' | 'DELETE', path: string, params: Record<string, string>, final = false): Promise<Json> => {
+  /** L'appel brut : le statut et le corps lu, ou null si le réseau n'a pas répondu. */
+  const raw = async (method: 'GET' | 'POST' | 'DELETE', path: string, params: Record<string, string>): Promise<{ res: Response; data: unknown } | null> => {
     const body = new URLSearchParams({ ...params, access_token: network.token });
-    const lost = (): SocialSendError => (final ? new SocialSendError('issue_inconnue', 'verifier', true) : new SocialSendError('reseau_indisponible', 'reessayer'));
     let res: Response;
     try {
       res = await doFetch(method === 'POST' ? `${GRAPH}/${path}` : `${GRAPH}/${path}?${body.toString()}`, {
@@ -92,7 +92,7 @@ export function metaSocialChannels(config: MetaChannelsConfig): SocialChannel[] 
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch {
-      throw lost();
+      return null;
     }
     let data: unknown = null;
     try {
@@ -100,6 +100,13 @@ export function metaSocialChannels(config: MetaChannelsConfig): SocialChannel[] 
     } catch {
       data = null;
     }
+    return { res, data };
+  };
+  const call = async (method: 'GET' | 'POST' | 'DELETE', path: string, params: Record<string, string>, final = false): Promise<Json> => {
+    const lost = (): SocialSendError => (final ? new SocialSendError('issue_inconnue', 'verifier', true) : new SocialSendError('reseau_indisponible', 'reessayer'));
+    const got = await raw(method, path, params);
+    if (!got) throw lost();
+    const { res, data } = got;
     const refused = data !== null && typeof data === 'object' && typeof ((data as Json).error as Json | undefined)?.code === 'number';
     if (final && !refused && (!res.ok || data === null || typeof data !== 'object')) throw lost();
     if (final && refused && res.status >= 500) throw lost();
@@ -111,15 +118,37 @@ export function metaSocialChannels(config: MetaChannelsConfig): SocialChannel[] 
     if (typeof id !== 'string' || !/^[0-9_]{1,64}$/.test(id)) throw final ? new SocialSendError('reponse_illisible', 'verifier', true) : new SocialSendError('reponse_illisible', 'reessayer');
     return id;
   };
-  /** Retirer une publication : déjà absente chez le réseau (code 100), elle est retirée [R42]. */
+  /**
+   * Retirer une publication [R42]. Elle n'est tenue pour retirée que sur un succès du réseau, ou quand une relecture
+   * établit qu'elle n'existe plus (code 100, sous-code 33 de Meta). Tout autre refus, même de contenu, reste dû.
+   */
   const remove = async (postRef: string, account: SocialPayload['account']): Promise<void> => {
     if (account !== 'reseau') throw new SocialSendError('compte_non_relie', 'relier');
     if (!/^[0-9_]{1,64}$/.test(postRef)) throw new SocialSendError('reference_illisible', 'verifier');
     try {
-      await call('DELETE', postRef, {});
+      const done = await call('DELETE', postRef, {});
+      if (done.success !== true) throw new SocialSendError('retrait_non_confirme', 'reessayer');
     } catch (error) {
-      if (error instanceof SocialSendError && error.code === 'contenu_refuse') return;
-      throw error;
+      const seen = await raw('GET', postRef, { fields: 'id' });
+      const err = seen?.data !== null && typeof seen?.data === 'object' ? ((seen.data as Json).error as Json | undefined) : undefined;
+      if (seen && seen.res.status >= 400 && seen.res.status < 500 && err?.code === 100 && err.error_subcode === 33) return;
+      throw error instanceof SocialSendError ? new SocialSendError(error.code, error.action === 'corriger' ? 'reessayer' : error.action) : new SocialSendError('erreur_reseau', 'reessayer');
+    }
+  };
+  /**
+   * Chaque photo doit se lire à son adresse publique avant d'envoyer quoi que ce soit : une photo que le site ne sert
+   * pas encore (bien pas encore publié sur le site, photo hors de sa version publiée) attend, à réessayer.
+   */
+  const reachable = async (images: readonly string[]): Promise<void> => {
+    for (const url of images) {
+      let ok = false;
+      try {
+        const res = await doFetch(url, { method: 'HEAD', signal: AbortSignal.timeout(timeoutMs) });
+        ok = res.ok && (res.headers.get('content-type') ?? 'image/').startsWith('image/');
+      } catch {
+        ok = false;
+      }
+      if (!ok) throw new SocialSendError('visuel_non_servi', 'reessayer');
     }
   };
   /** Le lien public relu chez le réseau, en https chez Facebook ou Instagram seulement ; sinon null. */
@@ -151,7 +180,9 @@ export function metaSocialChannels(config: MetaChannelsConfig): SocialChannel[] 
     post: async (payload) => {
       networkOnly(payload);
       const photos: string[] = [];
-      for (const url of urls(payload)) photos.push(idOf(await call('POST', `${network.pageId}/photos`, { url, published: 'false' })));
+      const images = urls(payload);
+      await reachable(images);
+      for (const url of images) photos.push(idOf(await call('POST', `${network.pageId}/photos`, { url, published: 'false' })));
       const params: Record<string, string> = { message: caption(payload, true) };
       photos.forEach((id, i) => (params[`attached_media[${i}]`] = JSON.stringify({ media_fbid: id })));
       const postRef = idOf(await call('POST', `${network.pageId}/feed`, params, true), true);
@@ -166,6 +197,7 @@ export function metaSocialChannels(config: MetaChannelsConfig): SocialChannel[] 
     post: async (payload) => {
       networkOnly(payload);
       const images = urls(payload);
+      await reachable(images);
       const text = caption(payload, false);
       let container: string;
       if (images.length === 1) {
