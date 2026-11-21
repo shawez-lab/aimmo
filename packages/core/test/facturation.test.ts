@@ -426,13 +426,22 @@ describeWithSqlite('HX49 · factures fournisseurs, rapprochement bancaire et rel
     await relances.prepare(t.network.id);
     const text = (await t.db.first<{ text: string }>('SELECT text FROM invoice_reminders ORDER BY prepared_at DESC LIMIT 1'))?.text ?? '';
     expect(text).toContain('Nous en avons reçu 6 000,00 € ; 4 000,00 € n\'apparaissent pas encore dans nos encaissements.');
+    // Une nouvelle part ferme la relance préparée sur l'ancien reste : elle ne part plus avec un montant faux.
+    const pending = await t.db.first<{ id: string }>("SELECT id FROM invoice_reminders WHERE status = 'a_valider'");
+    expect(pending).not.toBeNull();
+    await t.db.run("INSERT INTO bank_lines (id, network_id, day, amount_cents, invoice_refs, imported_by, created_at) VALUES ('ligne-1000', ?, '2027-07-16', 100000, '[]', 'x', 'y')", [t.network.id]);
+    expect((await t.banque.allocate(t.direction, 'ligne-1000', [{ invoiceId: t.invoice.id, amountCents: 100_000 }])).ok).toBe(true);
+    expect(await t.db.first('SELECT status, rule FROM invoice_reminders WHERE id = ?', [pending!.id])).toEqual({ status: 'close', rule: 'paiement_partiel' });
+    // La base refuse une ligne d'avant la facture, même écrite à la main.
+    await t.db.run("INSERT INTO bank_lines (id, network_id, day, amount_cents, invoice_refs, imported_by, created_at) VALUES ('ligne-avant', ?, '2027-06-01', 100000, '[]', 'x', 'y')", [t.network.id]);
+    await expect(t.db.run("INSERT INTO bank_allocations (line_id, invoice_id, network_id, amount_cents, by, created_at) VALUES ('ligne-avant', ?, ?, 1, 'x', 'y')", [t.invoice.id, t.network.id])).rejects.toThrow();
     // Une part de trop est refusée, au centime ; le solde exact passe.
-    expect(await t.banque.allocate(t.direction, last, [{ invoiceId: t.invoice.id, amountCents: 400_001 }])).toMatchObject({ ok: false, rule: 'R551' });
-    const done = await t.banque.allocate(t.direction, last, [{ invoiceId: t.invoice.id, amountCents: 400_000 }]);
-    expect(done.ok && done.value.invoices[0]).toMatchObject({ paidCents: 1_000_000, remainingCents: 0, settled: true, lines: [{ lineId: first, day: '2027-07-10', amountCents: 600_000 }, { lineId: last, day: '2027-07-14', amountCents: 400_000 }] });
+    expect(await t.banque.allocate(t.direction, last, [{ invoiceId: t.invoice.id, amountCents: 300_001 }])).toMatchObject({ ok: false, rule: 'R551' });
+    const done = await t.banque.allocate(t.direction, last, [{ invoiceId: t.invoice.id, amountCents: 300_000 }]);
+    expect(done.ok && done.value.invoices[0]).toMatchObject({ paidCents: 1_000_000, remainingCents: 0, settled: true, lines: [{ lineId: first, day: '2027-07-10', amountCents: 600_000 }, { lineId: last, day: '2027-07-14', amountCents: 300_000 }, { lineId: 'ligne-1000', day: '2027-07-16', amountCents: 100_000 }] });
     // Encaissée au jour de la dernière part, qui en fait la preuve.
     expect((await t.banque.recordReceipt(t.direction, t.invoice.id)).ok).toBe(true);
-    expect(await t.db.first('SELECT proof_ref, received_at FROM commission_receipts WHERE file_id = ?', [t.fileId])).toEqual({ proof_ref: `banque:${last}`, received_at: '2027-07-13T22:00:00.000Z' });
+    expect(await t.db.first('SELECT proof_ref, received_at FROM commission_receipts WHERE file_id = ?', [t.fileId])).toEqual({ proof_ref: 'banque:ligne-1000', received_at: '2027-07-15T22:00:00.000Z' });
     // La relance en attente se ferme.
     await relances.closeSettledReminders(t.network.id);
     expect(await t.db.all("SELECT status FROM invoice_reminders WHERE status IN ('a_valider', 'validee')")).toEqual([]);

@@ -14,6 +14,7 @@ CREATE INDEX IF NOT EXISTS bank_allocations_facture ON bank_allocations (invoice
 CREATE TRIGGER IF NOT EXISTS bank_allocations_bornes
 BEFORE INSERT ON bank_allocations
 WHEN (SELECT amount_cents FROM bank_lines WHERE id = NEW.line_id) <= 0
+  OR (SELECT day FROM bank_lines WHERE id = NEW.line_id) < (SELECT issued_on FROM invoices WHERE id = NEW.invoice_id)
   OR (SELECT kind FROM invoices WHERE id = NEW.invoice_id) <> 'honoraires'
   OR (SELECT network_id FROM bank_lines WHERE id = NEW.line_id) <> NEW.network_id
   OR (SELECT network_id FROM invoices WHERE id = NEW.invoice_id) <> NEW.network_id
