@@ -307,6 +307,11 @@ describeWithSqlite('HX62 · rapports sur mesure et export complet', () => {
     expect(JSON.stringify(doc)).not.toContain(autre);
     expect(JSON.stringify(doc)).not.toContain(t.sam.id);
     expect(await t.exports.verify(JSON.parse(JSON.stringify(doc)))).toEqual({ verified: true, fingerprint: e.value.fingerprint });
+    // Un dossier d'agent devenu incomplet ferme l'export des fiches, autorisation valide ou non [R82].
+    await t.db.run('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO agent_onboardings (agent_id, network_id, candidate_id, created_by, created_at) VALUES (?, ?, 'cand-x', 'direction:x', '2027-06-01T08:00:00.000Z')", [t.alex.id, t.network.id]);
+    await t.db.run('PRAGMA foreign_keys = ON');
+    expect(await t.exports.make(t.agent, undefined, { authorizationId: given.value.id })).toEqual({ ok: false, rule: 'R82', code: 'agent_file_incomplete' });
     // Échue, l'autorisation ne sert plus.
     const late = new ExportAgent(t.db, t.journal, { requireSecondFactor: async () => ({ ok: true }) }, { now: () => new Date('2027-08-15T10:00:00.000Z') });
     expect(await late.make(t.agent, undefined, { authorizationId: given.value.id })).toMatchObject({ ok: false, rule: 'R16', code: 'no_authorization' });

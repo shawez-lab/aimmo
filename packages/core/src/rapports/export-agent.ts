@@ -11,6 +11,7 @@
  * L'agent seul tire son export : ni la direction ni un autre rôle ne le tire à sa place [R16].
  */
 import type { Viewer } from '../acces/droits.ts';
+import { agentState } from '../acces/etat-agent.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -117,7 +118,7 @@ export async function fingerprintOf(doc: unknown): Promise<string> {
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-type Refusal = { ok: false; rule: 'R16' | 'R601'; code: string };
+type Refusal = { ok: false; rule: 'R16' | 'R601' | 'R82'; code: string };
 
 /** La porte du second facteur (HX56, `ClesAppareil.requireSecondFactor`) [R601]. */
 export interface SecondFactorGate {
@@ -199,6 +200,11 @@ export class ExportAgent {
         [options.authorizationId, net, id],
       );
       if (!auth || auth.expires_on < localTime(this.now(), 'Europe/Paris').date) return refuse('no_authorization');
+      // Les fiches de ses clients ne sortent pas d'un dossier d'agent incomplet ou échu, même avec un contrat [R82].
+      if ((await agentState(this.db, net, id, this.now())) !== 'actif') {
+        await appendEvent(this.journal, { type: 'acces.refuse', actor: `agent:${id}`, subject: `network:${net}`, data: { rule: 'R82', role: 'agent', kind: 'agent_export', code: 'agent_file_incomplete' } }, this.now);
+        return { ok: false, rule: 'R82', code: 'agent_file_incomplete' };
+      }
     }
 
     const tables: AgentExport['tables'] = {
