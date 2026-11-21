@@ -1612,3 +1612,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 18:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 17:53 par une autre séance voie 2, active : push sur chantier/AU091 à 18:30)
 - 2026-11-21 19:11 · AU037 · fiche Google réelle derrière le Worker (H07) : accusé de Google gardé avec l'envoi, échec en code et geste, à reconnecter ou relier tant qu'aucun envoi n'est confirmé, mise à jour de la fiche par la direction ; R154 ; Codex 2 P0 et 2 P2 corrigés, 1 P0 réfuté, puis rien ; vérification GitHub verte ; fusionnée (#766, da1f338a) · prochaine : AU038
 - 2026-11-21 19:11 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions (deuxième fois) ; reprise au prochain passage planifié avec AU038
+- 2026-11-21 19:24 · voie 1 : PLAN.md rétabli (la fin de séance AU037, 8d112dc8, l'avait tronqué de 7751 à 466 lignes ; seules les lignes d'AU037 gardées) ; AU038 en cours
