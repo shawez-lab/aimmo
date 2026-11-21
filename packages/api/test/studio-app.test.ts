@@ -385,7 +385,7 @@ describe('X11 · écran « Studio » de l’application', () => {
     const t = await run();
     await t.openB1();
     await t.click(t.byText('Publications'));
-    expect(t.body().textContent).toContain('Mode essai : rien ne part réellement sur les réseaux.');
+    expect(t.body().textContent).toContain('Rien ne part sans votre validation. Avant l’envoi, chaque réseau dit s’il publie pour de vrai ou en essai.');
     // Une photo sans certificat n'est pas proposée.
     expect(t.body().all().filter((e) => e.tagName === 'label' && e.textContent.includes('avec certificat'))).toHaveLength(1);
     await t.click(t.byText('Ouvrir'));
@@ -414,6 +414,41 @@ describe('X11 · écran « Studio » de l’application', () => {
     const sent = t.calls.filter((c) => c.url === '/v1/studio/publications/post1/envoi');
     expect(sent).toHaveLength(1);
     expect(JSON.parse(sent[0]!.body!)).toEqual({ targets: [{ channel: 'instagram', account: 'reseau' }] });
+  });
+
+  it('[R134] AU036 · un réseau mis en service est dit « publication réelle » ; rien ne part sans la case cochée ; lien et action affichés', async () => {
+    const t = await run();
+    await t.openB1();
+    await t.click(t.byText('Publications'));
+    t.table['GET /v1/studio/publications/post1'] = ok({
+      ...POST_VIEW,
+      visuals: [{ ...POST_VIEW.visuals[0], check: 'admis' }],
+      validated: { by: 'agent:a1', at: '2027-10-14T09:00:00.000Z' },
+      modes: { instagram: 'reel', facebook: 'reel', linkedin: 'essai' },
+      sends: [
+        { channel: 'facebook', account: 'reseau', mode: 'reel', outcome: 'envoye', url: 'https://www.facebook.com/p/1', code: null, action: null },
+        { channel: 'instagram', account: 'reseau', mode: 'reel', outcome: 'echec', url: null, code: 'jeton_expire', action: 'reconnecter' },
+        { channel: 'linkedin', account: 'reseau', mode: 'reel', outcome: 'envoye', url: 'javascript:alert(1)', code: null, action: null },
+      ],
+    });
+    t.table['POST /v1/studio/publications/post1/envoi'] = ok({});
+    await t.click(t.byText('Ouvrir'));
+    expect(t.byText('Envoyer en mode essai')).toBeUndefined();
+    const text = t.body().textContent;
+    expect(text).toContain('publient pour de vrai');
+    expect(text).toContain('Facebook · compte du réseau : publiée');
+    expect(text).toContain('Instagram · compte du réseau : en échec, reconnectez le compte chez le réseau');
+    // Seul un lien https de Facebook ou d'Instagram devient un lien.
+    const links = t.body().all().filter((e) => e.tagName === 'a');
+    expect(links.map((a) => a.attributes.href)).toEqual(['https://www.facebook.com/p/1']);
+    t.input('Instagram (publication réelle)').checked = true;
+    t.input('Compte').value = 'reseau';
+    await t.click(t.byText('Publier'));
+    expect(t.state()).toBe('Publication réelle sur Instagram : cochez la case qui le confirme.');
+    expect(t.calls.filter((c) => c.url === '/v1/studio/publications/post1/envoi')).toHaveLength(0);
+    t.input('Je publie pour de vrai sur les réseaux marqués « publication réelle »').checked = true;
+    await t.click(t.byText('Publier'));
+    expect(t.calls.filter((c) => c.url === '/v1/studio/publications/post1/envoi')).toHaveLength(1);
   });
 
   describe('AT20 · liens à coller', () => {

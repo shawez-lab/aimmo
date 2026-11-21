@@ -544,7 +544,7 @@ globalThis.AIMMO_STUDIO = function (t) {
   function publications() {
     var certified = photos(false).filter(function (p) { return typeof p.certificatePath === 'string'; });
     var b = block('Préparer une publication');
-    b.appendChild(el('p', 'Mode essai : rien ne part réellement sur les réseaux.', 'doux'));
+    b.appendChild(el('p', 'Rien ne part sans votre validation. Avant l’envoi, chaque réseau dit s’il publie pour de vrai ou en essai.', 'doux'));
     var ev = field(b, 'studio-evenement', 'Événement', 'select');
     Object.keys(EVENTS).forEach(function (k) { var o = el('option', EVENTS[k]); o.setAttribute('value', k); ev.appendChild(o); });
     ev.value = 'nouveau_bien';
@@ -615,17 +615,44 @@ globalThis.AIMMO_STUDIO = function (t) {
         var acc = field(s, 'studio-compte', 'Compte', 'select');
         [['agent', 'Mon compte'], ['reseau', 'Compte du réseau']].forEach(function (a) { var o = el('option', a[1]); o.setAttribute('value', a[0]); acc.appendChild(o); });
         acc.value = 'agent';
-        var nets = Object.keys(CHANNELS).map(function (c) { return [c, checkbox(s, 'studio-reseau-' + c, CHANNELS[c])]; });
-        s.appendChild(button('Envoyer en mode essai', function () {
-          var targets = nets.filter(function (n) { return n[1].checked; }).map(function (n) { return { channel: n[0], account: acc.value }; });
+        // AU036 : le mode de chaque réseau vient du serveur ; un réseau réel publie pour de vrai, et l'écran le dit.
+        var modes = p.modes && typeof p.modes === 'object' ? p.modes : {};
+        var isLive = function (c) { return modes[c] === 'reel'; };
+        var nets = Object.keys(CHANNELS).map(function (c) { return [c, checkbox(s, 'studio-reseau-' + c, CHANNELS[c] + (isLive(c) ? ' (publication réelle)' : ''))]; });
+        var anyLive = Object.keys(CHANNELS).some(isLive);
+        var sure = null;
+        if (anyLive) {
+          s.appendChild(el('p', 'Les réseaux marqués « publication réelle » publient pour de vrai, sous les yeux de tous ; les autres restent en essai.', 'etat'));
+          sure = checkbox(s, 'studio-reel-ok', 'Je publie pour de vrai sur les réseaux marqués « publication réelle »');
+        }
+        s.appendChild(button(anyLive ? 'Publier' : 'Envoyer en mode essai', function () {
+          var chosen = nets.filter(function (n) { return n[1].checked; });
+          var targets = chosen.map(function (n) { return { channel: n[0], account: acc.value }; });
           if (!targets.length) { state(NO.cibles_invalides); return; }
-          act(path + '/envoi', { targets: targets }, 'Rien n’est parti.', 'Envoyé en mode essai : rien n’est parti réellement.', again);
+          var live = chosen.filter(function (n) { return isLive(n[0]); }).map(function (n) { return CHANNELS[n[0]]; });
+          if (live.length && !(sure && sure.checked)) { state('Publication réelle sur ' + live.join(', ') + ' : cochez la case qui le confirme.'); return; }
+          act(path + '/envoi', { targets: targets }, 'Rien n’est parti.', live.length ? 'Envoi fait : voyez l’état de chaque réseau ci-dessous.' : 'Envoyé en mode essai : rien n’est parti réellement.', again);
         }));
       }
       var sent = (p.sends || []);
+      var liveLink = function (u) { if (u.indexOf('https:' + '/' + '/') !== 0 || u.length > 500) return false; var h = u.slice(8).split('/')[0]; return /^([a-z0-9-]+[.])*(facebook|instagram)[.]com$/.test(h); };
+      var ACTIONS = { reessayer: 'renvoyez plus tard', reconnecter: 'reconnectez le compte chez le réseau', relier: 'reliez ce compte à AIMMO', corriger: 'préparez une nouvelle publication', verifier: 'regardez chez le réseau si elle est en ligne' };
       if (sent.length) {
         var ul = el('ul', null, 'liste');
-        sent.forEach(function (x) { ul.appendChild(el('li', (CHANNELS[x.channel] || x.channel) + ' · ' + (x.account === 'reseau' ? 'compte du réseau' : 'mon compte') + ' : ' + (x.outcome === 'envoye' ? 'envoyé en essai' : x.outcome === 'echec' ? 'en échec' : 'en cours'))); });
+        sent.forEach(function (x) {
+          var real = x.mode === 'reel';
+          var what = x.outcome === 'envoye' ? (real ? 'publiée' : 'envoyé en essai') : x.outcome === 'retiree' ? 'retirée du réseau' : x.outcome === 'a_verifier' ? 'à vérifier' : x.outcome === 'echec' ? 'en échec' : 'en cours';
+          var li = el('li', (CHANNELS[x.channel] || x.channel) + ' · ' + (x.account === 'reseau' ? 'compte du réseau' : 'mon compte') + ' : ' + what + (real && ACTIONS[x.action] ? ', ' + ACTIONS[x.action] : ''));
+          if (real && x.outcome === 'envoye' && typeof x.url === 'string' && liveLink(x.url)) {
+            var a = el('a', 'Voir la publication');
+            a.setAttribute('href', x.url);
+            a.setAttribute('rel', 'noopener noreferrer');
+            a.setAttribute('target', '_blank');
+            li.appendChild(el('span', ' · '));
+            li.appendChild(a);
+          }
+          ul.appendChild(li);
+        });
         s.appendChild(ul);
       }
       return true;

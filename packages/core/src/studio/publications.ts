@@ -153,6 +153,8 @@ export interface SocialPost {
     action: SendAction | null;
   }[];
   createdAt: string;
+  /** Le mode de chaque réseau en service : l'écran dit avant l'envoi ce qui publiera pour de vrai (AU036). */
+  modes: Partial<Record<SocialChannelName, SocialMode>>;
 }
 
 /** Ce qui ne va pas dans l'ordre des visuels choisis : une image aménagée en premier, sans jumelle, ou loin d'elle [R493]. */
@@ -711,6 +713,7 @@ export class Publications {
       validated: val ? { by: val.validated_by, at: val.validated_at } : null,
       sends: [...last.values()].sort((x, y) => (x.channel === y.channel ? x.account.localeCompare(y.account) : x.channel.localeCompare(y.channel))),
       createdAt: row.created_at,
+      modes: Object.fromEntries([...this.channels.values()].map((c) => [c.channel, c.mode])),
     };
   }
 
