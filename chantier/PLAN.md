@@ -1143,7 +1143,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU106 · Le budget vérifie des octets compressés, pas le temps réel d’accès à une fiche sur téléphone avec un…
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A106 (majeur), endroit : C/design/audit.ts, `budgetProblems` ; tests/design.
 - Constat de l'audit : Le budget vérifie des octets compressés, pas le temps réel d’accès à une fiche sur téléphone avec un portefeuille chargé.

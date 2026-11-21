@@ -1556,3 +1556,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 01:41 · VOIE 2 : AU083, d0784edb (main), relancé non
 - 2026-11-21 01:41 · VOIE 2 : relance refusée, question 2 (la séance voie 2 de 23:55 n'a produit ni commit ni tâche finie : verrou occupé)
 - 2026-11-21 01:00 · voie 3 · AU110 (#738) fusionnée : export de reprise autorisé par contrat (clients, coordonnées, projets, pièces, sans orphelin, fermé au dossier incomplet). AU108 proposée (#742).
+- 2026-11-21 01:05 · voie 3 · AU108 (#742) et AU107 (#743) proposées ; AU106 commencée.
