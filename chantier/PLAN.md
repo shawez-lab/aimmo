@@ -447,7 +447,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : branche `chantier/AU035` gardée, #757 ouverte sans fusion (2026-11-21, voie 1). Fait sur la branche : empreinte avec les pièces quand elles sont dites, empreinte propre à l'annonce sans pièces, parcours sur preuve seulement, doute lu pour fermer (fermetures, messages préparés et remis), description notée d'une annonce fermée revue (migration 4064, table `pige_closed_descriptions`), R672 ; 11 tests [R672]. Codex : 9 P0 corrigés en six tours ; le dernier (juste) reste : une conversion directe en base d'une annonce fermée seulement dans le doute passe, car les déclencheurs de `pige_properties` et `pige_property_keys` ne lisent que l'empreinte exacte. Prochaine approche : rendre le doute lisible par la base, en ajout seul : pour chaque relève, une table de ses empreintes « bien sans pièces » à 1 m² près ; pour chaque fermeture d'une annonce sans pièces, ces empreintes tant que sa dernière description tait ses pièces ; puis les déclencheurs de fermeture (`pige_ads`, `pige_drafts`, `pige_handovers`, `pige_properties`, `pige_property_keys`) joignent ces tables. Repartir de la branche.
 
 ### AU036 · Valider mes contenus ne les publie pas réellement sur mes réseaux sociaux
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A036 (majeur), endroit : C/annonces/publication.ts, `trialChannel` ; A/app.ts, marketing.
 - Constat de l'audit : Valider mes contenus ne les publie pas réellement sur mes réseaux sociaux : les canaux de l’application restent d’essai.
