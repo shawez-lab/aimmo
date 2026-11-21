@@ -441,6 +441,9 @@ describeWithSqlite('HX49 · factures fournisseurs, rapprochement bancaire et rel
     // La base refuse une ligne d'avant la facture, même écrite à la main.
     await t.db.run("INSERT INTO bank_lines (id, network_id, day, amount_cents, invoice_refs, imported_by, created_at) VALUES ('ligne-avant', ?, '2027-06-01', 100000, '[]', 'x', 'y')", [t.network.id]);
     await expect(t.db.run("INSERT INTO bank_allocations (line_id, invoice_id, network_id, amount_cents, by, created_at) VALUES ('ligne-avant', ?, ?, 1, 'x', 'y')", [t.invoice.id, t.network.id])).rejects.toThrow();
+    // Ni une fraction de centime.
+    await t.db.run("INSERT INTO bank_lines (id, network_id, day, amount_cents, invoice_refs, imported_by, created_at) VALUES ('ligne-demi', ?, '2027-07-16', 100, '[]', 'x', 'y')", [t.network.id]);
+    await expect(t.db.run("INSERT INTO bank_allocations (line_id, invoice_id, network_id, amount_cents, by, created_at) VALUES ('ligne-demi', ?, ?, 0.5, 'x', 'y')", [t.invoice.id, t.network.id])).rejects.toThrow(/CHECK/);
     // Une part de trop est refusée, au centime ; le solde exact passe.
     expect(await t.banque.allocate(t.direction, last, [{ invoiceId: t.invoice.id, amountCents: 300_001 }])).toMatchObject({ ok: false, rule: 'R551' });
     const done = await t.banque.allocate(t.direction, last, [{ invoiceId: t.invoice.id, amountCents: 300_000 }]);

@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS bank_allocations (
   line_id TEXT NOT NULL REFERENCES bank_lines (id) ON DELETE RESTRICT,
   invoice_id TEXT NOT NULL REFERENCES invoices (id) ON DELETE RESTRICT,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
-  amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+  amount_cents INTEGER NOT NULL CHECK (amount_cents > 0 AND amount_cents = CAST(amount_cents AS INTEGER)),
   by TEXT NOT NULL,
   created_at TEXT NOT NULL,
   PRIMARY KEY (line_id, invoice_id)
