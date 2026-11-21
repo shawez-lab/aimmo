@@ -1614,3 +1614,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 19:11 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions (deuxième fois) ; reprise au prochain passage planifié avec AU038
 - 2026-11-21 19:24 · voie 1 : PLAN.md rétabli (la fin de séance AU037, 8d112dc8, l'avait tronqué de 7751 à 466 lignes ; seules les lignes d'AU037 gardées) ; AU038 en cours
 - 2026-11-21 19:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 17:53 par une autre séance voie 2, active : push sur chantier/AU091 à 19:40)
+- 2026-11-21 20:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 17:53 par une autre séance voie 2, active : push sur chantier/AU091 à 20:23 ; pas de reprise du verrou pour ne pas doubler le travail)
