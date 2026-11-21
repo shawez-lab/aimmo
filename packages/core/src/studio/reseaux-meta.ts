@@ -144,7 +144,7 @@ export function metaSocialChannels(config: MetaChannelsConfig): SocialChannel[] 
       let ok = false;
       try {
         const res = await doFetch(url, { method: 'HEAD', signal: AbortSignal.timeout(timeoutMs) });
-        ok = res.ok && (res.headers.get('content-type') ?? 'image/').startsWith('image/');
+        ok = res.ok && /^image\//.test(res.headers.get('content-type') ?? 'image/jpeg');
       } catch {
         ok = false;
       }
