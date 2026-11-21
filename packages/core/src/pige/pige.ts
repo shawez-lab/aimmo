@@ -16,8 +16,12 @@
  *   WhatsApp ou mail, la décision unique du contrôle central refuse faute d'accord préalable [R03]. Un non ou un stop du
  *   particulier ferme ce bien pour toujours [R04, R02]. AIMMO n'envoie rien : ce module n'a aucun canal [R275].
  *
- * Un bien se reconnaît d'un site à l'autre par sorte, code postal, commune et surface à 1 m² près, ni prix ni pièces :
- * le doute ferme plus, jamais moins.
+ * Un bien se reconnaît d'un site à l'autre seulement sur preuve (AU035) [R672] : même sorte, code postal, commune,
+ * surface à 1 m² près et même nombre de pièces, dit des deux côtés. Deux annonces dont les pièces diffèrent restent deux
+ * biens, même de même surface dans la même commune : rien ne passe de l'une à l'autre. Quand un site tait les pièces, le
+ * doute ne réunit rien (deux biens dans la file), mais il ferme plus, jamais moins : un « pas d'agence », un non ou un
+ * message de l'une tient l'autre fermée, sans jamais se ranger sur elle, pour que le doute ne passe pas d'un bien à un
+ * troisième.
  * Décidé (2026-11-07), lecture prudente : répondre à l'annonce par sa propre messagerie, message collé par l'agent, est
  * tenu pour hors du champ de R03, qui vise le téléphone, le SMS, WhatsApp et le mail ; à faire confirmer (H58).
  * Rien ne change ni ne s'efface [R17] ; chaque mouvement au journal, sans donnée du particulier [R13].
@@ -155,6 +159,9 @@ interface CleanAd {
   diagnosedOn: string | null;
 }
 
+/** Au plus tant de pièces lues sur une annonce. */
+export const MAX_ROOMS = 40;
+
 const intIn = (v: unknown, min: number, max: number): number | null =>
   typeof v === 'number' && Number.isFinite(v) && v >= min && v <= max ? Math.round(v) : null;
 
@@ -173,7 +180,7 @@ export function noAgencyKey(raw: RawAd): { key: PropertyKey | null; ref: AdRef |
   return { key, ref };
 }
 
-export type PropertyKey = Pick<CleanAd, 'kind' | 'postalCode' | 'commune' | 'surfaceM2'>;
+export type PropertyKey = Pick<CleanAd, 'kind' | 'postalCode' | 'commune' | 'surfaceM2' | 'rooms'>;
 export interface AdRef {
   source: string;
   sourceRef: string;
@@ -187,13 +194,13 @@ export function readRef(raw: RawAd): AdRef | null {
     : null;
 }
 
-/** Sorte, code postal, commune et surface, quand ils se lisent, même sans prix ni date. */
+/** Sorte, code postal, commune et surface, quand ils se lisent, même sans prix ni date ; les pièces quand elles se lisent. */
 export function readPropertyKey(raw: RawAd): PropertyKey | null {
   if (typeof raw !== 'object' || raw === null) return null;
   const { kind, commune, postalCode } = raw;
   const surfaceM2 = intIn(raw.surfaceM2, 8, 2000);
   return typeof kind === 'string' && (PIGE_KINDS as readonly string[]).includes(kind) && typeof commune === 'string' && COMMUNE.test(commune.trim()) && typeof postalCode === 'string' && POSTAL.test(postalCode) && surfaceM2 !== null
-    ? { kind: kind as PigeKind, postalCode, commune: commune.trim().replace(/\s+/g, ' '), surfaceM2 }
+    ? { kind: kind as PigeKind, postalCode, commune: commune.trim().replace(/\s+/g, ' '), surfaceM2, rooms: intIn(raw.rooms, 1, MAX_ROOMS) }
     : null;
 }
 
@@ -209,7 +216,7 @@ export function cleanAd(raw: RawAd, now: Date): CleanAd | null {
   const surfaceM2 = intIn(raw.surfaceM2, 8, 2000);
   const priceEur = intIn(raw.priceEur, 1000, 50_000_000);
   if (surfaceM2 === null || priceEur === null) return null;
-  const rooms = raw.rooms === undefined || raw.rooms === null ? null : intIn(raw.rooms, 1, 40);
+  const rooms = raw.rooms === undefined || raw.rooms === null ? null : intIn(raw.rooms, 1, MAX_ROOMS);
   if (raw.rooms !== undefined && raw.rooms !== null && rooms === null) return null;
   if (typeof publishedAt !== 'string') return null;
   const at = Date.parse(publishedAt);
@@ -242,22 +249,43 @@ async function sha256(text: string): Promise<string> {
   return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
+/** Ce qui fait l'empreinte d'un bien ; des pièces tues ou absentes valent « non dites ». */
+export type FingerprintInput = Pick<CleanAd, 'kind' | 'postalCode' | 'commune' | 'surfaceM2'> & { rooms?: number | null };
+
 /**
- * L'empreinte d'un bien, la même d'un site à l'autre et après une baisse de prix : sorte, code postal, commune et
- * surface. Ni le prix (un bien dont le prix baisse reste le même bien, sans second message [R05]), ni les pièces, qu'un
- * site peut taire : le doute ferme plus, jamais moins [R273].
+ * L'empreinte d'un bien, la même d'un site à l'autre et après une baisse de prix : sorte, code postal, commune, surface
+ * et pièces quand elles sont dites. Ni le prix (un bien dont le prix baisse reste le même bien, sans second message
+ * [R05]). Sans pièces, l'empreinte est celle d'avant AU035 : ce qui a été fermé avant reste fermé pour tout bien qui
+ * pourrait être celui-là [R672].
  */
-export function adFingerprint(ad: Pick<CleanAd, 'kind' | 'postalCode' | 'commune' | 'surfaceM2'>): Promise<string> {
-  return sha256(['pige', ad.kind, ad.postalCode, communeSlug(ad.commune), ad.surfaceM2].join('|'));
+export function adFingerprint(ad: FingerprintInput): Promise<string> {
+  const parts: (string | number)[] = ['pige', ad.kind, ad.postalCode, communeSlug(ad.commune), ad.surfaceM2];
+  if (typeof ad.rooms === 'number') parts.push(`p${ad.rooms}`);
+  return sha256(parts.join('|'));
 }
 
 /** Écart de surface d'un site à l'autre tenu pour le même bien, en m², pour fermer un bien ou éviter un second message. */
 export const SURFACE_TOLERANCE_M2 = 1;
 
-/** Les empreintes du même bien à la surface près : celles qu'un « pas d'agence », un non ou un message ferment. */
-export async function nearFingerprints(ad: Pick<CleanAd, 'kind' | 'postalCode' | 'commune' | 'surfaceM2'>): Promise<string[]> {
+/**
+ * Les empreintes du même bien prouvé, à la surface près et aux mêmes pièces : celles où se range un « pas d'agence », un
+ * non ou un message [R672].
+ */
+export async function nearFingerprints(ad: FingerprintInput): Promise<string[]> {
   const out: string[] = [];
-  for (let d = -SURFACE_TOLERANCE_M2; d <= SURFACE_TOLERANCE_M2; d += 1) out.push(await adFingerprint({ ...ad, surfaceM2: ad.surfaceM2 + d }));
+  for (let d = -SURFACE_TOLERANCE_M2; d <= SURFACE_TOLERANCE_M2; d += 1) out.push(await adFingerprint({ ...ad, surfaceM2: ad.surfaceM2 + d, rooms: ad.rooms ?? null }));
+  return out;
+}
+
+/**
+ * Les empreintes des biens qui pourraient être celui-ci faute de pièces dites d'un côté : à la surface près, le bien
+ * sans pièces quand celui-ci les dit, et chaque nombre de pièces quand il les tait. Lues pour fermer, jamais pour
+ * ranger ni pour réunir [R672, R273].
+ */
+export async function doubtFingerprints(ad: FingerprintInput): Promise<string[]> {
+  const rooms: (number | null)[] = typeof ad.rooms === 'number' ? [null] : Array.from({ length: MAX_ROOMS }, (_, i) => i + 1);
+  const out: string[] = [];
+  for (const r of rooms) out.push(...(await nearFingerprints({ ...ad, rooms: r })));
   return out;
 }
 
@@ -386,11 +414,11 @@ export class Pige {
         if (closing.key && zones.get(communeSlug(closing.key.commune))) keys.push(...(await nearFingerprints(closing.key)));
         // Et le bien que cette annonce a déjà porté sur son site, à 1 m² près : la base le voit fermé sans calculer de clé (HX18).
         if (closing.ref) {
-          const before = await this.db.all<{ kind: PigeKind; postal_code: string; commune: string; surface_m2: number }>(
-            'SELECT DISTINCT kind, postal_code, commune, surface_m2 FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ?',
+          const before = await this.db.all<{ kind: PigeKind; postal_code: string; commune: string; surface_m2: number; rooms: number | null }>(
+            'SELECT DISTINCT kind, postal_code, commune, surface_m2, rooms FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ?',
             [networkId, closing.ref.source, closing.ref.sourceRef],
           );
-          for (const b of before) keys.push(...(await nearFingerprints({ kind: b.kind, postalCode: b.postal_code, commune: b.commune, surfaceM2: b.surface_m2 })));
+          for (const b of before) keys.push(...(await nearFingerprints({ kind: b.kind, postalCode: b.postal_code, commune: b.commune, surfaceM2: b.surface_m2, rooms: b.rooms })));
         }
         if (keys.length === 0) {
           outside += 1;
@@ -463,15 +491,17 @@ export class Pige {
     const ref = readRef(raw);
     const key = readPropertyKey(raw);
     const keys: string[] = [];
+    // Ce qui pourrait être ce bien faute de pièces dites : lu pour fermer, jamais pour ranger [R672].
+    let marks: string[] = [];
     if (ref) keys.push(await refKey(ref.source, ref.sourceRef));
     // Ce que cette annonce a déjà porté sur son site : le parcours part aussi de là.
     const before = ref
       ? (await this.db.all<{ fingerprint: string }>('SELECT DISTINCT fingerprint FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ?', [networkId, ref.source, ref.sourceRef])).map((r) => r.fingerprint)
       : [];
-    // Le bien et tout ce qui lui est relié, de proche en proche, clés des annonces comprises.
+    // Le bien et tout ce qui lui est relié sur preuve, de proche en proche, clés des annonces comprises.
     if (key || before.length > 0) {
       const seeds = [...(key ? await nearFingerprints(key) : []), ...before];
-      const l = await this.linked(networkId, key ? await adFingerprint(key) : (before[0] ?? ''), seeds);
+      const l = await this.linked(networkId, key ? await adFingerprint(key) : (before[0] ?? ''), seeds, key ? await doubtFingerprints(key) : []);
       // Trop relié pour être suivi en entier : l'annonce n'entre pas, et sa clé et son bien sont fermés pour de bon, par
       // prudence, pour qu'une correction plus tard ne les rouvre pas [R273].
       if (!l.complete) {
@@ -482,12 +512,18 @@ export class Pige {
         return true;
       }
       keys.push(...l.keys);
+      marks = l.marks;
     }
     if (keys.length === 0) return false;
     let closed = false;
     for (const table of ['pige_no_agency', 'pige_oppositions'] as const) {
       const hit = await this.db.first(`SELECT 1 AS x FROM ${table} WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?))`, [networkId, JSON.stringify(keys)]);
-      if (!hit) continue;
+      if (!hit) {
+        // Fermé seulement dans le doute : l'annonce n'entre pas, mais rien n'est rangé sur elle. Le jour où ses pièces se
+        // disent et la séparent du bien fermé, elle entre [R672].
+        if (marks.length > 0 && (await this.db.first(`SELECT 1 AS x FROM ${table} WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?))`, [networkId, JSON.stringify(marks)]))) closed = true;
+        continue;
+      }
       closed = true;
       const all = [...new Set([...keys, ...(key ? await nearFingerprints(key) : [])])];
       for (const f of all) {
@@ -650,15 +686,18 @@ export class Pige {
   }
 
   /** Le parcours lui-même ; `complete` est faux quand la limite l'a coupé : alors tout se ferme [R273]. */
-  private async linked(networkId: string, fingerprint: string, seeds: readonly string[] = []): Promise<{ keys: string[]; complete: boolean }> {
+  private async linked(networkId: string, fingerprint: string, seeds: readonly string[] = [], doubtSeeds: readonly string[] = []): Promise<{ keys: string[]; marks: string[]; complete: boolean }> {
     const start = [...new Set([fingerprint, ...seeds])];
     const fps = new Set<string>(start);
     const refs = new Set<string>();
     const keys = new Set<string>(start);
+    // Ce qui ferme sans réunir : les biens qui pourraient être l'un de ceux-ci faute de pièces dites. Jamais parcourus :
+    // le doute ne passe pas d'un bien à un troisième [R672].
+    const doubts = new Set<string>(doubtSeeds);
     let frontier = start;
     while (frontier.length > 0 && refs.size < this.maxLinkedAds) {
-      const rows = await this.db.all<{ source: string; source_ref: string; fingerprint: string; kind: PigeKind; postal_code: string; commune: string; surface_m2: number }>(
-        `SELECT DISTINCT b.source, b.source_ref, b.fingerprint, b.kind, b.postal_code, b.commune, b.surface_m2
+      const rows = await this.db.all<{ source: string; source_ref: string; fingerprint: string; kind: PigeKind; postal_code: string; commune: string; surface_m2: number; rooms: number | null }>(
+        `SELECT DISTINCT b.source, b.source_ref, b.fingerprint, b.kind, b.postal_code, b.commune, b.surface_m2, b.rooms
            FROM pige_ads x JOIN pige_ads b ON b.network_id = x.network_id AND b.source = x.source AND b.source_ref = x.source_ref
           WHERE x.network_id = ? AND x.fingerprint IN (SELECT value FROM json_each(?))`,
         [networkId, JSON.stringify(frontier)],
@@ -670,24 +709,27 @@ export class Pige {
           refs.add(ref);
           keys.add(await refKey(r.source, r.source_ref));
         }
-        for (const f of [r.fingerprint, ...(await nearFingerprints({ kind: r.kind, postalCode: r.postal_code, commune: r.commune, surfaceM2: r.surface_m2 }))]) {
+        const property = { kind: r.kind, postalCode: r.postal_code, commune: r.commune, surfaceM2: r.surface_m2, rooms: r.rooms };
+        for (const f of [r.fingerprint, ...(await nearFingerprints(property))]) {
           keys.add(f);
           if (!fps.has(f)) {
             fps.add(f);
             next.push(f);
           }
         }
+        for (const f of await doubtFingerprints(property)) doubts.add(f);
       }
       frontier = next;
     }
-    return { keys: [...keys], complete: frontier.length === 0 };
+    return { keys: [...keys], marks: [...new Set([...keys, ...doubts])], complete: frontier.length === 0 };
   }
 
   private async closedReason(networkId: string, fingerprint: string): Promise<Problem | null> {
-    const { keys, complete } = await this.linked(networkId, fingerprint);
+    const l = await this.linked(networkId, fingerprint);
     // Un bien relié à trop d'annonces pour être suivi en entier : fermé, jamais supposé ouvert.
-    if (!complete) return { ok: false, rule: 'R273', code: 'bien_trop_relie' };
-    const marks = JSON.stringify(keys);
+    if (!l.complete) return { ok: false, rule: 'R273', code: 'bien_trop_relie' };
+    // Prouvé ou dans le doute, ce qui ferme l'un ferme l'autre [R672].
+    const marks = JSON.stringify(l.marks);
     if (await this.db.first(`SELECT 1 AS x FROM pige_no_agency WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?))`, [networkId, marks])) return { ok: false, rule: 'R273', code: 'pas_agence' };
     if (await this.db.first(`SELECT 1 AS x FROM pige_oppositions WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?))`, [networkId, marks])) return { ok: false, rule: 'R04', code: 'opposition' };
     return null;
@@ -704,7 +746,8 @@ export class Pige {
     if ('ok' in ad) return ad;
     const l = await this.linked(viewer.networkId, ad.fingerprint);
     if (!l.complete) return { ok: false, rule: 'R273', code: 'bien_trop_relie' };
-    const near = l.keys;
+    // Un message préparé pour ce bien, ou pour un bien qui pourrait être celui-ci, et pas un second [R05, R672].
+    const near = l.marks;
     if (await this.db.first(`SELECT 1 AS x FROM pige_drafts WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?))`, [viewer.networkId, JSON.stringify(near)])) {
       return { ok: false, rule: 'R05', code: 'deja_prepare' };
     }
@@ -764,7 +807,7 @@ export class Pige {
     }
     // Un seul message par bien : un autre message du même bien, relié depuis par une correction, déjà remis, ferme
     // celui-ci [R05, R275].
-    const linked = await this.linkedKeys(viewer.networkId, d.fingerprint);
+    const linked = (await this.linked(viewer.networkId, d.fingerprint)).marks;
     const handed = await this.db.first(
       `SELECT 1 AS x FROM pige_drafts o JOIN pige_handovers h ON h.draft_id = o.id
         WHERE o.network_id = ? AND o.id <> ? AND o.fingerprint IN (SELECT value FROM json_each(?))`,
@@ -792,7 +835,7 @@ export class Pige {
     // relié entre-temps ce bien à un non, un « pas d'agence » ou un autre message remis la garde pour toujours, sans
     // texte rendu. Rien n'est jamais parti d'AIMMO [R04, R05, R273].
     const after = await this.closedReason(viewer.networkId, d.fingerprint);
-    const relinked = await this.linkedKeys(viewer.networkId, d.fingerprint);
+    const relinked = (await this.linked(viewer.networkId, d.fingerprint)).marks;
     const twice = await this.db.first(
       `SELECT 1 AS x FROM pige_drafts o JOIN pige_handovers h ON h.draft_id = o.id
         WHERE o.network_id = ? AND o.id <> ? AND o.fingerprint IN (SELECT value FROM json_each(?))`,
