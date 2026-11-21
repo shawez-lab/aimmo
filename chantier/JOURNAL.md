@@ -1591,3 +1591,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 10:40 · VOIE 3 : AU067 fusionnée (#759) : rétractation ou annulation du mandat → retrait immédiat sur chaque canal et portail, accusés dans la réponse ; un passage en cours relit avant de rendre la main ; le passage planifié a les mêmes connecteurs [R42]
 - 2026-11-21 10:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 09:55 par une autre séance voie 2, active : push sur chantier/AU104 à 10:46)
 - 2026-11-21 11:05 · AU035 · bloquée : deux appartements de 65 m² distingués par les pièces (R672), doute lu pour fermer ; Codex 9 P0 corrigés en six tours, le dernier (doute invisible aux déclencheurs de la base) demande une autre approche ; #757 ouverte sans fusion, branche gardée · prochaine : AU036
+- 2026-11-21 11:07 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU036
