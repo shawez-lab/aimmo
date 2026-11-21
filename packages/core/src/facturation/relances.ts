@@ -262,10 +262,10 @@ export class RelancesImpayes {
 
   /** La direction valide le texte préparé, tel quel : il partira au passage suivant [R553]. */
   /**
-   * `expected.preparedAt` : le texte que la direction a lu, par le jour de sa préparation. Un texte refait depuis (une
+   * `expected` : le texte que la direction a lu, et le jour de sa préparation. Un texte refait depuis (une
    * part reçue entre la lecture et la confirmation) n'est pas validé : l'écran se relit (AU094b) [R553].
    */
-  async validate(viewer: Viewer, reminderId: string, expected?: { preparedAt: unknown }): Promise<{ ok: true } | Refusal | Problem> {
+  async validate(viewer: Viewer, reminderId: string, expected?: { preparedAt: unknown; text?: unknown }): Promise<{ ok: true } | Refusal | Problem> {
     const refusal = await directionRefusal(this.journal, this.now, viewer, 'invoice_reminder');
     if (refusal) return refusal;
     await this.closeSettled(viewer.networkId);
@@ -274,8 +274,8 @@ export class RelancesImpayes {
     const at = this.now().toISOString();
     const { changes } = await this.db.run(
       // Un texte à refaire (une part reçue depuis) ne se valide pas : le passage de préparation le refait d'abord.
-      `UPDATE invoice_reminders SET status = 'validee', validated_by = ?, validated_at = ?, updated_at = ? WHERE id = ? AND status = 'a_valider' AND rule IS NOT 'paiement_partiel'${expected ? ' AND prepared_at = ?' : ''}`,
-      [actorOf(viewer), at, at, reminderId, ...(expected ? [typeof expected.preparedAt === 'string' ? expected.preparedAt : ''] : [])],
+      `UPDATE invoice_reminders SET status = 'validee', validated_by = ?, validated_at = ?, updated_at = ? WHERE id = ? AND status = 'a_valider' AND rule IS NOT 'paiement_partiel'${expected ? ' AND prepared_at = ? AND text = ?' : ''}`,
+      [actorOf(viewer), at, at, reminderId, ...(expected ? [typeof expected.preparedAt === 'string' ? expected.preparedAt : '', typeof expected.text === 'string' ? expected.text : ''] : [])],
     );
     if (changes !== 1) {
       const stale = await this.db.first("SELECT 1 AS one FROM invoice_reminders WHERE id = ? AND status = 'a_valider' AND rule = 'paiement_partiel'", [reminderId]);
@@ -292,12 +292,33 @@ export class RelancesImpayes {
    * Le passage d'envoi : chaque relance validée passe par le contrôle central, dans la boîte d'essai [R26]. Une relance
    * refusée pour l'heure attend le passage suivant [R01]. Rend le nombre de relances parties en essai.
    */
+  /**
+   * AU094b · une relance validée marquée par une part reçue pendant son envoi, dont l'envoi est fini ou coupé : remise à
+   * valider, sa validation levée, son texte à refaire. Elle ne repart jamais avec l'ancien montant [R553].
+   */
+  private async revertMarked(networkId: string): Promise<void> {
+    const stale = new Date(this.now().getTime() - 10 * 60_000).toISOString();
+    const marked = await this.db.all<{ id: string }>(
+      "SELECT id FROM invoice_reminders WHERE network_id = ? AND status = 'validee' AND rule = 'paiement_partiel' AND (sending_at IS NULL OR sending_at < ?)",
+      [networkId, stale],
+    );
+    for (const m of marked) {
+      const at = this.now().toISOString();
+      await this.db.run("UPDATE invoice_reminders SET sending_at = NULL WHERE id = ? AND status = 'validee' AND rule = 'paiement_partiel' AND (sending_at IS NULL OR sending_at < ?)", [m.id, stale]);
+      await this.db.run(
+        "UPDATE invoice_reminders SET status = 'a_valider', validated_by = NULL, validated_at = NULL, updated_at = ? WHERE id = ? AND status = 'validee' AND rule = 'paiement_partiel' AND sending_at IS NULL",
+        [at, m.id],
+      );
+    }
+  }
+
   async send(networkId: string): Promise<number> {
     await this.closeSettled(networkId);
-    const rows = await this.db.all<{ id: string; invoice_id: string; rank: number; person_id: string; text: string; validated_by: string; file_id: string; agent_id: string | null }>(
-      `SELECT r.id, r.invoice_id, r.rank, r.person_id, r.text, r.validated_by, i.file_id, c.agent_id FROM invoice_reminders r
+    await this.revertMarked(networkId);
+    const rows = await this.db.all<{ id: string; invoice_id: string; rank: number; person_id: string; text: string; validated_by: string; validated_at: string; prepared_at: string; file_id: string; agent_id: string | null }>(
+      `SELECT r.id, r.invoice_id, r.rank, r.person_id, r.text, r.validated_by, r.validated_at, r.prepared_at, i.file_id, c.agent_id FROM invoice_reminders r
          JOIN invoices i ON i.id = r.invoice_id LEFT JOIN commissions c ON c.file_id = i.file_id
-       WHERE r.network_id = ? AND r.status = 'validee' AND r.validated_by IS NOT NULL ORDER BY r.validated_at, r.id`,
+       WHERE r.network_id = ? AND r.status = 'validee' AND r.validated_by IS NOT NULL AND r.rule IS NOT 'paiement_partiel' ORDER BY r.validated_at, r.id`,
       [networkId],
     );
     let sent = 0;
@@ -305,7 +326,12 @@ export class RelancesImpayes {
       // Réservée d'une seule écriture : deux passages qui se chevauchent n'envoient et ne rangent la relance qu'une fois.
       // Une réservation de plus de 10 minutes est celle d'un passage coupé : elle se reprend.
       const stale = new Date(this.now().getTime() - 10 * 60_000).toISOString();
-      const claim = await this.db.run("UPDATE invoice_reminders SET sending_at = ? WHERE id = ? AND status = 'validee' AND (sending_at IS NULL OR sending_at < ?)", [this.now().toISOString(), r.id, stale]);
+      // La réservation porte la version lue : même validation, même texte. Une relance refaite et revalidée depuis la
+      // lecture n'est pas réservée ici ; le passage suivant la lira (AU094b) [R553].
+      const claim = await this.db.run(
+        "UPDATE invoice_reminders SET sending_at = ? WHERE id = ? AND status = 'validee' AND validated_at = ? AND prepared_at = ? AND text = ? AND rule IS NOT 'paiement_partiel' AND (sending_at IS NULL OR sending_at < ?)",
+        [this.now().toISOString(), r.id, r.validated_at, r.prepared_at, r.text, stale],
+      );
       if (claim.changes !== 1) continue;
       const inv = await this.db.first<{ amount_cents: number; issued_on: string; label: string }>(`SELECT amount_cents, issued_on, ${LABEL_SQL()} AS label FROM invoices WHERE id = ?`, [r.invoice_id]);
       if (!inv) continue;
@@ -324,9 +350,18 @@ export class RelancesImpayes {
         // ne reçoit pas sa relance [R553].
         stillAllowed: async () => {
           const settled = await this.settled(r.invoice_id);
-          return settled ? { allowed: false, rule: 'R553', reason: 'La facture n’est plus impayée.' } : { allowed: true, rule: 'R553', reason: '' };
+          if (settled) return { allowed: false, rule: 'R553', reason: 'La facture n’est plus impayée.' };
+          // Une part reçue pendant l'envoi : le montant du texte n'est plus le bon (AU094b).
+          if (await this.db.first("SELECT 1 AS one FROM invoice_reminders WHERE id = ? AND rule = 'paiement_partiel'", [r.id])) return { allowed: false, rule: 'R10', reason: 'Une part de paiement est arrivée : le texte est à refaire.' };
+          return { allowed: true, rule: 'R553', reason: '' };
         },
       });
+      if (result.status !== 'sent' && (await this.db.first("SELECT 1 AS one FROM invoice_reminders WHERE id = ? AND rule = 'paiement_partiel'", [r.id]))) {
+        // Marquée par une part pendant l'envoi, et pas partie : remise à valider, texte à refaire (AU094b) [R553].
+        await this.db.run("UPDATE invoice_reminders SET sending_at = NULL WHERE id = ? AND status = 'validee'", [r.id]);
+        await this.revertMarked(networkId);
+        continue;
+      }
       const closed = result.status !== 'sent' && result.rule === 'R553';
       const status: ReminderStatus = result.status === 'sent' ? 'envoyee' : closed ? 'close' : result.status === 'failed' || result.rule === 'R01' ? 'validee' : 'refusee';
       const rule = result.status === 'sent' ? null : closed ? ((await this.settled(r.invoice_id)) ?? 'R553') : result.rule;

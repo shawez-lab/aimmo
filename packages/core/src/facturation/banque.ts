@@ -305,6 +305,9 @@ export class Rapprochements {
         "UPDATE invoice_reminders SET status = 'a_valider', rule = 'paiement_partiel', validated_by = NULL, validated_at = NULL, updated_at = ? WHERE invoice_id = ? AND (status = 'a_valider' OR (status = 'validee' AND sending_at IS NULL))",
         [at, p.invoiceId],
       );
+      // En envoi : marquée seulement ; l'envoi ne part pas avec l'ancien montant, et la relance revient à valider dès
+      // que l'envoi est fini ou coupé (AU094b).
+      await this.db.run("UPDATE invoice_reminders SET rule = 'paiement_partiel', updated_at = ? WHERE invoice_id = ? AND status = 'validee' AND sending_at IS NOT NULL", [at, p.invoiceId]);
     }
     for (const [i, p] of list.entries()) {
       await appendEvent(this.journal, { type: 'banque.part', actor: actorOf(viewer), subject: `sale_file:${files[i]}`, data: { rule: 'R551', invoice: p.invoiceId, line: lineId } }, this.now);

@@ -262,7 +262,7 @@ export function financesRoutes(): FinancesRoute[] {
       name: 'finances.relances.validation',
       roles: DIRECTION,
       // Le texte validé est celui que la direction a lu : sa préparation l'identifie (AU094b) [R553].
-      handle: withBody(['preparedAt'], async (s, v, [id], b) => (typeof b.preparedAt === 'string' ? reply(await relances(s).validate(v, id!, { preparedAt: b.preparedAt })) : json(400, { ok: false, rule: null, code: 'bad_revision' }))),
+      handle: withBody(['preparedAt', 'text'], async (s, v, [id], b) => (typeof b.preparedAt === 'string' && typeof b.text === 'string' ? reply(await relances(s).validate(v, id!, { preparedAt: b.preparedAt, text: b.text })) : json(400, { ok: false, rule: null, code: 'bad_revision' }))),
     },
     // Rapports sur mesure (HX62) : un agent ses chiffres, la direction un agent ou le total, jamais deux côte à côte [R560].
     {

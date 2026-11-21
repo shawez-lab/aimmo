@@ -304,7 +304,7 @@ describe('BR93 · la banque et les relances d’impayés à l’écran de la dir
     await d.click(d.button('Valider ce texte'));
     expect(d.posts()).toHaveLength(0);
     await d.click(d.button('Confirmer la validation'));
-    expect(d.posts()).toEqual([{ method: 'POST', url: '/v1/finances/relances/r1/validation', body: { preparedAt: '2027-07-15T04:00:00.000Z' }, type: 'application/json' }]);
+    expect(d.posts()).toEqual([{ method: 'POST', url: '/v1/finances/relances/r1/validation', body: { preparedAt: '2027-07-15T04:00:00.000Z', text: TEXT }, type: 'application/json' }]);
     expect(d.status()).toBe('Relance de la facture F-2027-00012 validée : elle partira au prochain passage, en mode essai.');
     const late = await desk({ 'POST /v1/finances/relances/r1/validation': no(409, { ok: false, rule: 'R553', code: 'not_pending' }) });
     await late.open();

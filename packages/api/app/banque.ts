@@ -288,7 +288,7 @@ globalThis.AIMMO_BANQUE = function (t) {
       if (r.status === 'a_valider') {
         var holder = el('div');
         twoSteps(holder, 'Valider ce texte', 'Valider ce texte, tel quel : il partira au prochain passage, par le contrôle central, en mode essai.', 'Confirmer la validation', function () {
-          write(R + '/' + encodeURIComponent(r.id) + '/validation', { preparedAt: r.preparedAt }, function () { return 'Relance de la facture ' + r.label + ' validée : elle partira au prochain passage, en mode essai.'; });
+          write(R + '/' + encodeURIComponent(r.id) + '/validation', { preparedAt: r.preparedAt, text: r.text }, function () { return 'Relance de la facture ' + r.label + ' validée : elle partira au prochain passage, en mode essai.'; });
         });
         li.appendChild(holder);
       }

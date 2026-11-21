@@ -240,10 +240,10 @@ describeWithSqlite('BR04 · routes des finances : factures fournisseurs, banque,
     const list = await t.http('direction', 'GET', '/finances/relances');
     expect(list.body.data).toEqual([expect.objectContaining({ label: 'F-2027-00001', rank: 1, status: 'a_valider', validatedBy: null })]);
     const id = list.body.data[0].id as string;
-    const read = { preparedAt: list.body.data[0].preparedAt as string };
+    const read = { preparedAt: list.body.data[0].preparedAt as string, text: list.body.data[0].text as string };
     // AU094b : la validation dit quel texte a été lu ; sans lui, ou avec un autre, rien n'est validé.
     expect(await t.http('direction', 'POST', `/finances/relances/${id}/validation`, {})).toMatchObject({ status: 400, body: { code: 'bad_revision' } });
-    expect(await t.http('direction', 'POST', `/finances/relances/${id}/validation`, { preparedAt: '2027-01-01T00:00:00.000Z' })).toMatchObject({ status: 409, body: { rule: 'R553', code: 'texte_change' } });
+    expect(await t.http('direction', 'POST', `/finances/relances/${id}/validation`, { ...read, text: 'un autre texte' })).toMatchObject({ status: 409, body: { rule: 'R553', code: 'texte_change' } });
     expect(await t.http('direction', 'POST', `/finances/relances/${id}/validation`, read)).toMatchObject({ status: 200, body: { ok: true, mode: 'essai' } });
     expect(await t.http('direction', 'POST', `/finances/relances/${id}/validation`, read)).toMatchObject({ status: 409, body: { rule: 'R553', code: 'not_pending' } });
     expect(await t.http('direction', 'POST', '/finances/relances/inconnue/validation', read)).toMatchObject({ status: 404 });
