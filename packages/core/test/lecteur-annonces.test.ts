@@ -73,6 +73,15 @@ describe('AU068 · la lecture d’une page d’annonce', () => {
     expect(r).toMatchObject({ energyClass: 'D', climateClass: 'C' });
   });
 
+  it('[R473] un prix écrit avec ses centimes se lit ; une offre désignée par son @id dit si l’annonce est encore là', () => {
+    for (const t of ['210 000,00 €', '210000.00 €', '210.000,00 €', '210 000 €']) expect(parseListingPage(`<p>Prix : ${t}</p>`), t).toMatchObject({ priceEur: 210000 });
+    const graph = (availability: string) =>
+      `<script type="application/ld+json">${JSON.stringify({ '@graph': [{ '@type': 'RealEstateListing', offers: { '@id': '#offre' } }, { '@id': '#offre', '@type': 'Offer', price: 210000, availability }] })}</script><p>Prix : 210 000 €</p>`;
+    expect(parseListingPage(graph('https://schema.org/SoldOut'))).toEqual({ found: false });
+    expect(parseListingPage(graph('https://schema.org/InStock'))).toMatchObject({ found: true, priceEur: 210000 });
+    expect(parseListingPage(`<script type="application/ld+json">${JSON.stringify({ '@graph': [{ '@type': 'RealEstateListing', offers: '#o' }, { '@id': '#o', price: '199000' }] })}</script><p>x</p>`)).toMatchObject({ priceEur: 199000 });
+  });
+
   it('[R473] 404 et 410 : plus en ligne ; une redirection, une autre réponse ou une page qui n’est pas du HTML : illisible ; jamais de redirection suivie', async () => {
     const f = fakeFetch();
     const reader = new HttpListingReader(f.fetch);

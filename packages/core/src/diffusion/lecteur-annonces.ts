@@ -35,7 +35,7 @@ export function eurosOf(value: unknown): number | null {
   if (typeof value !== 'string') return null;
   let v = value.replace(/[\s\u00a0\u202f]/g, '').replace(/€|EUR/gi, '');
   // « 210.000 » : des milliers séparés par des points ; « 210000,00 » ou « 210000.00 » : des centimes.
-  if (/^\d{1,3}(?:\.\d{3})+$/.test(v)) v = v.replace(/\./g, '');
+  if (/^\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?$/.test(v)) v = v.replace(/\./g, '').replace(',', '.');
   else v = v.replace(',', '.');
   if (!/^\d+(?:\.\d{1,2})?$/.test(v)) return null;
   const n = Number(v);
@@ -95,9 +95,15 @@ export function mainListing(data: readonly Record<string, unknown>[], pageUrl?: 
 }
 
 /** Les offres d'une annonce : elle-même, ses `offers`, et le prix de chacune. */
-const offersOf = (o: Record<string, unknown>): Record<string, unknown>[] => {
+const offersOf = (o: Record<string, unknown>, data: readonly Record<string, unknown>[] = []): Record<string, unknown>[] => {
   const raw = o.offers;
-  const list = (Array.isArray(raw) ? raw : raw ? [raw] : []).filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x));
+  const list = (Array.isArray(raw) ? raw : raw ? [raw] : []).flatMap((x): Record<string, unknown>[] => {
+    // Une offre désignée par son `@id` (« { "@id": "#offre" } » ou la chaîne seule) se lit dans le nœud qu'elle désigne.
+    const id = typeof x === 'string' ? x : x && typeof x === 'object' && !Array.isArray(x) ? (x as Record<string, unknown>)['@id'] : undefined;
+    const node = typeof id === 'string' ? data.find((d) => d !== o && d['@id'] === id) : undefined;
+    if (node) return [{ ...node, ...(typeof x === 'object' ? (x as Record<string, unknown>) : {}) }];
+    return x && typeof x === 'object' && !Array.isArray(x) ? [x as Record<string, unknown>] : [];
+  });
   return [...list, o];
 };
 
@@ -142,8 +148,9 @@ const classIn = (text: string, words: RegExp): string | null => {
 
 /** Ce qu'une page d'annonce dit, ou une erreur quand elle ne dit pas assez pour être comparée. */
 export function parseListingPage(html: string, pageUrl?: string): OnlineListing {
-  const main = mainListing(structuredData(html), pageUrl);
-  const offers = main ? offersOf(main) : [];
+  const data = structuredData(html);
+  const main = mainListing(data, pageUrl);
+  const offers = main ? offersOf(main, data) : [];
   if (offers.some((d) => typeof d.availability === 'string' && GONE.test(d.availability))) return { found: false };
   const text = visibleText(html);
   // Le premier prix lisible de l'annonce relue ; un prix vide ou illisible laisse la place au texte.
@@ -155,7 +162,7 @@ export function parseListingPage(html: string, pageUrl?: string): OnlineListing 
   }
   if (priceEur === null) {
     // Sans donnée structurée : le premier prix écrit en euros dans la page.
-    const m = text.match(/(\d{1,3}(?:[\s  .]\d{3})+|\d{4,9})\s*(?:€|euros?\b)/i);
+    const m = text.match(/(\d{1,3}(?:[\s\u00a0\u202f.]\d{3})+(?:[.,]\d{1,2})?|\d{4,9}(?:[.,]\d{1,2})?)\s*(?:€|euros?\b)/i);
     priceEur = m ? eurosOf(m[1]!) : null;
   }
   if (priceEur === null) throw new Error('prix_illisible');
