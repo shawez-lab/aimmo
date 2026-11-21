@@ -457,7 +457,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#762, 6e701665), migration `4076`, R134 mise à jour. Vrais Facebook et Instagram du compte du réseau (`reseaux-meta.ts`), mis en service par le Worker seulement quand tout est rangé (H77, après H06) ; lien public relu chez le réseau ; échecs avec code et action ; issue inconnue jamais refaite ; confirmation réelle par cible vérifiée par le serveur ; retrait chez le réseau à l'annulation ou la rétractation, puis par le passage planifié, même envois coupés [R42]. Codex : 8 P0 et 2 P1 corrigés en six tours, puis rien à signaler. Restent : relier les comptes personnels des agents (aujourd'hui « relier ») ; LinkedIn, Google, TikTok, YouTube restent d'essai ; le calendrier (HX52) reste sur les canaux d'essai ; une publication « à vérifier » n'a pas encore de geste pour la rapprocher.
 
 ### AU037 · La fiche Google et les signaux de référencement restent servis en essai malgré les écrans disponibles
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A037 (majeur), endroit : A/app.ts, `attirerServices` ; H07.
 - Constat de l'audit : La fiche Google et les signaux de référencement restent servis en essai malgré les écrans disponibles.
