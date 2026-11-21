@@ -1569,3 +1569,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 04:04 · VOIE 2 : AU084, a948a5a2 (main), relancé non (relance refusée par le contrôle des permissions ; reprise au prochain passage horaire avec AU085)
 - 2026-11-21 04:10 · voie 3 · AU108 (#742) fusionnée : la clé d'application cède la place aux séances de l'appareil (7 jours au plus ; 90 jours pour une invitation à deux rôles, coupée avec un appareil retiré) ; expiresOn exigé sur API_KEYS avec les séances. AU105 (#746) fusionnée : brouillons de la fiche du bien et de l'avis, repris ou abandonnés d'un geste.
 - 2026-11-21 04:35 · voie 3 · AU094 proposée (#751) : règlements partiels et virements groupés rapprochés au centime.
+- 2026-11-21 05:00 · voie 3 · AU094 (#751) corrigée après Codex ; AU087 proposée (#752) : une demande d'avis retenue par le plafond du jour ne s'éteint plus.
