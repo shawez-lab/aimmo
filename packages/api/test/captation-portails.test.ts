@@ -83,6 +83,15 @@ describeWithSqlite('AU032 · captation par mail, portail par portail', () => {
       name: 'Ana Essai',
       leadRef: 'AB-1234',
     });
+    // Les lignes du message du client, ou d'un mail cité, ne sont jamais lues comme ses coordonnées.
+    expect(readPortalBody('Nom : Essai\nMessage : voici les coordonnées de mon notaire\nE-mail : notaire@example.test\nTéléphone : 03 80 00 00 00')).toEqual({
+      email: null,
+      phone: null,
+      name: 'Essai',
+      leadRef: null,
+    });
+    expect(readPortalBody('Le 2 déc. 2026, Ana a écrit :\nE-mail : ancien@example.test')).toMatchObject({ email: null });
+    expect(readPortalBody('> E-mail : cite@example.test')).toMatchObject({ email: null });
     expect(readPortalBody('Prénom : Ana\nNom : Essai')).toMatchObject({ name: 'Ana Essai', email: null });
     expect(readPortalBody('Bonjour, mon mail est ana@example.test et mon numéro le 0611223344')).toEqual({ email: null, phone: null, name: null, leadRef: null });
   });
@@ -122,6 +131,16 @@ describeWithSqlite('AU032 · captation par mail, portail par portail', () => {
     expect((await handleEmail(message(bytes), w.mailConfig))[0]).toMatchObject({ status: 'duplicate' });
     expect(await w.persons()).toBe(1);
     expect((await w.identifiers()).map((f) => f.value)).not.toContain('abc123@messagerie.leboncoin.fr');
+  });
+
+  it('[R669] [R18] un mail déjà rangé sous son identifiant de mail reste un doublon quand il revient avec sa référence de demande', async () => {
+    const w = await world();
+    const before = new TextDecoder().decode(portalLead('pap.fr', 6, { ref: null }));
+    const withRef = before.replace('Message : ', 'Référence de la demande : PAP-0006\r\nMessage : ');
+    expect((await handleEmail(message(enc(before)), w.mailConfig))[0]).toMatchObject({ status: 'replied' });
+    expect((await handleEmail(message(enc(withRef)), w.mailConfig))[0]).toMatchObject({ status: 'duplicate' });
+    expect(await w.outbox()).toBe(1);
+    expect(await w.persons()).toBe(1);
   });
 
   it('[R669] [R12] une demande de portail sans coordonnée lisible n’est jamais un silence : l’agent est alerté, rien ne part', async () => {

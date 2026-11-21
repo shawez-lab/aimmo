@@ -450,16 +450,23 @@ export interface PortalBodyFields {
   leadRef: string | null;
 }
 
-const FIELD = /^[\s>*•-]*([A-Za-zÀ-ÿ'’°. -]{2,40}?)\s*:\s*(.+?)\s*$/;
+const FIELD = /^[\s*•-]*([A-Za-zÀ-ÿ'’°. -]{2,40}?)\s*:\s*(.+?)\s*$/;
+/** Le début du texte écrit par le client, ou d'un mail cité : rien n'est plus lu après lui. */
+const FREE_TEXT = /^(message|votre message|son message|commentaire|commentaires|texte|demande|question|precisions?|informations? complementaires?)$/;
+const QUOTE = /^\s*(>|-{2,}\s*(message|original|forwarded)|le .+ a ecrit\s*:|on .+ wrote\s*:|de\s*:|from\s*:)/i;
 
 export function readPortalBody(text: string): PortalBodyFields {
   const out: PortalBodyFields = { email: null, phone: null, name: null, leadRef: null };
   let first: string | null = null;
   let last: string | null = null;
   for (const line of text.split('\n').slice(0, 200)) {
+    // Un mail cité ou transféré : ce qui suit n'est plus le portail qui parle.
+    if (QUOTE.test(line.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))) break;
     const m = FIELD.exec(line);
     if (!m) continue;
     const label = m[1]!.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[’']/g, "'").replace(/\s+/g, ' ').trim();
+    // Le message du client commence : une adresse ou un numéro qu'il y écrit n'est pas forcément le sien [R669].
+    if (FREE_TEXT.test(label)) break;
     const value = m[2]!.trim();
     if (out.email === null && /^(e-?mail|courriel|mail|adresse (e-?mail|mail|electronique))( du contact)?$/.test(label)) {
       const found = value.match(/[^\s<>()"',;:]+@[^\s<>()"',;:]+\.[a-z]{2,}/i)?.[0];
@@ -506,6 +513,8 @@ function adaptEmail(raw: unknown, ctx: AdaptContext): InboundMessage | null | 'i
     channel: 'email',
     kind: portal ? 'portal_email' : 'email',
     externalId: portal && fields?.leadRef ? `${portal}:demande:${fields.leadRef}` : messageId,
+    // Le même mail déjà rangé sous son identifiant de mail reste un doublon [R18].
+    ...(portal && fields?.leadRef ? { previousExternalIds: [messageId] } : {}),
     conversationRef: firstMessageId(mail.references) ?? firstMessageId(mail.inReplyTo) ?? messageId,
     sender: {
       channelId: null,

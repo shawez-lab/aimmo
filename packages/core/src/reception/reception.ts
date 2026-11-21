@@ -125,6 +125,17 @@ export class Reception {
     const id = this.newId();
     const at = this.now().toISOString();
     const key = dedupKey(message);
+    // Déjà rangé sous un autre identifiant du même message (AU032) : un doublon, jamais traité une seconde fois [R18].
+    for (const previous of message.previousExternalIds ?? []) {
+      const row = await this.db.first<{ id: string; status: InboundStatus }>('SELECT id, status FROM inbound_messages WHERE network_id = ? AND dedup_key = ?', [
+        networkId,
+        dedupKey({ ...message, externalId: previous }),
+      ]);
+      if (row) {
+        await this.log(networkId, row.id, message.channel, message.kind, 'duplicate', 'message déjà reçu, non traité une seconde fois');
+        return { inboundId: row.id, outcome: 'duplicate', toProcess: row.status === 'received' };
+      }
+    }
     const { changes } = await this.db.run(
       `INSERT INTO inbound_messages (id, network_id, dedup_key, channel, kind, external_id, conversation_ref,
          sender_channel_id, sender_name, sender_identifiers, subject, body, post_ref, property_ref, portal,
