@@ -1140,7 +1140,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU104 · Même le paquet hors ligne prévu exclut l’adresse et le téléphone
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A104 (majeur), endroit : C/hors-ligne/reception.ts, `OfflinePack`, R278.
 - Constat de l'audit : Même le paquet hors ligne prévu exclut l’adresse et le téléphone : en zone blanche je ne retrouve ni l’entrée ni mon contact.
