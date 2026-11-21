@@ -7,6 +7,7 @@ import { letterUnsubscribeBase } from './marketing-passage.ts';
 import { isQuarterMinute, runNotificationsPass } from './notifications.ts';
 import { R2PieceStore, type R2Like } from './dossiers.ts';
 import { runListingSync, type MediaStore } from './vitrine.ts';
+import type { AnnonceOptions } from './annonces.ts';
 import { R2AgentPieceStore, type R2AgentBucket, type ReseauOptions } from './reseau.ts';
 import { D1SandboxStorage } from './bac-a-sable.ts';
 import { R2VaultStorage, type R2VaultBucket } from './conformite.ts';
@@ -172,11 +173,20 @@ function sandboxOptions(env: Env): NonNullable<ReseauOptions['sandbox']> | null 
   return { migrations: [], storage: new D1SandboxStorage(fromD1(env.BAC_A_SABLE_DB), fromD1(env.DB)), academyModuleId: moduleId };
 }
 
+/**
+ * AU067 · Les canaux et les connecteurs réels des annonces et des portails, les mêmes pour le retrait immédiat et pour
+ * le passage des quarts d'heure qui en réessaie les échecs. Aucun n'est encore branché (H10) : tout reste en essai.
+ */
+function listingOptions(_env: Env): AnnonceOptions {
+  return {};
+}
+
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
     const estimation = estimationServices(env);
     return handleRequest(request, {
       db: fromD1(env.DB),
+      listing: listingOptions(env),
       apiKeys: env.API_KEYS,
       intakeKeys: env.INTAKE_KEYS,
       mode: env.MODE,
@@ -262,7 +272,7 @@ export default {
       pigeProvider: pigeSourceOf(pigeProvider(env)),
     });
     // Le passage de publication (P10), une fois par quart d'heure, hors du planificateur horaire.
-    if (env.MODE === TRIAL_MODE) await runListingSync(fromD1(env.DB));
+    if (env.MODE === TRIAL_MODE) await runListingSync(fromD1(env.DB), undefined, listingOptions(env));
   },
   async email(message: InboundEmail, env: Env): Promise<void> {
     await handleEmail(message, {

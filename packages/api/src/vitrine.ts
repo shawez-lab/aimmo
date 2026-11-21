@@ -21,7 +21,7 @@ import { Acces, Diffusion, FicheClient, FicheUnique, SqlJournalStore, annonces a
 import { LISTABLE_STATUSES } from '../../core/src/attirer/liste-biens.ts';
 import { withLegalLinks } from '../../core/src/attirer/mentions-site.ts';
 import { journalError } from './app.ts';
-import { syncAnnonces } from './annonces.ts';
+import { syncAnnonces, type AnnonceOptions } from './annonces.ts';
 import { listingPresence, type ListingReference } from './attirer.ts';
 import { countPublicView } from './statistiques-site.ts';
 
@@ -140,7 +140,7 @@ export const LISTING_SYNC_JOB = 'annonces.publication';
  * Le passage de publication de chaque réseau, une seule fois par quart d'heure : le créneau est réservé avant de
  * lancer, deux déclencheurs en même temps n'en font qu'un. Une erreur va au journal, sans donnée [R13].
  */
-export async function runListingSync(db: SqlDatabase, now: () => Date = () => new Date()): Promise<{ slot: string; ran: boolean; properties: number; failed: number }> {
+export async function runListingSync(db: SqlDatabase, now: () => Date = () => new Date(), options: AnnonceOptions = {}): Promise<{ slot: string; ran: boolean; properties: number; failed: number }> {
   const at = now();
   const slot = quarterSlot(at);
   const claimed = await db.run('INSERT INTO scheduled_runs (job, slot, started_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', [LISTING_SYNC_JOB, slot, at.toISOString()]);
@@ -156,7 +156,8 @@ export async function runListingSync(db: SqlDatabase, now: () => Date = () => ne
     for (const n of networks) {
       // Un réseau en panne n'empêche pas les autres de publier ; la panne va au journal, sans donnée [R13].
       try {
-        const r = await syncAnnonces(s, n.id);
+        // AU067 : les mêmes canaux et connecteurs que le retrait immédiat, pour que ce passage réessaie ses échecs.
+        const r = await syncAnnonces(s, n.id, options);
         properties += r.properties;
         failed += r.failed;
       } catch (error) {

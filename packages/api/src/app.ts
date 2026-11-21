@@ -84,7 +84,7 @@ import { ESTIMATION_PATH, handleEstimation, type EstimationLimits } from './esti
 import { BOOKING_PATH, BOOKING_SLOTS_PATH, handleBooking, type BookingLimits } from './rendezvous.ts';
 import type { DetailedSales, Geocoder } from '@aimmo/core';
 import { m08Routes } from './acquereurs.ts';
-import { annonceRoutes } from './annonces.ts';
+import { annonceRoutes, type AnnonceOptions } from './annonces.ts';
 import { offreRoutes } from './offres.ts';
 import { dossierRoutes, type DossierRoute, type PieceStore } from './dossiers.ts';
 import { pilotageRoutes } from './pilotage.ts';
@@ -96,7 +96,7 @@ import { locationRoutes, type LocationRoute, type LocationServices } from './loc
 import { coproprieteRoutes, type CoproprieteRoute, type CoproprieteServices } from './copropriete.ts';
 import { avantContratRoutes, type AvantContratRoute, type AvantContratServices } from './avant-contrat.ts';
 import { commercesRoutes, dossierReaderRoutes, type CommercesRoute, type CommercesServices } from './commerces.ts';
-import { GpuUrbanism, conformite } from '@aimmo/core';
+import { GpuUrbanism, annonces as m07, conformite } from '@aimmo/core';
 import { CANDIDATURE_PATH, handleCandidature } from './candidature.ts';
 import { accessCut, conformiteRoutes, type ConformiteRoute, type VaultFiles } from './conformite.ts';
 import { securiteRoutes, type RegistreGelsSource, type SecuriteRoute } from './securite.ts';
@@ -170,6 +170,8 @@ export const TRIAL_MODE = 'essai';
 
 export interface ApiConfig {
   db: SqlDatabase;
+  /** AU067 · les canaux et les connecteurs réels des portails (H10) ; absents, chacun est en essai. */
+  listing?: AnnonceOptions;
   /** Secret `API_KEYS` : empreintes des clés et identité de chacune (voir auth.ts). */
   apiKeys: string | undefined;
   /** Variable `MODE` : doit valoir « essai ». */
@@ -2509,7 +2511,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   const routes: RouteDef[] = [
     ...ROUTES,
     ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null, geocoder: config.secteursGeocoder ?? config.estimation?.geocoder ?? null, ...(config.reportWriter ? { reportWriter: config.reportWriter } : {}) }),
-    ...annonceRoutes(),
+    ...annonceRoutes(config.listing ?? {}),
     ...offreRoutes(config.pieces ?? null),
     ...m10Routes(config.pieces ?? null),
     ...mandatRoutes(config.pieces ?? null),
@@ -2609,6 +2611,17 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     // AU108 · la clé de cet appareil rangée par une clé d'application : celle-ci cesse ; l'appareil entre désormais par
     // ses séances, qu'on coupe en retirant sa seule clé, sans toucher aux autres appareils [R600].
     const appKey = invitationKeyOf(request);
+    // AU067 · une rétractation ou une annulation du mandat retire l'annonce tout de suite, partout, avec chaque accusé ;
+    // ce qui échoue reste dû au passage planifié [R42, R668].
+    if ((route.name === 'mandat.retractation' || route.name === 'mandat.annulation') && response.ok && params[0]) {
+      const retraits = new m07.RetraitsImmediats(s.db, s.acces, s.journal, { now, ...(config.listing?.channels ? { channels: config.listing.channels } : {}), ...(config.listing?.portals ? { portals: config.listing.portals } : {}) });
+      const propertyId = await retraits.propertyOfMandate(viewer.networkId, params[0]);
+      if (propertyId !== null) {
+        const done = await retraits.run(viewer.networkId, propertyId, `${String(viewer.role)}:${viewer.userId}`);
+        const body = (await response.json()) as Record<string, unknown>;
+        return json(response.status, { ...body, retraits: { state: done.state, channels: done.channels, portals: done.portals, busy: done.busy } });
+      }
+    }
     if (route.name === 'cles.appareils.retrait' && response.ok && params[0]) await retireApplicationKeysOf(s.db, s.journal, params[0], `${viewer.role}:${viewer.userId}`, now);
     if (appKey !== null && route.name === 'cles.enregistrement.fin' && response.ok) {
       if (await retireApplicationKey(s.db, s.journal, appKey, `${viewer.role}:${viewer.userId}`, now)) {

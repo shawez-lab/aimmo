@@ -11,6 +11,7 @@ export * from './portails.ts';
 export * from './mesure.ts';
 export * from './traductions.ts';
 export * from './diffusion-portails.ts';
+export * from './retrait-immediat.ts';
 export { DiffusionSurveillee } from '../diffusion/surveillance.ts';
 export type { OnlineListing, OnlineListingReader, CheckOutcome } from '../diffusion/surveillance.ts';
 export * from '../diffusion/lecteur-annonces.ts';

@@ -242,9 +242,9 @@ describeWithSqlite('P04 · un passage à la fois par bien', () => {
     expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ busy: true, created: false, pushed: [] });
     t.channels[0]!.gate = null;
     release();
-    expect(await first).toMatchObject({ version: 1, state: 'en_vente' });
-    // Le passage suivant retire l'annonce partout : la dernière chose reçue par chaque canal est le retrait.
-    expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ version: 2, state: 'retiree', created: true });
+    // AU067 : le premier passage relit ce qui doit être montré avant de rendre la main, et retire lui-même l'annonce.
+    expect(await first).toMatchObject({ version: 2, state: 'retiree', created: true });
+    expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ version: 2, state: 'retiree', created: false });
     expect(t.channels.map((c) => c.received.at(-1)?.state)).toEqual(['retiree', 'retiree', 'retiree', 'retiree']);
   });
 
