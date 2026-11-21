@@ -67,9 +67,10 @@ import {
   type Fetcher,
   type ValuationReport,
 } from '@aimmo/core';
-import { bearerKey, fromMcpKey, intakeFromRequest, markMcpKey, parseApiKeys, parseIntakeKeys, sha256Hex, viewerFromRequest } from './auth.ts';
+import { bearerKey, fromMcpKey, intakeFromRequest, invitationKeyOf, markMcpKey, parseApiKeys, parseIntakeKeys, sha256Hex, viewerFromRequest } from './auth.ts';
 import { assistantKeyViewer } from '../../core/src/securite/index.ts';
-import { INVITATION_PATH, handleInvitation, invitedKeys, mergeKeys } from './acces.ts';
+import { INVITATION_PATH, handleInvitation, invitedKeys, mergeKeys, retireApplicationKey } from './acces.ts';
+import { localTime as parisLocalTime } from '../../core/src/envoi/horaires.ts';
 import { ASSISTANT_PATH, handleAssistant, type AssistantLimits } from './assistant.ts';
 import type { ReplyWriter, ReportWriter } from '@aimmo/core';
 import { META_PATH, handleMeta, type MetaConfig } from './meta.ts';
@@ -2430,9 +2431,10 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // d'appareil (BR06), relue dans la base à chaque demande : une clé retirée ou un agent parti la coupent [R600, R82].
   const secretKeys = config.apiKeys === undefined || config.apiKeys.trim() === '' ? [] : parseApiKeys(config.apiKeys);
   if (secretKeys === null) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');
-  const keys = mergeKeys(secretKeys, await invitedKeys(config.db));
+  // AU108 · avec les séances réglées, une clé d'application ne vit que le temps de ranger la clé de l'appareil.
+  const keys = mergeKeys(secretKeys, await invitedKeys(config.db, config.cles ? { now: now() } : {}));
   if (keys.length === 0 && !config.cles) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');
-  let keyViewer = keys.length > 0 ? await viewerFromRequest(request, keys) : null;
+  let keyViewer = keys.length > 0 ? await viewerFromRequest(request, keys, parisLocalTime(now(), 'Europe/Paris').date) : null;
   // La clé qu'un agent a créée pour son assistant (BR09), relue dans la base à chaque demande : retirée, ou son agent
   // parti, elle n'est plus reconnue [R82]. Elle porte la portée « mcp » : elle n'ouvre que le serveur MCP [R590].
   if (keyViewer === null) {
@@ -2551,7 +2553,14 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
         return json(403, { ok: false, rule, code });
       }
     }
-    return await route.handle(s, viewer, params, request);
+    const response = await route.handle(s, viewer, params, request);
+    // AU108 · la clé de cet appareil rangée par une clé d'application : celle-ci cesse ; l'appareil entre désormais par
+    // ses séances, qu'on coupe en retirant sa seule clé, sans toucher aux autres appareils [R600].
+    const appKey = invitationKeyOf(request);
+    if (appKey !== null && route.name === 'cles.enregistrement.fin' && response.ok) {
+      await retireApplicationKey(s.db, s.journal, appKey, `${viewer.role}:${viewer.userId}`, now);
+    }
+    return response;
   } catch (error) {
     // Jamais d'erreur avalée : une ligne au journal, sans le détail qui pourrait porter une donnée [R13].
     try {

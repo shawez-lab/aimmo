@@ -116,7 +116,7 @@ async function run(answers: Record<string, Answer> = {}, role = 'agent', dev: De
     return p;
   };
   const posts = () => calls.filter((c) => c.method === 'POST');
-  return { els, calls, table, asked, body, state, texts, find, buttons, input, click, voir, prove, posts, scripts };
+  return { els, calls, table, asked, body, state, texts, find, buttons, input, click, voir, prove, posts, scripts, storage };
 }
 
 describe('BR18 · la clé de cet appareil et la preuve d’une action, à l’écran', () => {
@@ -138,6 +138,19 @@ describe('BR18 · la clé de cet appareil et la preuve d’une action, à l’é
     // Une clé retirée n'a plus de geste.
     expect(t.buttons().filter((b) => b.includes('Tablette'))).toEqual([]);
     expect(t.state()).toBe('');
+  });
+
+  it('[R600] AU108 · l’identité de l’appareil se retient avant de ranger sa clé : la clé d’application cesse aussitôt après', async () => {
+    const who = { networkId: 'n-1', role: 'agent', userId: 'agent-1' };
+    const t = await run({ 'GET /v1/cles/mes-appareils': ok([]), 'GET /v1/cles/identite': ok(who) });
+    await t.voir();
+    t.input('cles-accueil-nom').value = 'Mon téléphone';
+    await t.click(t.find('Ranger la clé de cet appareil'));
+    await settle();
+    const order = t.calls.map((c) => `${c.method} ${c.url}`);
+    expect(order.indexOf('GET /v1/cles/identite')).toBeLessThan(order.indexOf('POST /v1/cles/enregistrement/fin'));
+    expect(JSON.parse(t.storage.get('aimmo.appareil')!)).toEqual(who);
+    expect(t.storage.get('aimmo.appareil')).not.toContain(KEY);
   });
 
   it('[R600] la clé de cet appareil se range par navigator.credentials.create sur le défi du serveur ; la clé publique n’est jamais montrée', async () => {

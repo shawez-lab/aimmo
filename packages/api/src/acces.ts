@@ -54,15 +54,33 @@ export function parseGrants(raw: string): Grant[] | null {
 }
 
 /** Les clés remises par invitation et non retirées, sous la même forme que celles du secret `API_KEYS`. */
-export async function invitedKeys(db: SqlDatabase): Promise<ApiKeyEntry[]> {
-  const rows = await db.all<{ sha256: string; role: string; user_id: string; network_id: string }>(
+/**
+ * AU108 · avec les séances par clé d'appareil (BR06), la clé d'application d'un agent, de la direction ou de la
+ * conformité ne sert qu'à ranger la clé de son appareil : elle cesse dès qu'elle l'a fait, et au plus tard
+ * `APP_KEY_DAYS` jours après sa remise. Le partenaire, qui n'a pas de clé d'appareil, garde la sienne.
+ */
+export const APP_KEY_DAYS = 7;
+export const DEVICE_KEY_ROLES: readonly string[] = ['agent', 'direction', 'compliance'];
+
+export async function invitedKeys(db: SqlDatabase, options: { now?: Date } = {}): Promise<ApiKeyEntry[]> {
+  const rows = await db.all<{ sha256: string; role: string; user_id: string; network_id: string; created_at: string }>(
     // Seulement les clés d'une invitation qui a servi : celles d'un échange interrompu n'ouvrent rien.
-    `SELECT k.sha256, k.role, k.user_id, k.network_id FROM access_keys k JOIN access_invitations i ON i.id = k.invitation_id
+    `SELECT k.sha256, k.role, k.user_id, k.network_id, k.created_at FROM access_keys k JOIN access_invitations i ON i.id = k.invitation_id
      WHERE k.revoked_at IS NULL AND i.used_at IS NOT NULL ORDER BY k.created_at, k.sha256`,
   );
+  const since = options.now ? new Date(options.now.getTime() - APP_KEY_DAYS * 86_400_000).toISOString() : null;
   return rows
     .filter((r) => (ROLES as readonly string[]).includes(r.role))
-    .map((r) => ({ sha256: r.sha256, role: r.role as ApiKeyEntry['role'], userId: r.user_id, networkId: r.network_id }));
+    .filter((r) => since === null || !DEVICE_KEY_ROLES.includes(r.role) || r.created_at >= since)
+    .map((r) => ({ sha256: r.sha256, role: r.role as ApiKeyEntry['role'], userId: r.user_id, networkId: r.network_id, fromInvitation: true as const }));
+}
+
+/** AU108 · la clé d'application qui vient de ranger la clé de cet appareil cesse : l'appareil entre par ses séances. */
+export async function retireApplicationKey(db: SqlDatabase, journal: JournalStore, sha256: string, actor: string, now: () => Date): Promise<boolean> {
+  const done = await db.run('UPDATE access_keys SET revoked_at = ? WHERE sha256 = ? AND revoked_at IS NULL', [now().toISOString(), sha256]);
+  if (done.changes !== 1) return false;
+  await appendEvent(journal, { type: 'acces.cle_application_retiree', actor, subject: null, data: { rule: 'R600', reason: 'cle_appareil_rangee' } }, now);
+  return true;
 }
 
 /**

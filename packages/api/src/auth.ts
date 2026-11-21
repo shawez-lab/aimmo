@@ -13,12 +13,20 @@ export interface ApiKeyEntry extends Viewer {
    * refuse ; et `POST /v1/mcp` n'accepte qu'elle [R590, R591]. Réservée au rôle `agent`.
    */
   scope?: 'mcp';
+  /**
+   * AU108 · le dernier jour de Paris où la clé ouvre l'API (AAAA-MM-JJ). Passé ce jour, elle est refusée comme une
+   * clé inconnue. Une clé rangée à la main n'est qu'un secours technique : elle porte sa date de fin.
+   */
+  expiresOn?: string;
+  /** AU108 · la clé d'application remise par un lien (Z02), et non une clé du secret. */
+  fromInvitation?: true;
 }
 
 /** Une clé plus courte est refusée sans même être comparée. */
 export const MIN_KEY_LENGTH = 32;
 
 const HEX64 = /^[0-9a-f]{64}$/;
+const DAY = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
 
 export async function sha256Hex(text: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -41,13 +49,15 @@ export function parseApiKeys(raw: string | undefined): ApiKeyEntry[] | null {
   const entries: ApiKeyEntry[] = [];
   for (const item of parsed as unknown[]) {
     if (item === null || typeof item !== 'object') return null;
-    const { sha256, role, userId, networkId, scope } = item as Record<string, unknown>;
+    const { sha256, role, userId, networkId, scope, expiresOn } = item as Record<string, unknown>;
+    // Une date de fin mal écrite ferme l'API : lecture prudente [AU108].
+    if (expiresOn !== undefined && (typeof expiresOn !== 'string' || !DAY.test(expiresOn))) return null;
     if (typeof sha256 !== 'string' || !HEX64.test(sha256)) return null;
     if (typeof role !== 'string' || !(ROLES as readonly string[]).includes(role)) return null;
     if (typeof userId !== 'string' || userId === '' || typeof networkId !== 'string' || networkId === '') return null;
     // Une portée inconnue, ou la portée « mcp » sur un autre rôle que l'agent, ferme l'API : lecture prudente.
     if (scope !== undefined && (scope !== 'mcp' || role !== 'agent')) return null;
-    entries.push({ sha256, role: role as Viewer['role'], userId, networkId, ...(scope === 'mcp' ? { scope: 'mcp' as const } : {}) });
+    entries.push({ sha256, role: role as Viewer['role'], userId, networkId, ...(scope === 'mcp' ? { scope: 'mcp' as const } : {}), ...(typeof expiresOn === 'string' ? { expiresOn } : {}) });
   }
   if (new Set(entries.map((entry) => entry.sha256)).size !== entries.length) return null;
   return entries;
@@ -61,8 +71,11 @@ function sameHex(a: string, b: string): boolean {
   return diff === 0;
 }
 
-/** Rend l'identité portée par la clé de la requête, ou `null`. */
-export async function viewerFromRequest(request: Request, keys: readonly ApiKeyEntry[]): Promise<Viewer | null> {
+/**
+ * Rend l'identité portée par la clé de la requête, ou `null`. `today` (jour de Paris, AAAA-MM-JJ) : une clé dont la
+ * date de fin est passée est refusée [AU108].
+ */
+export async function viewerFromRequest(request: Request, keys: readonly ApiKeyEntry[], today?: string): Promise<Viewer | null> {
   const header = request.headers.get('authorization') ?? '';
   const match = /^Bearer ([^\s]+)$/.exec(header);
   const key = match?.[1];
@@ -70,8 +83,16 @@ export async function viewerFromRequest(request: Request, keys: readonly ApiKeyE
   const hash = await sha256Hex(key);
   let found: ApiKeyEntry | null = null;
   for (const entry of keys) if (sameHex(entry.sha256, hash)) found = entry;
+  if (found !== null && found.expiresOn !== undefined && (today === undefined || today > found.expiresOn)) return null;
   if (found?.scope === 'mcp') MCP_KEY_REQUESTS.add(request);
+  if (found?.fromInvitation) INVITATION_KEY_REQUESTS.set(request, found.sha256);
   return found === null ? null : { role: found.role, userId: found.userId, networkId: found.networkId };
+}
+
+/** Les demandes ouvertes par une clé d'application remise par un lien, avec l'empreinte de cette clé [AU108]. */
+const INVITATION_KEY_REQUESTS = new WeakMap<Request, string>();
+export function invitationKeyOf(request: Request): string | null {
+  return INVITATION_KEY_REQUESTS.get(request) ?? null;
 }
 
 /** Les demandes ouvertes par une clé de portée « mcp », marquées à l'authentification (BR08). */

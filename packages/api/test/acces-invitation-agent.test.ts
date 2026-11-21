@@ -61,7 +61,7 @@ async function setup() {
     if (c.status !== 200) return c;
     return call('POST', '/cles/connexion/fin', { body: { ...(await device.sign(c.body.data as Challenge)) } });
   };
-  return { ...t, other, stranger, call, enroll, prove, directionDevice, invite, open, login };
+  return { ...t, config, other, stranger, call, enroll, prove, directionDevice, invite, open, login };
 }
 
 describeWithSqlite('AU023 · une invitation nominative mène à une connexion par clé d’appareil', () => {
@@ -134,11 +134,12 @@ describeWithSqlite('AU023 · une invitation nominative mène à une connexion pa
     const who = { networkId: t.network.id, role: 'agent', userId: t.sam.userId };
     // Un second lien préparé mais pas encore ouvert.
     const unused = (await t.invite(t.sam.userId, false)).body.data.lien as string;
-    // Sans « appareil perdu », l'ancien accès reste.
-    expect((await t.call('GET', '/moi', { bearer: first.key! })).status).toBe(200);
+    // Sans « appareil perdu », l'ancien accès reste : la clé de l'appareil. Sa clé d'application a cessé en la rangeant [AU108].
+    expect((await t.login(who, lost.device)).status).toBe(200);
+    expect((await t.call('GET', '/moi', { bearer: first.key! })).status).toBe(401);
 
     const recovery = await t.invite(t.sam.userId, true);
-    expect(recovery).toMatchObject({ status: 200, body: { data: { keysRevoked: 1, linksVoided: 1, devicesRevoked: 1 } } });
+    expect(recovery).toMatchObject({ status: 200, body: { data: { keysRevoked: 0, linksVoided: 1, devicesRevoked: 1 } } });
     // Le téléphone perdu n'ouvre plus rien : ni sa clé d'application, ni sa clé d'appareil, ni le lien resté de côté.
     expect((await t.call('GET', '/moi', { bearer: first.key! })).status).toBe(401);
     expect((await t.login(who, lost.device)).status).toBe(403);
@@ -157,7 +158,7 @@ describeWithSqlite('AU023 · une invitation nominative mène à une connexion pa
     // Les clés retirées restent, datées : rien n'est effacé.
     expect(await t.db.all("SELECT status FROM security_devices WHERE user_id = ? ORDER BY created_at, id", [t.sam.userId])).toEqual(expect.arrayContaining([{ status: 'retire' }, { status: 'actif' }]));
     const event = (await t.journal.all()).filter((e) => e.type === 'acces.invitation_creee').at(-1);
-    expect(event?.data).toMatchObject({ retirerAnciens: true, keysRevoked: 1, linksVoided: 1, devicesRevoked: 1 });
+    expect(event?.data).toMatchObject({ retirerAnciens: true, keysRevoked: 0, linksVoided: 1, devicesRevoked: 1 });
   });
 
   it('[R600] appareil perdu : un ancien lien ouvert pendant le recours n’échappe jamais au retrait', async () => {
@@ -191,5 +192,69 @@ describeWithSqlite('AU023 · une invitation nominative mène à une connexion pa
       expect(fired).toBe(true);
       expect((await invitedKeys(t.db)).filter((k) => k.userId === t.sam.userId)).toEqual([]);
     }
+  });
+
+  it('[R600] AU108 · la clé d’application ne sert qu’à ranger la clé de l’appareil : elle cesse aussitôt, l’appareil entre par ses séances', async () => {
+    const t = await setup();
+    const opened = await t.open((await t.invite(t.sam.userId, false)).body.data.lien);
+    const appKey = opened.key!;
+    const who = { networkId: t.network.id, role: 'agent', userId: t.sam.userId };
+    expect((await t.call('GET', '/moi', { bearer: appKey })).status).toBe(200);
+    const { device } = await t.enroll(appKey, 41);
+    // Le constat de l'audit : la clé d'application restait un accès parallèle, permanent, gardé sur l'appareil.
+    expect((await t.call('GET', '/moi', { bearer: appKey })).status).toBe(401);
+    expect((await t.journal.all()).filter((e) => e.type === 'acces.cle_application_retiree')).toEqual([
+      expect.objectContaining({ actor: `agent:${t.sam.userId}`, data: { rule: 'R600', reason: 'cle_appareil_rangee' } }),
+    ]);
+    const row = await t.db.first<{ revoked_at: string | null }>('SELECT revoked_at FROM access_keys WHERE sha256 = ?', [await sha256Hex(appKey)]);
+    expect(row?.revoked_at).toBe(t.now().toISOString());
+    // La séance de l'appareil expire : 12 heures.
+    const session = await t.login(who, device);
+    expect(session.status).toBe(200);
+    expect(Date.parse(session.body.data.expiresAt) - t.now().getTime()).toBe(12 * 3600 * 1000);
+  });
+
+  it('[R600] AU108 · une clé d’application jamais servie à ranger une clé d’appareil cesse au bout de 7 jours', async () => {
+    const t = await setup();
+    const opened = await t.open((await t.invite(t.sam.userId, false)).body.data.lien);
+    const at = (days: number) => async (path: string) => {
+      const config: ApiConfig = { ...t.config, now: () => new Date(t.now().getTime() + days * 86_400_000) };
+      return (await handleRequest(new Request(`https://aimmo-api.example.test/v1${path}`, { headers: { authorization: `Bearer ${opened.key!}` } }), config)).status;
+    };
+    expect(await (at(6.9))('/moi')).toBe(200);
+    expect(await (at(7.1))('/moi')).toBe(401);
+  });
+
+  it('[R600] AU108 · un appareil perdu se coupe seul : sa clé retirée, ses séances cessent ; l’autre appareil de l’agent continue', async () => {
+    const t = await setup();
+    const who = { networkId: t.network.id, role: 'agent', userId: t.sam.userId };
+    const phone = await t.enroll((await t.open((await t.invite(t.sam.userId, false)).body.data.lien)).key!, 51);
+    const laptop = await t.enroll((await t.open((await t.invite(t.sam.userId, false)).body.data.lien)).key!, 52);
+    // La seconde clé attend l'accord de la direction.
+    const ok = await t.prove(DIRECTION_KEY, t.directionDevice, 'approuver_appareil', `device:${laptop.id}`);
+    expect((await t.call('POST', `/cles/appareils/${laptop.id}/accord`, { bearer: DIRECTION_KEY, body: { stepUpId: ok } })).status).toBe(200);
+    const phoneSession = (await t.login(who, phone.device)).body.data.token as string;
+    const laptopSession = (await t.login(who, laptop.device)).body.data.token as string;
+    // Le téléphone est perdu : la direction retire sa seule clé.
+    expect((await t.call('POST', `/cles/appareils/${phone.id}/retrait`, { bearer: DIRECTION_KEY })).status).toBe(200);
+    expect((await t.call('GET', '/moi', { bearer: phoneSession })).status).toBe(401);
+    expect((await t.login(who, phone.device)).status).toBe(403);
+    // L'ordinateur de l'agent n'a rien perdu.
+    expect((await t.call('GET', '/moi', { bearer: laptopSession })).status).toBe(200);
+    expect((await t.login(who, laptop.device)).status).toBe(200);
+  });
+
+  it('[R600] AU108 · une clé rangée à la main dans le secret porte sa date de fin : passée, elle est refusée ; mal écrite, l’API ferme', async () => {
+    const t = await setup();
+    const KEY = 'test-cle-au108-secours-ssssssssssssssssssssssss';
+    const today = '2027-01-01';
+    const status = async (expiresOn: unknown, now: Date) => {
+      const apiKeys = JSON.stringify([{ sha256: await sha256Hex(KEY), role: 'agent', userId: t.sam.userId, networkId: t.network.id, expiresOn }]);
+      return (await handleRequest(new Request('https://aimmo-api.example.test/v1/moi', { headers: { authorization: `Bearer ${KEY}` } }), { ...t.config, apiKeys, now: () => now })).status;
+    };
+    // Le dernier jour de Paris compte encore : 23 h 30 à Paris le 1er janvier, c'est 22 h 30 en UTC.
+    expect(await status(today, new Date('2027-01-01T22:30:00.000Z'))).toBe(200);
+    expect(await status(today, new Date('2027-01-01T23:30:00.000Z'))).toBe(401);
+    expect(await status('01/01/2027', new Date('2026-12-01T10:00:00.000Z'))).toBe(503);
   });
 });
