@@ -506,6 +506,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   offline_ops: { locate: [via('appointment_id', 'appointments')] },
   visit_field_notes: { locate: [via('appointment_id', 'appointments')] },
   visit_photos: { locate: [via('appointment_id', 'appointments')] },
+  visit_photo_files: { locate: [via('photo_id', 'visit_photos')] },
   visit_shot_skips: { locate: [via('appointment_id', 'appointments')] },
   presentation_ratings: { locate: [via('appointment_id', 'appointments')] },
   daily_plans: { locate: [{ json: 'items', idFields: ['personId', 'memberIds'], onlyMine: ['personId', 'memberIds'] }] },

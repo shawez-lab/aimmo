@@ -4,6 +4,8 @@
  *   GET  /v1/hors-ligne/paquet?jour=AAAA-MM-JJ : le paquet du jour, sans rien d'un client, gardé par le téléphone [R278]
  *   POST /v1/hors-ligne/saisies { deviceId, ops } : les saisies faites sans réseau, reçues chacune une seule fois [R276]
  *   GET  /v1/hors-ligne/depart/<rendez-vous> : ce qui manque encore avant de repartir [R277]
+ *   POST /v1/hors-ligne/photos/<appareil>/<saisie> : le fichier JPEG de l'image entière d'une photo déjà reçue, rangé
+ *        seulement s'il est celui que la saisie annonçait [R677]
  *   POST /v1/hors-ligne/prive : le mode privé du jour, sur le geste de l'agent : adresse du bien, nom et numéro de la
  *        personne rencontrée, chiffrés ensuite sur le téléphone sous un code qui ne le quitte jamais [R676]
  *
@@ -19,7 +21,9 @@ import { readCapped } from './studio.ts';
  */
 export const MAX_SAISIES_BODY_BYTES = 1_000_000;
 /** Le téléphone n'envoie pas plus de tant de saisies à la fois : avec des photos, l'envoi reste sous la limite. */
-export const BATCH_LIMIT = 10;
+export const BATCH_LIMIT = 8;
+/** Le fichier d'une image entière, au plus [R677]. */
+export const MAX_IMAGE_BODY_BYTES = horsLigne.IMAGE_MAX_BYTES;
 const ID = /^[A-Za-z0-9_-]{8,64}$/;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -27,6 +31,8 @@ export interface HorsLigneServices {
   db: SqlDatabase;
   journal: JournalStore;
   now: () => Date;
+  /** Le rangement des images entières (R2) ; absent, le fichier reste sur le téléphone, qui le renverra [R677]. */
+  images?: horsLigne.VisitImageStore | null;
 }
 
 export interface HorsLigneRoute {
@@ -43,7 +49,7 @@ const failure = (status: number, code: string): Response => json(status, { ok: f
 type Refusal = { ok: false; rule: string | null; code: string };
 function refused(r: Refusal): Response {
   if (r.rule === 'R16') return json(403, { ok: false, rule: 'R16', code: r.code });
-  if (r.code === 'unknown_appointment') return json(404, { ok: false, rule: null, code: r.code });
+  if (r.code === 'unknown_appointment' || r.code === 'photo_inconnue') return json(404, { ok: false, rule: null, code: r.code });
   if (r.rule === null && /^bad_/.test(r.code)) return json(400, { ok: false, rule: null, code: r.code });
   return json(409, { ok: false, rule: r.rule, code: r.code });
 }
@@ -106,6 +112,26 @@ export function horsLigneRoutes(): HorsLigneRoute[] {
         const r = await server(s).receive(viewer, { deviceId: body.deviceId, ops: body.ops });
         if (!r.ok) return refused(r);
         return json(200, { ok: true, mode: 'essai', sent: false, data: { results: r.results } });
+      },
+    },
+    {
+      method: 'POST',
+      pattern: /^\/hors-ligne\/photos\/([A-Za-z0-9_-]{1,64})\/([A-Za-z0-9_-]{1,64})$/,
+      name: 'hors_ligne.photo',
+      handle: async (s, viewer, params, request) => {
+        // Le rôle d'abord, avant de lire le fichier [R16].
+        if (viewer.role !== 'agent') {
+          const r = await server(s).depositImage(viewer, params[0], params[1], null, null);
+          return r.ok ? failure(500, 'internal') : refused(r);
+        }
+        if ((request.headers.get('content-type') ?? '').toLowerCase().split(';')[0]?.trim() !== horsLigne.IMAGE_TYPE) return failure(415, 'type_image');
+        const length = Number(request.headers.get('content-length') ?? '0');
+        if (Number.isFinite(length) && length > MAX_IMAGE_BODY_BYTES) return failure(413, 'trop_lourd');
+        const bytes = await readCapped(request, MAX_IMAGE_BODY_BYTES);
+        if (bytes === null) return failure(413, 'trop_lourd');
+        const r = await server(s).depositImage(viewer, params[0], params[1], bytes, s.images ?? null);
+        if (!r.ok) return r.code === 'depot_indisponible' ? json(503, { ok: false, rule: null, code: r.code }) : refused(r);
+        return json(200, { ok: true, mode: 'essai', sent: false, data: { rangee: true, again: r.again } });
       },
     },
     {
