@@ -391,14 +391,14 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
               // tout est rangé (R134) ; chaque publication est validée par l'agent, et retirée quand le bien ne peut
               // plus être diffusé (R42). Ce ne sont pas des messages à une personne.
               'const socialOf = (env: Env) => socialFromEnv(env, fetch.bind(globalThis));',
-              // La vraie fiche Google de chaque agent (AU037), seulement mise en service quand tout est rangé (H07) :
-              // chaque réponse ou publication est validée par un humain (R154), la mise à jour est un geste de la
-              // direction. Ce ne sont pas des messages à une personne.
-              'attirer: { gbp: gbpFromEnv(env, fetch.bind(globalThis)) },',
               // Le fournisseur de pige du réseau (AU034), en GET : seule la date de début part, la clé dans l'en-tête.
               'export function pigeSourceOf(settings: PigeProviderSettings, fetcher: PigeFetcher = fetch.bind(globalThis)): { networkId: string; source: PigeSource } | null {',
               'const reader = env.DVF_BASE_URL ? httpDvfReader(fetch.bind(globalThis), env.DVF_BASE_URL) : null;',
               'return reader ? { geocoder: new BanGeocoder(fetch.bind(globalThis)), sales: new DvfSiteSales(reader) } : undefined;',
+              // La vraie fiche Google de chaque agent (AU037), seulement mise en service quand tout est rangé (H07) :
+              // chaque réponse ou publication est validée par un humain (R154), la mise à jour est un geste de la
+              // direction. Ce ne sont pas des messages à une personne.
+              'attirer: { gbp: gbpFromEnv(env, fetch.bind(globalThis)) },',
       // Les données publiques d'un bien pour l'avis de valeur (E09), en lecture seule, jamais un envoi.
       '...(estimation ? { estimation, fetchPublicData: fetch.bind(globalThis) } : {}),',
               // Le fichier public du registre des gels de la DG Trésor (BR85), lu en GET au seul appui du responsable de
