@@ -31,11 +31,13 @@ it('les accroches des événements passent le contrôle des textes publics', () 
 });
 
 it('[R26] [R134] un canal réel est refusé sans la mise en service explicite (AU036) ; un mode inconnu toujours', () => {
-  const real: SocialChannel = { channel: 'instagram', mode: 'reel', post: async () => ({ postRef: '1' }) };
+  const real: SocialChannel = { channel: 'instagram', mode: 'reel', post: async () => ({ postRef: '1' }), remove: async () => {} };
   const deps = { facts: {} as never, certs: {} as never, diffusion: {} as never, mentions: {} as never, consents: {} as never };
   expect(() => new Publications({} as SqlDatabase, {} as never, {} as never, { ...deps, channels: [real] })).toThrow(/mode essai/);
   expect(() => new Publications({} as SqlDatabase, {} as never, {} as never, { ...deps, channels: [real] }, { live: false })).toThrow(/mode essai/);
   expect(() => new Publications({} as SqlDatabase, {} as never, {} as never, { ...deps, channels: [real] }, { live: true })).not.toThrow();
+  // [R42] Ce qui part pour de vrai doit savoir se retirer.
+  expect(() => new Publications({} as SqlDatabase, {} as never, {} as never, { ...deps, channels: [{ channel: 'instagram', mode: 'reel', post: async () => ({ postRef: '1' }) }] }, { live: true })).toThrow(/retirer/);
   const odd = { channel: 'instagram', mode: 'direct', post: async () => {} } as unknown as SocialChannel;
   expect(() => new Publications({} as SqlDatabase, {} as never, {} as never, { ...deps, channels: [odd] }, { live: true })).toThrow(/Mode inconnu/);
 });
@@ -475,17 +477,19 @@ const TOKEN = 'jeton-invente-' + 'x'.repeat(24);
 const ACCOUNT = { pageId: '111', igUserId: '222', token: TOKEN };
 
 /** Une API Graph simulée : chaque appel est noté ; `fail` rend une erreur de Meta pour un chemin donné. */
-function fakeGraph(opts: { fail?: Record<string, { status: number; code: number }>; noPermalink?: boolean } = {}) {
+function fakeGraph(opts: { fail?: Record<string, { status: number; code: number | null }>; noPermalink?: boolean; down?: string[] } = {}) {
   const calls: { method: string; path: string; params: Record<string, string> }[] = [];
   let n = 0;
   const fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? 'GET';
-    const params = Object.fromEntries(method === 'GET' ? url.searchParams : new URLSearchParams(String(init?.body ?? '')));
+    const params = Object.fromEntries(method !== 'POST' ? url.searchParams : new URLSearchParams(String(init?.body ?? '')));
     const path = url.pathname.replace(/^\/v[0-9.]+\//, '');
     calls.push({ method, path, params });
+    if (opts.down?.some((d) => path.endsWith(d))) throw new TypeError('réseau coupé');
     const failing = Object.entries(opts.fail ?? {}).find(([k]) => path.endsWith(k));
-    if (failing) return new Response(JSON.stringify({ error: { message: 'texte du réseau à ne jamais garder', code: failing[1].code } }), { status: failing[1].status });
+    if (failing) return new Response(failing[1].code === null ? 'panne' : JSON.stringify({ error: { message: 'texte du réseau à ne jamais garder', code: failing[1].code } }), { status: failing[1].status });
+    if (method === 'DELETE') return Response.json({ success: true });
     if (method === 'GET') {
       if (opts.noPermalink) return new Response('{}', { status: 500 });
       const field = params.fields!;
@@ -631,13 +635,13 @@ describeWithSqlite('AU036 · une publication validée part vraiment sur les comp
     expect(await t2.pubs.publish(t2.alexV, id2, [{ channel: 'facebook', account: 'reseau' }])).toMatchObject({ ok: true, value: { sends: [{ outcome: 'envoye', url: null, code: null }] } });
   });
 
-  it('[R134] un envoi réel sans issue rangée n’est jamais doublé : en cours, puis à vérifier ; sans référence, c’est un échec', async () => {
+  it('[R134] un envoi réel sans issue rangée n’est jamais doublé : en cours, puis à vérifier ; sans référence, à vérifier aussi', async () => {
     let calls = 0;
     let hang = true;
     const t = await setup({
       live: () => [
-        { channel: 'facebook', mode: 'reel', post: async () => (calls++, hang ? new Promise<never>(() => {}) : { postRef: '1' }) },
-        { channel: 'instagram', mode: 'reel', post: async () => (calls++, undefined) },
+        { channel: 'facebook', mode: 'reel', post: async () => (calls++, hang ? new Promise<never>(() => {}) : { postRef: '1' }), remove: async () => {} },
+        { channel: 'instagram', mode: 'reel', post: async () => (calls++, undefined), remove: async () => {} },
       ],
     });
     const id = await t.ready();
@@ -649,8 +653,10 @@ describeWithSqlite('AU036 · une publication validée part vraiment sur les comp
     expect(await t.pubs.publish(t.alexV, id, [{ channel: 'facebook', account: 'reseau' }])).toMatchObject({ ok: true, value: { sends: [{ outcome: 'a_verifier' }] } });
     expect(calls).toBe(1);
     void first;
-    // Un canal réel qui ne rend aucune référence : rien ne prouve la publication, c'est un échec à réessayer.
-    expect(await t.pubs.publish(t.alexV, id, [{ channel: 'instagram', account: 'reseau' }])).toMatchObject({ ok: true, value: { sends: [{ outcome: 'a_verifier' }, { channel: 'instagram', outcome: 'echec', code: 'reponse_illisible', action: 'reessayer' }] } });
+    // Un canal réel accepté sans référence lisible a pu publier : à vérifier, jamais refait.
+    expect(await t.pubs.publish(t.alexV, id, [{ channel: 'instagram', account: 'reseau' }])).toMatchObject({ ok: true, value: { sends: [{ outcome: 'a_verifier' }, { channel: 'instagram', outcome: 'a_verifier', code: 'reponse_illisible', action: 'verifier' }] } });
+    expect(await t.pubs.publish(t.alexV, id, [{ channel: 'instagram', account: 'reseau' }])).toMatchObject({ ok: true });
+    expect(calls).toBe(2);
   });
 
   it('[R26] un essai réussi avant la mise en service n’empêche pas la vraie publication de la même cible', async () => {
@@ -667,6 +673,73 @@ describeWithSqlite('AU036 · une publication validée part vraiment sur les comp
       ['agent', 'reel', 'echec', 'compte_non_relie'],
       ['reseau', 'reel', 'envoye', null],
     ]);
+  });
+  it('[R134] la réponse perdue de l’appel qui publie : à vérifier, jamais refaite ; une panne avant lui se réessaie', async () => {
+    const g = fakeGraph({ down: ['111/feed'], fail: { media_publish: { status: 502, code: null } } });
+    const t = await setup({ live: () => metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: g.fetch }) });
+    const id = await t.ready();
+    expect(await t.pubs.publish(t.alexV, id, both)).toMatchObject({
+      ok: true,
+      value: {
+        sends: [
+          { channel: 'facebook', outcome: 'a_verifier', code: 'issue_inconnue', action: 'verifier', url: null },
+          { channel: 'instagram', outcome: 'a_verifier', code: 'issue_inconnue', action: 'verifier', url: null },
+        ],
+      },
+    });
+    const before = g.calls.length;
+    expect(await t.pubs.publish(t.alexV, id, both)).toMatchObject({ ok: true, value: { sends: [{ outcome: 'a_verifier' }, { outcome: 'a_verifier' }] } });
+    expect(g.calls.length).toBe(before);
+    // Un refus clair de Meta à l'appel qui publie dit que rien n'est fait : réessayable.
+    const g2 = fakeGraph({ fail: { '111/feed': { status: 400, code: 4 } } });
+    const t2 = await setup({ live: () => metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: g2.fetch }) });
+    const id2 = await t2.ready();
+    expect(await t2.pubs.publish(t2.alexV, id2, [both[0]])).toMatchObject({ ok: true, value: { sends: [{ outcome: 'echec', code: 'limite_atteinte', action: 'reessayer' }] } });
+  });
+
+  it('[R42] le bien ne peut plus être diffusé : chaque vraie publication est retirée chez le réseau, une fois ; une panne reste due', async () => {
+    const g = fakeGraph();
+    const t = await setup({ live: () => metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: g.fetch }) });
+    const id = await t.ready();
+    await t.pubs.publish(t.alexV, id, both);
+    // Porte ouverte : rien n'est retiré.
+    expect(await t.pubs.withdrawLive(t.network.id, t.p.id)).toEqual({ removed: [], failed: [], toVerify: [] });
+    expect(g.calls.some((c) => c.method === 'DELETE')).toBe(false);
+    t.state.diffusable = false;
+    // Facebook en panne au premier retrait : il reste dû et le passage planifié le reprend.
+    const flaky = fakeGraph({ fail: { '111_3': { status: 503, code: 2 } } });
+    const pubs2 = new Publications(t.db, (t.pubs as unknown as { acces: never }).acces, t.journal, { ...(t.pubs as unknown as { deps: ConstructorParameters<typeof Publications>[3] }).deps, channels: metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: flaky.fetch }) }, { live: true });
+    expect(await pubs2.withdrawLive(t.network.id, t.p.id, 'agent:x')).toEqual({ removed: [{ channel: 'instagram', account: 'reseau' }], failed: [{ channel: 'facebook', account: 'reseau', code: 'reseau_indisponible' }], toVerify: [] });
+    expect(flaky.calls.filter((c) => c.method === 'DELETE').map((c) => [c.path, c.params.access_token === TOKEN])).toEqual([
+      ['111_3', true],
+      ['9007', true],
+    ]);
+    expect(await t.pubs.withdrawAllLive(t.network.id)).toEqual([{ propertyId: t.p.id, result: { removed: [{ channel: 'facebook', account: 'reseau' }], failed: [], toVerify: [] } }]);
+    expect(await t.pubs.withdrawAllLive(t.network.id)).toEqual([]);
+    const view = await t.pubs.read(t.alexV, id);
+    expect(view.ok && view.value.sends.map((x) => [x.channel, x.outcome, x.url])).toEqual([
+      ['facebook', 'retiree', null],
+      ['instagram', 'retiree', null],
+    ]);
+    // Au journal : l'issue et la règle, jamais le jeton ni la référence.
+    const ev = await t.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'studio.publication.retrait'");
+    expect(ev.map((e) => JSON.parse(e.data)).map((d) => [d.channel, d.outcome, d.rule])).toEqual([
+      ['facebook', 'echec', 'R42'],
+      ['instagram', 'retiree', 'R42'],
+      ['facebook', 'retiree', 'R42'],
+    ]);
+    expect(JSON.stringify(ev)).not.toMatch(/111_3|9007|jeton/);
+  });
+
+  it('[R42] une publication déjà absente chez le réseau est retirée ; un envoi d’issue inconnue est dit à vérifier', async () => {
+    const g = fakeGraph({ down: ['media_publish'] });
+    const t = await setup({ live: () => metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: g.fetch }) });
+    const id = await t.ready();
+    await t.pubs.publish(t.alexV, id, both);
+    t.state.diffusable = false;
+    const gone = fakeGraph({ fail: { '111_3': { status: 400, code: 100 } } });
+    const pubs2 = new Publications(t.db, (t.pubs as unknown as { acces: never }).acces, t.journal, { ...(t.pubs as unknown as { deps: ConstructorParameters<typeof Publications>[3] }).deps, channels: metaSocialChannels({ network: ACCOUNT, mediaUrl, fetch: gone.fetch }) }, { live: true });
+    expect(await pubs2.withdrawLive(t.network.id, t.p.id)).toEqual({ removed: [{ channel: 'facebook', account: 'reseau' }], failed: [], toVerify: [{ channel: 'instagram', account: 'reseau' }] });
   });
 });
 

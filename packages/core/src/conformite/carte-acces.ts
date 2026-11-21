@@ -1061,6 +1061,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   social_post_attempts: out('sans_client', 'Essais d\'envoi d\'une publication, en mode essai : aucune personne.'),
   social_post_sends: out('sans_client', 'Issues des envois d\'une publication : aucune personne.'),
   social_live_attempts: out('sans_client', 'Envois réels d\'une publication vers un réseau (AU036) : aucune personne.'),
+  social_live_removals: out('sans_client', 'Retraits chez le réseau des vraies publications d\'un bien qui ne peut plus être diffusé : aucune personne.'),
   social_live_sends: out('sans_client', 'Issues des envois réels : référence et lien public de la publication chez le réseau, ou code de l\'échec ; aucune personne.'),
   social_calendar_rules: out('agent', 'Réglages du calendrier de publication d\'un agent (HX52) : nombres par réseau et heures, aucune personne.'),
   social_calendar_slots: out('sans_client', 'Créneaux du calendrier de publication (HX52) : un bien, une publication, un réseau, une heure ; aucune personne.'),

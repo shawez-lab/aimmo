@@ -232,6 +232,9 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   shop_order_validations: { via: [['order_id', 'shop_orders', 'id']] },
   social_calendar_outcomes: { via: [['slot_id', 'social_calendar_runs', 'slot_id']] },
   social_calendar_runs: { via: [['slot_id', 'social_calendar_slots', 'id']] },
+  social_live_attempts: { via: [['post_id', 'social_posts', 'id']] },
+  social_live_removals: { via: [['attempt_id', 'social_live_attempts', 'id']] },
+  social_live_sends: { via: [['attempt_id', 'social_live_attempts', 'id']] },
   social_post_attempts: { via: [['post_id', 'social_posts', 'id']] },
   social_post_sends: { via: [['attempt_id', 'social_post_attempts', 'id']] },
   social_post_validations: { via: [['post_id', 'social_posts', 'id']] },
@@ -363,7 +366,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   rental_applications rental_checks rental_fees rental_facts rental_listing_communes rental_owner_notices
   rental_fairness_receipts rental_presentations rental_listings shop_order_results shop_order_sends
   shop_order_validations shop_orders sign_pickup_tasks sign_removals sign_placements social_calendar_outcomes
-  social_calendar_runs social_calendar_slots social_post_sends social_post_attempts social_post_validations
+  social_calendar_runs social_calendar_slots social_live_removals social_live_sends social_live_attempts social_post_sends social_post_attempts social_post_validations
   social_visual_checks social_posts valuation_market_snapshots valuation_reports video_montages video_text_checks
   properties public_sites quiz_attestations quiz_attempts reprise_depot_morceaux reprise_depots sandbox_steps
   sandbox_runs social_calendar_rules sponsorships training_turns training_sessions vitrine_screen_switches

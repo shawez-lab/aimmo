@@ -144,6 +144,7 @@ import {
 import type { FeeSettings } from '../../core/src/partenaires/index.ts';
 import { Annuaire, MiseEnRelation } from '../../core/src/partenaires/index.ts';
 import { investirRoutes, type InvestirRoute, type InvestirServices } from './investir.ts';
+import { withdrawLiveNow } from './reseaux-reels.ts';
 import { readCapped, studioRoutes, type StudioRoute, type StudioServices } from './studio.ts';
 import { accordsRoutes, type AccordsRoute } from './accords.ts';
 import { biensFicheRoutes, type BiensFicheRoute } from './biens-fiche.ts';
@@ -2621,8 +2622,11 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       const propertyId = await retraits.propertyOfMandate(viewer.networkId, params[0]);
       if (propertyId !== null) {
         const done = await retraits.run(viewer.networkId, propertyId, `${String(viewer.role)}:${viewer.userId}`);
+        // AU036 · les vraies publications du bien sur les réseaux sont retirées dans le même geste ; ce qui échoue reste
+        // dû au passage planifié (`runLiveWithdrawals`) [R42].
+        const reseaux = config.studio?.social ? await withdrawLiveNow(s.db, s.journal, now, config.studio.social, viewer.networkId, propertyId, `${String(viewer.role)}:${viewer.userId}`) : null;
         const body = (await response.json()) as Record<string, unknown>;
-        return json(response.status, { ...body, retraits: { state: done.state, channels: done.channels, portals: done.portals, busy: done.busy } });
+        return json(response.status, { ...body, retraits: { state: done.state, channels: done.channels, portals: done.portals, busy: done.busy, ...(reseaux ? { reseaux } : {}) } });
       }
     }
     if (route.name === 'cles.appareils.retrait' && response.ok && params[0]) await retireApplicationKeysOf(s.db, s.journal, params[0], `${viewer.role}:${viewer.userId}`, now);

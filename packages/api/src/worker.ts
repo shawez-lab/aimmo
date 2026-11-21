@@ -14,12 +14,12 @@ import { R2VaultStorage, type R2VaultBucket } from './conformite.ts';
 import { R2PartnerFiles, type R2PartnerBucket } from './partenaires.ts';
 import { R2DossierStorage, type R2DossierBucket } from './commerces.ts';
 import { R2FichiersPlages, plagesBucket } from './reprise-fichiers.ts';
-import { BanGeocoder, DvfSiteSales, EstimationEnLigne, GpuUrbanism, httpDvfReader } from '@aimmo/core';
+import { BanGeocoder, DvfSiteSales, EstimationEnLigne, GpuUrbanism, httpDvfReader, SqlJournalStore } from '@aimmo/core';
 import type { StudioUploadStore } from '../../core/src/studio/depot.ts';
 import { readClesConfig } from './cles.ts';
 import { AdemeDiagnosisFeed } from '../../core/src/veille-dpe/index.ts';
 import { HttpPigeSource, missingPigeSettings, type PigeFetcher, type PigeProviderSettings, type PigeSource } from '../../core/src/pige/index.ts';
-import { liveSocialChannels } from './reseaux-reels.ts';
+import { liveSocialChannels, runLiveWithdrawals } from './reseaux-reels.ts';
 
 /**
  * Liaisons du Worker, déclarées dans wrangler.toml ; `API_KEYS` et `INTAKE_KEYS` sont des secrets Cloudflare.
@@ -278,6 +278,12 @@ export default {
     });
     // Le passage de publication (P10), une fois par quart d'heure, hors du planificateur horaire.
     if (env.MODE === TRIAL_MODE) await runListingSync(fromD1(env.DB), undefined, listingOptions(env));
+    // AU036 : les vraies publications d'un bien qui ne peut plus être diffusé sont retirées chez le réseau [R42].
+    const social = liveSocialChannels(env);
+    if (env.MODE === TRIAL_MODE && social) {
+      const db = fromD1(env.DB);
+      await runLiveWithdrawals(db, new SqlJournalStore(db), () => new Date(), social);
+    }
   },
   async email(message: InboundEmail, env: Env): Promise<void> {
     await handleEmail(message, {

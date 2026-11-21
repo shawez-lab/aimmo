@@ -7,7 +7,9 @@
  * ou l'une est mal formée : rien de réel, tous les réseaux restent d'essai [R26, R134]. Les autres réseaux (LinkedIn,
  * Google, TikTok, YouTube) restent d'essai tant qu'ils n'ont pas leur propre canal.
  */
-import { metaSocialChannels, SOCIAL_CHANNELS, trialSocialChannel, type SocialChannel } from '../../core/src/studio/index.ts';
+import { appendEvent, type JournalStore, type SqlDatabase } from '@aimmo/core';
+import { metaSocialChannels, SOCIAL_CHANNELS, trialSocialChannel, type LiveWithdrawal, type SocialChannel } from '../../core/src/studio/index.ts';
+import { studioCore } from './studio.ts';
 
 export interface SocialEnv {
   RESEAUX_MODE?: string | undefined;
@@ -43,4 +45,35 @@ export function liveSocialChannels(env: SocialEnv, doFetch: typeof fetch = fetch
   });
   const real = new Set(meta.map((c) => c.channel));
   return { channels: [...meta, ...SOCIAL_CHANNELS.filter((c) => !real.has(c)).map((c) => trialSocialChannel(c))], live: true };
+}
+
+/** Le stockage des fichiers n'est pas lu par les retraits : aucune pièce n'est demandée. */
+const NO_FILES = { has: async (): Promise<boolean> => false };
+
+const publicationsOf = (db: SqlDatabase, journal: JournalStore, now: () => Date, social: { channels: readonly SocialChannel[]; live: true }) =>
+  studioCore({ db, journal, now, files: NO_FILES, channels: social.channels, live: social.live }).publications;
+
+/**
+ * Le retrait immédiat des vraies publications d'un bien, à la rétractation ou à l'annulation de son mandat [R42]. Une
+ * panne n'empêche pas la réponse du geste : elle est écrite au journal et le passage planifié reprend.
+ */
+export async function withdrawLiveNow(db: SqlDatabase, journal: JournalStore, now: () => Date, social: { channels: readonly SocialChannel[]; live: true }, networkId: string, propertyId: string, actor: string): Promise<LiveWithdrawal | { error: 'retrait_reporte' }> {
+  try {
+    return await publicationsOf(db, journal, now, social).withdrawLive(networkId, propertyId, actor);
+  } catch {
+    await appendEvent(journal, { type: 'studio.publication.retrait_echec', actor, subject: `property:${propertyId}`, data: { rule: 'R42', code: 'erreur' } }, now);
+    return { error: 'retrait_reporte' };
+  }
+}
+
+/** Le passage planifié des retraits : chaque réseau qui a une vraie publication pas encore retirée [R42]. */
+export async function runLiveWithdrawals(db: SqlDatabase, journal: JournalStore, now: () => Date, social: { channels: readonly SocialChannel[]; live: true }): Promise<number> {
+  const networks = await db.all<{ network_id: string }>(
+    `SELECT DISTINCT p.network_id FROM social_posts p JOIN social_live_attempts a ON a.post_id = p.id JOIN social_live_sends s ON s.attempt_id = a.id
+     WHERE s.outcome = 'envoye' AND NOT EXISTS (SELECT 1 FROM social_live_removals r WHERE r.attempt_id = a.id AND r.outcome = 'retire') ORDER BY p.network_id`,
+  );
+  const publications = publicationsOf(db, journal, now, social);
+  let removed = 0;
+  for (const n of networks) for (const r of await publications.withdrawAllLive(n.network_id)) removed += r.result?.removed.length ?? 0;
+  return removed;
 }

@@ -17,8 +17,12 @@
  *
  * Chaque échec devient une erreur `SocialSendError` avec un code fermé et ce que l'agent peut faire : réessayer
  * (réseau indisponible, limite atteinte), reconnecter (jeton expiré, droits retirés), relier (compte de l'agent pas
- * encore relié), corriger (contenu ou visuel refusé, qui ne repart jamais tel quel). Ni le jeton, ni le texte, ni la
+ * encore relié), corriger (contenu ou visuel refusé, qui ne repart jamais tel quel), vérifier (la réponse de l'appel
+ * qui publie s'est perdue : la publication a pu être faite, elle n'est jamais refaite). Ni le jeton, ni le texte, ni la
  * réponse du réseau ne sortent d'ici : seul le code [R13].
+ *
+ * Retirer (R42) : `DELETE` sur la publication, chez Facebook comme chez Instagram ; une publication déjà absente est
+ * tenue pour retirée.
  */
 import { SocialSendError, type SocialChannel, type SocialPayload } from './publications.ts';
 
@@ -72,17 +76,23 @@ export function metaSocialChannels(config: MetaChannelsConfig): SocialChannel[] 
   const doFetch = config.fetch ?? fetch;
   const timeoutMs = config.timeoutMs ?? 15_000;
 
-  const call = async (method: 'GET' | 'POST', path: string, params: Record<string, string>): Promise<Json> => {
+  /**
+   * Un appel à l'API Graph. `final` : l'appel qui publie. Sa réponse perdue (réseau coupé, délai dépassé, panne du
+   * réseau, réponse illisible) ne dit pas si la publication est faite : l'issue est inconnue, à vérifier, jamais refaite.
+   * Seul un refus clair de Meta (une erreur 4xx avec son code) dit qu'elle ne l'est pas.
+   */
+  const call = async (method: 'GET' | 'POST' | 'DELETE', path: string, params: Record<string, string>, final = false): Promise<Json> => {
     const body = new URLSearchParams({ ...params, access_token: network.token });
+    const lost = (): SocialSendError => (final ? new SocialSendError('issue_inconnue', 'verifier', true) : new SocialSendError('reseau_indisponible', 'reessayer'));
     let res: Response;
     try {
-      res = await doFetch(method === 'GET' ? `${GRAPH}/${path}?${body.toString()}` : `${GRAPH}/${path}`, {
+      res = await doFetch(method === 'POST' ? `${GRAPH}/${path}` : `${GRAPH}/${path}?${body.toString()}`, {
         method,
         ...(method === 'POST' ? { body, headers: { 'content-type': 'application/x-www-form-urlencoded' } } : {}),
         signal: AbortSignal.timeout(timeoutMs),
       });
     } catch {
-      throw new SocialSendError('reseau_indisponible', 'reessayer');
+      throw lost();
     }
     let data: unknown = null;
     try {
@@ -90,13 +100,27 @@ export function metaSocialChannels(config: MetaChannelsConfig): SocialChannel[] 
     } catch {
       data = null;
     }
+    const refused = data !== null && typeof data === 'object' && typeof ((data as Json).error as Json | undefined)?.code === 'number';
+    if (final && !refused && (!res.ok || data === null || typeof data !== 'object')) throw lost();
+    if (final && refused && res.status >= 500) throw lost();
     if (!res.ok || data === null || typeof data !== 'object' || (data as Json).error) throw metaError(res.status, data);
     return data as Json;
   };
-  const idOf = (data: Json): string => {
+  const idOf = (data: Json, final = false): string => {
     const id = data.id ?? data.post_id;
-    if (typeof id !== 'string' || !/^[0-9_]{1,64}$/.test(id)) throw new SocialSendError('reponse_illisible', 'reessayer');
+    if (typeof id !== 'string' || !/^[0-9_]{1,64}$/.test(id)) throw final ? new SocialSendError('reponse_illisible', 'verifier', true) : new SocialSendError('reponse_illisible', 'reessayer');
     return id;
+  };
+  /** Retirer une publication : déjà absente chez le réseau (code 100), elle est retirée [R42]. */
+  const remove = async (postRef: string, account: SocialPayload['account']): Promise<void> => {
+    if (account !== 'reseau') throw new SocialSendError('compte_non_relie', 'relier');
+    if (!/^[0-9_]{1,64}$/.test(postRef)) throw new SocialSendError('reference_illisible', 'verifier');
+    try {
+      await call('DELETE', postRef, {});
+    } catch (error) {
+      if (error instanceof SocialSendError && error.code === 'contenu_refuse') return;
+      throw error;
+    }
   };
   /** Le lien public relu chez le réseau, en https chez Facebook ou Instagram seulement ; sinon null. */
   const permalink = async (id: string, field: 'permalink_url' | 'permalink'): Promise<string | null> => {
@@ -130,9 +154,10 @@ export function metaSocialChannels(config: MetaChannelsConfig): SocialChannel[] 
       for (const url of urls(payload)) photos.push(idOf(await call('POST', `${network.pageId}/photos`, { url, published: 'false' })));
       const params: Record<string, string> = { message: caption(payload, true) };
       photos.forEach((id, i) => (params[`attached_media[${i}]`] = JSON.stringify({ media_fbid: id })));
-      const postRef = idOf(await call('POST', `${network.pageId}/feed`, params));
+      const postRef = idOf(await call('POST', `${network.pageId}/feed`, params, true), true);
       return { postRef, url: await permalink(postRef, 'permalink_url') };
     },
+    remove,
   };
 
   const instagram: SocialChannel = {
@@ -150,9 +175,10 @@ export function metaSocialChannels(config: MetaChannelsConfig): SocialChannel[] 
         for (const image_url of images) children.push(idOf(await call('POST', `${network.igUserId}/media`, { image_url, is_carousel_item: 'true' })));
         container = idOf(await call('POST', `${network.igUserId}/media`, { media_type: 'CAROUSEL', children: children.join(','), caption: text }));
       }
-      const postRef = idOf(await call('POST', `${network.igUserId}/media_publish`, { creation_id: container }));
+      const postRef = idOf(await call('POST', `${network.igUserId}/media_publish`, { creation_id: container }, true), true);
       return { postRef, url: await permalink(postRef, 'permalink') };
     },
+    remove,
   };
 
   return [facebook, instagram];

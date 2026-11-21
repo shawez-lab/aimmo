@@ -18,14 +18,30 @@ CREATE TRIGGER IF NOT EXISTS social_live_attempts_fige BEFORE UPDATE ON social_l
 
 CREATE TABLE IF NOT EXISTS social_live_sends (
   attempt_id TEXT PRIMARY KEY REFERENCES social_live_attempts (id) ON DELETE RESTRICT,
-  outcome TEXT NOT NULL CHECK (outcome IN ('envoye', 'echec')),
+  -- « incertain » : la réponse du dernier appel s'est perdue, la publication a pu être faite ; jamais refaite.
+  outcome TEXT NOT NULL CHECK (outcome IN ('envoye', 'echec', 'incertain')),
   post_ref TEXT,
   url TEXT CHECK (url IS NULL OR (url LIKE 'https://%' AND length(url) <= 500)),
   error_code TEXT,
-  action TEXT CHECK (action IS NULL OR action IN ('reessayer', 'reconnecter', 'relier', 'corriger')),
+  action TEXT CHECK (action IS NULL OR action IN ('reessayer', 'reconnecter', 'relier', 'corriger', 'verifier')),
   done_at TEXT NOT NULL,
   CHECK ((outcome = 'envoye' AND post_ref IS NOT NULL AND error_code IS NULL AND action IS NULL)
-      OR (outcome = 'echec' AND post_ref IS NULL AND url IS NULL AND error_code IS NOT NULL AND action IS NOT NULL))
+      OR (outcome = 'echec' AND post_ref IS NULL AND url IS NULL AND error_code IS NOT NULL AND action IN ('reessayer', 'reconnecter', 'relier', 'corriger'))
+      OR (outcome = 'incertain' AND post_ref IS NULL AND url IS NULL AND error_code IS NOT NULL AND action = 'verifier'))
 );
 CREATE TRIGGER IF NOT EXISTS social_live_sends_garde BEFORE DELETE ON social_live_sends BEGIN SELECT RAISE(ABORT, 'social_live_sends : rien ne s''efface'); END;
 CREATE TRIGGER IF NOT EXISTS social_live_sends_fige BEFORE UPDATE ON social_live_sends BEGIN SELECT RAISE(ABORT, 'social_live_sends : un envoi ne change plus'); END;
+
+-- Le retrait chez le réseau d'une vraie publication dont le bien ne peut plus être diffusé [R42] : chaque essai, et
+-- un seul « retiré » par envoi. Un retrait en échec reste dû au passage planifié.
+CREATE TABLE IF NOT EXISTS social_live_removals (
+  id TEXT PRIMARY KEY,
+  attempt_id TEXT NOT NULL REFERENCES social_live_attempts (id) ON DELETE RESTRICT,
+  outcome TEXT NOT NULL CHECK (outcome IN ('retire', 'echec')),
+  error_code TEXT,
+  done_at TEXT NOT NULL,
+  CHECK ((outcome = 'retire' AND error_code IS NULL) OR (outcome = 'echec' AND error_code IS NOT NULL))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS social_live_removals_une_fois ON social_live_removals (attempt_id) WHERE outcome = 'retire';
+CREATE TRIGGER IF NOT EXISTS social_live_removals_garde BEFORE DELETE ON social_live_removals BEGIN SELECT RAISE(ABORT, 'social_live_removals : rien ne s''efface'); END;
+CREATE TRIGGER IF NOT EXISTS social_live_removals_fige BEFORE UPDATE ON social_live_removals BEGIN SELECT RAISE(ABORT, 'social_live_removals : un retrait ne change plus'); END;

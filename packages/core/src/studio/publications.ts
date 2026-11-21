@@ -84,14 +84,19 @@ export interface SocialPayload {
 export const SOCIAL_MODES = ['essai', 'reel'] as const;
 export type SocialMode = (typeof SOCIAL_MODES)[number];
 /** Ce que l'agent peut faire d'un envoi en échec. */
-export const SEND_ACTIONS = ['reessayer', 'reconnecter', 'relier', 'corriger'] as const;
+export const SEND_ACTIONS = ['reessayer', 'reconnecter', 'relier', 'corriger', 'verifier'] as const;
 export type SendAction = (typeof SEND_ACTIONS)[number];
 
-/** L'échec d'un envoi réel, dit par son canal : un code fermé et une action, jamais le texte du réseau [R13]. */
+/**
+ * L'échec d'un envoi réel, dit par son canal : un code fermé et une action, jamais le texte du réseau [R13]. `uncertain`
+ * quand la publication a pu être faite malgré tout (réponse perdue au dernier appel) : elle n'est jamais refaite, elle
+ * reste à vérifier.
+ */
 export class SocialSendError extends Error {
   constructor(
     readonly code: string,
     readonly action: SendAction,
+    readonly uncertain = false,
   ) {
     super(code);
     this.name = 'SocialSendError';
@@ -107,6 +112,16 @@ export interface SocialChannel {
    * Un canal réel rend toujours sa référence, et le lien public relu chez lui (null s'il n'a pas pu être relu).
    */
   post(payload: SocialPayload): Promise<void | { postRef: string; url?: string | null }>;
+  /** Retire une publication réelle chez le réseau (R42) ; obligatoire pour un canal réel. Déjà absente : retirée. */
+  remove?(postRef: string, account: SocialAccount): Promise<void>;
+}
+
+/** Le retrait des vraies publications d'un bien qui ne peut plus être diffusé [R42]. */
+export interface LiveWithdrawal {
+  removed: { channel: SocialChannelName; account: SocialAccount }[];
+  failed: { channel: SocialChannelName; account: SocialAccount; code: string }[];
+  /** Les envois dont l'issue est inconnue : rien à retirer sans leur référence, à vérifier chez le réseau. */
+  toVerify: { channel: SocialChannelName; account: SocialAccount }[];
 }
 
 /** Le canal d'essai : rien ne part ; l'essai est rangé avec son issue. */
@@ -128,8 +143,11 @@ export interface SocialPost {
     channel: SocialChannelName;
     account: SocialAccount;
     mode: SocialMode;
-    /** « a_verifier » : un envoi réel parti sans issue rangée depuis plus de 10 minutes ; il n'est jamais doublé. */
-    outcome: 'envoye' | 'echec' | 'en_cours' | 'a_verifier';
+    /**
+     * « a_verifier » : un envoi réel dont l'issue est inconnue (réponse perdue, ou sans issue rangée depuis plus de 10
+     * minutes) ; il n'est jamais doublé. « retiree » : une vraie publication retirée chez le réseau [R42].
+     */
+    outcome: 'envoye' | 'echec' | 'en_cours' | 'a_verifier' | 'retiree';
     url: string | null;
     code: string | null;
     action: SendAction | null;
@@ -237,6 +255,8 @@ export class Publications {
       // Aucun canal réel sans la mise en service explicite (AU036) [R26, R134].
       if (!(SOCIAL_MODES as readonly unknown[]).includes(c.mode)) throw new Error('Mode inconnu');
       if (c.mode !== 'essai' && options.live !== true) throw new Error(`Canal ${String(c.channel)} refusé : seul le mode essai est en service`);
+      // Ce qui part pour de vrai doit pouvoir être retiré dès que le bien ne peut plus être diffusé [R42].
+      if (c.mode === 'reel' && typeof c.remove !== 'function') throw new Error(`Canal ${String(c.channel)} refusé : un canal réel doit savoir retirer`);
       if (!(SOCIAL_CHANNELS as readonly string[]).includes(c.channel)) throw new Error('Canal inconnu');
       this.channels.set(c.channel, c);
     }
@@ -447,23 +467,28 @@ export class Publications {
       let outcome: 'envoye' | 'echec' = 'envoye';
       let sent: void | { postRef: string; url?: string | null } = undefined;
       let failure: { code: string; action: SendAction } | null = null;
+      let uncertain = false;
       try {
         sent = await channel.post({ postId, account: w.account, text: post.value.text, visuals: current.visuals.map(({ ref, overlay, certificatePath }) => ({ ref, overlay, certificatePath })), link: tracked?.link ?? null });
-        // Un envoi réel sans référence chez le réseau n'est pas prouvé : il est tenu pour un échec, à réessayer.
+        // Un envoi réel accepté sans référence lisible a pu être publié : jamais refait, à vérifier chez le réseau.
         if (live && !(sent && typeof sent.postRef === 'string' && POST_REF.test(sent.postRef))) {
           outcome = 'echec';
-          failure = { code: 'reponse_illisible', action: 'reessayer' };
+          uncertain = true;
+          failure = { code: 'reponse_illisible', action: 'verifier' };
           sent = undefined;
         }
       } catch (error) {
         outcome = 'echec';
-        failure = error instanceof SocialSendError && CODE.test(error.code) && (SEND_ACTIONS as readonly string[]).includes(error.action) ? { code: error.code, action: error.action } : { code: 'erreur', action: 'reessayer' };
+        const known = error instanceof SocialSendError && CODE.test(error.code) && (SEND_ACTIONS as readonly string[]).includes(error.action);
+        // Un canal réel qui ne dit pas clairement « refusé » a pu publier : l'issue est inconnue, rien ne repart.
+        uncertain = live && (!known || (error as SocialSendError).uncertain || (error as SocialSendError).action === 'verifier');
+        failure = known && !uncertain ? { code: (error as SocialSendError).code, action: (error as SocialSendError).action } : uncertain ? { code: known ? (error as SocialSendError).code : 'issue_inconnue', action: 'verifier' } : { code: 'erreur', action: 'reessayer' };
       }
       if (live) {
         const url = outcome === 'envoye' && typeof sent?.url === 'string' && safeUrl(sent.url) ? sent.url : null;
         await this.db.run('INSERT INTO social_live_sends (attempt_id, outcome, post_ref, url, error_code, action, done_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
           attempt,
-          outcome,
+          uncertain ? 'incertain' : outcome,
           outcome === 'envoye' ? sent!.postRef : null,
           url,
           failure?.code ?? null,
@@ -475,7 +500,7 @@ export class Publications {
       }
       await appendEvent(
         this.journal,
-        { type: 'studio.publication.envoi', actor, subject, data: { post: postId, channel: w.channel, account: w.account, mode: channel.mode, outcome, ...(failure && live ? { code: failure.code, action: failure.action } : {}), rule: live ? 'R134' : 'R26' } },
+        { type: 'studio.publication.envoi', actor, subject, data: { post: postId, channel: w.channel, account: w.account, mode: channel.mode, outcome: uncertain ? 'incertain' : outcome, ...(failure && live ? { code: failure.code, action: failure.action } : {}), rule: live ? 'R134' : 'R26' } },
         this.now,
       );
       // Relié seulement une fois l'envoi noté : rien ne se glisse entre un envoi et sa trace.
@@ -490,6 +515,70 @@ export class Publications {
       }
     }
     return { ok: true, value: (await this.view(postId))! };
+  }
+
+  /**
+   * Retire chez le réseau chaque vraie publication d'un bien que la porte de diffusion ferme (rétractation, annulation,
+   * fin du mandat…) [R42]. Un geste du système, lancé tout de suite par la rétractation ou l'annulation, et repris par
+   * le passage planifié jusqu'à ce que tout soit retiré. Un retrait en panne reste dû ; un envoi d'issue inconnue est
+   * dit à vérifier. Rien n'est fait tant que la porte est ouverte.
+   */
+  async withdrawLive(networkId: string, propertyId: string, actor = 'system:publication'): Promise<LiveWithdrawal> {
+    const out: LiveWithdrawal = { removed: [], failed: [], toVerify: [] };
+    if ((await this.deps.diffusion.canDiffuse(networkId, propertyId, this.now())).allowed) return out;
+    const subject = `property:${propertyId}`;
+    const rows = await this.db.all<{ attempt_id: string; post_id: string; channel: SocialChannelName; account: SocialAccount; outcome: 'envoye' | 'incertain'; post_ref: string | null }>(
+      `SELECT a.id AS attempt_id, a.post_id, a.channel, a.account, s.outcome, s.post_ref
+       FROM social_posts p JOIN social_live_attempts a ON a.post_id = p.id JOIN social_live_sends s ON s.attempt_id = a.id
+       WHERE p.network_id = ? AND p.property_id = ? AND s.outcome IN ('envoye', 'incertain')
+         AND NOT EXISTS (SELECT 1 FROM social_live_removals r WHERE r.attempt_id = a.id AND r.outcome = 'retire')
+       ORDER BY a.channel, a.account, a.post_id`,
+      [networkId, propertyId],
+    );
+    for (const r of rows) {
+      const target = { channel: r.channel, account: r.account };
+      if (r.outcome === 'incertain' || r.post_ref === null) {
+        out.toVerify.push(target);
+        await appendEvent(this.journal, { type: 'studio.publication.retrait', actor, subject, data: { post: r.post_id, channel: r.channel, account: r.account, outcome: 'a_verifier', rule: 'R42' } }, this.now);
+        continue;
+      }
+      const channel = this.channels.get(r.channel);
+      let code: string | null = null;
+      if (!channel || channel.mode !== 'reel' || !channel.remove) code = 'canal_hors_service';
+      else {
+        try {
+          await channel.remove(r.post_ref, r.account);
+        } catch (error) {
+          code = error instanceof SocialSendError && CODE.test(error.code) ? error.code : 'erreur';
+        }
+      }
+      await this.db.run('INSERT INTO social_live_removals (id, attempt_id, outcome, error_code, done_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [this.newId(), r.attempt_id, code === null ? 'retire' : 'echec', code, this.now().toISOString()]);
+      await appendEvent(this.journal, { type: 'studio.publication.retrait', actor, subject, data: { post: r.post_id, channel: r.channel, account: r.account, outcome: code === null ? 'retiree' : 'echec', ...(code ? { code } : {}), rule: 'R42' } }, this.now);
+      if (code === null) out.removed.push(target);
+      else out.failed.push({ ...target, code });
+    }
+    return out;
+  }
+
+  /** Le passage planifié des retraits : chaque bien du réseau dont une vraie publication n'est pas encore retirée [R42]. */
+  async withdrawAllLive(networkId: string): Promise<{ propertyId: string; result: LiveWithdrawal | null }[]> {
+    const rows = await this.db.all<{ property_id: string }>(
+      `SELECT DISTINCT p.property_id FROM social_posts p JOIN social_live_attempts a ON a.post_id = p.id JOIN social_live_sends s ON s.attempt_id = a.id
+       WHERE p.network_id = ? AND s.outcome = 'envoye' AND NOT EXISTS (SELECT 1 FROM social_live_removals r WHERE r.attempt_id = a.id AND r.outcome = 'retire')
+       ORDER BY p.property_id`,
+      [networkId],
+    );
+    const out: { propertyId: string; result: LiveWithdrawal | null }[] = [];
+    for (const r of rows) {
+      try {
+        out.push({ propertyId: r.property_id, result: await this.withdrawLive(networkId, r.property_id) });
+      } catch {
+        // Un bien en erreur n'arrête pas les retraits des autres ; il est repris au passage suivant [R42].
+        await appendEvent(this.journal, { type: 'studio.publication.retrait_echec', actor: 'system:publication', subject: `property:${r.property_id}`, data: { rule: 'R42', code: 'erreur' } }, this.now);
+        out.push({ propertyId: r.property_id, result: null });
+      }
+    }
+    return out;
   }
 
   /** Les mentions d'un événement d'annonce : leur texte, null si l'événement n'en porte pas, ou « incomplètes » [R43]. */
@@ -545,7 +634,7 @@ export class Publications {
           [postId, w.channel, w.account],
         );
     if (rows.some((r) => r.outcome === 'envoye')) return null;
-    if (rows.some((r) => r.action === 'corriger')) return null;
+    if (rows.some((r) => r.action === 'corriger' || r.outcome === 'incertain')) return null;
     // Un envoi réel sans issue n'est jamais doublé : il a pu partir. Sa cible attend qu'on la regarde chez le réseau.
     if (rows.some((r) => r.outcome === null && (live || this.now().getTime() - Date.parse(r.claimed_at) < IN_FLIGHT_MS))) return null;
     if (rows.length >= MAX_ATTEMPTS) return null;
@@ -591,8 +680,10 @@ export class Publications {
       `SELECT a.channel, a.account, s.outcome FROM social_post_attempts a LEFT JOIN social_post_sends s ON s.attempt_id = a.id WHERE a.post_id = ? ORDER BY a.channel, a.account, a.attempt`,
       [postId],
     );
-    const liveAttempts = await this.db.all<{ channel: SocialChannelName; account: SocialAccount; claimed_at: string; outcome: 'envoye' | 'echec' | null; url: string | null; error_code: string | null; action: SendAction | null }>(
-      `SELECT a.channel, a.account, a.claimed_at, s.outcome, s.url, s.error_code, s.action FROM social_live_attempts a LEFT JOIN social_live_sends s ON s.attempt_id = a.id WHERE a.post_id = ? ORDER BY a.channel, a.account, a.attempt`,
+    const liveAttempts = await this.db.all<{ channel: SocialChannelName; account: SocialAccount; claimed_at: string; outcome: 'envoye' | 'echec' | 'incertain' | null; url: string | null; error_code: string | null; action: SendAction | null; retired: number }>(
+      `SELECT a.channel, a.account, a.claimed_at, s.outcome, s.url, s.error_code, s.action,
+              EXISTS (SELECT 1 FROM social_live_removals r WHERE r.attempt_id = a.id AND r.outcome = 'retire') AS retired
+       FROM social_live_attempts a LEFT JOIN social_live_sends s ON s.attempt_id = a.id WHERE a.post_id = ? ORDER BY a.channel, a.account, a.attempt`,
       [postId],
     );
     const last = new Map<string, SocialPost['sends'][number]>();
@@ -605,9 +696,10 @@ export class Publications {
     const real = new Set<string>();
     for (const a of liveAttempts) {
       const key = `${a.channel}/${a.account}`;
-      if (real.has(key) && last.get(key)?.outcome === 'envoye') continue;
+      if (real.has(key) && ['envoye', 'retiree', 'a_verifier'].includes(last.get(key)!.outcome)) continue;
       real.add(key);
-      last.set(key, { channel: a.channel, account: a.account, mode: 'reel', outcome: a.outcome ?? (this.now().getTime() - Date.parse(a.claimed_at) < IN_FLIGHT_MS ? 'en_cours' : 'a_verifier'), url: a.url, code: a.error_code, action: a.action });
+      const outcome = a.outcome === 'envoye' ? (Number(a.retired) === 1 ? 'retiree' : 'envoye') : a.outcome === 'incertain' ? 'a_verifier' : (a.outcome ?? (this.now().getTime() - Date.parse(a.claimed_at) < IN_FLIGHT_MS ? 'en_cours' : 'a_verifier'));
+      last.set(key, { channel: a.channel, account: a.account, mode: 'reel', outcome, url: outcome === 'envoye' ? a.url : null, code: a.error_code, action: a.action });
     }
     return {
       id: row.id,
