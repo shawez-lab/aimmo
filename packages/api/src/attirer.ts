@@ -4,7 +4,8 @@
  * Routes de l'application, sous `/v1/attirer` (le préfixe `/v1` est retiré par `app.ts`) :
  *   prix regroupés (AT01) : versions, zones, recalcul ; page de l'agent (AT03) : mentions, titulaire, aperçu ;
  *   référencement (AT04) : sites et plans ; origine des contacts (AT05) : mesure du mois ; fiche Google (AT06) :
- *   avis, réponses, validations, publications ; pages de quartier (AT07) : données, textes, validations.
+ *   avis, réponses, validations, publications ; pages de quartier (AT07) : données, textes, validations ; tableau de
+ *   mise en service (AU088) : les preuves déclarées par la direction et les fonctions qu'elles ferment [R675].
  * Chaque route dit les rôles qu'elle admet : un autre rôle est refusé avant que le corps soit lu, et le refus est écrit
  * au journal [R16]. La couche métier refait ses propres contrôles. Rien ne part réellement : fiche Google et IndexNow
  * restent en mode essai [R26].
@@ -27,7 +28,7 @@
  * chantier est en mode essai, les pages ne sont pas indexées (`x-robots-tag`, `robots.txt`).
  */
 import { FicheClient, FicheUnique, Rapprochement, appendEvent, pilotage, renderPublicPage, type JournalStore, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
-import { MentionsSite, renderLegalNotice, renderPrivacyPage, withLegalLinks, OrigineContacts, PageAgent, QualiteAgent, PagesQuartier, PrixRegroupes, Referencement, HOME_LISTINGS, latestListings, parseListingsQuery, parseDirectoryPage, renderAgentsList, renderListingsPage, renderPricesList, renderSiteHome, renderNeighbourhoodPage, renderPricePage, selectListings, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
+import { MentionsSite, siteReady, renderLegalNotice, renderPrivacyPage, withLegalLinks, OrigineContacts, PageAgent, QualiteAgent, PagesQuartier, PrixRegroupes, Referencement, HOME_LISTINGS, latestListings, parseListingsQuery, parseDirectoryPage, renderAgentsList, renderListingsPage, renderPricesList, renderSiteHome, renderNeighbourhoodPage, renderPricePage, selectListings, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 import { FicheGoogle, type GbpClient, type ReviewReplyWriter } from '../../core/src/attirer/fiche-google.ts';
 import { loanSimulatorHeaders, renderLoanSimulatorPage } from '../../core/src/attirer/simulateur-pret.ts';
 import type { DiffusionGate } from '../../core/src/acquereurs/rapprochement.ts';
@@ -35,6 +36,7 @@ import { handleEstimationPage, type EstimationPageConfig } from './estimation.ts
 import { countPublicView, type CountedKind } from './statistiques-site.ts';
 import { RechercheLangage } from '../../core/src/recherche/langage-courant.ts';
 import { keepPublished, parsePublicSearchQuery, publicSearchSteps, renderPublicSearchPage, type PublicSearchPageInput } from '../../core/src/recherche/page-publique.ts';
+import { MiseEnService } from '../../core/src/conformite/mise-en-service.ts';
 import { isRobotVisit } from '../../core/src/statistiques-site/robots.ts';
 import { ProgrammesNeufs, renderNewBuildGrid } from '../../core/src/neuf-viager/index.ts';
 
@@ -224,6 +226,9 @@ export function attirerRoutes(): AttirerRoute[] {
     // RS05 · mentions légales du site
     { method: 'GET', pattern: new RegExp(`${P}/mentions-site$`), name: 'attirer.site_mentions', roles: DIRECTION, handle: async (s, v) => reply(value(await new MentionsSite(s.db, s.journal, { now: s.now }).read(v.networkId))) },
     { method: 'POST', pattern: new RegExp(`${P}/mentions-site$`), name: 'attirer.site_mention', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await new MentionsSite(s.db, s.journal, { now: s.now }).set(v, b))) },
+    // AU088 · le tableau de mise en service : preuves déclarées par la direction, et les fonctions qu'elles ferment [R675]
+    { method: 'GET', pattern: new RegExp(`${P}/mise-en-service$`), name: 'attirer.mise_en_service', roles: DIRECTION, handle: async (s, v) => reply(value(await new MiseEnService(s.db, s.journal, { now: s.now }).board(v.networkId))) },
+    { method: 'POST', pattern: new RegExp(`${P}/mise-en-service$`), name: 'attirer.mise_en_service_preuve', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await new MiseEnService(s.db, s.journal, { now: s.now }).declare(v, b))) },
     // AT04 · référencement
     { method: 'GET', pattern: new RegExp(`${P}/sites$`), name: 'attirer.sites', roles: DIRECTION, handle: async (s, v) => reply(value(await services(s).referencement.sites(v.networkId))) },
     { method: 'POST', pattern: new RegExp(`${P}/sites$`), name: 'attirer.site', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).referencement.setSite(v, b))) },
@@ -395,8 +400,8 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
   if (!found) return notFound();
   const { networkId, site } = found;
   const legal = new MentionsSite(s.db, s.journal, { now: s.now });
-  // Une mention légale manque : le site reste en essai, non indexé [R221].
-  const mode: 'essai' | 'reel' = s.mode === 'reel' && (await legal.read(networkId)).missing.length === 0 ? 'reel' : 'essai';
+  // Une mention légale manque, ou une preuve de mise en service n'est pas valide : le site reste en essai, non indexé [R221, R675].
+  const mode: 'essai' | 'reel' = s.mode === 'reel' && siteReady(await legal.read(networkId)) ? 'reel' : 'essai';
   const html = (body: string): Response => new Response(request.method === 'HEAD' ? null : withLegalLinks(body), { status: 200, headers: pageHeaders('text/html; charset=utf-8', mode) });
   const m = PUBLIC_PATHS[kind].exec(path)!;
   // La page servie compte une vue de son contenu (BR41) ; rien du visiteur, et compter ne change jamais la page [R285].

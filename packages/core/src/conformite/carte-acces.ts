@@ -589,6 +589,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   card_holders: out('sans_client', 'Titulaire de la carte professionnelle du réseau.'),
   agent_title_settings: out('sans_client', 'Titre écrit à côté du nom des agents, réglé par la direction.'),
   site_legal_mentions: out('sans_client', 'Mentions légales du site, réglées par la direction.'),
+  launch_proofs: out('sans_client', 'Preuves de mise en service du réseau (carte, garantie, assurance, médiateur, relecture), déclarées par la direction (AU088) : aucun client.'),
   listing_drafts: { locate: [via('property_id', 'properties')] },
   listing_validations: { locate: [via('property_id', 'properties')] },
   listing_translations: { locate: [via('property_id', 'properties')] },

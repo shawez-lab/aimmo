@@ -86,6 +86,7 @@ export const CARTE_FICHIERS: Readonly<Record<string, ClasseReference>> = {
   'registered_letter_events.proof_ref': P,
   'rental_choices.proof_ref': P,
   'property_installations.proof_ref': P,
+  'launch_proofs.proof_ref': P,
   'sale_file_closings.proof_ref': P,
   'sale_file_conditions.proof_ref': P,
   'sale_file_dates.proof_ref': P,

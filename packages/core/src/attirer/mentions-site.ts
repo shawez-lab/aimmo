@@ -2,12 +2,14 @@
  * Les mentions légales et les données personnelles du site (RS05) [R221, R10, R16, R17].
  *
  * Rien n'est écrit d'avance : chaque mention vient des réglages du réseau, ou se dit manquante, sur la page comme à
- * l'écran. Tant qu'une mention manque, le site reste en essai : ni indexé, ni signalé aux moteurs. Le numéro de carte et son
+ * l'écran. Tant qu'une mention manque, ou qu'une preuve du tableau de mise en service n'est pas valide (AU088, R675), le
+ * site reste en essai : ni indexé, ni signalé aux moteurs. Le numéro de carte et son
  * titulaire viennent des réglages qui existent déjà, sans seconde saisie.
  *
  * Ces textes attendent la relecture de l'avocat, et leur contenu réel la société (H09).
  */
 import type { Viewer } from '../acces/droits.ts';
+import { LAUNCH_PREREQUISITES, MiseEnService } from '../conformite/mise-en-service.ts';
 import { REGISTRE_TRAITEMENTS } from '../conformite/registre-traitements.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { DESIGN_CSS, THEME_COLOR } from '../design/systeme.ts';
@@ -40,8 +42,13 @@ export interface SiteMentions {
   values: Partial<Record<SiteMentionField, string>>;
   cardNumber: string | null;
   cardHolder: string | null;
-  /** Les intitulés de ce qui manque ; vide, le site peut passer en réel. */
+  /** Les intitulés de ce qui manque. */
   missing: string[];
+  /**
+   * Les preuves du tableau de mise en service qui ne sont pas valides ce jour (AU088) [R675] : leurs intitulés. Le site
+   * ne passe en réel qu'avec `missing` et `launchClosedBy` vides.
+   */
+  launchClosedBy: string[];
 }
 
 export type SiteMentionsResult = { ok: true } | { ok: false; rule: 'R16' | null; code: string };
@@ -76,7 +83,8 @@ export class MentionsSite {
     const missing: string[] = (Object.keys(SITE_MENTION_FIELDS) as SiteMentionField[]).filter((f) => !values[f]).map((f) => SITE_MENTION_FIELDS[f]);
     if (!cardNumber) missing.push(CARD_LABEL);
     if (!cardHolder) missing.push(HOLDER_LABEL);
-    return { values, cardNumber, cardHolder, missing };
+    const gate = await new MiseEnService(this.db, this.journal, { now: this.now }).gate(networkId, 'site_reel');
+    return { values, cardNumber, cardHolder, missing, launchClosedBy: gate.closedBy.map((p) => LAUNCH_PREREQUISITES[p]) };
   }
 
   /** La direction règle une ou plusieurs mentions ; un texte vide retire la mention. Chaque réglage s'ajoute [R17]. */
@@ -125,8 +133,15 @@ function shell(title: string, body: string): string {
 
 const line = (label: string, value: string | null | undefined): string => `<dt>${escapeHtml(label)}</dt><dd>${value ? escapeHtml(value) : '<span class="manque">Mention manquante</span>'}</dd>`;
 const field = (m: SiteMentions, f: SiteMentionField): string => line(SITE_MENTION_FIELDS[f], m.values[f]);
-const alert = (m: SiteMentions): string =>
-  m.missing.length > 0 ? `<p class="alerte" role="status">Cette page n’est pas complète : ${m.missing.length === 1 ? 'une mention manque' : `${m.missing.length} mentions manquent`}. Le site reste en essai tant que c’est le cas.</p>` : '';
+/** Le site peut-il passer en réel : aucune mention ne manque et chaque preuve de mise en service est valide [R221, R675]. */
+export const siteReady = (m: SiteMentions): boolean => m.missing.length === 0 && m.launchClosedBy.length === 0;
+
+const alert = (m: SiteMentions): string => {
+  if (m.missing.length > 0) return `<p class="alerte" role="status">Cette page n’est pas complète : ${m.missing.length === 1 ? 'une mention manque' : `${m.missing.length} mentions manquent`}. Le site reste en essai tant que c’est le cas.</p>`;
+  // Les preuves elles-mêmes restent à l'écran de la direction : la page dit seulement que le site n'est pas ouvert.
+  if (m.launchClosedBy.length > 0) return '<p class="alerte" role="status">Ce site n’est pas encore ouvert : sa mise en service n’est pas terminée. Il reste en essai tant que c’est le cas.</p>';
+  return '';
+};
 
 export function renderLegalNotice(m: SiteMentions): string {
   return shell(

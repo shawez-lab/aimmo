@@ -1,4 +1,6 @@
 import { MentionsSite, SITE_MENTION_FIELDS } from '../src/attirer/mentions-site.ts';
+import { MiseEnService, launchDay } from '../src/conformite/mise-en-service.ts';
+import { launchProofInputs } from './mise-en-service-jeu.ts';
 import { expect, it } from 'vitest';
 import { SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
 import { PageAgent, Referencement, agentStructuredData, jsonLd, listingStructuredData, renderSitemap, type IndexNowClient } from '../src/attirer/index.ts';
@@ -27,15 +29,22 @@ async function setup(options: { indexNow?: IndexNowClient; mode?: 'essai' | 'ree
   return { db, journal, ref, now };
 }
 
-/** Toutes les mentions du site, inventées ; sans `all`, il en manque encore une. */
-async function completeMentions(db: SqlDatabase, journal: SqlJournalStore, all: boolean) {
+/**
+ * Toutes les mentions du site, inventées ; sans `all`, il en manque encore une. Avec `proofs` (par défaut : `all`), les
+ * preuves du tableau de mise en service sont aussi déclarées, valides ce jour (AU088).
+ */
+async function completeMentions(db: SqlDatabase, journal: SqlJournalStore, all: boolean, now: () => Date = () => new Date(), proofs = all) {
   const fields = Object.keys(SITE_MENTION_FIELDS).filter((f) => all || f !== 'mediateur');
-  expect(await new MentionsSite(db, journal).set(direction, Object.fromEntries(fields.map((f) => [f, `Texte inventé ${f}`])))).toEqual({ ok: true });
-  if (await db.first("SELECT 1 AS x FROM listing_settings WHERE id = 's-mentions'")) return;
-  await db.exec('PRAGMA foreign_keys = OFF');
-  await db.run("INSERT INTO listing_settings (id, network_id, card_number, set_by, set_at) VALUES ('s-mentions', 'net-1', 'CPI 0000', 'direction:dir-1', 'x')");
-  await db.run("INSERT INTO card_holders (id, network_id, holder_name, set_by, set_at) VALUES ('h-mentions', 'net-1', 'Société Exemple', 'direction:dir-1', 'x')");
-  await db.exec('PRAGMA foreign_keys = ON');
+  expect(await new MentionsSite(db, journal, { now }).set(direction, Object.fromEntries(fields.map((f) => [f, `Texte inventé ${f}`])))).toEqual({ ok: true });
+  if (!(await db.first("SELECT 1 AS x FROM listing_settings WHERE id = 's-mentions'"))) {
+    await db.exec('PRAGMA foreign_keys = OFF');
+    await db.run("INSERT INTO listing_settings (id, network_id, card_number, set_by, set_at) VALUES ('s-mentions', 'net-1', 'CPI 0000', 'direction:dir-1', 'x')");
+    await db.run("INSERT INTO card_holders (id, network_id, holder_name, set_by, set_at) VALUES ('h-mentions', 'net-1', 'Société Exemple', 'direction:dir-1', 'x')");
+    await db.exec('PRAGMA foreign_keys = ON');
+  }
+  if (!proofs) return;
+  const launch = new MiseEnService(db, journal, { now });
+  for (const input of launchProofInputs(launchDay(now()), 'CPI 0000')) expect((await launch.declare(direction, input)).ok).toBe(true);
 }
 
 async function listing(db: SqlDatabase, id: string, agent: string, seq: number, state: string, title = `Maison ${id}`, price = 250000) {
@@ -145,6 +154,10 @@ describeWithSqlite('AT04 · référencement : plan du site, données structurée
     await completeMentions(t.db, t.journal, false);
     expect((await real.signalChanges('net-1')).mode).toBe('essai');
     expect(sent).toEqual([]);
+    // [R675] Toutes les mentions, mais aucune preuve de mise en service : toujours l'essai.
+    await completeMentions(t.db, t.journal, true, undefined, false);
+    expect((await real.signalChanges('net-1')).mode).toBe('essai');
+    expect(sent).toEqual([]);
     await completeMentions(t.db, t.journal, true);
     expect(await real.signalChanges('net-1')).toEqual({ mode: 'reel', signalled: 1, failed: 0 });
     expect(sent).toEqual([`${CAMILLE}/biens/b1`]);
@@ -164,7 +177,7 @@ describeWithSqlite('AT04 · référencement : plan du site, données structurée
       },
     });
     await sites(t);
-    await completeMentions(t.db, t.journal, true);
+    await completeMentions(t.db, t.journal, true, t.now);
     await listing(t.db, 'b1', 'ag-1', 1, 'en_vente');
     await listing(t.db, 'b2', 'ag-3', 1, 'en_vente');
     expect(await t.ref.signalChanges('net-1')).toEqual({ mode: 'reel', signalled: 1, failed: 1 });
