@@ -85,7 +85,7 @@ function figuresOf(f: ReminderFacts): string[] {
   return [f.label, `${euros(f.amountCents)} €`, ...received, frenchDay(f.issuedOn), frenchDay(f.dueOn)];
 }
 
-type Problem = { ok: false; rule: null | 'R553'; code: 'unknown' | 'not_pending' };
+type Problem = { ok: false; rule: null | 'R553'; code: 'unknown' | 'not_pending' | 'texte_a_refaire' };
 
 export class RelancesImpayes {
   private readonly now: () => Date;
@@ -181,8 +181,14 @@ export class RelancesImpayes {
     for (const inv of invoices) {
       if (!inv.person_id) continue;
       const last = await this.db.first<{ rank: number; status: ReminderStatus; rule: string | null; updated_at: string }>('SELECT rank, status, rule, updated_at FROM invoice_reminders WHERE invoice_id = ? ORDER BY rank DESC LIMIT 1', [inv.id]);
+      if (last && last.status === 'a_valider' && last.rule === 'paiement_partiel') {
+        // AU094b · remise à valider par une nouvelle part : son texte se refait au reste à jour, à son rang, sans en
+        // prendre un autre [R553].
+        if (await this.refresh(inv, last.rank)) made += 1;
+        continue;
+      }
       if (last) {
-        // Fermée par une nouvelle part de paiement (AU094) : le reste dû se relance, avec son montant à jour.
+        // Fermée par une nouvelle part de paiement avant AU094b : le reste dû se relance, avec son montant à jour.
         const replaced = last.status === 'close' && last.rule === 'paiement_partiel';
         if (last.status === 'a_valider' || last.status === 'validee' || (last.status === 'close' && !replaced)) continue;
         if (last.rank >= MAX_REMINDERS) continue;
@@ -227,6 +233,31 @@ export class RelancesImpayes {
     return { ok: true, value: rows.map((r) => ({ id: r.id, invoiceId: r.invoice_id, label: r.label, rank: r.rank, text: r.text, status: r.status, rule: r.rule, preparedAt: r.prepared_at, validatedBy: r.validated_by })) };
   }
 
+  /** Refait le texte d'une relance remise à valider par une nouvelle part, au reste dû à jour, et lève la règle. */
+  private async refresh(inv: { id: string; person_id: string | null; file_id: string; label: string; amount_cents: number; issued_on: string }, rank: number): Promise<boolean> {
+    if (!inv.person_id) return false;
+    const sentBefore = await this.db.first<{ n: number }>("SELECT COUNT(*) AS n FROM invoice_reminders WHERE invoice_id = ? AND status = 'envoyee'", [inv.id]);
+    const facts: ReminderFacts = {
+      firstName: await ficheFirstName(this.db, await this.unique.membersOf(inv.person_id)),
+      alreadySent: sentBefore?.n ?? 0,
+      label: inv.label,
+      amountCents: inv.amount_cents,
+      receivedCents: await this.receivedOf(inv.id),
+      issuedOn: inv.issued_on,
+      dueOn: addDays(inv.issued_on, this.paymentDays),
+    };
+    const text = unpaidReminderText(facts);
+    if (fundsInOutgoing(text)) return false;
+    const at = this.now().toISOString();
+    const { changes } = await this.db.run(
+      "UPDATE invoice_reminders SET text = ?, prepared_at = ?, rule = NULL, updated_at = ? WHERE invoice_id = ? AND rank = ? AND status = 'a_valider' AND rule = 'paiement_partiel'",
+      [text, at, at, inv.id, rank],
+    );
+    if (changes !== 1) return false;
+    await appendEvent(this.journal, { type: 'facture.relance', actor: 'system:facturation', subject: `sale_file:${inv.file_id}`, data: { rule: 'R553', client: `person:${inv.person_id}`, invoice: inv.id, rank, status: 'a_valider', refaite: true } }, this.now);
+    return true;
+  }
+
   /** La direction valide le texte préparé, tel quel : il partira au passage suivant [R553]. */
   async validate(viewer: Viewer, reminderId: string): Promise<{ ok: true } | Refusal | Problem> {
     const refusal = await directionRefusal(this.journal, this.now, viewer, 'invoice_reminder');
@@ -236,10 +267,14 @@ export class RelancesImpayes {
     if (!row || row.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown' };
     const at = this.now().toISOString();
     const { changes } = await this.db.run(
-      "UPDATE invoice_reminders SET status = 'validee', validated_by = ?, validated_at = ?, updated_at = ? WHERE id = ? AND status = 'a_valider'",
+      // Un texte à refaire (une part reçue depuis) ne se valide pas : le passage de préparation le refait d'abord.
+      "UPDATE invoice_reminders SET status = 'validee', validated_by = ?, validated_at = ?, updated_at = ? WHERE id = ? AND status = 'a_valider' AND rule IS NOT 'paiement_partiel'",
       [actorOf(viewer), at, at, reminderId],
     );
-    if (changes !== 1) return { ok: false, rule: 'R553', code: 'not_pending' };
+    if (changes !== 1) {
+      const stale = await this.db.first("SELECT 1 AS one FROM invoice_reminders WHERE id = ? AND status = 'a_valider' AND rule = 'paiement_partiel'", [reminderId]);
+      return { ok: false, rule: 'R553', code: stale ? 'texte_a_refaire' : 'not_pending' };
+    }
     const file = await this.db.first<{ file_id: string }>('SELECT file_id FROM invoices WHERE id = ?', [row.invoice_id]);
     await appendEvent(this.journal, { type: 'facture.relance', actor: actorOf(viewer), subject: `sale_file:${file?.file_id ?? ''}`, data: { rule: 'R553', client: `person:${row.person_id}`, invoice: row.invoice_id, status: 'validee' } }, this.now);
     return { ok: true };

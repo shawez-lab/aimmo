@@ -431,12 +431,13 @@ describeWithSqlite('HX49 · factures fournisseurs, rapprochement bancaire et rel
     expect(pending).not.toBeNull();
     await t.db.run("INSERT INTO bank_lines (id, network_id, day, amount_cents, invoice_refs, imported_by, created_at) VALUES ('ligne-1000', ?, '2027-07-16', 100000, '[]', 'x', 'y')", [t.network.id]);
     expect((await t.banque.allocate(t.direction, 'ligne-1000', [{ invoiceId: t.invoice.id, amountCents: 100_000 }])).ok).toBe(true);
-    expect(await t.db.first('SELECT status, rule FROM invoice_reminders WHERE id = ?', [pending!.id])).toEqual({ status: 'close', rule: 'paiement_partiel' });
-    // La relance suivante, au passage d'après l'intervalle, dit le reste à jour.
-    t.setClock(at9('2027-08-05'));
-    await t.banque.importStatement(t.direction, '2027-08-04;VIR AUTRE;1,00\n');
+    // AU094b : la même relance, à son rang, remise à valider avec son texte à refaire ; elle ne se valide pas ainsi.
+    expect(await t.db.first('SELECT status, rule, rank FROM invoice_reminders WHERE id = ?', [pending!.id])).toEqual({ status: 'a_valider', rule: 'paiement_partiel', rank: 1 });
+    expect(await relances.validate(t.direction, pending!.id)).toMatchObject({ ok: false, code: 'texte_a_refaire' });
+    // Le passage suivant refait son texte au reste à jour, sans prendre de rang.
     expect(await relances.prepare(t.network.id)).toBe(1);
-    const next = await t.db.first<{ text: string; status: string }>("SELECT text, status FROM invoice_reminders WHERE status = 'a_valider' ORDER BY rank DESC LIMIT 1");
+    const next = await t.db.first<{ id: string; text: string; status: string; rule: string | null; rank: number }>("SELECT id, text, status, rule, rank FROM invoice_reminders WHERE status = 'a_valider' ORDER BY rank DESC LIMIT 1");
+    expect(next).toMatchObject({ id: pending!.id, status: 'a_valider', rule: null, rank: 1 });
     expect(next?.text).toContain('Nous en avons reçu 7 000,00 € ; 3 000,00 €');
     // La base refuse une ligne d'avant la facture, même écrite à la main.
     await t.db.run("INSERT INTO bank_lines (id, network_id, day, amount_cents, invoice_refs, imported_by, created_at) VALUES ('ligne-avant', ?, '2027-06-01', 100000, '[]', 'x', 'y')", [t.network.id]);
@@ -454,6 +455,37 @@ describeWithSqlite('HX49 · factures fournisseurs, rapprochement bancaire et rel
     // La relance en attente se ferme.
     await relances.closeSettledReminders(t.network.id);
     expect(await t.db.all("SELECT status FROM invoice_reminders WHERE status IN ('a_valider', 'validee')")).toEqual([]);
+  });
+
+  it('[R553] AU094b · trois parts reçues avant tout envoi : la relance garde son rang, et les trois rangs restent aux envois', async () => {
+    const t = await invoiced();
+    t.setClock(at9('2027-07-15'));
+    await t.store.addIdentifier({ networkId: t.network.id, personId: t.buyerId, kind: 'email', value: 'acheteur@example.test' });
+    await t.store.addConsent({ networkId: t.network.id, personId: t.buyerId, purpose: SALE_FOLLOW_UP_PURPOSE, channel: 'email', proof: 'mandat', givenAt: new Date('2027-02-10T09:00:00.000Z') });
+    const relances = new RelancesImpayes(t.db, t.journal, { now: t.now });
+    t.setClock(at9('2027-07-20'));
+    expect(await relances.prepare(t.network.id)).toBe(1);
+    // Trois parts, l'une après l'autre ; la relance validée entre deux est remise à valider, jamais envoyée avec un montant faux.
+    for (const [n, day] of [[1, '2027-07-16'], [2, '2027-07-17'], [3, '2027-07-18']] as const) {
+      const r = await t.db.first<{ id: string }>("SELECT id FROM invoice_reminders WHERE status = 'a_valider'");
+      if (n === 2) expect((await relances.validate(t.direction, r!.id)).ok).toBe(true);
+      await t.db.run('INSERT INTO bank_lines (id, network_id, day, amount_cents, invoice_refs, imported_by, created_at) VALUES (?, ?, ?, 100000, \'[]\', \'x\', \'y\')', [`part-${n}`, t.network.id, day]);
+      expect((await t.banque.allocate(t.direction, `part-${n}`, [{ invoiceId: t.invoice.id, amountCents: 100_000 }])).ok).toBe(true);
+      expect(await relances.prepare(t.network.id)).toBe(1);
+    }
+    const rows = await t.db.all<{ rank: number; status: string; rule: string | null; text: string }>('SELECT rank, status, rule, text FROM invoice_reminders ORDER BY rank');
+    expect(rows.map((r) => [r.rank, r.status, r.rule])).toEqual([[1, 'a_valider', null]]);
+    expect(rows[0]!.text).toContain('Nous en avons reçu 3 000,00 € ; 7 000,00 €');
+    // Validée, son texte ne change pas ; en envoi, elle ne se remet pas à valider ; partie, elle ne change plus.
+    const id = (await t.db.first<{ id: string }>('SELECT id FROM invoice_reminders'))!.id;
+    expect((await relances.validate(t.direction, id)).ok).toBe(true);
+    await expect(t.db.run("UPDATE invoice_reminders SET text = 'autre' WHERE id = ?", [id])).rejects.toThrow();
+    await t.db.run("UPDATE invoice_reminders SET sending_at = 'x' WHERE id = ?", [id]);
+    await expect(t.db.run("UPDATE invoice_reminders SET status = 'a_valider', rule = 'paiement_partiel', validated_by = NULL, validated_at = NULL WHERE id = ?", [id])).rejects.toThrow();
+    await t.db.run('UPDATE invoice_reminders SET sending_at = NULL WHERE id = ?', [id]);
+    expect(await relances.send(t.network.id)).toBe(1);
+    await expect(t.db.run("UPDATE invoice_reminders SET status = 'a_valider', rule = 'paiement_partiel', validated_by = NULL, validated_at = NULL WHERE id = ?", [id])).rejects.toThrow();
+    await expect(t.db.run("UPDATE invoice_reminders SET text = 'autre' WHERE id = ?", [id])).rejects.toThrow();
   });
 
   it('[R16] [R551] AU094 · la direction seule partage ; une ligne déjà rapprochée un à un, un débit ou une facture corrigée n’en prennent pas', async () => {
