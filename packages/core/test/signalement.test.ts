@@ -13,7 +13,7 @@ const NOW = new Date('2027-03-09T09:00:00.000Z');
 const LONG_AGO = new Date('2026-01-01T00:00:00.000Z');
 const NOTE = 'Paiement proposé en espèces, sans explication.';
 
-async function setup() {
+async function setup(options: { dispositif?: boolean } = {}) {
   const t = await setupAnnonce();
   t.setClock(NOW);
   const signalement = new conformite.SignalementSoupcon(t.db, t.acces, t.journal, { now: t.now });
@@ -26,10 +26,48 @@ async function setup() {
   await t.store.addIdentifier({ networkId: t.network.id, personId: t.personId, kind: 'email', value: 'lea.exemple@example.test' });
   await t.store.addConsent({ networkId: t.network.id, personId: t.personId, purpose: 'follow_up', channel: 'email', proof: 'formulaire test', givenAt: LONG_AGO });
   const mandateRef = `mandate:${t.mandateId}`;
-  return { ...t, signalement, controle, outbox, mandateRef, conformite: as('compliance', 'conformite-1'), partner: as('partner', 'partenaire-1') };
+  // AU089 · le responsable nommé par la direction, et la procédure approuvée (inventés) : sans eux, personne ne lit.
+  const dispositif = new conformite.DispositifLcb(t.db, t.journal, { now: t.now });
+  if (options.dispositif !== false) await dispositif.designate(t.direction, 'conformite-1');
+  if (options.dispositif !== false) await dispositif.approveProcedure(t.direction, { documentRef: 'procedures/lcb-v1.pdf', documentSha256: 'a'.repeat(64), approvedBy: 'Avocat Essai', approvedOn: '2027-03-01' });
+  return { ...t, signalement, controle, outbox, mandateRef, dispositif, as, conformite: as('compliance', 'conformite-1'), partner: as('partner', 'partenaire-1') };
 }
 
 describeWithSqlite('L05 · signaler au responsable', () => {
+  it('[R94] [R16] AU089 · dossier témoin : sans responsable nommé personne ne lit ; nommé, lui seul ; sans procédure approuvée, il ne décide pas', async () => {
+    const t = await setup({ dispositif: false });
+    // L'agent signale toujours : le dossier est figé et attend le responsable.
+    expect(await t.signalement.report(t.agent, t.mandateRef, { note: NOTE })).toEqual({ ok: true, status: 'transmis' });
+    // Le constat : n'importe quel compte de conformité lisait et décidait, sans responsable nommé ni procédure.
+    expect(await t.signalement.list(t.conformite)).toEqual({ ok: false, rule: 'R16', code: 'pas_de_responsable' });
+    expect(await t.dispositif.status(t.direction)).toEqual({ ok: true, value: { officer: null, procedure: null, ready: false } });
+    // La direction seule nomme ; l'identifiant est contrôlé.
+    expect(await t.dispositif.designate(t.agent, 'conformite-1')).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.dispositif.designate(t.direction, 'un nom avec espaces')).toEqual({ ok: false, rule: null, code: 'bad_officer' });
+    expect((await t.dispositif.designate(t.direction, 'conformite-1')).ok).toBe(true);
+    // Un autre compte de conformité ne lit rien.
+    expect(await t.signalement.list(t.as('compliance', 'conformite-2'))).toEqual({ ok: false, rule: 'R16', code: 'pas_responsable' });
+    const list = await t.signalement.list(t.conformite);
+    const id = list.ok ? list.value[0]!.reportId : '';
+    expect(list.ok && list.value).toHaveLength(1);
+    const decision = { decision: 'pas_de_declaration', reason: 'Explication écrite reçue (essai).', validatorName: 'Responsable Essai' };
+    expect(await t.signalement.decide(t.conformite, id, decision)).toEqual({ ok: false, rule: 'R16', code: 'procedure_non_approuvee' });
+    // La procédure approuvée : version, document, avocat, jour ; jamais dans le futur.
+    const proc = { documentRef: 'procedures/lcb-v1.pdf', documentSha256: 'b'.repeat(64), approvedBy: 'Avocat Essai', approvedOn: '2027-03-01' };
+    expect(await t.dispositif.approveProcedure(t.direction, { ...proc, approvedOn: '2099-01-01' })).toEqual({ ok: false, rule: null, code: 'bad_day' });
+    expect(await t.dispositif.approveProcedure(t.direction, { ...proc, documentSha256: 'x' })).toEqual({ ok: false, rule: null, code: 'bad_document' });
+    const ready = await t.dispositif.approveProcedure(t.direction, proc);
+    expect(ready).toMatchObject({ ok: true, value: { officer: { userId: 'conformite-1' }, procedure: { version: 1, approvedBy: 'Avocat Essai', approvedOn: '2027-03-01' }, ready: true } });
+    expect((await t.signalement.decide(t.conformite, id, decision)).ok).toBe(true);
+    // Une nouvelle nomination remplace l'ancienne : l'ancien responsable ne lit plus.
+    await t.dispositif.designate(t.direction, 'conformite-2');
+    expect(await t.signalement.list(t.conformite)).toEqual({ ok: false, rule: 'R16', code: 'pas_responsable' });
+    expect((await t.signalement.list(t.as('compliance', 'conformite-2'))).ok).toBe(true);
+    // Rien ne change ni ne s'efface [R17].
+    await expect(t.db.run("UPDATE lcb_officers SET officer_user_id = 'x'")).rejects.toThrow();
+    await expect(t.db.run('DELETE FROM lcb_procedures')).rejects.toThrow();
+  });
+
   it('[R94] [R16] seul le responsable voit le signalement ; l’agent qui l’a fait voit seulement « transmis »', async () => {
     const t = await setup();
     expect(await t.signalement.report(t.agent, t.mandateRef, { note: NOTE })).toEqual({ ok: true, status: 'transmis' });

@@ -686,6 +686,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       freeze_match_decisions: ['match_id', 'reason', 'validator_name', 'decided_by'],
       // HX76 : chaque dossier remis au responsable de la conformité d'une agence sous licence, avec qui l'a tiré.
       licence_lcb_exports: ['made_by'],
+      // AU089 : le responsable nommé et la procédure approuvée, avec qui les a rangés.
+      lcb_officers: ['officer_user_id', 'designated_by'],
+      lcb_procedures: ['document_sha256', 'approved_by', 'recorded_by'],
     },
   },
   {
@@ -1547,6 +1550,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   freeze_checks: ['id', 'network_id', 'version_id', 'result', 'checked_at'],
   freeze_matches: ['id', 'network_id', 'check_id', 'created_at'],
   freeze_match_decisions: ['network_id', 'decision', 'decided_on', 'at'],
+  lcb_officers: ['network_id', 'seq', 'designated_at'],
+  lcb_procedures: ['network_id', 'version', 'document_ref', 'approved_on', 'created_at'],
   partners: ['id', 'network_id', 'trade', 'created_at'],
   partner_zones: ['partner_id', 'network_id', 'created_at'],
   partner_credentials: ['id', 'network_id', 'partner_id', 'kind', 'domain', 'version', 'number', 'valid_from', 'valid_until', 'recorded_at'],

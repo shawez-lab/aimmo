@@ -69,6 +69,8 @@ export const ORDRE_LCB: readonly string[] = [
   'freeze_registry_entries',
   'freeze_registry_versions',
   'licence_lcb_exports',
+  'lcb_procedures',
+  'lcb_officers',
 ];
 
 type Json = string | number | boolean | null;
