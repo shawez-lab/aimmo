@@ -98,15 +98,15 @@ describeWithSqlite('AU009 · coacquéreurs d’une offre et de son dossier', () 
     expect(await e.record(t.agent, t.fileId, { kind: 'acte_prevu', day: '2027-06-10', proofRef: PROOF, personId: co })).toMatchObject({ ok: false, code: 'unknown_buyer' });
     const lead = await e.record(t.agent, t.fileId, { kind: 'notification_acquereur', day: '2027-03-11', proofRef: PROOF, personId: t.buyerId });
     expect(lead.ok && lead.value.buyers).toEqual([
-      { personId: t.buyerId, lead: true, notifiedOn: '2027-03-11', version: 1, lastDay: '2027-03-22' },
-      { personId: co, lead: false, notifiedOn: null, version: null, lastDay: null },
+      { personId: t.buyerId, lead: true, notifiedOn: '2027-03-11', version: 1, lastDay: '2027-03-22', calendar: 'national', calendarReason: null },
+      { personId: co, lead: false, notifiedOn: null, version: null, lastDay: null, calendar: 'national', calendarReason: null },
     ]);
     // Le coacquéreur n'est pas encore notifié : la rétractation reste à saisir.
     expect(lead.ok && lead.value.lines[0]).toMatchObject({ deadline: 'fin_retractation', status: 'a_saisir', day: null });
     expect(await e.record(t.agent, t.fileId, { kind: 'notification_acquereur', day: '2027-03-09', proofRef: PROOF, personId: co })).toMatchObject({ ok: false, code: 'before_compromis' });
     expect(await e.record(t.agent, t.fileId, { kind: 'notification_acquereur', day: '2027-03-17', proofRef: PROOF, personId: co })).toMatchObject({ ok: false, code: 'future_day' });
     const both = await e.record(t.agent, t.fileId, { kind: 'notification_acquereur', day: '2027-03-13', proofRef: PROOF, personId: co });
-    expect(both.ok && both.value.buyers[1]).toEqual({ personId: co, lead: false, notifiedOn: '2027-03-13', version: 1, lastDay: '2027-03-23' });
+    expect(both.ok && both.value.buyers[1]).toEqual({ personId: co, lead: false, notifiedOn: '2027-03-13', version: 1, lastDay: '2027-03-23', calendar: 'national', calendarReason: null });
     expect(both.ok && both.value.lines[0]).toMatchObject({ status: 'datee', day: '2027-03-23' });
     // Une correction s'ajoute en nouvelle version, l'ancienne reste [R17].
     const fixed = await e.record(t.agent, t.fileId, { kind: 'notification_acquereur', day: '2027-03-15', proofRef: PROOF, personId: co });
@@ -230,7 +230,7 @@ describeWithSqlite('AU009 · coacquéreurs d’une offre et de son dossier', () 
     await e.record(t.agent, t.fileId, { kind: 'notification_acquereur', day: '2027-03-13', proofRef: PROOF, personId: co });
     await t.db.run('UPDATE persons SET agent_id = ? WHERE id = ?', [t.sam.userId, co!]);
     const s = await e.schedule(t.agent, t.fileId);
-    expect(s.ok && s.value.buyers[1]).toEqual({ personId: null, lead: false, notifiedOn: null, version: null, lastDay: null });
+    expect(s.ok && s.value.buyers[1]).toEqual({ personId: null, lead: false, notifiedOn: null, version: null, lastDay: null, calendar: null, calendarReason: null });
     expect(s.ok && s.value.lines[0]).toMatchObject({ status: 'datee', day: '2027-03-23' });
     expect(JSON.stringify(s)).not.toContain(co!);
     const { SuiviOffres } = await import('../src/offres/suivi-offres.ts');

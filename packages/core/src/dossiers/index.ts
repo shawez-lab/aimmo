@@ -12,3 +12,4 @@ export * from './arret.ts';
 export * from './chemin-critique.ts';
 export * from './a-tenir.ts';
 export * from './installations.ts';
+export * from './calendrier.ts';
