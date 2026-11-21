@@ -41,7 +41,27 @@ export const PUBLICITE_REFUSALS: Readonly<Record<string, string>> = Object.freez
   pas_lancee: 'Cette campagne n’a jamais été lancée.',
   depense_sans_lancement: 'Cette campagne n’a jamais été lancée.',
   depense_hors_validation: 'La demande n’a pas pu être lue. Rechargez l’écran.',
+  plafond: 'Le budget total dépasse le plafond réglé pour les campagnes réelles : baissez-le, ou faites relever le plafond.',
 });
+
+/** AU038 : le mode de la campagne, lu dans l'accusé de la plateforme. */
+export const PUBLICITE_MODES: Readonly<Record<string, string>> = Object.freeze({
+  essai: 'Mode essai : rien n’est payé.',
+  reel: 'Mode réel : la plateforme dépense, dans les budgets validés et sous le plafond.',
+});
+
+/** AU038 : le dernier échec d'un appel à la plateforme, en mots, avec le geste à faire. */
+export const PUBLICITE_FAILURES: Readonly<Record<string, string>> = Object.freeze({
+  reconnecter: 'La connexion au compte publicitaire a expiré : reconnectez le compte du réseau.',
+  acces: 'AIMMO n’a pas l’accès au compte publicitaire : donnez-lui l’accès depuis la plateforme.',
+  refusee: 'La plateforme a refusé la campagne : corrigez-la, puis validez de nouveaux budgets.',
+  lieu_inconnu: 'Une commune n’est pas encore connue de la plateforme : ajoutez-la aux lieux réglés, puis relancez.',
+  rayon: 'Ce rayon est trop petit pour une annonce de logement sur cette plateforme : portez-le à 25 km au moins.',
+  indisponible: 'La plateforme n’a pas répondu : réessayez dans un moment.',
+  inconnue: 'La plateforme a répondu sans qu’on sache si la campagne est partie : vérifiez sur la plateforme.',
+});
+
+export const PUBLICITE_STEPS: Readonly<Record<string, string>> = Object.freeze({ lancement: 'Au lancement', pause: 'À la pause', depense: 'À la lecture de la dépense' });
 
 /** Une écriture sans réponse, ou coupée par une panne du serveur, a pu passer : l'écran ne dit ni fait ni pas fait. */
 export const PUBLICITE_LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Relisez les campagnes avant de recommencer.';
@@ -51,7 +71,7 @@ export const PUBLICITE_PLATFORMS: Readonly<Record<string, string>> = Object.free
 export const PUBLICITE_STATES: Readonly<Record<string, string>> = Object.freeze({
   a_valider: 'À valider : rien ne se dépense avant la validation de ses budgets.',
   validee: 'Validée, pas encore lancée.',
-  en_cours: 'En cours, en mode essai : rien n’est payé.',
+  en_cours: 'En cours.',
   arretee: 'Arrêtée',
 });
 
@@ -90,6 +110,9 @@ globalThis.AIMMO_PUBLICITE = function (t) {
   var PLATFORMS = ${JSON.stringify(PUBLICITE_PLATFORMS)};
   var STATES = ${JSON.stringify(PUBLICITE_STATES)};
   var STOPS = ${JSON.stringify(PUBLICITE_STOPS)};
+  var MODES = ${JSON.stringify(PUBLICITE_MODES)};
+  var FAILURES = ${JSON.stringify(PUBLICITE_FAILURES)};
+  var STEPS = ${JSON.stringify(PUBLICITE_STEPS)};
   var CONFIRM = ${JSON.stringify(PUBLICITE_CONFIRM)};
   var LOST = ${JSON.stringify(PUBLICITE_LOST)};
   var OFFLINE = 'Pas de réseau. Réessayez dans un moment.';
@@ -157,9 +180,13 @@ globalThis.AIMMO_PUBLICITE = function (t) {
     var st = STATES[c.state] || 'État inconnu : relisez les campagnes.';
     if (c.state === 'arretee') st += STOPS[c.stopReason] ? ' ' + STOPS[c.stopReason] + '.' : '.';
     li.appendChild(el('p', st, c.state === 'arretee' ? 'alerte' : 'doux'));
+    if (MODES[c.mode]) li.appendChild(el('p', MODES[c.mode], c.mode === 'reel' ? 'alerte' : 'doux'));
+    var f = c.failure && typeof c.failure === 'object' ? c.failure : null;
+    if (f) li.appendChild(el('p', (STEPS[f.step] || 'À un appel') + ' : ' + (FAILURES[f.code] || FAILURES.inconnue), 'alerte'));
     var dl = el('dl');
     row(dl, 'Dépense', euros(c.spendCents));
     row(dl, 'Contacts', count(c.contacts));
+    if (whole(c.pendingArrivals) && c.pendingArrivals > 0) row(dl, 'Demandes pas encore rattachées à une fiche', String(c.pendingArrivals));
     row(dl, 'Mandats signés par ces contacts', count(c.mandates));
     row(dl, 'Actes', count(c.sales));
     row(dl, 'Coût par contact', per(c.costPerContactCents, 'pas encore de contact'));
@@ -172,7 +199,7 @@ globalThis.AIMMO_PUBLICITE = function (t) {
     if (c.state === 'validee') {
       var go = button('Lancer', function () {
         if (!confirmed(go, 'Lancer', 'lancer')) return;
-        write(BASE + '/' + encodeURIComponent(id) + '/lancement', null, 'Campagne lancée, en mode essai : rien n’est payé.', 'La campagne n’est pas lancée.');
+        write(BASE + '/' + encodeURIComponent(id) + '/lancement', null, 'Campagne lancée : son mode et l’accusé de la plateforme se lisent dans la liste.', 'La campagne n’est pas lancée.');
       });
       li.appendChild(go);
     }

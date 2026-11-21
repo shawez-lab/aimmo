@@ -19,6 +19,13 @@
  * nationalité, religion, langue, situation de famille, handicap, revenus, centres d'intérêt, listes de contacts ou
  * audiences semblables sont refusés et nommés ; la base ne range rien d'autre [R589, R50]. Au journal : les issues,
  * les règles et des montants, jamais une personne [R13]. Rien ne s'efface [R17].
+ *
+ * AU038 : une plateforme réelle (Google Ads, Meta) n'est admise qu'avec un plafond du budget total d'une validation,
+ * réglé à la mise en service (H63) ; au-delà, la validation est refusée. Le lancement range l'accusé de la plateforme
+ * (sa référence de la campagne et le mode réel ou d'essai) avant la réponse ; un lancement réel sans accusé est un
+ * échec. Chaque échec d'appel est rangé en code fermé et en geste (reconnecter, donner l'accès, corriger, réessayer,
+ * vérifier). Le passage planifié lit la dépense des trois derniers jours chez la plateforme et rapproche des campagnes
+ * les demandes arrivées par leur lien (`?o=<code>`), une fois le message rattaché à une fiche [R588].
  */
 import type { Viewer } from '../acces/droits.ts';
 import { randomContentCode } from '../attirer/origine-contacts.ts';
@@ -105,11 +112,51 @@ export interface AdLaunch {
   totalBudgetCents: number;
 }
 
-/** Une plateforme de publicité. Seul le mode essai est admis tant que le plan ne l'a pas mise en service [R587]. */
+export type AdMode = 'essai' | 'reel';
+
+/** L'accusé de la plateforme au lancement : sa référence de la campagne créée. */
+export interface AdReceipt {
+  externalRef: string;
+}
+
+/** Ce qu'une plateforme sait d'une campagne lancée : son code de suivi et, si elle l'a rendue, sa référence. */
+export interface AdRef {
+  code: string;
+  externalRef: string | null;
+}
+
+/** Les échecs d'un appel à la plateforme, en liste fermée, chacun avec son geste [R587]. */
+export const AD_FAILURE_ACTIONS = {
+  reconnecter: 'reconnecter',
+  acces: 'donner_acces',
+  refusee: 'corriger',
+  lieu_inconnu: 'corriger',
+  rayon: 'corriger',
+  indisponible: 'reessayer',
+  inconnue: 'verifier',
+} as const;
+export type AdFailureCode = keyof typeof AD_FAILURE_ACTIONS;
+export type AdAction = (typeof AD_FAILURE_ACTIONS)[AdFailureCode];
+export type AdStep = 'lancement' | 'pause' | 'depense';
+
+/** Une erreur de la plateforme, déjà classée ; toute autre erreur compte comme `inconnue`. */
+export class AdPlatformError extends Error {
+  constructor(readonly failure: AdFailureCode) {
+    super(`plateforme publicitaire : ${failure}`);
+    this.name = 'AdPlatformError';
+  }
+}
+
+/**
+ * Une plateforme de publicité. L'essai est la règle ; une plateforme réelle n'est admise qu'avec un plafond réglé à la
+ * mise en service (H63) [R587]. `pause` reçoit la référence rendue au lancement quand elle est connue ; sans elle, la
+ * plateforme cherche la campagne par son code. `spend` lit la dépense d'un jour, en centimes.
+ */
 export interface AdPlatform {
-  readonly mode: 'essai';
-  start(launch: AdLaunch): Promise<void>;
-  pause(code: string): Promise<void>;
+  readonly mode: AdMode;
+  start(launch: AdLaunch): Promise<AdReceipt | void>;
+  pause(code: string, externalRef?: string | null): Promise<void>;
+  spend?(ref: AdRef, day: string): Promise<number>;
 }
 
 /** Une plateforme d'essai : elle note ce qu'elle reçoit, n'appelle personne et ne dépense rien. */
@@ -147,6 +194,12 @@ export interface CampaignReport {
   costPerMandateCents: number | null;
   costPerSaleCents: number | null;
   maxCostPerContactCents: number | null;
+  /** Le mode du dernier accusé de la plateforme ; `null` tant qu'aucun lancement n'a d'accusé. */
+  mode: AdMode | null;
+  /** Le dernier échec depuis la dernière validation, avec son geste ; `null` s'il n'y en a pas. */
+  failure: { step: AdStep; code: AdFailureCode; action: AdAction } | null;
+  /** Les demandes arrivées par le lien de la campagne et pas encore rattachées à une fiche. */
+  pendingArrivals: number;
 }
 
 export interface PubliciteOptions {
@@ -155,7 +208,13 @@ export interface PubliciteOptions {
   newCode?: () => string;
   /** Le temps laissé à la plateforme pour répondre au lancement, bien en deçà de `LAUNCH_ANSWER_MINUTES`. */
   launchTimeoutMs?: number;
+  /** AU038 : le plafond du budget total d'une validation, en centimes, obligatoire avec une plateforme réelle (H63). */
+  realCapCents?: number;
 }
+
+/** Les jours de dépense relus à chaque passage : aujourd'hui et les deux jours d'avant, corrections comprises. */
+export const SPEND_DAYS = 3;
+const EXTERNAL_REF = /^[A-Za-z0-9_/:.-]{1,200}$/;
 
 interface CampaignRow {
   id: string;
@@ -177,6 +236,8 @@ interface ApprovalRow {
 }
 
 const INSEE = /^(\d{5}|2[AB]\d{3})$/;
+/** Le paramètre porteur des liens, le même que celui de l'origine des contacts (AT05). */
+const CARRIER = 'o';
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const marks = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 const isPlainObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v) && Object.getPrototypeOf(v) === Object.prototype;
@@ -213,6 +274,7 @@ export class PublicitePayante {
   private readonly newId: () => string;
   private readonly newCode: () => string;
   private readonly launchTimeoutMs: number;
+  private readonly realCapCents: number | null;
   private readonly fiche: FicheUnique;
 
   constructor(
@@ -221,9 +283,13 @@ export class PublicitePayante {
     private readonly platforms: Readonly<Record<AdPlatformName, AdPlatform>>,
     options: PubliciteOptions = {},
   ) {
+    const cap = options.realCapCents;
+    this.realCapCents = typeof cap === 'number' && Number.isSafeInteger(cap) && cap > 0 ? cap : null;
     for (const name of AD_PLATFORMS) {
-      // Aucun envoi réel tant que le plan ne l'a pas mis en service [R587].
-      if (platforms[name]?.mode !== 'essai') throw new Error(`plateforme ${name} : seul le mode essai est admis`);
+      const mode = platforms[name]?.mode;
+      // Aucun envoi réel tant que le plan ne l'a pas mis en service : le réel demande son plafond (H63) [R587].
+      if (mode === 'reel' && this.realCapCents === null) throw new Error(`plateforme ${name} : le mode réel demande un plafond`);
+      if (mode !== 'essai' && mode !== 'reel') throw new Error(`plateforme ${name} : mode inconnu`);
     }
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
@@ -295,6 +361,8 @@ export class PublicitePayante {
     if (!c) return { ok: false, rule: null, code: 'unknown' };
     const { dailyBudgetCents: daily, totalBudgetCents: total, maxCostPerContactCents: max } = input;
     if (!cents(daily) || !cents(total) || !cents(max) || total < daily) return { ok: false, rule: 'R587', code: 'bad_budget' };
+    // Une plateforme réelle : jamais plus que le plafond réglé à la mise en service (AU038, H63) [R587].
+    if (this.platforms[c.platform].mode === 'reel' && total > this.realCapCents!) return this.refuse(viewer, 'ad_approval', 'R587', 'plafond', { campaign: c.id, totalBudgetCents: total, capCents: this.realCapCents });
     // Une validation en cours de dépense n'est pas remplacée sous ses pieds : elle s'arrête d'abord.
     const last = await this.lastApproval(c.id);
     if (last && (await this.running(last.id))) return { ok: false, rule: 'R587', code: 'en_cours' };
@@ -403,11 +471,21 @@ export class PublicitePayante {
     if (changes !== 1) return this.refuse(viewer, 'ad_start', 'R587', 'deja_lancee_ou_arretee', { campaign: c.id });
     const launch: AdLaunch = { code: c.code, communes: JSON.parse(c.communes) as string[], radiusKm: c.radius_km === null ? null : Number(c.radius_km), dailyBudgetCents: Number(a.daily_budget_cents), totalBudgetCents: Number(a.total_budget_cents) };
     let answered = false;
-    const call = this.platforms[c.platform].start(launch);
+    const platform = this.platforms[c.platform];
+    const call = platform.start(launch);
     try {
-      await this.withinTimeout(call);
+      const receipt = await this.withinTimeout(call);
+      const ref = receipt && typeof receipt.externalRef === 'string' && EXTERNAL_REF.test(receipt.externalRef) ? receipt.externalRef : null;
+      // Un lancement réel sans accusé lisible : la campagne n'est pas tenue, c'est un échec (AU038) [R587].
+      if (platform.mode === 'reel' && ref === null) throw new AdPlatformError('inconnue');
+      // L'accusé est rangé avant la réponse : une réponse rangée a toujours son accusé.
+      if (ref !== null) {
+        await this.db.run('INSERT INTO ad_campaign_receipts (approval_id, campaign_id, mode, external_ref, received_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [a.id, c.id, platform.mode, ref, this.now().toISOString()]);
+      }
       answered = await this.launched(a.id, 'lancee');
     } catch (e) {
+      const failure: AdFailureCode = e instanceof AdPlatformError ? e.failure : e === LAUNCH_TIMED_OUT ? 'indisponible' : 'inconnue';
+      await this.fail(c, 'lancement', failure);
       // L'arrêt d'abord : coupé avant la réponse rangée, le lancement est soldé au passage suivant, rien n'est perdu.
       await this.stopApproval(c, a.id, 'echec_lancement', `${String(viewer.role)}:${viewer.userId}`);
       if (e !== LAUNCH_TIMED_OUT) {
@@ -416,11 +494,11 @@ export class PublicitePayante {
         // Délai passé, l'appel continue peut-être chez la plateforme : la réponse reste à venir, donc rien ne se valide
         // ni ne se relance avant elle ou avant le solde, qui redemandera la pause [R587, R588].
         void call.then(
-          () => this.answeredLate(c, a.id).catch(() => undefined),
+          (late) => this.answeredLate(c, a.id, late).catch(() => undefined),
           () => undefined,
         );
       }
-      return { ok: false, rule: 'R587', code: 'echec_lancement' };
+      return { ok: false, rule: 'R587', code: 'echec_lancement', detail: failure };
     }
     if (!answered) return this.lateAnswer(c);
     // Arrêtée pendant que la plateforme lançait : la pause a pu passer avant le lancement, elle est redemandée.
@@ -429,18 +507,18 @@ export class PublicitePayante {
       await this.pause(c, a.id, true);
       return { ok: false, rule: 'R588', code: 'arretee_au_lancement' };
     }
-    await appendEvent(this.journal, { type: 'publicite.lancee', actor: this.actor(viewer), subject: `ad_campaign:${c.id}`, data: { rule: 'R587', mode: 'essai', version: a.version, dailyBudgetCents: launch.dailyBudgetCents, totalBudgetCents: launch.totalBudgetCents } }, this.now);
+    await appendEvent(this.journal, { type: 'publicite.lancee', actor: this.actor(viewer), subject: `ad_campaign:${c.id}`, data: { rule: 'R587', mode: platform.mode, version: a.version, dailyBudgetCents: launch.dailyBudgetCents, totalBudgetCents: launch.totalBudgetCents } }, this.now);
     return { ok: true, value: { approvalId: a.id } };
   }
 
   /** La réponse de la plateforme, ou une erreur passé le délai de lancement. */
-  private async withinTimeout(call: Promise<void>): Promise<void> {
+  private async withinTimeout<T>(call: Promise<T>): Promise<T> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const late = new Promise<never>((_, reject) => {
       timer = setTimeout(() => reject(LAUNCH_TIMED_OUT), this.launchTimeoutMs);
     });
     try {
-      await Promise.race([call, late]);
+      return await Promise.race([call, late]);
     } finally {
       clearTimeout(timer);
     }
@@ -450,7 +528,12 @@ export class PublicitePayante {
    * La plateforme a lancé après le délai, la validation déjà arrêtée : la pause à redemander est rangée d'abord, puis
    * la réponse. Avant le solde, une coupure ici laisse le lancement sans réponse et le solde redemande la pause.
    */
-  private async answeredLate(c: CampaignRow, approvalId: string): Promise<void> {
+  private async answeredLate(c: CampaignRow, approvalId: string, receipt?: AdReceipt | void): Promise<void> {
+    // L'accusé tardif est gardé quand même : la pause redemandée vise alors la bonne campagne chez la plateforme.
+    const ref = receipt && typeof receipt.externalRef === 'string' && EXTERNAL_REF.test(receipt.externalRef) ? receipt.externalRef : null;
+    if (ref !== null) {
+      await this.db.run('INSERT INTO ad_campaign_receipts (approval_id, campaign_id, mode, external_ref, received_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [approvalId, c.id, this.platforms[c.platform].mode, ref, this.now().toISOString()]);
+    }
     await this.db.run('INSERT INTO ad_campaign_repauses (approval_id, asked_at) VALUES (?, ?) ON CONFLICT DO NOTHING', [approvalId, this.now().toISOString()]);
     if (await this.launched(approvalId, 'lancee')) await this.pause(c, approvalId, true);
     else await this.lateAnswer(c);
@@ -524,9 +607,11 @@ export class PublicitePayante {
   }
 
   private async pause(c: CampaignRow, approvalId: string, again = false): Promise<void> {
+    const receipt = await this.db.first<{ external_ref: string }>('SELECT external_ref FROM ad_campaign_receipts WHERE approval_id = ?', [approvalId]);
     try {
-      await this.platforms[c.platform].pause(c.code);
-    } catch {
+      await this.platforms[c.platform].pause(c.code, receipt?.external_ref ?? null);
+    } catch (e) {
+      await this.fail(c, 'pause', e instanceof AdPlatformError ? e.failure : 'inconnue');
       await appendEvent(this.journal, { type: 'publicite.pause_echec', actor: 'system:publicite', subject: `ad_campaign:${c.id}`, data: { rule: 'R588' } }, this.now);
       // Une pause redemandée après le lancement et en échec redevient à confirmer.
       if (again) await this.db.run('INSERT INTO ad_campaign_repauses (approval_id, asked_at) VALUES (?, ?) ON CONFLICT DO NOTHING', [approvalId, this.now().toISOString()]);
@@ -585,7 +670,7 @@ export class PublicitePayante {
   }
 
   /** Un contact amené par le code de suivi d'une campagne lancée, une fois par personne. */
-  async recordContact(networkId: string, code: unknown, personId: unknown): Promise<AdResult<{ campaignId: string; counted: boolean }>> {
+  async recordContact(networkId: string, code: unknown, personId: unknown, arrivedAt?: string): Promise<AdResult<{ campaignId: string; counted: boolean }>> {
     if (typeof code !== 'string' || typeof personId !== 'string') return { ok: false, rule: null, code: 'bad_input' };
     const c = await this.db.first<{ id: string }>('SELECT id FROM ad_campaigns WHERE code = ? AND network_id = ?', [code, networkId]);
     if (!c) return { ok: false, rule: null, code: 'unknown' };
@@ -595,7 +680,7 @@ export class PublicitePayante {
     const members = await this.fiche.membersOf(root);
     const seen = await this.db.first<{ n: number }>(`SELECT count(*) AS n FROM ad_campaign_contacts WHERE campaign_id = ? AND person_id IN (${marks(members.length)})`, [c.id, ...members]);
     if (Number(seen?.n) > 0) return { ok: true, value: { campaignId: c.id, counted: false } };
-    const { changes } = await this.db.run('INSERT INTO ad_campaign_contacts (campaign_id, network_id, person_id, arrived_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', [c.id, networkId, root, this.now().toISOString()]);
+    const { changes } = await this.db.run('INSERT INTO ad_campaign_contacts (campaign_id, network_id, person_id, arrived_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', [c.id, networkId, root, arrivedAt ?? this.now().toISOString()]);
     if (changes === 1) await appendEvent(this.journal, { type: 'publicite.contact', actor: 'system:publicite', subject: `ad_campaign:${c.id}`, data: { rule: 'R588' } }, this.now);
     return { ok: true, value: { campaignId: c.id, counted: changes === 1 } };
   }
@@ -622,6 +707,116 @@ export class PublicitePayante {
     let stopped = 0;
     for (const c of rows) if (await this.check(c)) stopped += 1;
     return { stopped };
+  }
+
+  /** Un échec d'appel à la plateforme, rangé en code et en geste, et écrit au journal sans personne [R587, R13]. */
+  private async fail(c: CampaignRow, step: AdStep, code: AdFailureCode): Promise<void> {
+    const action = AD_FAILURE_ACTIONS[code];
+    await this.db.run('INSERT INTO ad_campaign_failures (id, campaign_id, step, code, action, at) VALUES (?, ?, ?, ?, ?, ?)', [this.newId(), c.id, step, code, action, this.now().toISOString()]);
+    await appendEvent(this.journal, { type: 'publicite.echec', actor: 'system:publicite', subject: `ad_campaign:${c.id}`, data: { rule: 'R587', step, code, action } }, this.now);
+  }
+
+  /**
+   * La dépense lue chez la plateforme pour chaque campagne lancée qui a un accusé : aujourd'hui et les deux jours
+   * d'avant (heure de Paris), chaque lancement de la campagne additionné. Une lecture en échec est rangée avec son geste
+   * et le jour n'est pas rangé ; le contrôle du seuil suit chaque jour lu [R588].
+   */
+  async syncSpend(networkId: string): Promise<{ days: number; failures: number }> {
+    const rows = await this.db.all<CampaignRow>(
+      `SELECT id, network_id, platform, name, code, communes, radius_km, created_at FROM ad_campaigns c WHERE network_id = ?
+        AND EXISTS (SELECT 1 FROM ad_campaign_receipts r WHERE r.campaign_id = c.id) ORDER BY created_at, id`,
+      [networkId],
+    );
+    let days = 0;
+    let failures = 0;
+    const now = this.now();
+    for (const c of rows) {
+      const platform = this.platforms[c.platform];
+      if (!platform.spend) continue;
+      // Une campagne arrêtée et mise en pause depuis plus que la fenêtre ne dépense plus : rien à relire.
+      const open = await this.db.first<{ n: number }>(
+        `SELECT count(*) AS n FROM ad_campaign_starts s WHERE s.campaign_id = ? AND NOT EXISTS (
+           SELECT 1 FROM ad_campaign_stops t WHERE t.approval_id = s.approval_id AND t.paused_at IS NOT NULL AND t.paused_at < ?)`,
+        [c.id, new Date(now.getTime() - SPEND_DAYS * 86_400_000).toISOString()],
+      );
+      if (Number(open?.n) === 0) continue;
+      const receipts = await this.db.all<{ external_ref: string; received_at: string }>('SELECT external_ref, received_at FROM ad_campaign_receipts WHERE campaign_id = ? ORDER BY received_at, approval_id', [c.id]);
+      const firstDay = PublicitePayante.parisDay(new Date(receipts[0]!.received_at));
+      for (let back = SPEND_DAYS - 1; back >= 0; back -= 1) {
+        const day = PublicitePayante.parisDay(new Date(now.getTime() - back * 86_400_000));
+        if (day < firstDay) continue;
+        let total = 0;
+        let failed = false;
+        for (const r of receipts) {
+          if (PublicitePayante.parisDay(new Date(r.received_at)) > day) continue;
+          try {
+            const amount = await platform.spend({ code: c.code, externalRef: r.external_ref }, day);
+            if (!Number.isSafeInteger(amount) || amount < 0) throw new AdPlatformError('inconnue');
+            total += amount;
+          } catch (e) {
+            await this.fail(c, 'depense', e instanceof AdPlatformError ? e.failure : 'inconnue');
+            failed = true;
+            break;
+          }
+        }
+        // Une lecture incomplète n'est jamais rangée : elle ferait baisser la dépense d'un jour.
+        if (failed) {
+          failures += 1;
+          continue;
+        }
+        const r = await this.recordSpend(networkId, c.id, day, total);
+        if (r.ok) days += 1;
+      }
+    }
+    return { days, failures };
+  }
+
+  /**
+   * Une demande arrivée par le lien d'une campagne lancée : un seul code `o`, celui d'une campagne du réseau. Seuls le
+   * message et la campagne sont gardés, jamais l'adresse de la page [R156]. Rangée une fois.
+   */
+  async recordArrival(networkId: string, inboundId: string, signals: { link?: string | null | undefined; landingPage?: string | null | undefined }): Promise<{ campaignId: string } | null> {
+    for (const raw of [signals.link, signals.landingPage]) {
+      if (typeof raw !== 'string' || raw.length > 2_000) continue;
+      let url: URL;
+      try {
+        url = new URL(raw);
+      } catch {
+        continue;
+      }
+      const codes = url.searchParams.getAll(CARRIER);
+      if (codes.length !== 1) continue;
+      const c = await this.db.first<{ id: string }>(
+        'SELECT c.id FROM ad_campaigns c WHERE c.code = ? AND c.network_id = ? AND EXISTS (SELECT 1 FROM ad_campaign_starts s WHERE s.campaign_id = c.id)',
+        [codes[0]!, networkId],
+      );
+      if (!c) continue;
+      const m = await this.db.first<{ received_at: string }>('SELECT received_at FROM inbound_messages WHERE id = ? AND network_id = ?', [inboundId, networkId]);
+      if (!m) return null;
+      const { changes } = await this.db.run('INSERT INTO ad_campaign_arrivals (inbound_id, campaign_id, network_id, arrived_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', [inboundId, c.id, networkId, m.received_at]);
+      if (changes === 1) await appendEvent(this.journal, { type: 'publicite.demande', actor: 'system:publicite', subject: `ad_campaign:${c.id}`, data: { rule: 'R588' } }, this.now);
+      return { campaignId: c.id };
+    }
+    return null;
+  }
+
+  /** Le rapprochement : chaque demande arrivée par une campagne et désormais rattachée à une fiche en devient un contact [R588]. */
+  async matchArrivals(networkId: string): Promise<{ matched: number }> {
+    const rows = await this.db.all<{ inbound_id: string; code: string; person_id: string; arrived_at: string }>(
+      `SELECT a.inbound_id, c.code, m.person_id, a.arrived_at FROM ad_campaign_arrivals a
+         JOIN ad_campaigns c ON c.id = a.campaign_id
+         JOIN inbound_messages m ON m.id = a.inbound_id
+        WHERE a.network_id = ? AND a.matched_at IS NULL AND m.person_id IS NOT NULL ORDER BY a.arrived_at, a.inbound_id`,
+      [networkId],
+    );
+    let matched = 0;
+    for (const r of rows) {
+      const k = await this.recordContact(networkId, r.code, r.person_id, r.arrived_at);
+      if (!k.ok) continue;
+      const { changes } = await this.db.run('UPDATE ad_campaign_arrivals SET matched_at = ? WHERE inbound_id = ? AND matched_at IS NULL', [this.now().toISOString(), r.inbound_id]);
+      if (changes === 1) matched += 1;
+    }
+    return { matched };
   }
 
   /** Les mandats et les ventes qu'une campagne rapporte, lus dans la base comme ceux de G10. */
@@ -673,10 +868,23 @@ export class PublicitePayante {
         costPerMandateCents: per(o.mandates),
         costPerSaleCents: per(o.sales),
         maxCostPerContactCents: a ? Number(a.max_cost_per_contact_cents) : null,
+        ...(await this.platformState(c.id)),
       });
     }
     await appendEvent(this.journal, { type: 'publicite.compte_rendu', actor: this.actor(viewer), subject: null, data: { rule: 'R16', campaigns: out.length } }, this.now);
     return { ok: true, value: out };
+  }
+
+  /** L'accusé, le dernier échec depuis la dernière validation et les demandes à rapprocher d'une campagne. */
+  private async platformState(campaignId: string): Promise<Pick<CampaignReport, 'mode' | 'failure' | 'pendingArrivals'>> {
+    const r = await this.db.first<{ mode: AdMode }>('SELECT mode FROM ad_campaign_receipts WHERE campaign_id = ? ORDER BY received_at DESC, approval_id DESC LIMIT 1', [campaignId]);
+    const since = await this.db.first<{ at: string | null }>('SELECT max(approved_at) AS at FROM ad_campaign_approvals WHERE campaign_id = ?', [campaignId]);
+    const f = await this.db.first<{ step: AdStep; code: AdFailureCode; action: AdAction }>(
+      'SELECT step, code, action FROM ad_campaign_failures WHERE campaign_id = ? AND at >= ? ORDER BY at DESC, id DESC LIMIT 1',
+      [campaignId, since?.at ?? ''],
+    );
+    const p = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM ad_campaign_arrivals WHERE campaign_id = ? AND matched_at IS NULL', [campaignId]);
+    return { mode: r?.mode ?? null, failure: f ? { step: f.step, code: f.code, action: f.action } : null, pendingArrivals: Number(p?.n ?? 0) };
   }
 
   /** Le jour de Paris d'un instant, pour ranger la dépense du jour. */
