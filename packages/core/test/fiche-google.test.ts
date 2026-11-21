@@ -775,6 +775,19 @@ describeWithSqlite('AU037 · l’accusé réel de Google et l’échec qui dit q
     expect((await view(s)).reviews[0]!.draft).toMatchObject({ state: 'envoye', error: null, action: null });
   });
 
+  it('[R154] l’envoi et son accusé s’écrivent ensemble : si l’accusé ne peut être gardé, rien n’est dit parti', async () => {
+    const s = await setup({ mode: 'reel' });
+    const draftId = await validReply(s);
+    await s.db.exec("CREATE TRIGGER essai_accuse BEFORE INSERT ON gbp_receipts BEGIN SELECT RAISE(ABORT, 'panne inventée'); END");
+    await expect(s.fiche.publish(agent, draftId)).rejects.toThrow();
+    expect(await s.db.all('SELECT id FROM gbp_sends')).toEqual([]);
+    expect((await view(s)).reviews[0]!.draft!.state).toBe('envoi_en_cours');
+    await expect(s.fiche.sendInfo(direction, 'ag-1')).rejects.toThrow();
+    expect(await s.db.all('SELECT id FROM gbp_sends')).toEqual([]);
+    await s.db.exec('DROP TRIGGER essai_accuse');
+    expect(await s.fiche.sendInfo(direction, 'ag-1')).toEqual({ ok: true, changed: true, mode: 'reel' });
+  });
+
   it('« reconnecter » tient jusqu’au prochain envoi confirmé, même si une panne vient après', async () => {
     const s = await setup({ mode: 'reel' });
     const draftId = await validReply(s);

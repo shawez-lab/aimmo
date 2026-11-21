@@ -27,7 +27,7 @@ import type { DiffusionGate } from '../acquereurs/rapprochement.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import { Diffusion } from '../documents/retractation.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase, type SqlStatement } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 
@@ -489,10 +489,11 @@ export class FicheGoogle {
     if (result.outcome === 'sans_service') return { ok: false, rule: null, code: 'sans_service' };
     const outcome = result.outcome === 'incertain' ? 'echec' : result.outcome;
     const sendId = this.newId();
-    await this.db.run("INSERT INTO gbp_sends (id, network_id, agent_id, draft_id, kind, info_sha256, mode, outcome, sent_by, sent_at) VALUES (?, ?, ?, NULL, 'informations', ?, ?, ?, 'system:fiche_google', ?)", [
-      sendId, networkId, agentId, hash, this.mode, outcome, this.now().toISOString(),
+    // L'envoi et son accusé (ou son échec) s'écrivent ensemble, tout ou rien : jamais un « envoyé » sans sa preuve.
+    await runBatch(this.db, [
+      { sql: "INSERT INTO gbp_sends (id, network_id, agent_id, draft_id, kind, info_sha256, mode, outcome, sent_by, sent_at) VALUES (?, ?, ?, NULL, 'informations', ?, ?, ?, 'system:fiche_google', ?)", params: [sendId, networkId, agentId, hash, this.mode, outcome, this.now().toISOString()] },
+      ...this.receipt(sendId, result),
     ]);
-    await this.receipt(sendId, result);
     await appendEvent(this.journal, { type: 'attirer.google.informations', actor: 'system:fiche_google', subject: `agent:${agentId}`, data: { rule: 'R26', mode: this.mode, outcome, ...errorData(result) } }, this.now);
     if (result.outcome === 'echec') return { ok: false, rule: null, code: 'echec', error: result.error, action: result.action };
     return { ok: true, changed: true, mode: this.mode };
@@ -520,13 +521,15 @@ export class FicheGoogle {
     return { outcome: 'envoye', ack };
   }
 
-  /** L'accusé ou l'échec d'un envoi réel, gardé à côté de l'envoi ; un essai n'en a pas [R26]. */
-  private async receipt(sendId: string, result: GoogleResult): Promise<void> {
+  /** L'accusé ou l'échec d'un envoi réel, écrit dans le même lot que l'envoi ; un essai n'en a pas [R26]. */
+  private receipt(sendId: string, result: GoogleResult): SqlStatement[] {
     if (result.outcome === 'envoye') {
-      await this.db.run('INSERT INTO gbp_receipts (send_id, ack_ref, url, error_code, action, done_at) VALUES (?, ?, ?, NULL, NULL, ?)', [sendId, result.ack.ref, result.ack.url, this.now().toISOString()]);
-    } else if (result.outcome === 'echec') {
-      await this.db.run('INSERT INTO gbp_receipts (send_id, ack_ref, url, error_code, action, done_at) VALUES (?, NULL, NULL, ?, ?, ?)', [sendId, result.error, result.action, this.now().toISOString()]);
+      return [{ sql: 'INSERT INTO gbp_receipts (send_id, ack_ref, url, error_code, action, done_at) VALUES (?, ?, ?, NULL, NULL, ?)', params: [sendId, result.ack.ref, result.ack.url, this.now().toISOString()] }];
     }
+    if (result.outcome === 'echec') {
+      return [{ sql: 'INSERT INTO gbp_receipts (send_id, ack_ref, url, error_code, action, done_at) VALUES (?, NULL, NULL, ?, ?, ?)', params: [sendId, result.error, result.action, this.now().toISOString()] }];
+    }
+    return [];
   }
 
   /** Les avis de la fiche, lus par l'interface et rangés sans le nom de leur auteur. Un avis déjà lu n'est pas repris. */
@@ -823,14 +826,18 @@ export class FicheGoogle {
     }
     const sendId = this.newId();
     try {
-      await this.db.run('INSERT INTO gbp_sends (id, network_id, agent_id, draft_id, kind, info_sha256, mode, outcome, sent_by, sent_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)', [
-        sendId, row.network_id, row.agent_id, row.id, row.kind, this.mode, result.outcome, this.actor(viewer), this.now().toISOString(),
+      // L'envoi et son accusé (ou son échec) s'écrivent ensemble, tout ou rien : jamais un « envoyé » sans sa preuve.
+      await runBatch(this.db, [
+        {
+          sql: 'INSERT INTO gbp_sends (id, network_id, agent_id, draft_id, kind, info_sha256, mode, outcome, sent_by, sent_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)',
+          params: [sendId, row.network_id, row.agent_id, row.id, row.kind, this.mode, result.outcome, this.actor(viewer), this.now().toISOString()],
+        },
+        ...this.receipt(sendId, result),
       ]);
     } catch (error) {
       if (/UNIQUE/i.test(String(error))) return { ok: false, rule: 'R154', code: 'deja_parti' };
       throw error;
     }
-    await this.receipt(sendId, result);
     await appendEvent(this.journal, { type: 'attirer.google.envoi', actor: this.actor(viewer), subject: `agent:${row.agent_id}`, data: { rule: 'R154', kind: row.kind, mode: this.mode, outcome: result.outcome, validatedBy: row.validated_by, ...errorData(result) } }, this.now);
     if (result.outcome === 'echec') return { ok: false, rule: null, code: 'echec', error: result.error, action: result.action };
     return { ok: true, mode: this.mode };
