@@ -21,8 +21,10 @@
  * l'acquéreur vérifiée [R58] ; la signature du compromis se saisit d'abord, les autres dates ne la précèdent pas ;
  * la date limite du prêt n'a pas d'objet si l'offre n'a pas de condition de prêt, l'état daté si le bien n'est pas un
  * lot de copropriété ; une fin du délai de la commune un samedi, un dimanche ou un jour férié est reportée au jour
- * ouvrable suivant, pour ne jamais annoncer trop tôt un silence acquis ;
- * les jours fériés propres à l'Alsace-Moselle ne sont pas comptés.
+ * ouvrable suivant, pour ne jamais annoncer trop tôt un silence acquis.
+ *
+ * Calendrier territorial (AU085) : en Moselle, dans le Bas-Rhin et le Haut-Rhin, le Vendredi saint et la Saint-Étienne
+ * sont fériés en plus ; chaque délai dit le calendrier qu'il suit et pourquoi (voir `calendrier.ts`).
  *
  * Coacquéreurs (AU009) : chacun a sa propre notification, avec sa date, sa preuve et ses versions, donc son propre délai
  * de rétractation. Le dossier retient le dernier délai : la rétractation est « à saisir » tant qu'un seul des
@@ -32,10 +34,11 @@ import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { PropertySheet } from '../annonces/fiche-bien.ts';
 import type { SqlDatabase } from '../db/sql.ts';
-import { frenchHolidays, localTime } from '../envoi/horaires.ts';
+import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { PROOF_REF } from '../offres/transmission.ts';
+import { buyersInAlsaceMoselle, calendarFor, isWorkingDayIn, propertyPlaceOf, type Calendar, type CalendarReason } from './calendrier.ts';
 import { actorOf, gateSaleFile, openFile, type FileRefusal, type FileUnknown } from './acces-dossier.ts';
 
 const TIME_ZONE = 'Europe/Paris';
@@ -66,16 +69,12 @@ function validDay(v: unknown): v is string {
 
 export const addDays = (day: string, n: number): string => new Date(Date.parse(`${day}T12:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 
-function isWorkingDay(day: string): boolean {
-  const w = new Date(`${day}T12:00:00Z`).getUTCDay();
-  return w !== 0 && w !== 6 && !frenchHolidays(Number(day.slice(0, 4))).has(day);
-}
-
-/** Dernier jour de la rétractation de l'acquéreur (inclus), depuis la première présentation de la notification. */
-export function buyerWithdrawalLastDay(notifiedOn: string): string {
-  let last = addDays(notifiedOn, BUYER_WITHDRAWAL_DAYS);
-  while (!isWorkingDay(last)) last = addDays(last, 1);
-  return last;
+/**
+ * Dernier jour de la rétractation de l'acquéreur (inclus), depuis la première présentation de la notification, dans le
+ * calendrier du délai (AU085).
+ */
+export function buyerWithdrawalLastDay(notifiedOn: string, calendar: Calendar = 'national'): string {
+  return nextWorkingDay(addDays(notifiedOn, BUYER_WITHDRAWAL_DAYS), calendar);
 }
 
 /** Le même jour, `n` mois plus tard ; au dernier jour du mois s'il est plus court. */
@@ -90,14 +89,14 @@ function addMonths(day: string, n: number): string {
 
 const daysBetween = (from: string, to: string): number => Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / 86_400_000);
 
-const nextWorkingDay = (day: string): string => {
+function nextWorkingDay(day: string, calendar: Calendar): string {
   let d = day;
-  while (!isWorkingDay(d)) d = addDays(d, 1);
+  while (!isWorkingDayIn(d, calendar)) d = addDays(d, 1);
   return d;
-};
+}
 
 /** La fin du délai de la commune sans suspension, reportée au jour ouvrable suivant. */
-export const preemptionBaseEnd = (receivedOn: string): string => nextWorkingDay(addMonths(receivedOn, PREEMPTION_MONTHS));
+export const preemptionBaseEnd = (receivedOn: string, calendar: Calendar = 'national'): string => nextWorkingDay(addMonths(receivedOn, PREEMPTION_MONTHS), calendar);
 
 /**
  * Le jour où la commune doit avoir répondu sur son droit de préemption, ou null tant que le délai est suspendu.
@@ -106,16 +105,16 @@ export const preemptionBaseEnd = (receivedOn: string): string => nextWorkingDay(
  * moins un mois. Lecture prudente : une fin un samedi, un dimanche ou un jour férié est reportée au jour ouvrable
  * suivant, pour ne jamais dire acquis un silence qui ne l'est pas encore.
  */
-export function preemptionLastDay(receivedOn: string, suspendedOn?: string, resumedOn?: string): string | null {
+export function preemptionLastDay(receivedOn: string, suspendedOn?: string, resumedOn?: string, calendar: Calendar = 'national'): string | null {
   // La fin sans suspension, reportée au jour ouvrable : une demande faite jusqu'à ce jour suspend encore le délai.
-  let end = preemptionBaseEnd(receivedOn);
+  let end = preemptionBaseEnd(receivedOn, calendar);
   if (suspendedOn && suspendedOn <= end) {
     if (!resumedOn) return null;
     const rest = addDays(resumedOn, daysBetween(suspendedOn, end));
     const month = addMonths(resumedOn, 1);
     end = rest > month ? rest : month;
   }
-  return nextWorkingDay(end);
+  return nextWorkingDay(end, calendar);
 }
 
 export interface ScheduleLine {
@@ -128,6 +127,17 @@ export interface ScheduleLine {
   status: 'datee' | 'a_saisir' | 'sans_objet' | 'suspendue';
   /** La date saisie dont l'échéance vient. */
   from: DateKind;
+  /** Le calendrier des jours fériés d'un délai calculé (AU085) ; null pour une date lue telle que saisie. */
+  calendar: Calendar | null;
+}
+
+/** Les calendriers des délais calculés d'un dossier (AU085). Par défaut, le calendrier national. */
+export interface ScheduleCalendars {
+  preemption?: Calendar;
+  /** La rétractation de l'acquéreur en tête. */
+  lead?: Calendar;
+  /** Celle de chaque coacquéreur, dans l'ordre de `coBuyersNotifiedOn`. */
+  coBuyers?: readonly Calendar[];
 }
 
 /** La notification d'un acquéreur du dossier et son propre délai de rétractation (AU009). */
@@ -141,6 +151,9 @@ export interface BuyerNotice {
   version: number | null;
   /** Le dernier jour de sa rétractation, ou null. */
   lastDay: string | null;
+  /** Le calendrier de son délai et pourquoi (AU085) ; null quand celui qui lit ne voit pas cette fiche en entier. */
+  calendar: Calendar | null;
+  calendarReason: CalendarReason;
 }
 
 export interface Schedule {
@@ -149,6 +162,8 @@ export interface Schedule {
   /** Un acquéreur par ligne, l'acquéreur en tête d'abord, chacun avec son délai. */
   buyers: BuyerNotice[];
   lines: ScheduleLine[];
+  /** Le calendrier du délai de la commune et pourquoi (AU085). */
+  preemptionCalendar: { calendar: Calendar; reason: CalendarReason };
 }
 
 /**
@@ -156,19 +171,25 @@ export interface Schedule {
  * `coBuyersNotifiedOn` : la notification de chaque coacquéreur, null tant qu'elle manque (AU009). La fin de la
  * rétractation est la plus tardive de tous ; à saisir tant qu'une seule manque.
  */
-export function scheduleLines(dates: Partial<Record<DateKind, string>>, facts: { hasLoanCondition: boolean; isCoownershipLot: boolean | null }, coBuyersNotifiedOn: readonly (string | null)[] = []): ScheduleLine[] {
-  const line = (deadline: Deadline, source: 'calcul' | 'saisie', from: DateKind, day: string | null): ScheduleLine => ({ deadline, source, from, day, status: day === null ? 'a_saisir' : 'datee' });
-  const notices = [dates.notification_acquereur ?? null, ...coBuyersNotifiedOn];
-  const withdrawal = notices.some((d) => d === null) ? null : notices.map((d) => buyerWithdrawalLastDay(d!)).reduce((a, b) => (a > b ? a : b));
+export function scheduleLines(dates: Partial<Record<DateKind, string>>, facts: { hasLoanCondition: boolean; isCoownershipLot: boolean | null }, coBuyersNotifiedOn: readonly (string | null)[] = [], calendars: ScheduleCalendars = {}): ScheduleLine[] {
+  const line = (deadline: Deadline, source: 'calcul' | 'saisie', from: DateKind, day: string | null, calendar: Calendar | null = null): ScheduleLine => ({ deadline, source, from, day, status: day === null ? 'a_saisir' : 'datee', calendar });
+  const pre = calendars.preemption ?? 'national';
+  const notices: { day: string | null; calendar: Calendar }[] = [
+    { day: dates.notification_acquereur ?? null, calendar: calendars.lead ?? 'national' },
+    ...coBuyersNotifiedOn.map((day, i) => ({ day, calendar: calendars.coBuyers?.[i] ?? 'national' })),
+  ];
+  const withdrawal = notices.some((n) => n.day === null) ? null : notices.map((n) => buyerWithdrawalLastDay(n.day!, n.calendar)).reduce((a, b) => (a > b ? a : b));
+  // Le calendrier du délai retenu : celui d'Alsace-Moselle dès qu'un acquéreur le suit.
+  const withdrawalCalendar: Calendar = notices.some((n) => n.calendar === 'alsace_moselle') ? 'alsace_moselle' : 'national';
   const dia = dates.dia_recue;
   const lines: ScheduleLine[] = [
-    line('fin_retractation', 'calcul', 'notification_acquereur', withdrawal),
-    !dia ? line('reponse_preemption', 'calcul', 'dia_recue', null)
-      : dates.dia_suspension && !dates.dia_reprise && dates.dia_suspension <= preemptionBaseEnd(dia) ? { deadline: 'reponse_preemption', source: 'calcul', from: 'dia_suspension', day: null, status: 'suspendue' }
-      : line('reponse_preemption', 'calcul', dates.dia_reprise ? 'dia_reprise' : 'dia_recue', preemptionLastDay(dia, dates.dia_suspension, dates.dia_reprise)),
-    facts.hasLoanCondition ? line('date_limite_pret', 'saisie', 'date_limite_pret', dates.date_limite_pret ?? null) : { deadline: 'date_limite_pret', source: 'saisie', from: 'date_limite_pret', day: null, status: 'sans_objet' },
+    line('fin_retractation', 'calcul', 'notification_acquereur', withdrawal, withdrawalCalendar),
+    !dia ? line('reponse_preemption', 'calcul', 'dia_recue', null, pre)
+      : dates.dia_suspension && !dates.dia_reprise && dates.dia_suspension <= preemptionBaseEnd(dia, pre) ? { deadline: 'reponse_preemption', source: 'calcul', from: 'dia_suspension', day: null, status: 'suspendue', calendar: pre }
+      : line('reponse_preemption', 'calcul', dates.dia_reprise ? 'dia_reprise' : 'dia_recue', preemptionLastDay(dia, dates.dia_suspension, dates.dia_reprise, pre), pre),
+    facts.hasLoanCondition ? line('date_limite_pret', 'saisie', 'date_limite_pret', dates.date_limite_pret ?? null) : { deadline: 'date_limite_pret', source: 'saisie', from: 'date_limite_pret', day: null, status: 'sans_objet', calendar: null },
     // La copropriété inconnue : l'état daté est demandé, par prudence.
-    facts.isCoownershipLot === false ? { deadline: 'etat_date', source: 'saisie', from: 'etat_date_attendu', day: null, status: 'sans_objet' } : line('etat_date', 'saisie', 'etat_date_attendu', dates.etat_date_attendu ?? null),
+    facts.isCoownershipLot === false ? { deadline: 'etat_date', source: 'saisie', from: 'etat_date_attendu', day: null, status: 'sans_objet', calendar: null } : line('etat_date', 'saisie', 'etat_date_attendu', dates.etat_date_attendu ?? null),
     line('acte', 'saisie', 'acte_prevu', dates.acte_prevu ?? null),
   ];
   return lines;
@@ -268,7 +289,7 @@ export class Echeancier {
     const buyers: BuyerNotice[] = [];
     for (const b of schedule.buyers) {
       const read = b.personId ? await this.acces.readFiche(viewer, b.personId) : null;
-      buyers.push(read?.ok && read.view === 'full' ? b : { personId: null, lead: b.lead, notifiedOn: null, version: null, lastDay: null });
+      buyers.push(read?.ok && read.view === 'full' ? b : { personId: null, lead: b.lead, notifiedOn: null, version: null, lastDay: null, calendar: null, calendarReason: null });
     }
     return { ...schedule, buyers };
   }
@@ -279,10 +300,18 @@ export class Echeancier {
     const days = Object.fromEntries(Object.entries(dates).map(([k, v]) => [k, v.day])) as Partial<Record<DateKind, string>>;
     const { lead, co } = await this.buyersOf(file);
     const notices = await this.coNoticesOf(file.id);
-    const notice = (personId: string, isLead: boolean, n: { day: string; version: number } | undefined): BuyerNotice =>
-      ({ personId, lead: isLead, notifiedOn: n?.day ?? null, version: n?.version ?? null, lastDay: n ? buyerWithdrawalLastDay(n.day) : null });
+    // Le calendrier de chaque délai (AU085) : le lieu du bien, et pour la rétractation le domicile de chaque acquéreur.
+    const place = await propertyPlaceOf(this.db, file.property_id);
+    const local = await buyersInAlsaceMoselle(this.db, [lead, ...co]);
+    const calOf = (personId: string) => calendarFor(place, local.has(personId));
+    const notice = (personId: string, isLead: boolean, n: { day: string; version: number } | undefined): BuyerNotice => {
+      const c = calOf(personId);
+      return { personId, lead: isLead, notifiedOn: n?.day ?? null, version: n?.version ?? null, lastDay: n ? buyerWithdrawalLastDay(n.day, c.calendar) : null, calendar: c.calendar, calendarReason: c.reason };
+    };
     const buyers = [notice(lead, true, dates.notification_acquereur), ...co.map((p) => notice(p, false, notices.get(p)))];
-    return { fileId: file.id, dates, buyers, lines: scheduleLines(days, await this.facts(file), co.map((p) => notices.get(p)?.day ?? null)) };
+    const preemptionCalendar = calendarFor(place);
+    const calendars: ScheduleCalendars = { preemption: preemptionCalendar.calendar, lead: calOf(lead).calendar, coBuyers: co.map((p) => calOf(p).calendar) };
+    return { fileId: file.id, dates, buyers, preemptionCalendar, lines: scheduleLines(days, await this.facts(file), co.map((p) => notices.get(p)?.day ?? null), calendars) };
   }
 
   /** L'échéancier du dossier : agent du bien, direction, conformité [R16]. */
