@@ -50,7 +50,11 @@ export function structuredData(html: string): Record<string, unknown>[] {
     else if (v && typeof v === 'object') {
       const o = v as Record<string, unknown>;
       if (o['@graph'] !== undefined) push(o['@graph']);
-      else out.push(o);
+      else {
+        // La page (`WebPage`) qui porte l'annonce dans `mainEntity` : l'annonce d'abord, la page ensuite.
+        if (o.mainEntity !== undefined) push(o.mainEntity);
+        out.push(o);
+      }
     }
   };
   for (const m of html.matchAll(/<script[^>]*type\s*=\s*["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {

@@ -111,6 +111,12 @@ describe('AU068 · la lecture d’une page d’annonce', () => {
     expect(r.found && r.text).not.toContain('climat C');
   });
 
+  it('[R473] l’annonce portée par la page dans mainEntity est celle qu’on relit', () => {
+    const ld = (availability: string) => `<script type="application/ld+json">${JSON.stringify({ '@type': 'WebPage', mainEntity: { '@type': 'RealEstateListing', offers: { price: 210000, availability } } })}</script><p>Prix : 210 000 €</p>`;
+    expect(parseListingPage(ld('https://schema.org/SoldOut'))).toEqual({ found: false });
+    expect(parseListingPage(ld('https://schema.org/InStock'))).toMatchObject({ found: true, priceEur: 210000 });
+  });
+
   it('[R473] 404 et 410 : plus en ligne ; une redirection, une autre réponse ou une page qui n’est pas du HTML : illisible ; jamais de redirection suivie', async () => {
     const f = fakeFetch();
     const reader = new HttpListingReader(f.fetch);
