@@ -379,4 +379,81 @@ describeWithSqlite('HX49 · factures fournisseurs, rapprochement bancaire et rel
     other.setClock(at9('2027-07-20'));
     expect(await new RelancesImpayes(other.db, other.journal, { now: other.now }).prepare(other.network.id)).toBe(0);
   });
+
+  /** Une seconde facture d'honoraires du réseau, inventée, de 4 000,00 €. */
+  const second = async (t: Awaited<ReturnType<typeof invoiced>>) => {
+    await t.db.run('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO invoices (id, network_id, issuer, year, number, kind, file_id, draft_id, corrects_invoice_id, content, amount_cents, issued_on, validated_by, created_at) VALUES ('inv-2', ?, 'reseau', 2027, 2, 'honoraires', 'dossier-2', 'dr-2', NULL, '{}', 400000, '2027-06-12', 'direction:x', '2027-06-12T08:00:00.000Z')", [t.network.id]);
+    await t.db.run('PRAGMA foreign_keys = ON');
+    return 'inv-2';
+  };
+  const lineOf = async (t: Awaited<ReturnType<typeof invoiced>>, amountCents: number) => (await t.db.first<{ id: string }>('SELECT id FROM bank_lines WHERE amount_cents = ? ORDER BY day, id LIMIT 1', [amountCents]))!.id;
+
+  it('[R551] AU094 · constat : un virement groupé solde deux factures, chacune pour sa part ; le reste de la ligne se dit au centime', async () => {
+    const t = await invoiced();
+    const inv2 = await second(t);
+    t.setClock(at9('2027-07-15'));
+    await t.banque.importStatement(t.direction, '2027-07-14;VIR ETUDE GROUPE;14 000,50\n');
+    const line = await lineOf(t, 1_400_050);
+    // Avant AU094 : un montant différent ne se rapprochait d'aucune facture.
+    expect(await t.banque.confirm(t.direction, line, t.invoice.id)).toMatchObject({ ok: false, code: 'amount' });
+    const r = await t.banque.allocate(t.direction, line, [{ invoiceId: t.invoice.id, amountCents: 1_000_000 }, { invoiceId: inv2, amountCents: 400_000 }]);
+    if (!r.ok) throw new Error((r as { code: string }).code);
+    expect(r.value.lines).toEqual([expect.objectContaining({ lineId: line, amountCents: 1_400_050, allocatedCents: 1_400_000, remainingCents: 50 })]);
+    expect(r.value.invoices.map((i) => [i.invoiceId, i.paidCents, i.remainingCents, i.settled])).toEqual([[t.invoice.id, 1_000_000, 0, true], [inv2, 400_000, 0, true]]);
+    // Soldée, la facture s'encaisse, la ligne en preuve ; plus de relance, plus de proposition un à un.
+    expect((await t.banque.recordReceipt(t.direction, t.invoice.id)).ok).toBe(true);
+    expect(await t.db.first('SELECT proof_ref FROM commission_receipts WHERE file_id = ?', [t.fileId])).toEqual({ proof_ref: `banque:${line}` });
+    const p = await t.banque.proposals(t.direction);
+    expect(p.ok && p.value.map((x) => x.lineId)).not.toContain(line);
+    // Rien ne change ni ne s'efface [R17] ; la base refuse une part de trop.
+    await expect(t.db.run('UPDATE bank_allocations SET amount_cents = 1')).rejects.toThrow();
+    await expect(t.db.run("INSERT INTO bank_allocations (line_id, invoice_id, network_id, amount_cents, by, created_at) VALUES (?, 'inv-2', ?, 1, 'x', 'y')", [line, t.network.id])).rejects.toThrow();
+  });
+
+  it('[R551] [R552] AU094 · deux règlements partiels soldent une facture ; partielle, elle ne s’encaisse pas et sa relance dit le reste', async () => {
+    const t = await invoiced();
+    t.setClock(at9('2027-07-15'));
+    await t.banque.importStatement(t.direction, '2027-07-10;VIR ACOMPTE;6 000,00\n2027-07-14;VIR SOLDE;4 000,00\n');
+    const first = await lineOf(t, 600_000);
+    const last = await lineOf(t, 400_000);
+    expect((await t.banque.allocate(t.direction, first, [{ invoiceId: t.invoice.id, amountCents: 600_000 }])).ok).toBe(true);
+    expect(await t.banque.recordReceipt(t.direction, t.invoice.id)).toMatchObject({ ok: false, rule: 'R552', code: 'partial' });
+    await t.store.addIdentifier({ networkId: t.network.id, personId: t.buyerId, kind: 'email', value: 'acheteur@example.test' });
+    await t.store.addConsent({ networkId: t.network.id, personId: t.buyerId, purpose: SALE_FOLLOW_UP_PURPOSE, channel: 'email', proof: 'mandat', givenAt: new Date('2027-02-10T09:00:00.000Z') });
+    const relances = new RelancesImpayes(t.db, t.journal, { now: t.now });
+    t.setClock(at9('2027-07-20'));
+    await relances.prepare(t.network.id);
+    const text = (await t.db.first<{ text: string }>('SELECT text FROM invoice_reminders ORDER BY prepared_at DESC LIMIT 1'))?.text ?? '';
+    expect(text).toContain('Nous en avons reçu 6 000,00 € ; 4 000,00 € n\'apparaissent pas encore dans nos encaissements.');
+    // Une part de trop est refusée, au centime ; le solde exact passe.
+    expect(await t.banque.allocate(t.direction, last, [{ invoiceId: t.invoice.id, amountCents: 400_001 }])).toMatchObject({ ok: false, rule: 'R551' });
+    const done = await t.banque.allocate(t.direction, last, [{ invoiceId: t.invoice.id, amountCents: 400_000 }]);
+    expect(done.ok && done.value.invoices[0]).toMatchObject({ paidCents: 1_000_000, remainingCents: 0, settled: true, lines: [{ lineId: first, day: '2027-07-10', amountCents: 600_000 }, { lineId: last, day: '2027-07-14', amountCents: 400_000 }] });
+    // Encaissée au jour de la dernière part, qui en fait la preuve.
+    expect((await t.banque.recordReceipt(t.direction, t.invoice.id)).ok).toBe(true);
+    expect(await t.db.first('SELECT proof_ref, received_at FROM commission_receipts WHERE file_id = ?', [t.fileId])).toEqual({ proof_ref: `banque:${last}`, received_at: '2027-07-13T22:00:00.000Z' });
+    // La relance en attente se ferme.
+    await relances.closeSettledReminders(t.network.id);
+    expect(await t.db.all("SELECT status FROM invoice_reminders WHERE status IN ('a_valider', 'validee')")).toEqual([]);
+  });
+
+  it('[R16] [R551] AU094 · la direction seule partage ; une ligne déjà rapprochée un à un, un débit ou une facture corrigée n’en prennent pas', async () => {
+    const t = await invoiced();
+    t.setClock(at9('2027-07-15'));
+    await t.banque.importStatement(t.direction, '2027-07-14;VIR F-2027-00001;10 000,00\n2027-07-14;PRLV;-50,00\n2027-07-14;VIR AUTRE;3 000,00\n');
+    expect(await t.banque.run(t.network.id)).toBe(1);
+    const whole = await lineOf(t, 1_000_000);
+    const debit = await lineOf(t, -5_000);
+    const other = await lineOf(t, 300_000);
+    expect(await t.banque.allocate(t.agent, other, [{ invoiceId: t.invoice.id, amountCents: 1 }])).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.banque.allocate(t.direction, debit, [{ invoiceId: t.invoice.id, amountCents: 1 }])).toMatchObject({ ok: false, code: 'not_credit' });
+    expect(await t.banque.allocate(t.direction, whole, [{ invoiceId: t.invoice.id, amountCents: 1 }])).toMatchObject({ ok: false, code: 'already' });
+    expect(await t.banque.allocate(t.direction, other, [{ invoiceId: t.invoice.id, amountCents: 1 }])).toMatchObject({ ok: false, code: 'already' });
+    for (const bad of [[], [{ invoiceId: t.invoice.id, amountCents: 0 }], [{ invoiceId: t.invoice.id, amountCents: 1.5 }], 'x']) {
+      expect(await t.banque.allocate(t.direction, other, bad)).toMatchObject({ ok: false, code: 'bad_parts' });
+    }
+    expect(await t.db.first('SELECT COUNT(*) AS n FROM bank_allocations')).toEqual({ n: 0 });
+  });
 });
+

@@ -21,7 +21,7 @@
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { Encaissements } from '../pilotage/encaissements.ts';
@@ -110,13 +110,26 @@ export interface Reconciliation {
   receipt?: { receivedAt: string; payoutDueAt: string; proof: 'ligne' | 'autre' } | null;
 }
 
-type Problem = { ok: false; rule: null | 'R551' | 'R552'; code: 'bad_statement' | 'unknown_line' | 'unknown_invoice' | 'not_credit' | 'amount' | 'before_invoice' | 'credited' | 'already' | 'not_reconciled'; line?: number };
+type Problem = { ok: false; rule: null | 'R551' | 'R552'; code: 'bad_statement' | 'unknown_line' | 'unknown_invoice' | 'not_credit' | 'amount' | 'before_invoice' | 'credited' | 'already' | 'not_reconciled' | 'partial' | 'bad_parts' | 'line_exceeded' | 'invoice_exceeded'; line?: number };
+
+/** AU094 · une part d'une ligne de banque rapprochée d'une facture, au centime. */
+export interface AllocationPart {
+  invoiceId: string;
+  amountCents: number;
+}
+
+/** AU094 · le solde de chaque ligne partagée et de chaque facture réglée par parts, au centime. */
+export interface AllocationBalances {
+  lines: { lineId: string; day: string; amountCents: number; allocatedCents: number; remainingCents: number; parts: { invoiceId: string; label: string; amountCents: number }[] }[];
+  invoices: { invoiceId: string; label: string; amountCents: number; paidCents: number; remainingCents: number; settled: boolean; lines: { lineId: string; day: string; amountCents: number }[] }[];
+}
 
 /** Une facture d'honoraires du réseau qui peut encore être rapprochée : ni rapprochée, ni corrigée par un avoir. */
 const FREE_INVOICE = `i.kind = 'honoraires'
   AND NOT EXISTS (SELECT 1 FROM bank_reconciliations r WHERE r.invoice_id = i.id)
-  AND NOT EXISTS (SELECT 1 FROM invoices a WHERE a.corrects_invoice_id = i.id)`;
-const FREE_LINE = 'NOT EXISTS (SELECT 1 FROM bank_reconciliations r WHERE r.line_id = l.id)';
+  AND NOT EXISTS (SELECT 1 FROM invoices a WHERE a.corrects_invoice_id = i.id)
+  AND NOT EXISTS (SELECT 1 FROM bank_allocations p WHERE p.invoice_id = i.id)`;
+const FREE_LINE = 'NOT EXISTS (SELECT 1 FROM bank_reconciliations r WHERE r.line_id = l.id) AND NOT EXISTS (SELECT 1 FROM bank_allocations p WHERE p.line_id = l.id)';
 
 export class Rapprochements {
   private readonly now: () => Date;
@@ -238,6 +251,91 @@ export class Rapprochements {
     return { ok: true, value: { lineId, invoiceId, label: invoice.label, day: line.day, amountCents: line.amount_cents, mode: 'direction' } };
   }
 
+  /**
+   * AU094 · la direction partage une ligne de crédit entre une ou plusieurs factures d'honoraires, au centime : un
+   * virement groupé solde plusieurs factures, plusieurs règlements partiels en soldent une. Jamais plus que ce que la
+   * ligne apporte, ni que ce que chaque facture demande encore ; une ligne ou une facture déjà rapprochée un à un, ou
+   * une facture corrigée par un avoir, n'en prend pas. Tout en une écriture [R551].
+   */
+  async allocate(viewer: Viewer, lineId: string, parts: unknown): Promise<{ ok: true; value: AllocationBalances } | Refusal | Problem> {
+    const refusal = await directionRefusal(this.journal, this.now, viewer, 'bank_allocation');
+    if (refusal) return refusal;
+    if (!Array.isArray(parts) || parts.length === 0 || parts.length > 20) return { ok: false, rule: null, code: 'bad_parts' };
+    const list: AllocationPart[] = [];
+    for (const p of parts as unknown[]) {
+      const x = p as Record<string, unknown> | null;
+      if (!x || typeof x.invoiceId !== 'string' || !Number.isInteger(x.amountCents) || (x.amountCents as number) <= 0) return { ok: false, rule: null, code: 'bad_parts' };
+      if (list.some((y) => y.invoiceId === x.invoiceId)) return { ok: false, rule: null, code: 'bad_parts' };
+      list.push({ invoiceId: x.invoiceId, amountCents: x.amountCents as number });
+    }
+    const line = await this.db.first<{ day: string; amount_cents: number }>('SELECT day, amount_cents FROM bank_lines WHERE id = ? AND network_id = ?', [lineId, viewer.networkId]);
+    if (!line) return { ok: false, rule: null, code: 'unknown_line' };
+    if (line.amount_cents <= 0) return { ok: false, rule: 'R551', code: 'not_credit' };
+    if (await this.db.first('SELECT 1 FROM bank_reconciliations WHERE line_id = ?', [lineId])) return { ok: false, rule: 'R551', code: 'already' };
+    const used = await this.db.first<{ n: number | null }>('SELECT SUM(amount_cents) AS n FROM bank_allocations WHERE line_id = ?', [lineId]);
+    if (Number(used?.n ?? 0) + list.reduce((a, p) => a + p.amountCents, 0) > line.amount_cents) return { ok: false, rule: 'R551', code: 'line_exceeded' };
+    const files: string[] = [];
+    for (const p of list) {
+      const invoice = await this.db.first<{ kind: string; amount_cents: number; issued_on: string; file_id: string }>('SELECT kind, amount_cents, issued_on, file_id FROM invoices WHERE id = ? AND network_id = ?', [p.invoiceId, viewer.networkId]);
+      if (!invoice || invoice.kind !== 'honoraires') return { ok: false, rule: null, code: 'unknown_invoice' };
+      if (line.day < invoice.issued_on) return { ok: false, rule: 'R551', code: 'before_invoice' };
+      if (await this.db.first('SELECT 1 FROM invoices WHERE corrects_invoice_id = ?', [p.invoiceId])) return { ok: false, rule: 'R551', code: 'credited' };
+      if (await this.db.first('SELECT 1 FROM bank_reconciliations WHERE invoice_id = ?', [p.invoiceId])) return { ok: false, rule: 'R551', code: 'already' };
+      if (await this.db.first('SELECT 1 FROM bank_allocations WHERE line_id = ? AND invoice_id = ?', [lineId, p.invoiceId])) return { ok: false, rule: 'R551', code: 'already' };
+      const paid = await this.db.first<{ n: number | null }>('SELECT SUM(amount_cents) AS n FROM bank_allocations WHERE invoice_id = ?', [p.invoiceId]);
+      if (Number(paid?.n ?? 0) + p.amountCents > invoice.amount_cents) return { ok: false, rule: 'R551', code: 'invoice_exceeded' };
+      files.push(invoice.file_id);
+    }
+    const at = this.now().toISOString();
+    try {
+      await runBatch(
+        this.db,
+        list.map((p) => ({ sql: 'INSERT INTO bank_allocations (line_id, invoice_id, network_id, amount_cents, by, created_at) VALUES (?, ?, ?, ?, ?, ?)', params: [lineId, p.invoiceId, viewer.networkId, p.amountCents, actorOf(viewer), at] })),
+      );
+    } catch (error) {
+      // Un autre geste est passé entre-temps : la base refuse tout, rien n'est partagé.
+      if (error instanceof Error && /bank_allocations :|UNIQUE|PRIMARY/.test(error.message)) return { ok: false, rule: 'R551', code: 'already' };
+      throw error;
+    }
+    for (const [i, p] of list.entries()) {
+      await appendEvent(this.journal, { type: 'banque.part', actor: actorOf(viewer), subject: `sale_file:${files[i]}`, data: { rule: 'R551', invoice: p.invoiceId, line: lineId } }, this.now);
+    }
+    return { ok: true, value: await this.balancesOf(viewer.networkId) };
+  }
+
+  /** AU094 · les soldes des lignes partagées et des factures réglées par parts : la direction et le comptable [R16]. */
+  async balances(viewer: Viewer): Promise<{ ok: true; value: AllocationBalances } | Refusal> {
+    const refusal = await directionRefusal(this.journal, this.now, viewer, 'bank_allocations', { accountantReads: true });
+    if (refusal) return refusal;
+    return { ok: true, value: await this.balancesOf(viewer.networkId) };
+  }
+
+  private async balancesOf(networkId: string): Promise<AllocationBalances> {
+    const rows = await this.db.all<{ line_id: string; invoice_id: string; amount_cents: number; line_day: string; line_amount: number; invoice_amount: number; label: string }>(
+      `SELECT a.line_id, a.invoice_id, a.amount_cents, l.day AS line_day, l.amount_cents AS line_amount, i.amount_cents AS invoice_amount, ${LABEL_SQL('i')} AS label
+         FROM bank_allocations a JOIN bank_lines l ON l.id = a.line_id JOIN invoices i ON i.id = a.invoice_id
+        WHERE a.network_id = ? ORDER BY l.day, a.line_id, i.issued_on, i.number`,
+      [networkId],
+    );
+    const lines = new Map<string, AllocationBalances['lines'][number]>();
+    const invoices = new Map<string, AllocationBalances['invoices'][number]>();
+    for (const r of rows) {
+      const amount = Number(r.amount_cents);
+      const l = lines.get(r.line_id) ?? { lineId: r.line_id, day: r.line_day, amountCents: Number(r.line_amount), allocatedCents: 0, remainingCents: Number(r.line_amount), parts: [] };
+      l.allocatedCents += amount;
+      l.remainingCents = l.amountCents - l.allocatedCents;
+      l.parts.push({ invoiceId: r.invoice_id, label: r.label, amountCents: amount });
+      lines.set(r.line_id, l);
+      const i = invoices.get(r.invoice_id) ?? { invoiceId: r.invoice_id, label: r.label, amountCents: Number(r.invoice_amount), paidCents: 0, remainingCents: Number(r.invoice_amount), settled: false, lines: [] };
+      i.paidCents += amount;
+      i.remainingCents = i.amountCents - i.paidCents;
+      i.settled = i.remainingCents === 0;
+      i.lines.push({ lineId: r.line_id, day: r.line_day, amountCents: amount });
+      invoices.set(r.invoice_id, i);
+    }
+    return { lines: [...lines.values()], invoices: [...invoices.values()] };
+  }
+
   /** Les rapprochements du réseau : la direction seule [R16]. */
   async list(viewer: Viewer): Promise<{ ok: true; value: Reconciliation[] } | Refusal> {
     const refusal = await directionRefusal(this.journal, this.now, viewer, 'bank_reconciliations', { accountantReads: true });
@@ -276,7 +374,23 @@ export class Rapprochements {
        WHERE r.invoice_id = ? AND r.network_id = ?`,
       [invoiceId, viewer.networkId],
     );
-    if (!r) return { ok: false, rule: 'R552', code: 'not_reconciled' };
+    if (!r) {
+      // AU094 · réglée par parts : soldée au centime, elle s'encaisse au jour de sa dernière part, qui en fait la preuve.
+      const parts = await this.db.all<{ line_id: string; day: string; amount_cents: number; file_id: string; invoice_amount: number; invoiced_at: string | null }>(
+        `SELECT a.line_id, l.day, a.amount_cents, i.file_id, i.amount_cents AS invoice_amount,
+                (SELECT s.at FROM commission_steps s WHERE s.file_id = i.file_id AND s.status = 'facturee') AS invoiced_at
+           FROM bank_allocations a JOIN bank_lines l ON l.id = a.line_id JOIN invoices i ON i.id = a.invoice_id
+          WHERE a.invoice_id = ? AND a.network_id = ? ORDER BY l.day, a.line_id`,
+        [invoiceId, viewer.networkId],
+      );
+      if (parts.length === 0) return { ok: false, rule: 'R552', code: 'not_reconciled' };
+      if (parts.reduce((n, p) => n + Number(p.amount_cents), 0) !== Number(parts[0]!.invoice_amount)) return { ok: false, rule: 'R552', code: 'partial' };
+      const last = parts.at(-1)!;
+      const begin = parisMidnight(last.day);
+      const billed = last.invoiced_at ? new Date(last.invoiced_at) : begin;
+      const at = begin.getTime() < billed.getTime() ? billed : begin;
+      return this.encaissements.recordReceipt(viewer, last.file_id, { receivedAt: at.toISOString(), proofRef: `banque:${last.line_id}` });
+    }
     const start = parisMidnight(r.day);
     // Le début du jour de la ligne ; si la facture a été validée ce jour-là, l'instant de sa validation.
     const invoiced = r.invoiced_at ? new Date(r.invoiced_at) : start;

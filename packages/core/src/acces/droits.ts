@@ -17,7 +17,7 @@ export type Role = (typeof ROLES)[number];
  */
 export const LIMITED_ROLE_ROUTES: Readonly<Partial<Record<Role, readonly string[]>>> = {
   assistant: ['bien'],
-  accountant: ['finances.fournisseurs', 'finances.banque.rapprochements', 'finances.banque.fraicheur'],
+  accountant: ['finances.fournisseurs', 'finances.banque.rapprochements', 'finances.banque.soldes', 'finances.banque.fraicheur'],
 };
 
 /** Qui lit. Pour un agent, `userId` est son identifiant dans la table `agents`. */
