@@ -236,6 +236,16 @@ describe('AU105 · une correction de l’avis non enregistrée se retrouve, ou s
     expect(JSON.parse(again.storage.get('aimmo.brouillons')!)).toEqual({});
   });
 
+  it('[R276] un appareil qui ne peut pas garder la correction le dit tout de suite', async () => {
+    const t = await run(answers(), { 'aimmo.brouillons': '{}' });
+    await t.open();
+    t.storage.set = () => { throw new Error('plein'); };
+    const text = t.input('avis-texte');
+    text.value = 'Autre';
+    text.listeners.input!({});
+    expect(t.state()).toBe('Cet appareil ne peut pas garder cette correction : enregistrez-la avant de quitter l’écran.');
+  });
+
   it('[R276] abandonner la correction la retire de l’appareil ; l’avis rangé reste tel quel', async () => {
     const t = await run(answers());
     await t.open();

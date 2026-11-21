@@ -182,7 +182,7 @@ globalThis.AIMMO_AVIS = function (t) {
     var key = 'avis:' + r.id;
     function keep() {
       if (low.value === String(r.low) && high.value === String(r.high) && text.value === r.text) drafts.drop(key);
-      else drafts.set(key, { updatedAt: r.updatedAt, low: low.value, high: high.value, text: text.value });
+      else if (!drafts.set(key, { updatedAt: r.updatedAt, low: low.value, high: high.value, text: text.value })) state('Cet appareil ne peut pas garder cette correction : enregistrez-la avant de quitter l’écran.');
     }
     [low, high, text].forEach(function (f) { f.addEventListener('input', keep); });
     var kept = drafts.get(key);

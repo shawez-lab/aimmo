@@ -87,8 +87,8 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, checkbox = t.checkbox;
   // AU105 · chaque champ dessiné est suivi : une saisie non enregistrée devient un brouillon de cet appareil.
   var tracking = null;
-  function fieldT(box, id, label, kind) { var f = field(box, id, label, kind); if (tracking) tracking.push(f); return f; }
-  function checkboxT(box, id, label) { var f = checkbox(box, id, label); if (tracking) tracking.push(f); return f; }
+  function fieldT(box, id, label, kind) { var f = field(box, id, label, kind); if (tracking) tracking.push({ f: f, id: id, check: false }); return f; }
+  function checkboxT(box, id, label) { var f = checkbox(box, id, label); if (tracking) tracking.push({ f: f, id: id, check: true }); return f; }
   // AU105 · les brouillons de cet appareil, rangés par ce qu'ils concernent ; la sortie les efface.
   var DRAFTS = 'aimmo.brouillons';
   function dAll() { try { var a = JSON.parse(localStorage.getItem(DRAFTS) || '{}'); return a && typeof a === 'object' && !Array.isArray(a) ? a : {}; } catch (e) { return {}; } }
@@ -275,23 +275,38 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
     }
     var said = el('p', null, 'doux');
     said.setAttribute('role', 'status');
-    // Le point de départ est la fiche rangée : un brouillon repris ne devient pas la version lue.
-    var start = resumed ? resumed.start : JSON.stringify(read().sheet);
+    var start = JSON.stringify(read().sheet);
+    // AU105 · la saisie se garde telle quelle, champ par champ (même incomplète ou pas encore valable), à côté de la
+    // fiche rangée : reprise, elle se repose sur la version lue, photos comprises.
     var key = 'fiche-bien:' + o.base;
     var fields = tracking;
     tracking = null;
-    function keep() {
-      var now = read().sheet, text = JSON.stringify(now);
-      if (text === start) drafts.drop(key); else drafts.set(key, { version: version, start: start, sheet: now });
+    function raw() {
+      var out = {};
+      fields.forEach(function (x) { out[x.id] = x.check ? !!x.f.checked : String(x.f.value || ''); });
+      return out;
     }
-    fields.forEach(function (f) { f.addEventListener('input', keep); f.addEventListener('change', keep); });
+    var pristine = JSON.stringify(raw());
+    function keep() {
+      var now = raw();
+      if (JSON.stringify(now) === pristine) { drafts.drop(key); return; }
+      if (!drafts.set(key, { version: version, raw: now })) said.textContent = 'Cet appareil ne peut pas garder cette saisie : enregistrez-la avant de quitter l’écran.';
+    }
+    fields.forEach(function (x) { x.f.addEventListener('input', keep); x.f.addEventListener('change', keep); });
+    if (resumed && resumed.raw) {
+      fields.forEach(function (x) {
+        if (!(x.id in resumed.raw)) return;
+        var v = resumed.raw[x.id];
+        if (x.check) x.f.checked = v === true; else x.f.value = String(v);
+      });
+    }
     var kept = resumed ? null : drafts.get(key);
-    if (kept && kept.value && kept.value.sheet && kept.value.start !== JSON.stringify(kept.value.sheet)) {
+    if (kept && kept.value && kept.value.raw && JSON.stringify(kept.value.raw) !== pristine) {
       var note = el('div', null, 'retard');
       note.setAttribute('role', 'status');
       var same = Number(kept.value.version) === version;
-      note.appendChild(el('p', same ? 'Une saisie de cette fiche n’a pas été enregistrée sur cet appareil.' : 'Une saisie de cette fiche n’a pas été enregistrée sur cet appareil, mais la fiche a changé depuis : la reprendre repart de la version rangée, relisez chaque champ.'));
-      note.appendChild(button('Reprendre la saisie', function () { draw(zone, o, version, kept.value.sheet, { start: same ? kept.value.start : start }); }));
+      note.appendChild(el('p', same ? 'Une saisie de cette fiche n’a pas été enregistrée sur cet appareil.' : 'Une saisie de cette fiche n’a pas été enregistrée sur cet appareil, mais la fiche a changé depuis : la reprendre la pose sur la version rangée, relisez chaque champ.'));
+      note.appendChild(button('Reprendre la saisie', function () { draw(zone, o, version, sheet, { raw: kept.value.raw }); }));
       note.appendChild(button('Abandonner la saisie', function () { drafts.drop(key); zone.removeChild(note); }));
       zone.insertBefore(note, zone.firstChild);
     }

@@ -387,7 +387,7 @@ describe('AU105 · une saisie de la fiche du bien non enregistrée se retrouve, 
     type(t, 'fiche-bien-bedrooms', '3');
     const kept = JSON.parse(t.storage.get('aimmo.brouillons')!);
     expect(Object.keys(kept)).toHaveLength(1);
-    expect(Object.values(kept)[0]).toMatchObject({ value: { version: 4, sheet: { characteristics: { bedrooms: 3 } } } });
+    expect(Object.values(kept)[0]).toMatchObject({ value: { version: 4, raw: { 'fiche-bien-bedrooms': '3' } } });
     // Revenir à la valeur rangée n'est plus une saisie : le brouillon s'efface.
     type(t, 'fiche-bien-bedrooms', '2');
     expect(JSON.parse(t.storage.get('aimmo.brouillons')!)).toEqual({});
@@ -416,6 +416,40 @@ describe('AU105 · une saisie de la fiche du bien non enregistrée se retrouve, 
     expect(again.f('fiche-bien-bedrooms').value).toBe('2');
     expect(JSON.parse(again.storage.get('aimmo.brouillons')!)).toEqual({});
     expect(again.posts()).toEqual([]);
+  });
+
+  it('[R276] la saisie se garde telle quelle, même pas encore valable : des lots tapés avant « en copropriété », un nombre mal écrit', async () => {
+    const SANS = { ...SHEET, coownership: null };
+    const t = await run({ [GET]: ok({ propertyId: 'b1', version: 4, sheet: SANS }) });
+    await t.open();
+    type(t, 'fiche-bien-lots', '8');
+    type(t, 'fiche-bien-bedrooms', '3 ch');
+    const again = await run({ [GET]: ok({ propertyId: 'b1', version: 4, sheet: SANS }) }, { 'aimmo.brouillons': t.storage.get('aimmo.brouillons')! });
+    await again.open();
+    await again.click(again.find('Reprendre la saisie'));
+    expect(again.f('fiche-bien-lots').value).toBe('8');
+    expect(again.f('fiche-bien-bedrooms').value).toBe('3 ch');
+  });
+
+  it('[R276] reprise sur une fiche qui a changé : la saisie se pose sur la version lue, ses photos comprises', async () => {
+    const t = await run();
+    await t.open();
+    type(t, 'fiche-bien-bedrooms', '3');
+    const MORE = [...MEDIA, { ref: 'biens/b1/0b6f1d2e-3333-4a2b-8c3d-000000000002.jpg', kind: 'photo', edit: 'aucune' }];
+    const again = await run({ [GET]: ok({ propertyId: 'b1', version: 5, sheet: { ...SHEET, media: MORE } }), 'POST /v1/annonces/b1/fiche?siVersion=5': ok({ version: 6 }) }, { 'aimmo.brouillons': t.storage.get('aimmo.brouillons')! });
+    await again.open();
+    expect(again.body().textContent).toContain('la fiche a changé depuis');
+    await again.click(again.find('Reprendre la saisie'));
+    await again.save();
+    expect(again.posts().at(-1)).toMatchObject({ url: '/v1/annonces/b1/fiche?siVersion=5', body: { characteristics: { bedrooms: 3 }, media: MORE } });
+  });
+
+  it('[R276] un appareil qui ne peut pas garder la saisie le dit tout de suite', async () => {
+    const t = await run();
+    await t.open();
+    (t.context.localStorage as { setItem: (k: string, v: string) => void }).setItem = () => { throw new Error('plein'); };
+    type(t, 'fiche-bien-bedrooms', '3');
+    expect(t.body().textContent).toContain('Cet appareil ne peut pas garder cette saisie : enregistrez-la avant de quitter l’écran.');
   });
 
   it('[R13] la sortie efface les brouillons de l’appareil', async () => {
