@@ -2208,6 +2208,8 @@ ${LOUER_JS}
       $('hors-ligne').appendChild(s);
     });
   }
+  // Le même chargeur, sous un nom qu'aucun écouteur ne recouvre (AU104).
+  var withOffline = offline;
   function enter(key) {
     session += 1;
     var mine = session;
@@ -2391,10 +2393,13 @@ ${LOUER_JS}
     $('alerte').addEventListener('click', function () { raiseAlert(false); });
     $('sortir').addEventListener('click', function () {
       session += 1;
+      // AU104 : la sortie efface le mode privé de la visite de la clé qui sort, la visite sans réseau chargée au besoin,
+      // même si la journée n'a pas fini de s'ouvrir [R676].
+      var leaving = currentKey || readKey();
+      if (OFF && OFF.sortie) OFF.sortie();
+      if (leaving) withOffline(function (H) { return H.oublier ? H.oublier(leaving) : null; });
       currentKey = null;
       forgetKey();
-      // AU104 : la sortie efface le mode privé de la visite [R676].
-      if (OFF && OFF.sortie) OFF.sortie();
       try { localStorage.removeItem('aimmo.brouillons'); } catch (e) { /* rien */ }
       $('bonjour').textContent = '';
       wipe();

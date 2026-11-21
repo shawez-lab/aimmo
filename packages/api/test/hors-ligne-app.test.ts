@@ -204,7 +204,7 @@ type World = Awaited<ReturnType<typeof setup>>;
  * Le téléphone : l'application et la visite sans réseau, chargées comme la page les charge. `network` décide si le
  * réseau répond ; `loseAnswer` fait perdre la réponse d'un envoi après que le serveur l'a reçu.
  */
-async function phone(w: World, idb: Map<string, unknown>, net: { network: boolean; loseAnswer?: boolean; hold?: Promise<void>; decode?: Promise<void>; dropPack?: boolean; refuseMe?: boolean }, who: { key: string; viewer?: Viewer } = { key: KEY }) {
+async function phone(w: World, idb: Map<string, unknown>, net: { network: boolean; loseAnswer?: boolean; hold?: Promise<void>; decode?: Promise<void>; dropPack?: boolean; refuseMe?: boolean; holdDay?: Promise<void> }, who: { key: string; viewer?: Viewer } = { key: KEY }) {
   const viewer = who.viewer ?? w.agent;
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
   const winListeners: Record<string, () => void> = {};
@@ -263,6 +263,7 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
         if (net.loseAnswer && method === 'POST') throw new TypeError('réponse perdue');
         return r;
       }
+      if (url === '/v1/plan-du-jour' && net.holdDay) await net.holdDay;
       if (url === '/v1/moi') return net.refuseMe ? Response.json({ ok: false }, { status: 401 }) : stub({ role: 'agent', firstName: 'Alex' });
       if (url === '/v1/rendez-vous/jour') return stub({ day: '2026-12-08', appointments: [] });
       if (url === '/v1/contacts-chauds') return stub({ contacts: [] });
@@ -295,7 +296,7 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
     await settle();
   };
   const H = (ctx.AimmoHorsLigne ?? { pending: async () => [], refused: async () => [] }) as { pending: (o?: string) => Promise<unknown[]>; refused: () => Promise<unknown[]> };
-  return { els, ctx, calls, bodies, later, fire, loads, root, find, click, H, online: async () => (winListeners.online?.(), await settle()) };
+  return { els, ctx, calls, bodies, later, fire, tick: settle, loads, root, find, click, H, online: async () => (winListeners.online?.(), await settle()) };
 }
 
 describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’envoi', () => {
@@ -743,6 +744,16 @@ describeWithSqlite('AU104 · le mode privé de la visite, sur le téléphone', (
     const out = await keep();
     out.els.sortir!.listeners.click!({});
     await until(() => !privOf(idb), 'effacé à la sortie');
+    // La sortie pendant que la journée s'ouvre encore, avant que la visite sans réseau ne soit chargée.
+    await keep();
+    let open: () => void = () => undefined;
+    const slow = await phone(w, idb, { network: true, holdDay: new Promise<void>((r) => (open = r)) });
+    expect(slow.loads).toEqual([]);
+    slow.els.sortir!.listeners.click!({});
+    open();
+    await slow.tick();
+    await until(() => !privOf(idb), 'effacé à la sortie pendant l’ouverture');
+    expect(slow.loads).toEqual(['/app/hors-ligne.js']);
     // La visite annulée : la préparation suivante, avec du réseau, efface tout.
     await keep();
     await w.db.run("UPDATE appointments SET status = 'cancelled' WHERE id = ?", [w.visitId]);
