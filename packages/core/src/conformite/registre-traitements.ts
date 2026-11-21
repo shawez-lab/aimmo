@@ -1373,7 +1373,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   sale_file_conditions: ['file_id', 'network_id', 'kind', 'version', 'responsible', 'due_day', 'state', 'at'],
   sale_file_condition_tasks: ['file_id', 'network_id', 'kind', 'alert', 'due_day', 'created_at'],
   sale_file_reminders: ['file_id', 'piece', 'day', 'network_id', 'side', 'status', 'rule', 'message_id', 'updated_at'],
-  sale_file_financing: ['file_id', 'seq', 'network_id', 'step', 'day', 'at'],
+  sale_file_financing: ['file_id', 'seq', 'network_id', 'step', 'day', 'at', 'request_label'],
   sale_file_financing_alerts: ['file_id', 'network_id', 'kind', 'due_day', 'step_seq', 'created_at'],
   sale_file_fund_alerts: ['message_id', 'file_id', 'network_id', 'side', 'created_at', 'reminder_status', 'reminder_rule'],
   sale_file_closings: ['file_id', 'network_id', 'signed_on', 'aftersale', 'at'],
