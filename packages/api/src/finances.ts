@@ -210,6 +210,21 @@ export function financesRoutes(): FinancesRoute[] {
       roles: DIRECTION,
       handle: withBody(['invoiceId'], async (s, v, [lineId], b) => (typeof b.invoiceId === 'string' ? reply(await banque(s).confirm(v, lineId!, b.invoiceId)) : badBody())),
     },
+    // AU094 · une ligne partagée entre factures, au centime, et les soldes qui en restent [R551].
+    {
+      method: 'POST',
+      pattern: new RegExp(`${P}/banque/lignes/${ID}/parts$`),
+      name: 'finances.banque.parts',
+      roles: DIRECTION,
+      handle: withBody(['parts'], async (s, v, [lineId], b) => reply(await banque(s).allocate(v, lineId!, b.parts))),
+    },
+    {
+      method: 'GET',
+      pattern: new RegExp(`${P}/banque/soldes$`),
+      name: 'finances.banque.soldes',
+      roles: DIRECTION_ACCOUNTANT,
+      handle: async (s, v) => reply(await banque(s).balances(v)),
+    },
     {
       method: 'GET',
       pattern: new RegExp(`${P}/banque/rapprochements$`),

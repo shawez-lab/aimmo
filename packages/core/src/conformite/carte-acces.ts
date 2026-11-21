@@ -246,6 +246,7 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'commission.encaissement': INTERNE('Encaissement des honoraires par le réseau.'),
   // HX49 : rapprochement d'une facture et d'une ligne de banque (des identifiants) ; relance d'une facture impayée, qui porte la fiche du client.
   'banque.rapprochement': INTERNE('Rapprochement d\'une facture et d\'une ligne de banque du réseau : des identifiants, sans donnée d\'un client.'),
+  'banque.part': INTERNE('Part d\'une ligne de banque du réseau rapprochée d\'une facture (AU094) : des identifiants, sans montant ni donnée d\'un client.'),
   'facture.relance': 'client',
   'commission.reversement': INTERNE('Reversement à l\'agent.'),
   'commission.alerte_reversement': INTERNE('Alerte de reversement à l\'agent.'),
@@ -724,6 +725,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   supplier_invoices: out('sans_client', 'Facture d\'un fournisseur du réseau.'),
   bank_lines: out('non_rattachable', 'Ligne du relevé de banque du réseau : un jour, un montant, une empreinte, sans libellé.'),
   bank_reconciliations: { locate: [via('invoice_id', 'invoices')] },
+  bank_allocations: { locate: [via('invoice_id', 'invoices')] },
   invoice_reminders: { locate: by('person_id') },
   agent_cost_assignments: out('sans_client', 'Poste d\'une facture d\'un fournisseur du réseau, dit par la direction (HX65).'),
   agent_cost_settings: out('sans_client', 'Réglages du coût complet de l\'agent moyen, par la direction (HX65).'),
