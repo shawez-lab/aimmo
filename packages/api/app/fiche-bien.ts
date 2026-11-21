@@ -287,7 +287,11 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       return out;
     }
     var pristine = JSON.stringify(raw());
+    // Tant qu'une saisie gardée attend « reprendre » ou « abandonner », rien ne la remplace : la fiche est en lecture.
+    var waiting = false;
+    function lockFields(on) { fields.forEach(function (x) { x.f.disabled = on; }); }
     function keep() {
+      if (waiting) return;
       var now = raw();
       if (JSON.stringify(now) === pristine) { drafts.drop(key); return; }
       if (!drafts.set(key, { version: version, raw: now })) said.textContent = 'Cet appareil ne peut pas garder cette saisie : enregistrez-la avant de quitter l’écran.';
@@ -306,9 +310,12 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       note.setAttribute('role', 'status');
       var same = Number(kept.value.version) === version;
       note.appendChild(el('p', same ? 'Une saisie de cette fiche n’a pas été enregistrée sur cet appareil.' : 'Une saisie de cette fiche n’a pas été enregistrée sur cet appareil, mais la fiche a changé depuis : la reprendre la pose sur la version rangée, relisez chaque champ.'));
+      note.appendChild(el('p', 'Choisissez d’abord : la fiche se modifie une fois la saisie reprise ou abandonnée.', 'doux'));
       note.appendChild(button('Reprendre la saisie', function () { draw(zone, o, version, sheet, { raw: kept.value.raw }); }));
-      note.appendChild(button('Abandonner la saisie', function () { drafts.drop(key); zone.removeChild(note); }));
+      note.appendChild(button('Abandonner la saisie', function () { drafts.drop(key); waiting = false; lockFields(false); go.disabled = false; zone.removeChild(note); }));
       zone.insertBefore(note, zone.firstChild);
+      waiting = true;
+      lockFields(true);
     }
     var go = button('Enregistrer la fiche', function () {
       if (t.sending()) return;
@@ -319,11 +326,14 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       var mine = t.current();
       t.sending(true);
       go.disabled = true;
+      // Pendant l'envoi, rien ne se tape : ce qui part est ce qui sera rangé, et le brouillon ne s'efface qu'avec lui.
+      lockFields(true);
       said.textContent = 'Envoi…';
       return send(o.base + '/fiche?siVersion=' + version, 'POST', form.sheet).then(function (res) {
         t.sending(false);
         if (res.gone) return false;
         go.disabled = false;
+        lockFields(false);
         // Coupée ou en panne, la réponse ne dit pas si la version a été rangée.
         if (res.offline || res.status >= 500 || !res.body) { said.textContent = 'Réponse perdue : la fiche a peut-être été rangée. Rouvrez-la pour le voir, ce que vous avez saisi reste ici.'; return false; }
         if (res.status === 403) { said.textContent = 'Ce bien n’est pas dans vos droits.'; return false; }
@@ -339,6 +349,7 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
         return t.saved(mine, res.body.data && res.body.data.version);
       });
     });
+    if (waiting) go.disabled = true;
     zone.appendChild(go);
     zone.appendChild(said);
   }

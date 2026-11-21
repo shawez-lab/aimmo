@@ -452,6 +452,35 @@ describe('AU105 · une saisie de la fiche du bien non enregistrée se retrouve, 
     expect(t.body().textContent).toContain('Cet appareil ne peut pas garder cette saisie : enregistrez-la avant de quitter l’écran.');
   });
 
+  it('[R276] tant que la saisie gardée attend un choix, la fiche ne se modifie pas et ne l’efface pas', async () => {
+    const t = await run();
+    await t.open();
+    type(t, 'fiche-bien-bedrooms', '3');
+    const kept = t.storage.get('aimmo.brouillons')!;
+    const again = await run({}, { 'aimmo.brouillons': kept });
+    await again.open();
+    expect((again.f('fiche-bien-floor') as FakeElement & { disabled?: boolean }).disabled).toBe(true);
+    expect((again.find('Enregistrer la fiche') as FakeElement & { disabled?: boolean }).disabled).toBe(true);
+    type(again, 'fiche-bien-floor', '4');
+    expect(again.storage.get('aimmo.brouillons')).toBe(kept);
+    await again.click(again.find('Abandonner la saisie'));
+    expect((again.f('fiche-bien-floor') as FakeElement & { disabled?: boolean }).disabled).toBe(false);
+  });
+
+  it('[R276] pendant l’envoi, rien ne se tape ; le brouillon ne s’efface qu’avec ce qui a été rangé', async () => {
+    let answer: (r: Response) => void = () => {};
+    const t = await run({ [POST]: () => new Promise<Response>((r) => { answer = r; }) });
+    await t.open();
+    type(t, 'fiche-bien-bedrooms', '3');
+    void t.click(t.find('Enregistrer la fiche'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect((t.f('fiche-bien-bedrooms') as FakeElement & { disabled?: boolean }).disabled).toBe(true);
+    answer(Response.json({ ok: false, code: 'busy' }, { status: 409 }));
+    for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 0));
+    expect((t.f('fiche-bien-bedrooms') as FakeElement & { disabled?: boolean }).disabled).toBe(false);
+    expect(JSON.parse(t.storage.get('aimmo.brouillons')!)).not.toEqual({});
+  });
+
   it('[R13] la sortie efface les brouillons de l’appareil', async () => {
     const t = await run();
     await t.open();

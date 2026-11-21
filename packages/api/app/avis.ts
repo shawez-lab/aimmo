@@ -180,7 +180,9 @@ globalThis.AIMMO_AVIS = function (t) {
     function amount(f) { return Number(String(f.value).replace(/[\\s€]/g, '')); }
     // AU105 · une correction non enregistrée reste sur cet appareil, pour cet avis, jusqu'à l'enregistrer ou l'abandonner.
     var key = 'avis:' + r.id;
+    var waiting = false;
     function keep() {
+      if (waiting) return;
       if (low.value === String(r.low) && high.value === String(r.high) && text.value === r.text) drafts.drop(key);
       else if (!drafts.set(key, { updatedAt: r.updatedAt, low: low.value, high: high.value, text: text.value })) state('Cet appareil ne peut pas garder cette correction : enregistrez-la avant de quitter l’écran.');
     }
@@ -190,9 +192,13 @@ globalThis.AIMMO_AVIS = function (t) {
       var note = el('div', null, 'retard');
       note.setAttribute('role', 'status');
       note.appendChild(el('p', kept.value.updatedAt === r.updatedAt ? 'Une correction de cet avis n’a pas été enregistrée sur cet appareil.' : 'Une correction de cet avis n’a pas été enregistrée sur cet appareil, mais l’avis a changé depuis : relisez-la avant de l’enregistrer.'));
-      note.appendChild(button('Reprendre la correction', function () { low.value = String(kept.value.low); high.value = String(kept.value.high); text.value = kept.value.text; box.removeChild(note); }));
-      note.appendChild(button('Abandonner la correction', function () { drafts.drop(key); box.removeChild(note); }));
+      note.appendChild(el('p', 'Choisissez d’abord : l’avis se corrige une fois la correction reprise ou abandonnée.', 'doux'));
+      var settle = function () { waiting = false; [low, high, text].forEach(function (f) { f.disabled = false; }); box.removeChild(note); };
+      note.appendChild(button('Reprendre la correction', function () { low.value = String(kept.value.low); high.value = String(kept.value.high); text.value = kept.value.text; settle(); }));
+      note.appendChild(button('Abandonner la correction', function () { drafts.drop(key); settle(); }));
       box.insertBefore(note, box.firstChild);
+      waiting = true;
+      [low, high, text].forEach(function (f) { f.disabled = true; });
     }
     function change() {
       var c = {};
@@ -209,6 +215,7 @@ globalThis.AIMMO_AVIS = function (t) {
     function lock(on) { parts.forEach(function (p) { p.disabled = on; }); }
     function add(b) { parts.push(b); box.appendChild(b); }
     add(button('Enregistrer', function () {
+      if (waiting) { state('Choisissez d’abord : reprendre ou abandonner la correction gardée.'); return Promise.resolve(false); }
       var c = change();
       if (Object.keys(c).length === 0) { state('Rien à enregistrer.'); return Promise.resolve(false); }
       if (Number.isNaN(amount(low)) || Number.isNaN(amount(high))) { state('La fourchette s’écrit en euros, en chiffres seulement.'); return Promise.resolve(false); }
@@ -225,6 +232,7 @@ globalThis.AIMMO_AVIS = function (t) {
     // Une modification à l'écran, encore non enregistrée, ne se valide jamais à l'insu de l'agent [R30].
     // La version lue à l'écran part avec le geste : celle d'un autre appareil n'est jamais validée à l'aveugle.
     add(button('Valider l’avis', function () {
+      if (waiting) { state('Choisissez d’abord : reprendre ou abandonner la correction gardée.'); return Promise.resolve(false); }
       if (Object.keys(change()).length > 0) { state('Enregistrez d’abord vos changements : c’est ce texte qui sera validé.'); return Promise.resolve(false); }
       state('Validation…');
       lock(true);
