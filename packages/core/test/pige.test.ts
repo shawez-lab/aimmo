@@ -712,4 +712,37 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     expect((await s.db.first<{ n: number }>('SELECT count(*) AS n FROM pige_no_agency'))!.n).toBe(before);
     expect(await s.pige.ingest(s.network.id, [s.ad({ ...flat, source: 'Site F', rooms: 4 })])).toMatchObject({ added: 1 });
   });
+
+  it('[R672] deux annonces qui taisent leurs pièces ne sont jamais réunies, ni avant ni après que leurs pièces se disent', async () => {
+    const s = await setup();
+    const a = s.ad({ ...flat, rooms: undefined });
+    const b = s.ad({ ...flat, source: 'Site B', rooms: undefined });
+    await s.pige.ingest(s.network.id, [a, b]);
+    let q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value.map((e) => e.sites)).toEqual([1, 1]);
+    // Leurs pièces se disent : 3 et 4. Le 3 pièces revu « pas d'agence » ailleurs ne ferme pas le 4 pièces.
+    s.at(MONDAY_10H + 3_600_000);
+    await s.pige.ingest(s.network.id, [{ ...a, rooms: 3 }, { ...b, rooms: 4 }]);
+    await s.pige.ingest(s.network.id, [s.ad({ ...flat, source: 'Site C', rooms: 3, noAgency: true })]);
+    q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value.map((e) => [e.source, e.rooms])).toEqual([['Site B', 4]]);
+  });
+
+  it('[R672] une annonce fermée seulement dans le doute entre le jour où ses pièces la séparent du bien fermé', async () => {
+    const s = await setup();
+    const a = s.ad({ ...flat, rooms: undefined });
+    await s.pige.ingest(s.network.id, [a]);
+    await s.pige.ingest(s.network.id, [s.ad({ ...flat, source: 'Site B', rooms: 3, noAgency: true })]);
+    let q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value).toEqual([]);
+    s.at(MONDAY_10H + 3_600_000);
+    expect(await s.pige.ingest(s.network.id, [{ ...a, rooms: 4 }])).toMatchObject({ added: 1, noAgency: 0 });
+    q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value.map((e) => e.rooms)).toEqual([4]);
+    // Corrigée en 3 pièces, elle est prouvée le bien fermé : dehors.
+    s.at(MONDAY_10H + 7_200_000);
+    await s.pige.ingest(s.network.id, [{ ...a, rooms: 3 }]);
+    q = await s.pige.queue(s.agentAlex);
+    expect(q.ok && q.value).toEqual([]);
+  });
 });
