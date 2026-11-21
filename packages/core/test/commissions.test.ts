@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { ActeVente, Echeancier } from '../src/dossiers/index.ts';
 import { COMMISSION_STATUSES, Commissions, Factures, PlateformeEssai, computeShares, type CommissionShare } from '../src/pilotage/index.ts';
+import { ExportQuotidien } from '../src/pilotage/branchement.ts';
 import { PROOF, setupDossier } from './dossiers-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -412,6 +413,9 @@ describeWithSqlite('AU091 · une baisse d’honoraires signée après le comprom
     expect(await f.prepare(t.network.id)).toBe(2);
     const drafts = await f.drafts(t.direction);
     expect(drafts.ok && drafts.value.map((d) => [d.kind, d.amountCents]).sort()).toEqual([['honoraires', 800_000], ['reversement', 560_000]]);
+    // L'export quotidien du jour de l'acte dit les honoraires régularisés.
+    const csv = await new ExportQuotidien(t.db, t.journal, { now: t.now }).csv(t.direction, '2027-06-10');
+    expect(csv.ok && csv.value.split('\r\n').find((l) => l.includes(';total;'))).toMatch(/;8000$/);
     // Due : plus de régularisation (l'avoir de K02 prend le relais), et la base refuse toute retouche [R17].
     expect(await c.regularize(t.direction, t.fileId, { reason })).toEqual({ ok: false, rule: 'R678', code: 'already_due' });
     await expect(t.db.run('UPDATE commissions SET fee_cents = 1 WHERE file_id = ?', [t.fileId])).rejects.toThrow();
