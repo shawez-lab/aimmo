@@ -687,10 +687,13 @@ describeWithSqlite('AU104 · le mode privé de la visite, sur le téléphone', (
     await until(() => address(field), 'adresse sans réseau');
     expect(callLink(field)).toBeDefined();
     // Cinq minutes sans geste, personne ne touche l'écran : refermé, et l'adresse quitte l'écran d'elle-même.
+    // Une note en cours d'écriture : le verrouillage seul ne l'efface pas.
+    field.find('textarea')!.value = 'Note pas encore gardée';
     w.setClock(w.clock() + 6 * MIN);
     expect(field.later.length).toBeGreaterThan(0);
     for (const f of field.later.splice(0)) await f();
     await settle();
+    expect(field.find('textarea')!.value).toBe('Note pas encore gardée');
     expect(address(field)).toBeUndefined();
     expect(callLink(field)).toBeUndefined();
     expect(field.find('button', 'Ouvrir')).toBeDefined();
@@ -767,9 +770,11 @@ describeWithSqlite('AU104 · le mode privé de la visite, sur le téléphone', (
     await home.click(home.find('button', 'Verrouiller'));
     const items = () => ((idb.get(privOf(idb)!) as { items: { id: string }[] } | undefined)?.items ?? []).map((i) => i.id);
     expect(items()).toEqual([w.visitId, 'visite-test-2']);
-    // Deux heures après la fin de la première, sans le code : elle a quitté le téléphone, la seconde reste.
+    // Deux heures après la fin de la première, l'application restée ouverte et verrouillée, sans un geste : elle a quitté
+    // le téléphone à son heure, la seconde reste.
     w.setClock((await end(w)) + 2 * HOUR + MIN);
-    await phone(w, idb, { network: false });
+    expect(items()).toHaveLength(2);
+    for (const f of home.later.splice(0)) await f();
     await until(() => items().length === 1, 'première effacée');
     expect(items()).toEqual(['visite-test-2']);
     const field = await phone(w, idb, { network: false });

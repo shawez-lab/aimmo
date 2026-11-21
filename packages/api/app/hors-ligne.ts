@@ -236,7 +236,27 @@ function readPriv(o) {
     if (items.length === r.items.length) return { value: r };
     r.items = items;
     return { next: r, value: r };
-  }).then(function (r) { return r === 'vide' ? del(PRIV + ':' + o).then(function () { return null; }) : r; });
+  }).then(function (r) {
+    if (r === 'vide') return del(PRIV + ':' + o).then(function () { watchWipe(null); return null; });
+    watchWipe(r);
+    return r;
+  });
+}
+/* À l'heure d'effacement de la prochaine visite, ouvert ou verrouillé, sans personne pour toucher l'écran : elle quitte
+   le téléphone et l'écran [R676]. */
+var wipeTimer = null;
+function watchWipe(r) {
+  if (wipeTimer !== null && G.clearTimeout) G.clearTimeout(wipeTimer);
+  wipeTimer = null;
+  if (!r || !Array.isArray(r.items) || !r.items.length) return;
+  var next = Math.min.apply(null, r.items.map(function (it) { return Date.parse(it.wipeAt); }));
+  wipeTimer = G.setTimeout(wipeCheck, Math.max(1000, next - Date.now() + 1000));
+}
+function wipeCheck() {
+  wipeTimer = null;
+  var o = (ui && ui.owner) || last;
+  if (!o) return Promise.resolve(false);
+  return ui && ui.privSection ? redrawPriv(ui) : readPriv(o).then(function () { return true; });
 }
 function privWipe(o) {
   if (open_ && (!o || open_.o === o)) open_ = null;
@@ -261,7 +281,7 @@ function idleCheck() {
   if (!open_) return Promise.resolve(false);
   if (Date.now() - open_.at < P.idleMs) { watchIdle(); return Promise.resolve(false); }
   open_ = null;
-  return (ui && ui.owner ? render() : Promise.resolve(false)).then(function () { return true; });
+  return redrawPriv(ui).then(function () { return true; });
 }
 function opened(o, k, salt, visits) {
   open_ = visits.length ? { o: o, k: k, salt: salt, visits: visits, at: Date.now() } : null;
@@ -504,9 +524,9 @@ function render() {
   var o = mine.owner;
   return Promise.all([readPack(o), box(o), readPriv(o).then(null, function () { return null; }), privVisits(o).then(null, function () { return null; })]).then(function (got) {
     if (ui !== mine) return false;
-    var p = got[0], box = got[1], priv = {};
-    (got[3] || []).forEach(function (v) { priv[v.appointmentId] = v; });
+    var p = got[0], box = got[1];
     clear(root);
+    mine.slots = {};
     if (mine.back) root.appendChild(btn('Retour à ma journée', function () { mine.open = false; mine.back(mine.key); }, 'retour'));
     root.appendChild(el('h2', 'Mes visites sans réseau'));
     mine.etat = el('p', '', 'etat');
@@ -516,26 +536,57 @@ function render() {
     root.appendChild(mine.send);
     said(mine, box);
     box.refused.forEach(function (r) { root.appendChild(el('p', 'Refusée par le serveur : ' + (CODES[r.code] || r.code) + '.', 'doux')); });
-    root.appendChild(privTools(mine, o, got[2], got[3]));
+    mine.privSection = el('section', '', 'prive');
+    root.appendChild(mine.privSection);
     if (!p) { root.appendChild(el('p', 'Aucune visite préparée. Ouvrez l’application avec du réseau : la journée se prépare seule.')); return true; }
     if (!p.appointments.length) root.appendChild(el('p', 'Aucune visite ni estimation prévue ce jour.'));
-    p.appointments.forEach(function (a) { root.appendChild(card(a, box.pending, o, priv[a.appointmentId] || null)); });
+    p.appointments.forEach(function (a) { root.appendChild(card(a, box.pending, o, mine)); });
+    fillPriv(mine, o, got[2], got[3]);
     return true;
   });
+}
+/* Le mode privé redessiné seul, à sa place : une note en cours ou une première prise ne sont jamais effacées [R676]. */
+function redrawPriv(mine, said) {
+  if (said !== undefined) mine.privSaid = said;
+  if (!mine || ui !== mine || !mine.privSection) return Promise.resolve(false);
+  var o = mine.owner;
+  return Promise.all([readPriv(o).then(null, function () { return null; }), privVisits(o).then(null, function () { return null; })]).then(function (got) {
+    if (ui !== mine) return false;
+    fillPriv(mine, o, got[0], got[1]);
+    return true;
+  });
+}
+function fillPriv(mine, o, rec, visits) {
+  var by = {};
+  (visits || []).forEach(function (v) { by[v.appointmentId] = v; });
+  clear(mine.privSection);
+  privTools(mine, o, rec, visits, mine.privSection);
+  Object.keys(mine.slots || {}).forEach(function (id) { detail(mine.slots[id], by[id] || null); });
+}
+/* Ouvert avec le code : l'entrée et le contact, rien d'autre [R676]. */
+function detail(slot, v) {
+  clear(slot);
+  if (!v) return;
+  slot.appendChild(el('p', v.address ? v.address.street + ', ' + v.address.postalCode + ' ' + v.address.city : 'Adresse non renseignée sur la fiche du bien.', 'adresse'));
+  var who = v.contact && v.contact.name ? v.contact.name : 'la personne';
+  if (v.contact && v.contact.phone) {
+    var tel = el('a', 'Appeler ' + who + ' · ' + v.contact.phone, 'bouton');
+    tel.setAttribute('href', 'tel:' + String(v.contact.phone).replace(/[^0-9+]/g, ''));
+    slot.appendChild(tel);
+  } else slot.appendChild(el('p', 'Aucun numéro pour ' + who + '.', 'doux'));
 }
 /* Le mode privé à l'écran : le garder avec un code, l'ouvrir, le refermer ou l'effacer [R676]. */
 var PRIV_SAID = {
   code: 'Un code de ' + P.minDigits + ' à 12 chiffres.', absent: 'Rien n’est gardé sur ce téléphone.', efface: 'Cinq codes faux : adresses et numéros sont effacés du téléphone.',
   reseau: 'Il faut du réseau pour garder les adresses et les numéros.'
 };
-function privTools(mine, o, rec, visits) {
-  var s = el('section', '', 'prive');
+function privTools(mine, o, rec, visits, s) {
   s.setAttribute('aria-label', 'Adresses et numéros');
   s.appendChild(el('h3', 'Adresses et numéros'));
   var said = el('p', mine.privSaid || '', 'doux');
   said.setAttribute('role', 'status');
   mine.privSaid = '';
-  function again(t) { mine.privSaid = t || ''; return render(); }
+  function again(t) { return redrawPriv(mine, t || ''); }
   function codeField(label) {
     var f = el('input');
     f.setAttribute('type', 'password');
@@ -578,22 +629,14 @@ function privTools(mine, o, rec, visits) {
     }));
   }
   s.appendChild(said);
-  return s;
 }
-function card(a, pending, o, v) {
+function card(a, pending, o, mine) {
   var c = el('article', '', 'carte');
   var b = a.property;
   c.appendChild(el('h3', (a.kind === 'estimation' ? 'Estimation' : 'Visite') + ' à ' + hour(a.start) + (b ? ' · ' + b.reference + (b.city ? ', ' + b.city : '') : '')));
-  if (v) {
-    // Ouvert avec le code : l'entrée et le contact, rien d'autre [R676].
-    c.appendChild(el('p', v.address ? v.address.street + ', ' + v.address.postalCode + ' ' + v.address.city : 'Adresse non renseignée sur la fiche du bien.', 'adresse'));
-    var who = v.contact && v.contact.name ? v.contact.name : 'la personne';
-    if (v.contact && v.contact.phone) {
-      var tel = el('a', 'Appeler ' + who + ' · ' + v.contact.phone, 'bouton');
-      tel.setAttribute('href', 'tel:' + String(v.contact.phone).replace(/[^0-9+]/g, ''));
-      c.appendChild(tel);
-    } else c.appendChild(el('p', 'Aucun numéro pour ' + who + '.', 'doux'));
-  }
+  var slot = el('div', '', 'prive-detail');
+  mine.slots[a.appointmentId] = slot;
+  c.appendChild(slot);
   if (b) c.appendChild(el('p', [b.surfaceM2 ? b.surfaceM2 + ' m²' : '', b.rooms ? b.rooms + ' pièces' : ''].filter(Boolean).join(', '), 'doux'));
   var done = {}, skip = {};
   a.accepted.forEach(function (k) { done[k] = true; });
