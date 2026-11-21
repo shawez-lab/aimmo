@@ -941,7 +941,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU086 · Après sept jours, je ne peux plus enregistrer l’accord de fidélisation d’un client qui le donne réellement…
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M11 Après-vente ; audit A086 (majeur), endroit : C/apres-vente/relances-apres-vente.ts, `CHOICE_GRACE_DAYS`.
 - Constat de l'audit : Après sept jours, je ne peux plus enregistrer l’accord de fidélisation d’un client qui le donne réellement plus tard.
