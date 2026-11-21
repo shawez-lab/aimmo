@@ -300,6 +300,19 @@ describeWithSqlite('AU092 · une grille à paliers selon le chiffre d’affaires
     expect(sale!.tier).toBeNull();
   });
 
+  it('[R17] une nouvelle version sans paliers dits garde ceux de la dernière ; une liste vide les retire', async () => {
+    const t = await setup();
+    const c = t.commissions();
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, tiers: TIERS });
+    // L'écran de la grille ne montre que les taux : changer un taux propre ne retire pas les paliers.
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, agents: [{ agentId: t.sam.userId, rateBp: 6500 }] });
+    let g = await c.currentGrid(t.direction);
+    expect(g.ok && [g.value.version, g.value.inForce!.tiers]).toEqual([2, TIERS]);
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, tiers: [] });
+    g = await c.currentGrid(t.direction);
+    expect(g.ok && [g.value.version, g.value.inForce!.tiers]).toEqual([3, []]);
+  });
+
   it('les paliers se disent bien : le premier à 0, chacun au-dessus du précédent, deux à dix', async () => {
     const t = await setup();
     const c = t.commissions();

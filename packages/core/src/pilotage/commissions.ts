@@ -225,7 +225,17 @@ export class Commissions {
       const row = await this.db.first<{ network_id: string }>('SELECT network_id FROM agents WHERE id = ?', [a.agentId]);
       if (!row || row.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown_agent' };
     }
-    const tiers = input.tiers ?? [];
+    // Sans paliers dits, la nouvelle version garde ceux de la dernière : un écran qui ne les montre pas ne les efface pas.
+    // Une liste vide les retire.
+    const tiers =
+      input.tiers !== undefined
+        ? input.tiers
+        : (
+            await this.db.all<{ from_cents: number; rate_bp: number }>(
+              'SELECT t.from_cents, t.rate_bp FROM commission_grid_tiers t JOIN commission_grids g ON g.id = t.grid_id WHERE g.network_id = ? AND g.version = (SELECT MAX(version) FROM commission_grids WHERE network_id = ?) ORDER BY t.seq',
+              [viewer.networkId, viewer.networkId],
+            )
+          ).map((t) => ({ fromCents: Number(t.from_cents), rateBp: Number(t.rate_bp) }));
     if (!Array.isArray(tiers) || tiers.length === 1 || tiers.length > 10) return { ok: false, rule: null, code: 'bad_tiers' };
     for (let i = 0; i < tiers.length; i++) {
       const t = tiers[i];
@@ -350,7 +360,7 @@ export class Commissions {
          JOIN sale_file_dates d ON d.file_id = f.id AND d.kind = 'compromis_signe'
            AND d.version = (SELECT MAX(version) FROM sale_file_dates WHERE file_id = f.id AND kind = 'compromis_signe')
        WHERE f.network_id = ? AND ${openFile('f')} AND NOT EXISTS (SELECT 1 FROM commission_steps s WHERE s.file_id = f.id AND s.status = 'prevue')
-       ORDER BY f.opened_at, f.id`,
+       ORDER BY d.day, f.id`,
       [networkId],
     );
     for (const f of files) {
