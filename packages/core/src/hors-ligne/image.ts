@@ -180,6 +180,264 @@ export function jpegSize(bytes: Uint8Array): { width: number; height: number } |
   return null;
 }
 
+interface Huffman {
+  /** Pour chaque longueur de 1 à 16 : le plus grand code, le premier code et l'indice de sa première valeur. */
+  maxcode: Int32Array;
+  mincode: Int32Array;
+  valptr: Int32Array;
+  values: Uint8Array;
+}
+
+function huffman(counts: Uint8Array, values: Uint8Array): Huffman {
+  const maxcode = new Int32Array(18).fill(-1);
+  const mincode = new Int32Array(17);
+  const valptr = new Int32Array(17);
+  let code = 0;
+  let k = 0;
+  for (let l = 1; l <= 16; l++) {
+    const n = counts[l - 1] as number;
+    if (n) {
+      valptr[l] = k;
+      mincode[l] = code;
+      code += n;
+      k += n;
+      maxcode[l] = code - 1;
+    }
+    code <<= 1;
+  }
+  return { maxcode, mincode, valptr, values };
+}
+
+/**
+ * La lumière moyenne de chaque carré de 8 × 8 points d'un JPEG de base (SOF0 ou SOF1, Huffman), lue de ses seuls
+ * coefficients continus : l'image entière, réduite par blocs, telle qu'elle a été réellement codée. `null` si le fichier
+ * ne se décode pas jusqu'au bout du premier balayage qui contient la lumière [R677].
+ */
+export function jpegBlockLuma(bytes: Uint8Array): { width: number; height: number; luma: Uint8Array } | null {
+  if (!jpegSize(bytes)) return null;
+  const qt: Uint16Array[] = [];
+  const dc: (Huffman | undefined)[] = [];
+  const ac: (Huffman | undefined)[] = [];
+  let frame: { width: number; height: number; comps: { id: number; h: number; v: number; tq: number }[] } | null = null;
+  let restart = 0;
+  let i = 2;
+  const n = bytes.length;
+  while (i + 4 <= n) {
+    while (bytes[i + 1] === 0xff) i++;
+    const marker = bytes[i + 1] as number;
+    i += 2;
+    const len = u16(bytes, i);
+    const p = i + 2;
+    const end = i + len;
+    if (marker === 0xdb) {
+      for (let q = p; q < end; ) {
+        const pq = (bytes[q] as number) >> 4;
+        const t = new Uint16Array(64);
+        for (let k = 0; k < 64; k++) t[k] = pq ? u16(bytes, q + 1 + 2 * k) : (bytes[q + 1 + k] as number);
+        qt[(bytes[q] as number) & 15] = t;
+        q += 1 + (pq ? 128 : 64);
+      }
+    } else if (marker === 0xc4) {
+      for (let q = p; q < end; ) {
+        const tc = (bytes[q] as number) >> 4;
+        const th = (bytes[q] as number) & 15;
+        const counts = bytes.slice(q + 1, q + 17);
+        let sum = 0;
+        for (const c of counts) sum += c;
+        const table = huffman(counts, bytes.slice(q + 17, q + 17 + sum));
+        if (tc === 0) dc[th] = table;
+        else ac[th] = table;
+        q += 17 + sum;
+      }
+    } else if (marker === 0xdd) {
+      restart = u16(bytes, p);
+    } else if (SOF_MARKERS.has(marker)) {
+      // Seul le JPEG de base, celui que fait la toile du téléphone, est lu ici.
+      if ((marker !== 0xc0 && marker !== 0xc1) || bytes[p] !== 8) return null;
+      const comps = [];
+      for (let k = 0; k < (bytes[p + 5] as number); k++) {
+        const o = p + 6 + 3 * k;
+        const h = (bytes[o + 1] as number) >> 4;
+        const v = (bytes[o + 1] as number) & 15;
+        if (h < 1 || h > 4 || v < 1 || v > 4) return null;
+        comps.push({ id: bytes[o] as number, h, v, tq: (bytes[o + 2] as number) & 15 });
+      }
+      frame = { height: u16(bytes, p + 1), width: u16(bytes, p + 3), comps };
+    } else if (marker === 0xda) {
+      if (!frame) return null;
+      const f = frame;
+      const ns = bytes[p] as number;
+      const scan = [];
+      for (let k = 0; k < ns; k++) {
+        const ci = f.comps.findIndex((c) => c.id === bytes[p + 1 + 2 * k]);
+        const t = bytes[p + 2 + 2 * k] as number;
+        scan.push({ ci, dc: dc[t >> 4], ac: ac[t & 15] });
+      }
+      // La lumière est la première composante de la trame ; un balayage qui ne la porte pas est passé.
+      if (!scan.some((c) => c.ci === 0)) {
+        i = end;
+        while (i + 1 < n && !(bytes[i] === 0xff && bytes[i + 1] !== 0x00 && !((bytes[i + 1] as number) >= 0xd0 && (bytes[i + 1] as number) <= 0xd7))) i++;
+        continue;
+      }
+      const y = f.comps[0]!;
+      const q0 = qt[y.tq]?.[0];
+      if (q0 === undefined || scan.some((c) => !c.dc || !c.ac)) return null;
+      return decodeDc(bytes, end, f, scan as { ci: number; dc: Huffman; ac: Huffman }[], q0, restart);
+    }
+    i = end;
+  }
+  return null;
+}
+
+function decodeDc(
+  bytes: Uint8Array,
+  start: number,
+  f: { width: number; height: number; comps: { h: number; v: number }[] },
+  scan: { ci: number; dc: Huffman; ac: Huffman }[],
+  q0: number,
+  restart: number,
+): { width: number; height: number; luma: Uint8Array } | null {
+  let pos = start;
+  let acc = 0;
+  let nbits = 0;
+  let bad = false;
+  const bit = (): number => {
+    if (nbits === 0) {
+      if (pos >= bytes.length) {
+        bad = true;
+        return 0;
+      }
+      let b = bytes[pos++] as number;
+      if (b === 0xff) {
+        const next = bytes[pos];
+        if (next === 0x00) pos++;
+        else {
+          // Un marqueur au milieu des données : le fichier s'arrête trop tôt.
+          bad = true;
+          b = 0;
+          pos--;
+        }
+      }
+      acc = b;
+      nbits = 8;
+    }
+    nbits--;
+    return (acc >> nbits) & 1;
+  };
+  const receive = (s: number): number => {
+    let v = 0;
+    for (let k = 0; k < s; k++) v = (v << 1) | bit();
+    return v;
+  };
+  const extend = (v: number, s: number): number => (s === 0 ? 0 : v < 1 << (s - 1) ? v - (1 << s) + 1 : v);
+  const decode = (t: Huffman): number => {
+    let code = bit();
+    for (let l = 1; l <= 16; l++) {
+      if (code <= (t.maxcode[l] as number)) return t.values[(t.valptr[l] as number) + code - (t.mincode[l] as number)] ?? -1;
+      code = (code << 1) | bit();
+      if (bad) return -1;
+    }
+    bad = true;
+    return -1;
+  };
+  const hmax = Math.max(...f.comps.map((c) => c.h));
+  const vmax = Math.max(...f.comps.map((c) => c.v));
+  const y = f.comps[0]!;
+  const bw = Math.ceil(f.width / 8);
+  const bh = Math.ceil(f.height / 8);
+  const out = new Uint8Array(bw * bh);
+  const pred = new Int32Array(scan.length);
+  const block = (k: number): number => {
+    const c = scan[k]!;
+    const t = decode(c.dc);
+    if (t < 0 || t > 11) {
+      bad = true;
+      return 0;
+    }
+    pred[k] = (pred[k] as number) + extend(receive(t), t);
+    for (let z = 1; z < 64 && !bad; ) {
+      const rs = decode(c.ac);
+      if (rs < 0) {
+        bad = true;
+        break;
+      }
+      const r = rs >> 4;
+      const sz = rs & 15;
+      if (sz === 0) {
+        if (r !== 15) break;
+        z += 16;
+        continue;
+      }
+      z += r;
+      receive(sz);
+      z++;
+      if (z > 64) bad = true;
+    }
+    return pred[k] as number;
+  };
+  const put = (bx: number, by: number, dcv: number): void => {
+    if (bx < bw && by < bh) out[by * bw + bx] = Math.max(0, Math.min(255, Math.round((dcv * q0) / 8 + 128)));
+  };
+  const single = scan.length === 1;
+  const mcux = single ? Math.ceil((f.width * y.h) / hmax / 8) : Math.ceil(f.width / (8 * hmax));
+  const mcuy = single ? Math.ceil((f.height * y.v) / vmax / 8) : Math.ceil(f.height / (8 * vmax));
+  let count = 0;
+  for (let my = 0; my < mcuy; my++) {
+    for (let mx = 0; mx < mcux; mx++) {
+      if (restart && count > 0 && count % restart === 0) {
+        // La reprise : bits abandonnés, marqueur RST lu, prédictions remises à zéro.
+        nbits = 0;
+        if (bytes[pos] !== 0xff || (bytes[pos + 1] as number) < 0xd0 || (bytes[pos + 1] as number) > 0xd7) return null;
+        pos += 2;
+        pred.fill(0);
+      }
+      count++;
+      if (single) put(mx, my, block(0));
+      else
+        for (let k = 0; k < scan.length; k++) {
+          const c = f.comps[scan[k]!.ci]!;
+          for (let v = 0; v < c.v; v++)
+            for (let h = 0; h < c.h; h++) {
+              const d = block(k);
+              if (scan[k]!.ci === 0) put(mx * c.h + h, my * c.v + v, d);
+            }
+        }
+      if (bad) return null;
+    }
+  }
+  return { width: bw, height: bh, luma: out };
+}
+
+/** Une image réduite par moyenne de surface, à la taille demandée. */
+export function boxDown(img: { width: number; height: number; luma: Uint8Array }, width: number, height: number): Luma {
+  const out = new Uint8Array(width * height);
+  for (let y = 0; y < height; y++) {
+    const y0 = Math.floor((y * img.height) / height);
+    const y1 = Math.max(y0 + 1, Math.floor(((y + 1) * img.height) / height));
+    for (let x = 0; x < width; x++) {
+      const x0 = Math.floor((x * img.width) / width);
+      const x1 = Math.max(x0 + 1, Math.floor(((x + 1) * img.width) / width));
+      let sum = 0;
+      for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) sum += img.luma[yy * img.width + xx] as number;
+      out[y * width + x] = Math.round(sum / ((y1 - y0) * (x1 - x0)));
+    }
+  }
+  return { width, height, luma: out };
+}
+
+/** L'écart moyen permis entre l'image réduite annoncée et le fichier reçu, réduit de ses propres blocs. */
+export const FILE_MAX_MEAN_GAP = 20;
+
+/**
+ * Le fichier reçu montre-t-il l'image jugée ? Ses blocs, réduits à la taille de l'image annoncée, ne s'en écartent pas
+ * plus que la compression et la réduction ne l'expliquent [R677].
+ */
+export function fileShowsKept(bytes: Uint8Array, kept: Luma): boolean {
+  const blocks = jpegBlockLuma(bytes);
+  if (!blocks) return false;
+  return meanGap(boxDown(blocks, kept.width, kept.height), kept) <= FILE_MAX_MEAN_GAP;
+}
+
 /** L'empreinte SHA-256 d'un fichier, en hexadécimal. */
 export async function sha256Hex(bytes: Uint8Array): Promise<string> {
   const d = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));

@@ -1298,7 +1298,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   address_score_mandates: ['network_id', 'linked_at'],
   offline_ops: ['network_id', 'op_id', 'seq', 'kind', 'appointment_id', 'outcome', 'rule', 'code', 'written_at', 'received_at'],
   visit_field_notes: ['id', 'network_id', 'appointment_id', 'shot', 'written_at', 'received_at'],
-  visit_photos: ['id', 'network_id', 'appointment_id', 'shot', 'exposures', 'brightness', 'clipped', 'sharpness', 'taken_at', 'received_at', 'image_width', 'image_height', 'image_bytes', 'kept_brightness', 'kept_clipped', 'kept_sharpness'],
+  visit_photos: ['id', 'network_id', 'appointment_id', 'shot', 'exposures', 'brightness', 'clipped', 'sharpness', 'taken_at', 'received_at', 'image_width', 'image_height', 'image_bytes', 'kept_brightness', 'kept_clipped', 'kept_sharpness', 'kept_luma'],
   visit_photo_files: ['network_id', 'bytes', 'deposited_at'],
   visit_shot_skips: ['id', 'network_id', 'appointment_id', 'shot', 'written_at', 'received_at'],
   presentation_ratings: ['appointment_id', 'network_id', 'property_id', 'rooms', 'rated_at'],

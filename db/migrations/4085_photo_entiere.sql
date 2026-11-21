@@ -8,6 +8,8 @@ ALTER TABLE visit_photos ADD COLUMN image_bytes INTEGER CHECK (image_bytes IS NU
 ALTER TABLE visit_photos ADD COLUMN kept_brightness REAL;
 ALTER TABLE visit_photos ADD COLUMN kept_clipped REAL;
 ALTER TABLE visit_photos ADD COLUMN kept_sharpness REAL;
+-- L'image gardée réduite (au plus 128 points de côté, en base 64) : le fichier reçu ensuite doit la montrer.
+ALTER TABLE visit_photos ADD COLUMN kept_luma TEXT CHECK (kept_luma IS NULL OR length(kept_luma) <= 22000);
 
 -- Le fichier de l'image, rangé à part quand le téléphone a pu l'envoyer : une fois, jamais changé ni effacé.
 CREATE TABLE IF NOT EXISTS visit_photo_files (

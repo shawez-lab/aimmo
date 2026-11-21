@@ -5,6 +5,7 @@ import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { HORS_LIGNE_DB, HORS_LIGNE_SCRIPT } from '../app/hors-ligne.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL } from '../src/agent-app.ts';
 import { BATCH_LIMIT, MAX_SAISIES_BODY_BYTES, horsLigneRoutes } from '../src/hors-ligne.ts';
+import { encodeJpeg } from '../../core/test/jpeg-essai.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
@@ -122,25 +123,6 @@ function fakeIndexedDb(data: Map<string, unknown>) {
 }
 
 /**
- * Un JPEG inventé, bien formé de bout en bout : début, table de quantification, trame à la taille dite, table de
- * Huffman, balayage des trois composantes, données (chaque 0xFF bourré d'un 0x00), fin.
- */
-const fakeJpeg = (width: number, height: number, gray: Uint8Array): Uint8Array => {
-  const dqt = [0xff, 0xdb, 0x00, 0x43, 0x00, ...new Array<number>(64).fill(1)];
-  const sof = [0xff, 0xc0, 0x00, 0x11, 0x08, height >> 8, height & 255, width >> 8, width & 255, 0x03, 1, 0x11, 0, 2, 0x11, 0, 3, 0x11, 0];
-  const dht = [0xff, 0xc4, 0x00, 0x14, 0x00, 1, ...new Array<number>(15).fill(0), 0];
-  const sos = [0xff, 0xda, 0x00, 0x0c, 0x03, 1, 0x00, 2, 0x00, 3, 0x00, 0x00, 0x3f, 0x00];
-  const data: number[] = [];
-  for (const b of gray) b === 0xff ? data.push(0xff, 0x00) : data.push(b);
-  const head = [0xff, 0xd8, ...dqt, ...sof, ...dht, ...sos];
-  const out = new Uint8Array(head.length + data.length + 2);
-  out.set(head, 0);
-  out.set(data, head.length);
-  out.set([0xff, 0xd9], head.length + data.length);
-  return out;
-};
-
-/**
  * L'appareil photo inventé : un « fichier » porte son image (et sa taille, 1 280 points sur 960 par défaut) ; la toile
  * la rend en couleurs, point pour point, et en fait un JPEG inventé qui garde son image.
  */
@@ -182,7 +164,7 @@ const camera = {
     async convertToBlob(o: { type: string }) {
       const gray = new Uint8Array(this.width * this.height);
       for (let i = 0; i < gray.length; i++) gray[i] = this.px[4 * i]!;
-      const bytes = fakeJpeg(this.width, this.height, gray);
+      const bytes = encodeJpeg({ width: this.width, height: this.height, luma: gray });
       return { type: o.type, size: bytes.length, width: this.width, height: this.height, luma: { width: this.width, height: this.height, luma: gray }, arrayBuffer: async () => bytes.slice().buffer };
     }
   },

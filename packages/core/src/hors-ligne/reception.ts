@@ -24,8 +24,8 @@ import { parisDayStart } from '../pilotage/tableau-agent.ts';
 import { parisDay } from '../studio/bibliotheque.ts';
 import { OP_KINDS, type OpKind, type OpResult } from './boite.ts';
 import { SKIP_REASONS, departureCheck, shotPlan, type DepartureCheck, type Shot } from './cadrage.ts';
-import { checkKeptImage, IMAGE_TYPE, matchesKept } from './image.ts';
-import { decodeLuma, hdrPhoto, PHOTO_THRESHOLDS, type Luma, type PhotoThresholds } from './photo.ts';
+import { checkKeptImage, fileShowsKept, IMAGE_TYPE, matchesKept } from './image.ts';
+import { decodeLuma, encodeLuma, hdrPhoto, PHOTO_THRESHOLDS, type Luma, type PhotoThresholds } from './photo.ts';
 import { privateVisits, type PrivatePack } from './prive.ts';
 
 export const MAX_OPS_PER_BATCH = 50;
@@ -102,6 +102,14 @@ type Verdict = { ok: true; row: EntityRow } | { ok: false; rule: string | null; 
 /** Le rangement des images entières des visites (R2) : à part des médias publiés, rien n'y est servi au public. */
 export interface VisitImageStore {
   put(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
+}
+
+/** L'image réduite gardée à la réception (taille dans le texte : largeur, hauteur, points) et le fichier qui la montre. */
+function keptShown(bytes: Uint8Array, stored: string | null): boolean {
+  if (stored === null) return false;
+  const [w, h, data] = stored.split(':');
+  const kept = decodeLuma({ width: Number(w), height: Number(h), data });
+  return kept !== null && fileShowsKept(bytes, kept);
 }
 
 export type DepositResult = { ok: true; again: boolean } | Refusal | { ok: false; rule: 'R677' | null; code: string };
@@ -365,8 +373,8 @@ export class HorsLigne {
       ok: true,
       row: {
         table: 'visit_photos',
-        columns: ['id', 'network_id', 'appointment_id', 'agent_id', 'shot', 'exposures', 'brightness', 'clipped', 'sharpness', 'taken_at', 'received_at', 'image_sha256', 'image_width', 'image_height', 'image_bytes', 'kept_brightness', 'kept_clipped', 'kept_sharpness'],
-        values: [entityId, viewer.networkId, appointmentId, viewer.userId, shot, r.exposures, r.verdict.figures.brightness, r.verdict.figures.clipped, r.verdict.figures.sharpness, writtenAt, received, i.sha256, i.width, i.height, i.bytes, kept.figures.brightness, kept.figures.clipped, kept.figures.sharpness],
+        columns: ['id', 'network_id', 'appointment_id', 'agent_id', 'shot', 'exposures', 'brightness', 'clipped', 'sharpness', 'taken_at', 'received_at', 'image_sha256', 'image_width', 'image_height', 'image_bytes', 'kept_brightness', 'kept_clipped', 'kept_sharpness', 'kept_luma'],
+        values: [entityId, viewer.networkId, appointmentId, viewer.userId, shot, r.exposures, r.verdict.figures.brightness, r.verdict.figures.clipped, r.verdict.figures.sharpness, writtenAt, received, i.sha256, i.width, i.height, i.bytes, kept.figures.brightness, kept.figures.clipped, kept.figures.sharpness, `${i.kept.width}:${i.kept.height}:${encodeLuma(i.kept).data}`],
       },
     };
   }
@@ -387,8 +395,8 @@ export class HorsLigne {
     );
     const photoId = await sha256Of({ n: viewer.networkId, a: viewer.userId, d: deviceId, o: opId });
     const photo = op
-      ? await this.db.first<{ id: string; appointment_id: string; image_sha256: string | null; image_width: number | null; image_height: number | null; image_bytes: number | null }>(
-          'SELECT id, appointment_id, image_sha256, image_width, image_height, image_bytes FROM visit_photos WHERE id = ? AND network_id = ? AND agent_id = ?',
+      ? await this.db.first<{ id: string; appointment_id: string; image_sha256: string | null; image_width: number | null; image_height: number | null; image_bytes: number | null; kept_luma: string | null }>(
+          'SELECT id, appointment_id, image_sha256, image_width, image_height, image_bytes, kept_luma FROM visit_photos WHERE id = ? AND network_id = ? AND agent_id = ?',
           [photoId, viewer.networkId, viewer.userId],
         )
       : null;
@@ -396,7 +404,9 @@ export class HorsLigne {
     const done = await this.db.first<{ sha256: string }>('SELECT sha256 FROM visit_photo_files WHERE photo_id = ?', [photo.id]);
     if (done) return { ok: true, again: true };
     const expected = { sha256: photo.image_sha256, width: photo.image_width, height: photo.image_height, bytes: photo.image_bytes };
-    if (!bytes || !(await matchesKept(bytes, expected))) {
+    // Le fichier est celui annoncé, et il montre bien l'image jugée à sa réception : ses propres blocs, réduits, la
+    // retrouvent [R677].
+    if (!bytes || !(await matchesKept(bytes, expected)) || !keptShown(bytes, photo.kept_luma)) {
       await appendEvent(this.journal, { type: 'hors_ligne.image_refusee', actor: this.actor(viewer), subject: `appointment:${photo.appointment_id}`, data: { rule: 'R677', code: 'image_differente' } }, this.now);
       return { ok: false, rule: 'R677', code: 'image_differente' };
     }
