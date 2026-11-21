@@ -209,7 +209,8 @@ export class ActeVente {
     if (!compromis) return blocked({ ok: false, rule: null, code: 'compromis_missing' });
     if (signedOn < compromis) return blocked({ ok: false, rule: null, code: 'before_compromis' });
     // Le dossier complet au jour de l'acte : rien ne manque, identité vérifiée, aucune pièce périmée [R60].
-    const status = await this.pieces.status(viewer, fileId);
+    // L'âge des installations est jugé le jour de l'acte (AU084).
+    const status = await this.pieces.status(viewer, fileId, { deedDay: signedOn });
     if (!status.ok) return status as FileRefusal | FileUnknown;
     const expired = expiredPieces(status.value.lines, signedOn, this.validity);
     // L'identité de l'acquéreur vérifiée au jour de l'acte, pas seulement aujourd'hui : un contrôle fait après l'acte ne

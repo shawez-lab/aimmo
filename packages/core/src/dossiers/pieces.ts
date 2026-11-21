@@ -172,7 +172,15 @@ const BUILT: readonly PropertyKind[] = ['home', 'building', 'commercial', 'busin
  * Les pièces attendues, par des règles écrites, dans un ordre fixe. Fonction pure : mêmes données, même liste [R60].
  * `year` est l'année en cours, à Paris. Un fonds de commerce rend null (M16).
  */
-export function expectedPieces(kind: PropertyKind, sheet: PropertySheet | null, year: number, local: LocalFacts = UNKNOWN_LOCAL, installations: InstallationFacts = NO_INSTALLATIONS): ExpectedList | null {
+export function expectedPieces(
+  kind: PropertyKind,
+  sheet: PropertySheet | null,
+  year: number,
+  local: LocalFacts = UNKNOWN_LOCAL,
+  installations: InstallationFacts = NO_INSTALLATIONS,
+  /** L'année où l'âge des installations est jugé (AU084, relecture de Codex) : celle de l'acte, jamais avant `year`. */
+  agingYear: number = year,
+): ExpectedList | null {
   if (kind === 'business') return null;
   const pieces: ExpectedPiece[] = [];
   const unknown: UnknownData[] = [];
@@ -199,10 +207,11 @@ export function expectedPieces(kind: PropertyKind, sheet: PropertySheet | null, 
       // Électricité et gaz : installation intérieure de plus de 15 ans. Son âge, et la présence du gaz, viennent de la
       // déclaration prouvée (AU084) ; sinon l'âge du bâtiment en tient lieu. Seule l'année est connue : 15 ans pile
       // comptent, une installation de janvier a ses 15 ans dans l'année.
-      const old = buildYear === null || year - buildYear >= 15;
+      const age = Math.max(year, agingYear);
+      const old = buildYear === null || age - buildYear >= 15;
       for (const installation of ['electricite', 'gaz'] as const) {
         const fact = installations[installation];
-        const verdict = installationVerdict(fact, year);
+        const verdict = installationVerdict(fact, age);
         installationReadings.push({ installation, verdict: fact ? verdict : 'non_declaree', since: fact?.since ?? null, proof: fact?.proof ?? null });
         if (verdict === 'absente' || verdict === 'recente') continue;
         if (verdict === 'ancienne') {
@@ -347,7 +356,7 @@ export class PiecesDossier {
    * rapporté après un passage d'année ne fait pas demander une pièce que la vente n'exigeait pas (AU010, relecture
    * de Codex). Sans date lisible, l'année en cours, par prudence.
    */
-  private async expected(fileId: string, propertyId: string, kind: PropertyKind): Promise<ExpectedList | null> {
+  private async expected(fileId: string, propertyId: string, kind: PropertyKind, deedDay?: string): Promise<ExpectedList | null> {
     const row = await this.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [propertyId]);
     const sheet = row ? (JSON.parse(row.data) as PropertySheet) : null;
     const opened = await this.db.first<{ opened_at: string }>('SELECT opened_at FROM sale_files WHERE id = ?', [fileId]);
@@ -358,18 +367,21 @@ export class PiecesDossier {
     const local = network ? await localFactsOf(this.db, network.network_id, propertyId, localTime(this.now(), TIME_ZONE).date) : UNKNOWN_LOCAL;
     // Les installations déclarées avec leur preuve (AU084).
     const installations = network ? await installationFactsOf(this.db, network.network_id, propertyId) : NO_INSTALLATIONS;
-    return expectedPieces(kind, sheet, year, local, installations);
+    // Une installation vieillit jusqu'à l'acte (AU084, relecture de Codex) : son âge est jugé l'année de l'acte, ou
+    // aujourd'hui, à Paris ; les règles qui changent avec la loi restent celles de l'ouverture.
+    const agingYear = Number((deedDay ?? localTime(this.now(), TIME_ZONE).date).slice(0, 4));
+    return expectedPieces(kind, sheet, year, local, installations, agingYear);
   }
 
   /** La liste des pièces du dossier, ce qui manque, et s'il est complet [R60]. */
-  async status(viewer: Viewer, fileId: string): Promise<{ ok: true; value: FileStatus } | Refusal | PieceProblem> {
+  async status(viewer: Viewer, fileId: string, options: { /** Le jour de l'acte, `AAAA-MM-JJ` : l'âge des installations y est jugé. */ deedDay?: string } = {}): Promise<{ ok: true; value: FileStatus } | Refusal | PieceProblem> {
     const g = await this.gate(viewer, fileId, false);
     if (!g.ok) return g;
-    return this.compute(viewer, g.file, g.kind);
+    return this.compute(viewer, g.file, g.kind, options.deedDay);
   }
 
-  private async compute(viewer: Viewer, file: { id: string; network_id: string; property_id: string; buyer_person_id: string }, kind: PropertyKind): Promise<{ ok: true; value: FileStatus } | PieceProblem> {
-    const list = await this.expected(file.id, file.property_id, kind);
+  private async compute(viewer: Viewer, file: { id: string; network_id: string; property_id: string; buyer_person_id: string }, kind: PropertyKind, deedDay?: string): Promise<{ ok: true; value: FileStatus } | PieceProblem> {
+    const list = await this.expected(file.id, file.property_id, kind, deedDay);
     if (!list) return { ok: false, rule: null, code: 'business' };
     const rows = await this.db.all<{ piece: Piece; version: number; ref: string; issued_on: string; received_at: string }>(
       `SELECT piece, version, ref, issued_on, received_at FROM sale_file_pieces p WHERE file_id = ?

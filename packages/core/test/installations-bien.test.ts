@@ -83,6 +83,21 @@ describeWithSqlite('AU084 · installations du bien, déclarées avec preuve', ()
     await expect(t.db.run('DELETE FROM property_installations')).rejects.toThrow(/rien ne s'efface/);
   });
 
+  it('[R60] une installation vieillit jusqu’à l’acte : jugée l’année de l’acte, jamais celle de l’ouverture seule (relecture de Codex)', async () => {
+    const t = await setup();
+    // Tableau refait en 2013 : 14 ans en 2027, 15 ans en 2028.
+    expect((await t.inst.record(t.agent, t.propertyId, { installation: 'electricite', present: true, since: 2013, proof: 'facture_travaux', proofRef: PROOF })).ok).toBe(true);
+    const now = await t.pieces.status(t.agent, t.fileId);
+    expect(now.ok && now.value.lines.some((l) => l.piece === 'electricite')).toBe(false);
+    // Un acte signé en décembre 2027 : pas de diagnostic ; signé en 2028 : le diagnostic est demandé.
+    t.setClock(new Date('2028-01-10T12:00:00.000Z'));
+    const dec = await t.pieces.status(t.agent, t.fileId, { deedDay: '2027-12-20' });
+    expect(dec.ok && dec.value.lines.some((l) => l.piece === 'electricite')).toBe(false);
+    const jan = await t.pieces.status(t.agent, t.fileId, { deedDay: '2028-01-08' });
+    expect(jan.ok && jan.value.lines.find((l) => l.piece === 'electricite')?.reason).toBe('installation_declaree_plus_15_ans');
+    expect(expectedPieces('home', sheet(1965), 2027, undefined, { electricite: { present: true, since: 2013, proof: 'facture_travaux', version: 1 } }, 2028)!.pieces.map((p) => p.piece)).toContain('electricite');
+  });
+
   it('[R16] seuls l’agent du bien et la direction déclarent ; chaque refus au journal, rien de rangé', async () => {
     const t = await setup();
     const input = { installation: 'gaz', present: false, proof: 'declaration_vendeur', proofRef: PROOF };
