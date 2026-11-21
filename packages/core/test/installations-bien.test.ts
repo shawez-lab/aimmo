@@ -98,13 +98,29 @@ describeWithSqlite('AU084 · installations du bien, déclarées avec preuve', ()
     const jan = await t.pieces.status(t.agent, t.fileId, { deedDay: '2028-01-08' });
     expect(jan.ok && jan.value.lines.find((l) => l.piece === 'electricite')?.reason).toBe('installation_declaree_plus_15_ans');
     expect(expectedPieces('home', sheet(1965), 2027, undefined, { electricite: { present: true, since: 2013, proof: 'facture_travaux', version: 1 } }, 2028)!.pieces.map((p) => p.piece)).toContain('electricite');
-    // Une rénovation de 2028, déclarée avant que l'acte de décembre 2027 soit rapporté, ne retire pas le diagnostic.
+    // Une rénovation de 2028, déclarée avant que l'acte de décembre 2027 soit rapporté, ne vaut pas pour lui : la
+    // déclaration de 2013, rangée avant l'acte, reste celle de la vente.
     expect((await t.inst.record(t.agent, t.propertyId, { installation: 'electricite', present: true, since: 2028, proof: 'certificat_conformite', proofRef: PROOF })).ok).toBe(true);
     const late = await t.pieces.status(t.agent, t.fileId, { deedDay: '2027-12-20' });
-    expect(late.ok && late.value.lines.find((l) => l.piece === 'electricite')?.reason).toBe('installation_plus_15_ans');
-    expect(late.ok && late.value.installations[0]).toMatchObject({ verdict: 'non_tranche', since: 2028 });
+    expect(late.ok && late.value.installations[0]).toMatchObject({ verdict: 'recente', since: 2013 });
+    // Et même lue seule, une rénovation postérieure à l'année jugée ne tranche rien : le bâtiment reprend la main.
+    expect(installationVerdict({ present: true, since: 2028, proof: 'certificat_conformite', version: 2 }, 2027)).toBe('non_tranche');
+    expect(diag({ electricite: { present: true, since: 2028, proof: 'certificat_conformite', version: 2 } })).toContain('electricite:installation_plus_15_ans');
     // Ce diagnostic exigé pour l'acte se range encore, même si la rénovation le rend inutile aujourd'hui (relecture de Codex).
     expect((await t.pieces.add(t.agent, t.fileId, { piece: 'electricite', ref: t.upload(), issuedOn: '2027-12-01' })).ok).toBe(true);
+  });
+
+  it('[R60] une déclaration rangée après l’acte ne vaut pas pour lui : la précédente, ou le bâtiment (relecture de Codex)', async () => {
+    const t = await setup();
+    // Le gaz posé avec la maison (2008), déclaré en 2027 ; la vente est signée le 20 décembre 2027.
+    expect((await t.inst.record(t.agent, t.propertyId, { installation: 'gaz', present: true, since: 2008, proof: 'facture_travaux', proofRef: PROOF })).ok).toBe(true);
+    // Janvier 2028 : le gaz est supprimé et déclaré absent, avant que l'acte ne soit rapporté.
+    t.setClock(new Date('2028-01-10T12:00:00.000Z'));
+    expect((await t.inst.record(t.agent, t.propertyId, { installation: 'gaz', present: false, proof: 'declaration_vendeur', proofRef: PROOF })).ok).toBe(true);
+    const today = await t.pieces.status(t.agent, t.fileId);
+    expect(today.ok && today.value.lines.some((l) => l.piece === 'gaz')).toBe(false);
+    const deed = await t.pieces.status(t.agent, t.fileId, { deedDay: '2027-12-20' });
+    expect(deed.ok && deed.value.lines.find((l) => l.piece === 'gaz')?.reason).toBe('installation_declaree_plus_15_ans');
   });
 
   it('[R16] seuls l’agent du bien et la direction déclarent ; chaque refus au journal, rien de rangé', async () => {

@@ -366,7 +366,7 @@ export class PiecesDossier {
     const network = await this.db.first<{ network_id: string }>('SELECT network_id FROM sale_files WHERE id = ?', [fileId]);
     const local = network ? await localFactsOf(this.db, network.network_id, propertyId, localTime(this.now(), TIME_ZONE).date) : UNKNOWN_LOCAL;
     // Les installations déclarées avec leur preuve (AU084).
-    const installations = network && withInstallations ? await installationFactsOf(this.db, network.network_id, propertyId) : NO_INSTALLATIONS;
+    const installations = network && withInstallations ? await installationFactsOf(this.db, network.network_id, propertyId, deedDay) : NO_INSTALLATIONS;
     // Une installation vieillit jusqu'à l'acte (AU084, relecture de Codex) : son âge est jugé l'année de l'acte, ou
     // aujourd'hui, à Paris ; les règles qui changent avec la loi restent celles de l'ouverture.
     const agingYear = Number((deedDay ?? localTime(this.now(), TIME_ZONE).date).slice(0, 4));
