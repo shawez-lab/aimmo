@@ -407,13 +407,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#734, `1d00f18e`), migration `4043` (ajout seul). Décidé : l'adresse de l'export des biens (`Adresse`, `Rue`, `Voie`, `Numéro de voie`), validée par `readAddress`, est gardée une fois dans `agent_import_property_addresses`, jamais dans `properties` ; lue dans le dossier repris (`dossierOf`, `address`) par l'agent du bien ou la direction, au journal sans l'adresse ; bilan `addresses` (`kept`, `known`, `notTakenLines`) à l'aperçu et à l'import ; test de structure : seuls l'import et les cartes de conformité nomment la table. Codex : 1 P2 corrigé (aperçu), puis rien. Pas d'écran ; la désignation du mandat ne reprend pas encore cette adresse (parcelles à saisir).
 
 ### AU032 · La captation par mail dépend encore d’un routage et de variables marqués « plus tard »
-- Statut : en cours
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A032 (majeur), endroit : chantier/HUMAIN.md, H16 ; A/courrier.ts.
 - Constat de l'audit : La captation par mail dépend encore d’un routage et de variables marqués « plus tard » : aucune réception réelle n’est démontrée dans le dossier de livraison.
 - Objectif : Un mail réel de chaque portail souscrit crée un contact unique et une alerte, même après relivraison ; activation actuelle non vérifiée.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien (mise en service réelle : H16).
+- Reste : fusionnée (#739, `2603c63f`), migration `4055` (ajout seul), règle R669. Constat confirmé : une demande de portail sans « répondre à » vers le client ne recevait aucune réponse et ne prévenait personne. Décidé : `readPortalBody` lit les lignes « Libellé : valeur » du corps (mail, téléphone, nom, référence de la demande), s'arrête au message du client et à tout mail cité ; la référence de la demande est la clé de réception, l'identifiant du mail gardé comme autre clé (`inbound_message_keys`) ; une demande de portail sans réponse partie donne une alerte `needs_reply` ; `GET /v1/captation/mail` (direction) dit les réglages `MAIL_*` manquants et chaque portail « vérifiée » après son premier vrai mail. Codex : 4 P0 corrigés ; un cinquième (deux livraisons simultanées du même identifiant lues différemment) réfuté dans la proposition. Les vrais formats des portails restent à confirmer au premier vrai mail (H16).
 
 ### AU033 · Les leads Instagram, Facebook et WhatsApp dépendent d’autorisations Meta encore ouvertes dans le chantier
 - Statut : à faire

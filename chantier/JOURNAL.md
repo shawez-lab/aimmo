@@ -1560,3 +1560,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 01:15 · voie 3 · AU109 (#740) fusionnée : « copie prouvée » seulement avec une copie à jour et le dernier test de restauration du mois réussi ; alerte mensuelle sinon.
 - 2026-11-21 01:35 · voie 3 · AU106 (#745) et AU105 (#746) proposées ; #742 et #745 corrigés après Codex.
 - 2026-11-21 02:02 · voie 3 · AU093 (#747) proposée ; #742, #745, #746 corrigés après Codex. AU104 et AU103 laissées pour plus tard (téléphone réel, données privées sur l'appareil).
+- 2026-11-21 02:56 · AU032 · les demandes des 8 portails lues dans le corps du mail, une seule fiche même relivrée, alerte à l'agent sans coordonnée, état « vérifiée / non vérifiée » de chaque portail pour la direction ; R669 ; Codex 4 P0 corrigés, 1 réfuté ; fusionnée (#739, 2603c63f) · prochaine : AU033
