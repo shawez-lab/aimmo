@@ -63,7 +63,9 @@ export const NO_INSTALLATIONS: InstallationFacts = {};
 export function installationVerdict(fact: InstallationFact | undefined, year: number): 'absente' | 'recente' | 'ancienne' | 'non_tranche' {
   if (!fact) return 'non_tranche';
   if (!fact.present) return 'absente';
-  if (fact.since === null) return 'non_tranche';
+  // Sans année, ou une rénovation postérieure à l'année jugée (un acte rapporté après coup) : elle ne dit rien de
+  // l'installation au jour de la vente (relecture de Codex).
+  if (fact.since === null || fact.since > year) return 'non_tranche';
   if (year - fact.since >= INSTALLATION_DIAGNOSTIC_YEARS) return 'ancienne';
   return AGE_PROOFS.includes(fact.proof) ? 'recente' : 'non_tranche';
 }

@@ -96,6 +96,11 @@ describeWithSqlite('AU084 · installations du bien, déclarées avec preuve', ()
     const jan = await t.pieces.status(t.agent, t.fileId, { deedDay: '2028-01-08' });
     expect(jan.ok && jan.value.lines.find((l) => l.piece === 'electricite')?.reason).toBe('installation_declaree_plus_15_ans');
     expect(expectedPieces('home', sheet(1965), 2027, undefined, { electricite: { present: true, since: 2013, proof: 'facture_travaux', version: 1 } }, 2028)!.pieces.map((p) => p.piece)).toContain('electricite');
+    // Une rénovation de 2028, déclarée avant que l'acte de décembre 2027 soit rapporté, ne retire pas le diagnostic.
+    expect((await t.inst.record(t.agent, t.propertyId, { installation: 'electricite', present: true, since: 2028, proof: 'certificat_conformite', proofRef: PROOF })).ok).toBe(true);
+    const late = await t.pieces.status(t.agent, t.fileId, { deedDay: '2027-12-20' });
+    expect(late.ok && late.value.lines.find((l) => l.piece === 'electricite')?.reason).toBe('installation_plus_15_ans');
+    expect(late.ok && late.value.installations[0]).toMatchObject({ verdict: 'non_tranche', since: 2028 });
   });
 
   it('[R16] seuls l’agent du bien et la direction déclarent ; chaque refus au journal, rien de rangé', async () => {
