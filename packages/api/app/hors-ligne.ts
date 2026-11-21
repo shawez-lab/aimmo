@@ -340,7 +340,14 @@ function privVisits(o) {
   var mine = open_;
   mine.visits = mine.visits.filter(alive);
   if (!mine.visits.length) open_ = null;
-  return readPriv(o).then(function () { return mine.visits.length ? mine.visits : null; });
+  // Effacé ailleurs (un autre onglet, une sortie) : la clé et les visites quittent aussi cet onglet.
+  return readPriv(o).then(function (r) {
+    var ids = {};
+    (r ? r.items : []).forEach(function (it) { ids[it.id] = true; });
+    mine.visits = mine.visits.filter(function (v) { return ids[v.appointmentId]; });
+    if (!mine.visits.length) { if (open_ === mine) open_ = null; return null; }
+    return mine.visits;
+  });
 }
 /* Une préparation avec réseau qui ne rend plus l'une des visites gardées (annulée, déplacée, passée à un autre) : tout
    le mode privé s'efface. */
@@ -707,6 +714,8 @@ function oublier(key) {
   return tag(key).then(get).then(function (o) { return typeof o === 'string' ? privWipe(o) : null; }, function () { return null; });
 }
 function sortie() { var o = (ui && ui.owner) || last; last = null; privGen += 1; open_ = null; return o ? privWipe(o) : Promise.resolve(); }
+// Revenu sur cet onglet : le mode privé est relu, pour qu'un effacement fait ailleurs s'y voie aussitôt [R676].
+if (G.addEventListener) G.addEventListener('focus', function () { if (ui && ui.privSection) redrawPriv(ui); });
 // Au retour du réseau : la boîte part ; une préparation qui n'avait pas abouti est refaite.
 if (G.addEventListener) G.addEventListener('online', function () { if (ui && ui.key) (ui.owner ? sync(ui.key) : prepare(ui.key, ui.show, ui.back)); });
 

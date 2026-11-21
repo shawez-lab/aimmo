@@ -296,7 +296,7 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
     await settle();
   };
   const H = (ctx.AimmoHorsLigne ?? { pending: async () => [], refused: async () => [] }) as { pending: (o?: string) => Promise<unknown[]>; refused: () => Promise<unknown[]> };
-  return { els, ctx, calls, bodies, later, fire, tick: settle, loads, root, find, click, H, online: async () => (winListeners.online?.(), await settle()) };
+  return { els, ctx, calls, bodies, later, fire, tick: settle, focus: async () => (winListeners.focus?.(), await settle()), loads, root, find, click, H, online: async () => (winListeners.online?.(), await settle()) };
 }
 
 describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’envoi', () => {
@@ -873,6 +873,29 @@ describeWithSqlite('AU104 · le mode privé de la visite, sur le téléphone', (
     await settle();
     expect(privOf(idb)).toBeUndefined();
     expect(JSON.stringify([...idb.values()])).not.toMatch(/items/);
+  });
+
+  it('[R676] ouvert dans deux onglets, la sortie de l’un efface aussi ce que montre l’autre', async () => {
+    const w = await setup();
+    await designate(w);
+    const idb = new Map<string, unknown>();
+    w.setClock(w.visitStart - 2 * HOUR);
+    const a = await phone(w, idb, { network: true });
+    await openDay(a);
+    typeCode(a, KEEP, '482913');
+    await a.click(a.find('button', 'Garder pour aujourd’hui'));
+    await until(() => address(a), 'ouvert dans le premier onglet');
+    const b = await phone(w, idb, { network: true });
+    await openDay(b);
+    typeCode(b, OPEN, '482913');
+    await b.click(b.find('button', 'Ouvrir'));
+    await until(() => address(b), 'ouvert dans le second onglet');
+    b.els.sortir!.listeners.click!({});
+    await until(() => !privOf(idb), 'effacé par la sortie');
+    // Le premier onglet, revenu au premier plan : plus d'adresse, plus de clé.
+    await a.focus();
+    expect(address(a)).toBeUndefined();
+    expect(callLink(a)).toBeUndefined();
   });
 
   it('[R676] [R16] seul l’agent obtient le mode privé ; un autre rôle est refusé et le refus est au journal', async () => {
