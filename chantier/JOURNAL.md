@@ -1622,3 +1622,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 22:18 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 19:54 et 20:53 n'ont rien produit)
 - 2026-11-21 22:18 · VOIE 2 : AU091, c3a41ee9 (main), relancé non
 - 2026-11-21 22:47 · AU038 · vraie publicité Google Ads (v26) et Meta (logement) derrière le Worker (H63) : plafond relu à la validation et au lancement, accusé et mode rangés avec le lancement, échecs en code et geste, pause jamais confirmée par l'essai, dépense lue et demandes `?o=` rapprochées au quart d'heure ; R587, R588 ; Codex 2 P0 et 2 P1 corrigés, puis rien ; vérification GitHub verte au second passage (premier coupé à 35 min) ; fusionnée (#768, 9083dc81) · prochaine : AU039
+- 2026-11-21 22:47 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions (troisième fois) ; reprise au prochain passage planifié avec AU039
