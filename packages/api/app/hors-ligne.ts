@@ -14,16 +14,21 @@
  * Les calculs de la photo et la boîte reprennent ceux de `packages/core/src/hors-ligne/` : un test vérifie qu'ils
  * rendent les mêmes verdicts. Pas d'accent grave dans ce texte : il est servi tel quel.
  */
+import { horsLigne as horsLigneCore } from '@aimmo/core';
+
 export const HORS_LIGNE_PATH = '/app/hors-ligne.js';
 /** La base IndexedDB de l'appareil et ses deux clés. */
-export const HORS_LIGNE_DB = Object.freeze({ name: 'aimmo-hors-ligne', store: 'cles', boite: 'boite', paquet: 'paquet' });
-export const HORS_LIGNE_ROUTES = Object.freeze({ paquet: '/v1/hors-ligne/paquet', saisies: '/v1/hors-ligne/saisies' });
+export const HORS_LIGNE_DB = Object.freeze({ name: 'aimmo-hors-ligne', store: 'cles', boite: 'boite', paquet: 'paquet', prive: 'prive' });
+export const HORS_LIGNE_ROUTES = Object.freeze({ paquet: '/v1/hors-ligne/paquet', saisies: '/v1/hors-ligne/saisies', prive: '/v1/hors-ligne/prive' });
+/** Le mode privé [R676] : le code de l'agent ne quitte jamais l'appareil ; la clé en est tirée par PBKDF2. */
+export const PRIVE = Object.freeze({ iterations: 310_000, minDigits: horsLigneCore.PRIVATE_CODE_MIN_DIGITS, maxTries: horsLigneCore.PRIVATE_MAX_TRIES, idleMs: horsLigneCore.PRIVATE_IDLE_LOCK_MS });
 
 export const HORS_LIGNE_SCRIPT = `(function () {
 'use strict';
 var G = typeof self !== 'undefined' ? self : globalThis;
 var DB = ${JSON.stringify(HORS_LIGNE_DB.name)}, STORE = ${JSON.stringify(HORS_LIGNE_DB.store)}, BOITE = ${JSON.stringify(HORS_LIGNE_DB.boite)}, PAQUET = ${JSON.stringify(HORS_LIGNE_DB.paquet)};
-var R_PAQUET = ${JSON.stringify(HORS_LIGNE_ROUTES.paquet)}, R_SAISIES = ${JSON.stringify(HORS_LIGNE_ROUTES.saisies)};
+var R_PAQUET = ${JSON.stringify(HORS_LIGNE_ROUTES.paquet)}, R_SAISIES = ${JSON.stringify(HORS_LIGNE_ROUTES.saisies)}, R_PRIVE = ${JSON.stringify(HORS_LIGNE_ROUTES.prive)};
+var PRIV = ${JSON.stringify(HORS_LIGNE_DB.prive)}, P = ${JSON.stringify(PRIVE)};
 var MIN_SIDE = 32, MAX_SIDE = 128, MAX_NOTE = 2000;
 var T = { minBrightness: 60, maxClipped: 0.2, minSharpness: 40, minExposures: 2, minExposureSpread: 25 };
 var ADVICE = {
@@ -194,6 +199,97 @@ function tag(key) {
   });
 }
 
+/* Le mode privé [R676] : l'adresse du bien, le nom et le numéro de la personne rencontrée, pour les visites du jour.
+   Chiffré ici sous un code de l'agent qui ne part jamais au serveur ni ne reste sur l'appareil ; refermé après cinq
+   minutes sans geste ; chaque visite effacée deux heures après sa fin, tout effacé à minuit, à la sortie, après cinq codes
+   faux, ou quand une préparation avec réseau ne rend plus l'une de ses visites. */
+var open_ = null;
+function b64(bytes) { var s = '', a = new Uint8Array(bytes); for (var i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return G.btoa(s); }
+function unb64(t) { var s = G.atob(t), a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; }
+function goodCode(c) { return typeof c === 'string' && new RegExp('^[0-9]{' + P.minDigits + ',12}$').test(c); }
+function keyOf(code, salt) {
+  var S = G.crypto.subtle;
+  return S.importKey('raw', new G.TextEncoder().encode(code), 'PBKDF2', false, ['deriveKey']).then(function (base) {
+    return S.deriveKey({ name: 'PBKDF2', salt: salt, iterations: P.iterations, hash: 'SHA-256' }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  });
+}
+function alive(v) { return v && typeof v.wipeAt === 'string' && Date.parse(v.wipeAt) > Date.now(); }
+/* Rechiffrer les seules visites encore à garder, sous un nouveau tirage : une visite passée disparaît du téléphone. */
+function seal(o, k, salt, visits, tries) {
+  visits = visits.filter(alive);
+  if (!visits.length) return del(PRIV + ':' + o).then(function () { return []; });
+  var iv = G.crypto.getRandomValues(new Uint8Array(12));
+  return G.crypto.subtle.encrypt({ name: 'AES-GCM', iv: iv }, k, new G.TextEncoder().encode(JSON.stringify(visits))).then(function (ct) {
+    var until = visits.map(function (v) { return v.wipeAt; }).sort().pop();
+    return put(PRIV + ':' + o, { salt: b64(salt), iv: b64(iv), data: b64(ct), validUntil: until, ids: visits.map(function (v) { return v.appointmentId; }), tries: tries || 0 });
+  }).then(function () { return visits; });
+}
+function readPriv(o) {
+  if (!o) return Promise.resolve(null);
+  return get(PRIV + ':' + o).then(function (r) {
+    if (r && typeof r.validUntil === 'string' && Date.parse(r.validUntil) > Date.now() && typeof r.data === 'string') return r;
+    return r ? del(PRIV + ':' + o).then(function () { return null; }) : null;
+  });
+}
+function privWipe(o) {
+  if (open_ && (!o || open_.o === o)) open_ = null;
+  return o ? del(PRIV + ':' + o) : Promise.resolve();
+}
+function privLock() { open_ = null; }
+/* Avec du réseau, sur le geste de l'agent : le mode privé du jour, chiffré aussitôt. Rend le nombre de visites gardées. */
+function privKeep(key, o, code) {
+  if (!goodCode(code)) return Promise.reject(new Error('code'));
+  if (!G.indexedDB) return Promise.reject(new Error(NO_STORE));
+  return call(key, R_PRIVE, 'POST').then(function (d) {
+    if (!d || d.owner !== o || !d.pack || !Array.isArray(d.pack.visits)) throw new Error('réponse');
+    var salt = G.crypto.getRandomValues(new Uint8Array(16));
+    return keyOf(code, salt).then(function (k) {
+      return seal(o, k, salt, d.pack.visits, 0).then(function (kept) { open_ = { o: o, k: k, salt: salt, visits: kept, at: Date.now() }; return kept.length; });
+    });
+  });
+}
+/* Ouvrir avec le code : un code faux compte ; au cinquième, tout est effacé. */
+function privOpen(o, code) {
+  return readPriv(o).then(function (r) {
+    if (!r) return { ok: false, code: 'absent' };
+    if (!goodCode(code)) return { ok: false, code: 'code' };
+    var salt = unb64(r.salt);
+    return keyOf(code, salt).then(function (k) {
+      return G.crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(r.iv) }, k, unb64(r.data)).then(function (pt) {
+        var visits = JSON.parse(new G.TextDecoder().decode(pt));
+        return seal(o, k, salt, Array.isArray(visits) ? visits : [], 0).then(function (kept) {
+          open_ = kept.length ? { o: o, k: k, salt: salt, visits: kept, at: Date.now() } : null;
+          return { ok: true, count: kept.length };
+        });
+      }, function () {
+        var tries = (r.tries || 0) + 1;
+        if (tries >= P.maxTries) return privWipe(o).then(function () { return { ok: false, code: 'efface' }; });
+        r.tries = tries;
+        return put(PRIV + ':' + o, r).then(function () { return { ok: false, code: 'faux', left: P.maxTries - tries }; });
+      });
+    });
+  });
+}
+/* Les visites ouvertes, ou null : fermé, ou refermé faute de geste depuis cinq minutes. Chaque lecture compte comme geste. */
+function privVisits(o) {
+  if (!open_ || open_.o !== o) return Promise.resolve(null);
+  if (Date.now() - open_.at > P.idleMs) { open_ = null; return Promise.resolve(null); }
+  open_.at = Date.now();
+  var mine = open_;
+  if (mine.visits.every(alive)) return Promise.resolve(mine.visits);
+  return seal(o, mine.k, mine.salt, mine.visits, 0).then(function (kept) { if (open_ === mine) { mine.visits = kept; if (!kept.length) open_ = null; } return kept; });
+}
+/* Une préparation avec réseau qui ne rend plus l'une des visites gardées (annulée, déplacée, passée à un autre) : tout
+   le mode privé s'efface. */
+function privCheck(o, pack) {
+  return readPriv(o).then(function (r) {
+    if (!r) return null;
+    var ids = {};
+    (pack && Array.isArray(pack.appointments) ? pack.appointments : []).forEach(function (a) { ids[a.appointmentId] = true; });
+    return (r.ids || []).every(function (id) { return ids[id]; }) ? null : privWipe(o);
+  });
+}
+
 /* La photo [R277] : les mêmes calculs que le serveur. */
 function figures(img) {
   var w = img.width, h = img.height, l = img.luma, sum = 0, white = 0, i;
@@ -295,7 +391,7 @@ function prepare(key, show, back) {
     if (d.batchLimit > 0) limit = d.batchLimit;
     if (typeof d.owner !== 'string' || !/^[a-f0-9]{16,64}$/.test(d.owner)) return null;
     return tag(key).then(function (t) { return put(t, d.owner); }).then(function () {
-      return d.pack && Array.isArray(d.pack.appointments) ? put(PAQUET + ':' + d.owner, d.pack) : null;
+      return d.pack && Array.isArray(d.pack.appointments) ? put(PAQUET + ':' + d.owner, d.pack).then(function () { return privCheck(d.owner, d.pack); }) : null;
     }).then(function () {
       if (ui !== mine) return null;
       mine.owner = d.owner;
@@ -306,6 +402,9 @@ function prepare(key, show, back) {
 }
 /** La session finie (sortie, clé refusée, autre clé) : l'écran oublie la clé et l'agent ; rien n'est effacé de la boîte. */
 function stop() {
+  // Le mode privé ne survit pas à la sortie [R676].
+  if (ui && ui.owner) privWipe(ui.owner);
+  open_ = null;
   ui = null;
   var root = $('hors-ligne');
   if (root) clear(root);
@@ -355,9 +454,10 @@ function render() {
   var root = $('hors-ligne'), mine = ui;
   if (!root || !mine || !mine.owner) return Promise.resolve(false);
   var o = mine.owner;
-  return Promise.all([readPack(o), box(o)]).then(function (got) {
+  return Promise.all([readPack(o), box(o), readPriv(o).then(null, function () { return null; }), privVisits(o).then(null, function () { return null; })]).then(function (got) {
     if (ui !== mine) return false;
-    var p = got[0], box = got[1];
+    var p = got[0], box = got[1], priv = {};
+    (got[3] || []).forEach(function (v) { priv[v.appointmentId] = v; });
     clear(root);
     if (mine.back) root.appendChild(btn('Retour à ma journée', function () { mine.open = false; mine.back(mine.key); }, 'retour'));
     root.appendChild(el('h2', 'Mes visites sans réseau'));
@@ -368,16 +468,79 @@ function render() {
     root.appendChild(mine.send);
     said(mine, box);
     box.refused.forEach(function (r) { root.appendChild(el('p', 'Refusée par le serveur : ' + (CODES[r.code] || r.code) + '.', 'doux')); });
+    root.appendChild(privTools(mine, o, got[2], got[3]));
     if (!p) { root.appendChild(el('p', 'Aucune visite préparée. Ouvrez l’application avec du réseau : la journée se prépare seule.')); return true; }
     if (!p.appointments.length) root.appendChild(el('p', 'Aucune visite ni estimation prévue ce jour.'));
-    p.appointments.forEach(function (a) { root.appendChild(card(a, box.pending, o)); });
+    p.appointments.forEach(function (a) { root.appendChild(card(a, box.pending, o, priv[a.appointmentId] || null)); });
     return true;
   });
 }
-function card(a, pending, o) {
+/* Le mode privé à l'écran : le garder avec un code, l'ouvrir, le refermer ou l'effacer [R676]. */
+var PRIV_SAID = {
+  code: 'Un code de ' + P.minDigits + ' à 12 chiffres.', absent: 'Rien n’est gardé sur ce téléphone.', efface: 'Cinq codes faux : adresses et numéros sont effacés du téléphone.',
+  reseau: 'Il faut du réseau pour garder les adresses et les numéros.'
+};
+function privTools(mine, o, rec, visits) {
+  var s = el('section', '', 'prive');
+  s.setAttribute('aria-label', 'Adresses et numéros');
+  s.appendChild(el('h3', 'Adresses et numéros'));
+  var said = el('p', mine.privSaid || '', 'doux');
+  said.setAttribute('role', 'status');
+  mine.privSaid = '';
+  function again(t) { mine.privSaid = t || ''; return render(); }
+  function codeField(label) {
+    var f = el('input');
+    f.setAttribute('type', 'password');
+    f.setAttribute('inputmode', 'numeric');
+    f.setAttribute('autocomplete', 'off');
+    f.setAttribute('maxlength', '12');
+    f.setAttribute('aria-label', label);
+    s.appendChild(f);
+    return f;
+  }
+  var wipe = btn('Effacer du téléphone', function () { privWipe(o).then(function () { return again('Adresses et numéros effacés du téléphone.'); }); }, 'secondaire');
+  if (visits) {
+    s.appendChild(el('p', 'Ouvert : adresses et numéros sont sur chaque visite. Fermé seul après cinq minutes sans geste.', 'doux'));
+    s.appendChild(btn('Verrouiller', function () { privLock(); again('Verrouillé.'); }));
+    s.appendChild(wipe);
+  } else if (rec) {
+    var c = codeField('Code des adresses et numéros');
+    s.appendChild(btn('Ouvrir', function () {
+      var v = String(c.value || '');
+      c.value = '';
+      privOpen(o, v).then(function (r) {
+        if (r.ok) return again(r.count ? '' : 'Plus aucune visite à garder : tout est effacé.');
+        return again(r.code === 'faux' ? 'Code faux. ' + (r.left > 1 ? 'Encore ' + r.left + ' essais' : 'Dernier essai') + ' avant l’effacement.' : PRIV_SAID[r.code] || 'Refusé.');
+      }, function () { return again('Ouverture impossible : réessayez.'); });
+    }));
+    s.appendChild(wipe);
+  } else {
+    s.appendChild(el('p', 'Pour les visites d’aujourd’hui seulement : l’adresse du bien, le nom et le numéro de la personne. Chiffrés sur ce téléphone sous votre code, qui n’est envoyé nulle part ; effacés deux heures après chaque visite, à minuit, à la sortie, ou après cinq codes faux.', 'doux'));
+    var k = codeField('Choisissez un code de ' + P.minDigits + ' chiffres au moins');
+    s.appendChild(btn('Garder pour aujourd’hui', function () {
+      var v = String(k.value || '');
+      k.value = '';
+      if (!goodCode(v)) { again(PRIV_SAID.code); return; }
+      privKeep(mine.key, o, v).then(function (n) { return again(n ? n + (n > 1 ? ' visites gardées' : ' visite gardée') + ', ouvertes.' : 'Aucune visite à venir aujourd’hui : rien n’est gardé.'); }, function (e) { return again(e && e.message === NO_STORE ? NO_STORE : PRIV_SAID.reseau); });
+    }));
+  }
+  s.appendChild(said);
+  return s;
+}
+function card(a, pending, o, v) {
   var c = el('article', '', 'carte');
   var b = a.property;
   c.appendChild(el('h3', (a.kind === 'estimation' ? 'Estimation' : 'Visite') + ' à ' + hour(a.start) + (b ? ' · ' + b.reference + (b.city ? ', ' + b.city : '') : '')));
+  if (v) {
+    // Ouvert avec le code : l'entrée et le contact, rien d'autre [R676].
+    c.appendChild(el('p', v.address ? v.address.street + ', ' + v.address.postalCode + ' ' + v.address.city : 'Adresse non renseignée sur la fiche du bien.', 'adresse'));
+    var who = v.contact && v.contact.name ? v.contact.name : 'la personne';
+    if (v.contact && v.contact.phone) {
+      var tel = el('a', 'Appeler ' + who + ' · ' + v.contact.phone, 'bouton');
+      tel.setAttribute('href', 'tel:' + String(v.contact.phone).replace(/[^0-9+]/g, ''));
+      c.appendChild(tel);
+    } else c.appendChild(el('p', 'Aucun numéro pour ' + who + '.', 'doux'));
+  }
   if (b) c.appendChild(el('p', [b.surfaceM2 ? b.surfaceM2 + ' m²' : '', b.rooms ? b.rooms + ' pièces' : ''].filter(Boolean).join(', '), 'doux'));
   var done = {}, skip = {};
   a.accepted.forEach(function (k) { done[k] = true; });
@@ -450,6 +613,7 @@ G.AimmoHorsLigne = Object.freeze({
   pending: function (o) { o = o || (ui && ui.owner); return o ? box(o).then(function (s) { return s.pending.slice(); }) : Promise.resolve([]); },
   refused: function (o) { o = o || (ui && ui.owner); return o ? box(o).then(function (s) { return s.refused.slice(); }) : Promise.resolve([]); },
   readPack: readPack,
+  prive: Object.freeze({ garder: privKeep, ouvrir: privOpen, visites: privVisits, verrouiller: privLock, effacer: privWipe, lire: readPriv }),
   photo: Object.freeze({ figures: figures, judge: judge, fuse: fuse, hdr: hdr, encode: encode, reduce: reduce })
 });
 })();
