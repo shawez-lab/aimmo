@@ -92,6 +92,7 @@ describeWithSqlite('K01 · cycle de la commission', () => {
         payment: null,
         signedOn: null,
         cancelled: false,
+        tier: null,
       },
     ]);
     // Rien ne se facture ni ne se paie avant l'acte [R67].
@@ -208,11 +209,11 @@ describeWithSqlite('K01 · cycle de la commission', () => {
     expect(none.ok && none.value.agents.every((a) => a.rateBp === null)).toBe(true);
     await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, agents: [{ agentId: t.alexId, rateBp: 7500 }] });
     const read = await c.currentGrid(t.direction);
-    expect(read.ok && [read.value.version, read.value.inForce, read.value.upcoming]).toEqual([1, null, [{ version: 1, validFrom: '2027-03-01', defaultRateBp: 7000 }]]);
+    expect(read.ok && [read.value.version, read.value.inForce, read.value.upcoming]).toEqual([1, null, [{ version: 1, validFrom: '2027-03-01', defaultRateBp: 7000, tiers: [] }]]);
     // Le jour venu, elle est en vigueur, et ses taux propres préremplissent la suivante.
     t.setClock(at9('2027-03-05'));
     const live = await c.currentGrid(t.direction);
-    expect(live.ok && live.value.inForce).toEqual({ version: 1, validFrom: '2027-03-01', defaultRateBp: 7000 });
+    expect(live.ok && live.value.inForce).toEqual({ version: 1, validFrom: '2027-03-01', defaultRateBp: 7000, tiers: [] });
     // Des versions dans le désordre : c'est le jour qui décide, et le plus proche à venir vient d'abord.
     await c.setGrid(t.direction, { validFrom: '2027-06-01', defaultRateBp: 6000 });
     await c.setGrid(t.direction, { validFrom: '2027-04-01', defaultRateBp: 6500 });
@@ -251,3 +252,85 @@ describeWithSqlite('K01 · cycle de la commission', () => {
     expect((await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((e) => e.type === 'commission.ecart').map((e) => e.data.code)).toEqual(['compromis']);
   });
 });
+
+describeWithSqlite('AU092 · une grille à paliers selon le chiffre d’affaires cumulé de l’année', () => {
+  const TIERS = [{ fromCents: 0, rateBp: 5000 }, { fromCents: 1_500_000, rateBp: 6000 }, { fromCents: 3_000_000, rateBp: 7000 }];
+  /** Des ventes de l'agent déjà comptées : honoraires et parts rangés, inventés. */
+  const past = async (t: Awaited<ReturnType<typeof setup>>, rows: [string, string, number][]) => {
+    await t.db.run('PRAGMA foreign_keys = OFF');
+    const grid = await t.db.first<{ id: string }>('SELECT id FROM commission_grids ORDER BY version LIMIT 1');
+    for (const [id, day, fee] of rows) {
+      await t.db.run("INSERT INTO commissions (file_id, network_id, agent_id, mandate_id, compromis_on, fee_cents, fee_charge, grid_id, created_at) VALUES (?, ?, ?, 'm', ?, ?, 'vendeur', ?, ?)", [id, t.network.id, t.alexId, day, fee, grid!.id, day]);
+      await t.db.run("INSERT INTO commission_shares (file_id, seq, kind, beneficiary_id, reason, amount_cents) VALUES (?, 1, 'agent', ?, NULL, ?)", [id, t.alexId, fee]);
+    }
+    await t.db.run('PRAGMA foreign_keys = ON');
+  };
+
+  it('[R69] constat : la grille n’avait qu’un taux ; le taux de la vente suit le palier que le cumul de l’année atteint, montré avec elle', async () => {
+    const t = await setup();
+    const c = t.commissions();
+    expect(await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, tiers: TIERS })).toEqual({ ok: true, version: 1 });
+    // 2 000 000 cette année avant le compromis du 10 mars ; une vente de l'an passé ne compte pas.
+    await past(t, [['v-1', '2027-01-15', 1_200_000], ['v-2', '2027-02-20', 800_000], ['v-0', '2026-11-02', 5_000_000]]);
+    await t.compromis();
+    await c.sync(t.network.id);
+    const list = await c.list(t.direction);
+    const sale = list.ok ? list.value.find((v) => v.fileId === t.fileId)! : null;
+    expect(sale!.shares.map((x) => [x.kind, x.amountCents])).toEqual([['reseau', 400_000], ['agent', 600_000]]);
+    expect(sale!.tier).toEqual({ year: 2027, cumulCents: 2_000_000, tierSeq: 2, fromCents: 1_500_000, rateBp: 6000 });
+    // L'agent voit le palier de sa vente.
+    const mine = await c.list(t.agent);
+    expect(mine.ok && mine.value.find((v) => v.fileId === t.fileId)!.tier).toMatchObject({ tierSeq: 2, rateBp: 6000 });
+    // La grille en vigueur dit ses paliers.
+    const g = await c.currentGrid(t.direction);
+    expect(g.ok && g.value.inForce!.tiers).toEqual(TIERS);
+    // Rangé une seule fois, jamais changé [R17].
+    await expect(t.db.run('UPDATE commission_tier_picks SET rate_bp = 7000')).rejects.toThrow();
+  });
+
+  it('[R69] sous le premier seuil, le premier palier ; un agent qui a son taux propre le garde, sans palier', async () => {
+    const t = await setup();
+    const c = t.commissions();
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, tiers: TIERS, agents: [{ agentId: t.alexId, rateBp: 8000 }] });
+    await t.compromis();
+    await c.sync(t.network.id);
+    const list = await c.list(t.direction);
+    const sale = list.ok ? list.value.find((v) => v.fileId === t.fileId)! : null;
+    expect(sale!.shares.map((x) => x.amountCents)).toEqual([200_000, 800_000]);
+    expect(sale!.tier).toBeNull();
+  });
+
+  it('[R17] une nouvelle version sans paliers dits garde ceux de la dernière ; une liste vide les retire', async () => {
+    const t = await setup();
+    const c = t.commissions();
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, tiers: TIERS });
+    // L'écran de la grille ne montre que les taux : changer un taux propre ne retire pas les paliers.
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, agents: [{ agentId: t.sam.userId, rateBp: 6500 }] });
+    let g = await c.currentGrid(t.direction);
+    expect(g.ok && [g.value.version, g.value.inForce!.tiers]).toEqual([2, TIERS]);
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, tiers: [] });
+    g = await c.currentGrid(t.direction);
+    expect(g.ok && [g.value.version, g.value.inForce!.tiers]).toEqual([3, []]);
+  });
+
+  it('[R17] une grille programmée plus tard ne prête pas ses paliers à la version qui vaut aujourd’hui', async () => {
+    const t = await setup();
+    const c = t.commissions();
+    const JUNE = [{ fromCents: 0, rateBp: 8000 }, { fromCents: 1_000_000, rateBp: 9000 }];
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, tiers: TIERS });
+    await c.setGrid(t.direction, { validFrom: '2027-06-01', defaultRateBp: 7000, tiers: JUNE });
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, agents: [{ agentId: t.sam.userId, rateBp: 6500 }] });
+    const g = await c.currentGrid(t.direction);
+    expect(g.ok && [g.value.version, g.value.inForce!.tiers, g.value.upcoming.map((u) => u.tiers)]).toEqual([3, TIERS, [JUNE]]);
+  });
+
+  it('les paliers se disent bien : le premier à 0, chacun au-dessus du précédent, deux à dix', async () => {
+    const t = await setup();
+    const c = t.commissions();
+    for (const tiers of [[{ fromCents: 0, rateBp: 5000 }], [{ fromCents: 100, rateBp: 5000 }, { fromCents: 200, rateBp: 6000 }], [{ fromCents: 0, rateBp: 5000 }, { fromCents: 0, rateBp: 6000 }], [{ fromCents: 0, rateBp: 5000 }, { fromCents: 10, rateBp: 10_001 }]]) {
+      expect(await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, tiers })).toEqual({ ok: false, rule: null, code: 'bad_tiers' });
+    }
+    expect(await t.db.first('SELECT COUNT(*) AS n FROM commission_grids')).toEqual({ n: 0 });
+  });
+});
+

@@ -765,6 +765,12 @@ globalThis.AIMMO_FINANCES = function (t) {
     box.appendChild(state);
     return box;
   }
+  /* AU092 · le palier de la grille retenu pour la vente : le cumul de l'année déjà compté, le palier, son taux. */
+  function tierText(c) {
+    var p = c.tier;
+    if (!p || typeof p.rateBp !== 'number') return null;
+    return 'Grille à paliers : palier ' + p.tierSeq + ' (à partir de ' + euros(p.fromCents) + '), soit ' + String(p.rateBp / 100).replace('.', ',') + ' % ; chiffre d’affaires ' + p.year + ' déjà compté avant cette vente : ' + euros(p.cumulCents) + '.';
+  }
   function line(c, group, task) {
     var li = el('li');
     li.appendChild(el('strong', 'Dossier ' + c.fileId));
@@ -779,6 +785,8 @@ globalThis.AIMMO_FINANCES = function (t) {
       parts.appendChild(el('li', (SHARE_NAMES[s.kind] || 'Autre part') + who + why + ' : ' + euros(s.amountCents)));
     });
     li.appendChild(parts);
+    var tierLine = tierText(c);
+    if (tierLine) li.appendChild(el('p', tierLine, 'doux'));
     var gap = sum !== Number(c.feeCents);
     if (gap) li.appendChild(el('p', 'Écart de ' + euros(Math.abs(sum - Number(c.feeCents))) + ' entre les parts et les honoraires : ne versez rien, et vérifiez ce dossier.', 'retard'));
     li.appendChild(el('p', (c.steps || []).map(function (s) { return (STEP_NAMES[s.status] || s.status) + ' le ' + date(s.at); }).join(' · '), 'doux'));
@@ -853,6 +861,8 @@ globalThis.AIMMO_FINANCES = function (t) {
   function pathLine(c, mine) {
     var li = el('li');
     li.appendChild(el('strong', 'Dossier ' + c.fileId + ' : ma part ' + euros(mine)));
+    var myTier = tierText(c);
+    if (myTier) li.appendChild(el('p', myTier, 'doux'));
     if (c.shares.length > 1) {
       var parts = el('ul', null, 'liste');
       c.shares.forEach(function (s) { parts.appendChild(el('li', (SHARE_NAMES[s.kind] || 'Autre part') + ' : ' + euros(s.amountCents))); });
