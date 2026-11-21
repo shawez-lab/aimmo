@@ -781,4 +781,32 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     const q = await s.pige.queue(s.agentAlex);
     expect(q.ok && q.value.map((e) => e.rooms)).toEqual([4]);
   });
+
+  it('[R672] une annonce fermée dès sa première relève sans pièces, revue en 3 pièces, ne ferme plus un 4 pièces', async () => {
+    const s = await setup();
+    const a = s.ad({ ...flat, rooms: undefined, noAgency: true });
+    await s.pige.ingest(s.network.id, [a]);
+    // Tant qu'elle tait ses pièces, tout 65 m² de la commune est fermé dans le doute.
+    expect(await s.pige.ingest(s.network.id, [s.ad({ ...flat, source: 'Site B', rooms: 4 })])).toMatchObject({ added: 0, noAgency: 1 });
+    s.at(MONDAY_10H + 3_600_000);
+    await s.pige.ingest(s.network.id, [{ ...a, rooms: 3 }]);
+    expect(await s.pige.ingest(s.network.id, [s.ad({ ...flat, source: 'Site C', rooms: 4 })])).toMatchObject({ added: 1 });
+    expect(await s.pige.ingest(s.network.id, [s.ad({ ...flat, source: 'Site D', rooms: 3 })])).toMatchObject({ added: 0, noAgency: 1 });
+  });
+
+  it('[R672] un message d’une annonce revue fermée sans pièces compte encore pour un bien qu’elle pourrait être', async () => {
+    const s = await setup();
+    const a = s.ad({ ...flat, rooms: 3 });
+    await s.pige.ingest(s.network.id, [a]);
+    const first = (await s.db.first<{ id: string }>('SELECT id FROM pige_ads'))!.id;
+    expect(await s.pige.prepare(s.agentAlex, first)).toMatchObject({ ok: true });
+    // Un 4 pièces « pas d'agence » ailleurs ; A revient sans pièces : fermée dans le doute, sans relève rangée.
+    await s.pige.ingest(s.network.id, [s.ad({ ...flat, source: 'Site B', rooms: 4, noAgency: true })]);
+    s.at(MONDAY_10H + 3_600_000);
+    expect(await s.pige.ingest(s.network.id, [{ ...a, rooms: undefined }])).toMatchObject({ added: 0, noAgency: 1 });
+    // Un 5 pièces pourrait être A, qui a déjà eu un message : pas de second [R05].
+    await s.pige.ingest(s.network.id, [s.ad({ ...flat, source: 'Site C', rooms: 5 })]);
+    const five = (await s.db.first<{ id: string }>("SELECT id FROM pige_ads WHERE source = 'Site C'"))!.id;
+    expect(await s.pige.prepare(s.agentAlex, five)).toMatchObject({ ok: false, rule: 'R05' });
+  });
 });

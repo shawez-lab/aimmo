@@ -420,8 +420,10 @@ export class Pige {
         // L'annonce elle-même sur son site, quelle que soit la surface qu'elle a portée ou portera, dès que sa source et
         // sa référence se lisent : une empreinte seule, sans rien d'elle, même vue pour la première fois incomplète.
         if (closing.ref) keys.push(await refKey(closing.ref.source, closing.ref.sourceRef));
-        // Le bien dit, à 1 m² près, dans une commune du réseau.
-        if (closing.key && zones.get(communeSlug(closing.key.commune))) keys.push(...(await nearFingerprints(closing.key)));
+        // Le bien dit, à 1 m² près, dans une commune du réseau. Sans pièces dites, une annonce reconnue par sa clé ne
+        // range rien sur le bien : ce qu'elle dit d'elle est noté, et le doute suit ce qu'elle dira ensuite ; seule une
+        // annonce sans clé lisible le range, pour toujours [R672].
+        if (closing.key && zones.get(communeSlug(closing.key.commune)) && (closing.key.rooms !== null || !closing.ref)) keys.push(...(await nearFingerprints(closing.key)));
         // Et le bien que cette annonce a déjà porté sur son site, à 1 m² près : la base le voit fermé sans calculer de clé (HX18).
         if (closing.ref) {
           const before = await this.db.all<{ fingerprint: string; kind: PigeKind; postal_code: string; commune: string; surface_m2: number; rooms: number | null }>(
@@ -758,9 +760,20 @@ export class Pige {
           AND d.rowid = (SELECT e.rowid FROM pige_closed_descriptions e WHERE e.network_id = d.network_id AND e.ref_key = d.ref_key ORDER BY e.noted_at DESC, e.rowid DESC LIMIT 1)`,
       [networkId, JSON.stringify([...legacy])],
     );
+    let byKey: Map<string, { source: string; source_ref: string }> | null = null;
     for (const d of described) {
       if (seen.has(d.ref_key) || !fits(d)) continue;
       out.push(d.ref_key);
+      // Ses empreintes rangées, anciennes comprises, pour qu'un message d'avant compte encore [R05]. La clé ne garde pas
+      // l'annonce : ses relèves se retrouvent par le calcul de la clé, une fois par recherche.
+      if (!byKey) {
+        byKey = new Map();
+        for (const o of await this.db.all<{ source: string; source_ref: string }>('SELECT DISTINCT source, source_ref FROM pige_ads WHERE network_id = ?', [networkId])) {
+          byKey.set(await refKey(o.source, o.source_ref), o);
+        }
+      }
+      const o = byKey.get(d.ref_key);
+      if (o) for (const f of await fpsOf(o.source, o.source_ref)) out.push(f.fingerprint);
     }
     return out;
   }
