@@ -1607,3 +1607,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 17:18 · AU103 · photo HDR entière : trois lumières prises par la caméra, fusion en couleurs à la taille de la prise, JPEG relu et jugé, gardé sur le téléphone puis rangé seulement s'il montre l'image jugée ; R677 ; Codex 3 P0 corrigés, 1 P1 reporté en AU103b (socle, voie 1) ; fusionnée (#763, c0bc3452) · prochaine : AU106
 - 2026-11-21 17:18 · VOIE 2 : relance refusée, question 2 (la séance voie 2 de 11:53 n'a rien produit)
 - 2026-11-21 17:18 · VOIE 2 : AU103, c0bc3452 (main), relancé non
+- 2026-11-21 18:05 · VOIE 3 : AU094b fusionnée (#765) : une part de paiement remet la relance à valider à son rang, texte refait au reste dû ; validation liée au texte lu ; envoi lié à la version validée ; une part pendant un envoi la remet à valider [R553]
+- 2026-11-21 18:05 · VOIE 3 : plus de tâche libre ; AU091 est à la voie 2, AU068b/AU103/AU104 attendent un humain (H10, appareil réel, hors ligne), AU075b est à la voie 1
