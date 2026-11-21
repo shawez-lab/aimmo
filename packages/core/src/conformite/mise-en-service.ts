@@ -193,13 +193,13 @@ export class MiseEnService {
       'SELECT prerequisite, version, withdrawn, document_number, issuer, proof_ref, valid_from, valid_until, set_at FROM launch_proofs WHERE network_id = ? ORDER BY prerequisite, version',
       [networkId],
     );
-    const card = await this.db.first<{ card_number: string }>('SELECT card_number FROM listing_settings WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
+    const card = await this.db.first<{ card_number: string }>('SELECT card_number FROM listing_settings WHERE network_id = ? ORDER BY set_at DESC, id DESC LIMIT 1', [networkId]);
     const mediator = await this.db.first<{ mediator_name: string }>('SELECT mediator_name FROM complaint_settings WHERE network_id = ? ORDER BY version DESC LIMIT 1', [networkId]);
     // Tout ce que la page des mentions montre : ses réglages, et le numéro et le titulaire de la carte, lus ailleurs.
     const changes = await this.db.all<{ at: string | null }>(
-      `SELECT MAX(CASE WHEN set_at GLOB '[0-9][0-9][0-9][0-9]-*' THEN set_at END) AS at FROM site_legal_mentions WHERE network_id = ?
-       UNION ALL SELECT MAX(CASE WHEN set_at GLOB '[0-9][0-9][0-9][0-9]-*' THEN set_at END) FROM card_holders WHERE network_id = ?
-       UNION ALL SELECT MAX(CASE WHEN set_at GLOB '[0-9][0-9][0-9][0-9]-*' THEN set_at END) FROM listing_settings WHERE network_id = ?`,
+      `SELECT MAX(CASE WHEN set_at >= '0000' AND set_at < ':' THEN set_at END) AS at FROM site_legal_mentions WHERE network_id = ?
+       UNION ALL SELECT MAX(CASE WHEN set_at >= '0000' AND set_at < ':' THEN set_at END) FROM card_holders WHERE network_id = ?
+       UNION ALL SELECT MAX(CASE WHEN set_at >= '0000' AND set_at < ':' THEN set_at END) FROM listing_settings WHERE network_id = ?`,
       [networkId, networkId, networkId],
     );
     const mentionChange = changes.map((c) => c.at).filter((at): at is string => typeof at === 'string' && ISO.test(at) && !Number.isNaN(Date.parse(at))).sort().at(-1) ?? null;
