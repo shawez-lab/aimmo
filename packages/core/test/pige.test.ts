@@ -745,4 +745,19 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     q = await s.pige.queue(s.agentAlex);
     expect(q.ok && q.value).toEqual([]);
   });
+
+  it('[R672] un message préparé avant que les pièces se disent compte encore pour une annonce qui pourrait être ce bien', async () => {
+    const s = await setup();
+    const a = s.ad({ ...flat, rooms: undefined });
+    await s.pige.ingest(s.network.id, [a]);
+    const first = (await s.db.first<{ id: string }>('SELECT id FROM pige_ads'))!.id;
+    expect(await s.pige.prepare(s.agentAlex, first)).toMatchObject({ ok: true });
+    s.at(MONDAY_10H + 3_600_000);
+    await s.pige.ingest(s.network.id, [{ ...a, rooms: 3 }, s.ad({ ...flat, source: 'Site B', rooms: undefined }), s.ad({ ...flat, source: 'Site C', rooms: 4 })]);
+    const id = async (source: string) => (await s.db.first<{ id: string }>('SELECT id FROM pige_ads WHERE source = ?', [source]))!.id;
+    // Celle qui tait ses pièces pourrait être le 3 pièces déjà écrit : pas de second message [R05].
+    expect(await s.pige.prepare(s.agentAlex, await id('Site B'))).toMatchObject({ ok: false, rule: 'R05' });
+    // Le 4 pièces ne peut pas être lui : son message se prépare.
+    expect(await s.pige.prepare(s.agentAlex, await id('Site C'))).toMatchObject({ ok: true });
+  });
 });

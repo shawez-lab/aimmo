@@ -705,15 +705,17 @@ export class Pige {
   }
 
   /**
-   * Ce qui pourrait être ce bien faute de pièces dites d'un côté : les empreintes du doute, et les relèves en cours des
-   * autres annonces de la même sorte, du même code postal, de la même commune et de la surface à 1 m² près qui taisent
-   * leurs pièces. Lu pour fermer, jamais parcouru [R672].
+   * Ce qui pourrait être ce bien faute de pièces dites d'un côté : les empreintes du doute, et chaque annonce dont la
+   * relève en cours est de la même sorte, du même code postal, de la même commune, de la surface à 1 m² près, et tait ses
+   * pièces (ou les dit, quand ce bien tait les siennes). De ces annonces sont lues leur clé et toutes leurs empreintes,
+   * anciennes comprises, pour qu'un message ou une fermeture d'avant une correction compte encore. Lu pour fermer, jamais
+   * parcouru : le doute ne passe pas d'un bien à un troisième [R672].
    */
   private async doubtsOf(networkId: string, ad: FingerprintInput, except: AdRef | null = null): Promise<string[]> {
     const out = await doubtFingerprints(ad);
-    const rows = await this.db.all<{ source: string; source_ref: string; commune: string; fingerprint: string }>(
-      `SELECT b.source, b.source_ref, b.commune, b.fingerprint FROM pige_ads b
-        WHERE b.network_id = ? AND b.rooms IS NULL AND b.kind = ? AND b.postal_code = ? AND b.surface_m2 BETWEEN ? AND ?
+    const rows = await this.db.all<{ source: string; source_ref: string; commune: string }>(
+      `SELECT b.source, b.source_ref, b.commune FROM pige_ads b
+        WHERE b.network_id = ? AND b.kind = ? AND b.postal_code = ? AND b.surface_m2 BETWEEN ? AND ? ${typeof ad.rooms === 'number' ? 'AND b.rooms IS NULL' : ''}
           AND b.rowid = (SELECT c.rowid FROM pige_ads c WHERE c.network_id = b.network_id AND c.source = b.source AND c.source_ref = b.source_ref
                           ORDER BY c.collected_at DESC, c.rowid DESC LIMIT 1)`,
       [networkId, ad.kind, ad.postalCode, ad.surfaceM2 - SURFACE_TOLERANCE_M2, ad.surfaceM2 + SURFACE_TOLERANCE_M2],
@@ -722,7 +724,9 @@ export class Pige {
     for (const r of rows) {
       if (communeSlug(r.commune) !== slug) continue;
       if (except && r.source === except.source && r.source_ref === except.sourceRef) continue;
-      out.push(r.fingerprint);
+      out.push(await refKey(r.source, r.source_ref));
+      const fps = await this.db.all<{ fingerprint: string }>('SELECT DISTINCT fingerprint FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ?', [networkId, r.source, r.source_ref]);
+      for (const f of fps) out.push(f.fingerprint);
     }
     return out;
   }
