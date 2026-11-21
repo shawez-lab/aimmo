@@ -1141,7 +1141,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU103 · Le HDR reste un calcul sur prises fournies
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A103 (majeur), endroit : chantier/PLAN.md, HX12 ; C/hors-ligne/photo.ts.
 - Constat de l'audit : Le HDR reste un calcul sur prises fournies, sans capture multi-exposition ni dépôt de l’image entière raccordés au téléphone.
