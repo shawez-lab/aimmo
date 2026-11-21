@@ -999,7 +999,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H54).
 
 ### AU091 · Une réduction d’honoraires après compromis laisse ma commission prévue bloquée
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M13 Pilotage et finances ; audit A091 (majeur), endroit : C/pilotage/commissions.ts, commission prévue figée.
 - Constat de l'audit : Une réduction d’honoraires après compromis laisse ma commission prévue bloquée, sans parcours de régularisation métier décrit.
