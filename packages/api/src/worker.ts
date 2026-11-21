@@ -14,7 +14,7 @@ import { R2VaultStorage, type R2VaultBucket } from './conformite.ts';
 import { R2PartnerFiles, type R2PartnerBucket } from './partenaires.ts';
 import { R2DossierStorage, type R2DossierBucket } from './commerces.ts';
 import { R2FichiersPlages, plagesBucket } from './reprise-fichiers.ts';
-import { BanGeocoder, DvfSiteSales, EstimationEnLigne, GpuUrbanism, httpDvfReader, SqlJournalStore } from '@aimmo/core';
+import { BanGeocoder, DvfSiteSales, EstimationEnLigne, GpuUrbanism, annonces, httpDvfReader, SqlJournalStore } from '@aimmo/core';
 import type { StudioUploadStore } from '../../core/src/studio/depot.ts';
 import { readClesConfig } from './cles.ts';
 import { AdemeDiagnosisFeed } from '../../core/src/veille-dpe/index.ts';
@@ -33,6 +33,8 @@ const socialSettings = (s: ReturnType<typeof socialOf>) => ({ social: s.publish,
  * `MAIL_NETWORK_ID`, `MAIL_FORWARD_TO` et `MAIL_OWN_ADDRESSES` servent à la réception des mails (C06).
  */
 export interface Env {
+  /** AU068 · « oui » : la relecture des annonces en ligne lit les pages publiques des portails (H10). Absent : aucune relecture. */
+  RELECTURE_PORTAILS?: string;
   DB: D1Database;
   /** AU025 : la base D1 à part des bacs à sable, en Europe, jamais celle du réseau. Absente, le bac à sable reste fermé. */
   BAC_A_SABLE_DB?: D1Database;
@@ -227,7 +229,7 @@ export default {
       },
       // M19 (X10) : photos, originaux, preuves et accords dans `MEDIA`, dont seule l'existence est lue ; absent, fermé.
       // X12 : les fichiers finis rangés tels quels dans `MEDIA` ; sans lui (H25), le dépôt est fermé.
-      // AU036 : les vrais Facebook et Instagram du réseau seulement quand tout est rangé (H06, H88) ; sinon, essai.
+      // AU036 : les vrais Facebook et Instagram du réseau seulement quand tout est rangé (H06, H77) ; sinon, essai.
       studio: { files: env.MEDIA ? mediaFiles(env.MEDIA) : null, uploads: env.MEDIA ? mediaUploads(env.MEDIA) : null, ...socialSettings(socialOf(env)) },
       // M20 complet (G12) : preuves de coût dans `PIECES` ; géocodeur des lettres seulement avec les données publiques
       // de l'estimation ; sans IA branchée (H13), les textes du code. Rien ne part : mode essai.
@@ -266,6 +268,7 @@ export default {
     await runScheduler({
       db: fromD1(env.DB),
       mode: env.MODE,
+      listingReader: env.RELECTURE_PORTAILS === 'oui' ? new annonces.HttpListingReader(fetch.bind(globalThis) as unknown as annonces.FetchLike) : null,
       appointmentLinkBase: env.RDV_LINK_BASE,
       alertUnsubscribeBase: env.ALERT_UNSUBSCRIBE_BASE,
       communeRanges: estimation ? new EstimationEnLigne(estimation.geocoder, estimation.sales) : null,

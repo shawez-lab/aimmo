@@ -408,6 +408,9 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
               // La Base adresse nationale puis le Géoportail de l'urbanisme pour la zone du résumé de copropriété (BR87),
               // lus en GET au seul appui de l'agent du bien, jamais un envoi.
               'copropriete: { geocoder: new BanGeocoder(fetch.bind(globalThis)), urbanism: new GpuUrbanism(fetch.bind(globalThis)) },',
+              // AU068 : la page publique d'une annonce acceptée, lue en GET sans redirection ni cookie, seulement avec
+              // RELECTURE_PORTAILS=oui (H10) ; jamais un envoi.
+              "listingReader: env.RELECTURE_PORTAILS === 'oui' ? new annonces.HttpListingReader(fetch.bind(globalThis) as unknown as annonces.FetchLike) : null,",
               'dpeFeed: new AdemeDiagnosisFeed(fetch.bind(globalThis)),',
             ]
           : [],

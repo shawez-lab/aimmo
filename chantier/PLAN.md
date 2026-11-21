@@ -754,7 +754,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU068 · La surveillance portail par portail repose encore sur un lecteur d’annonces simulé, donc je ne sais pas si…
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A068 (majeur), endroit : C/diffusion/surveillance.ts ; H10.
 - Constat de l'audit : La surveillance portail par portail repose encore sur un lecteur d’annonces simulé, donc je ne sais pas si ma baisse de prix est réellement en ligne.
@@ -762,6 +762,15 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien (mise en service réelle : H10).
 
+
+### AU068b · Le lecteur des annonces en ligne réglé portail par portail, sur les pages réelles
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU068, H10
+- Cahier : M07 Commercialiser ; suite de l'audit A068 (relectures de Codex sur #761).
+- Constat : le lecteur générique (données schema.org, puis texte de l'annonce sans les blocs d'autres annonces) couvre les mises en page usuelles, mais chaque portail a la sienne ; six tours de relecture ont trouvé chaque fois une mise en page de plus.
+- Objectif : avec les accords de flux (H10), une page réelle de chaque portail réglé, rangée en jeu de test anonymisé ; le lecteur lit son prix, ses classes et ses mentions, et une page qu'il ne sait pas lire est dite illisible plutôt qu'en écart.
+- Critères : un test par portail réglé sur sa page rangée ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : H10.
 ### AU069 · Je peux proposer des langues rares pour le réseau français
 - Statut : bloquée : H73 (refaire les tables des traductions pour admettre l'allemand, l'espagnol, l'italien et le néerlandais, exception à R17)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
@@ -808,7 +817,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU073b · Dessiner le secteur d'une recherche au doigt, sur une carte
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU073
 - Cahier : M08 Acquéreurs et visites ; suite de l'audit A073 (relecture de Codex sur #692).
 - Constat : le secteur dessiné existe dans le serveur (polygone de 3 à 40 points) mais l'écran ne propose que le rayon autour d'un lieu.
@@ -1132,7 +1141,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU103 · Le HDR reste un calcul sur prises fournies
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A103 (majeur), endroit : chantier/PLAN.md, HX12 ; C/hors-ligne/photo.ts.
 - Constat de l'audit : Le HDR reste un calcul sur prises fournies, sans capture multi-exposition ni dépôt de l’image entière raccordés au téléphone.
@@ -1141,7 +1150,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU104 · Même le paquet hors ligne prévu exclut l’adresse et le téléphone
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-21)
+- Reste : fusionnée (#760, `c7a54416`), `packages/core/src/hors-ligne/prive.ts`, `POST /v1/hors-ligne/prive`, R676 en service, R278 précisée. Décidé, lecture prudente : adresse de la désignation du bien seulement (l'adresse reprise reste dans son espace privé, R46), nom et un numéro de la personne rencontrée, jamais le mail ni le vendeur, visites du jour seulement ; chiffré sur le téléphone sous un code de 6 à 12 chiffres (PBKDF2, AES-GCM), une visite par enregistrement ; refermé 5 min après le dernier geste ; effacé 2 h après chaque visite, à minuit, à la sortie, à la clé refusée, après 5 codes faux, à l'annulation. Codex 9 P0 corrigés en six tours, puis rien à signaler. Jamais vu : l'adresse et le numéro en zone blanche, chiffrés sous un code qui ne quitte pas l'appareil, effacés d'eux-mêmes visite par visite.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A104 (majeur), endroit : C/hors-ligne/reception.ts, `OfflinePack`, R278.
 - Constat de l'audit : Même le paquet hors ligne prévu exclut l’adresse et le téléphone : en zone blanche je ne retrouve ni l’entrée ni mon contact.

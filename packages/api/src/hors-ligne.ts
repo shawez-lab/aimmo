@@ -4,6 +4,8 @@
  *   GET  /v1/hors-ligne/paquet?jour=AAAA-MM-JJ : le paquet du jour, sans rien d'un client, gardé par le téléphone [R278]
  *   POST /v1/hors-ligne/saisies { deviceId, ops } : les saisies faites sans réseau, reçues chacune une seule fois [R276]
  *   GET  /v1/hors-ligne/depart/<rendez-vous> : ce qui manque encore avant de repartir [R277]
+ *   POST /v1/hors-ligne/prive : le mode privé du jour, sur le geste de l'agent : adresse du bien, nom et numéro de la
+ *        personne rencontrée, chiffrés ensuite sur le téléphone sous un code qui ne le quitte jamais [R676]
  *
  * Seul l'agent en activité prépare et envoie ; la couche métier refuse tout autre rôle et l'écrit au journal [R16].
  * Le rôle est contrôlé avant que le corps soit lu. Rien n'est envoyé à personne.
@@ -104,6 +106,17 @@ export function horsLigneRoutes(): HorsLigneRoute[] {
         const r = await server(s).receive(viewer, { deviceId: body.deviceId, ops: body.ops });
         if (!r.ok) return refused(r);
         return json(200, { ok: true, mode: 'essai', sent: false, data: { results: r.results } });
+      },
+    },
+    {
+      method: 'POST',
+      pattern: /^\/hors-ligne\/prive$/,
+      name: 'hors_ligne.prive',
+      // Aucun corps n'est lu : le code de l'agent ne part jamais au serveur [R676].
+      handle: async (s, viewer) => {
+        const r = await server(s).privatePack(viewer);
+        if (!r.ok) return refused(r);
+        return json(200, { ok: true, mode: 'essai', sent: false, data: { pack: r.pack, owner: await ownerMark(viewer) } });
       },
     },
     {
