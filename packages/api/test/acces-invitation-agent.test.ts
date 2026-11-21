@@ -286,5 +286,17 @@ describeWithSqlite('AU023 · une invitation nominative mène à une connexion pa
       expect((await handleRequest(new Request('https://aimmo-api.example.test/v1/moi', { headers: { authorization: `Bearer ${key}` } }), later)).status).toBe(200);
     }
   });
+
+  it('[R600] AU108 · un échange repris après une panne ne fait pas passer une invitation à un rôle pour une invitation à deux rôles', async () => {
+    const t = await setup();
+    const lien = (await t.invite(t.sam.userId, false)).body.data.lien as string;
+    const inv = await t.db.first<{ id: string }>('SELECT id FROM access_invitations ORDER BY created_at DESC, id DESC LIMIT 1');
+    // Une première tentative a tiré une clé, retirée par l'échange interrompu.
+    await t.db.run("INSERT INTO access_keys (sha256, network_id, role, user_id, invitation_id, created_at, revoked_at) VALUES (?, ?, 'agent', ?, ?, ?, ?)", ['a'.repeat(64), t.network.id, t.sam.userId, inv!.id, t.now().toISOString(), t.now().toISOString()]);
+    const key = (await t.open(lien)).key!;
+    const { handoff } = await t.enroll(key, 71);
+    expect(handoff).toBe(true);
+    expect((await t.call('GET', '/moi', { bearer: key })).status).toBe(401);
+  });
 });
 

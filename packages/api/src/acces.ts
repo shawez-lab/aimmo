@@ -65,7 +65,8 @@ export const DEVICE_KEY_ROLES: readonly string[] = ['agent', 'direction', 'compl
 export async function invitedKeys(db: SqlDatabase, options: { now?: Date } = {}): Promise<ApiKeyEntry[]> {
   const rows = await db.all<{ sha256: string; role: string; user_id: string; network_id: string; created_at: string; siblings: number }>(
     // Seulement les clés d'une invitation qui a servi : celles d'un échange interrompu n'ouvrent rien.
-    `SELECT k.sha256, k.role, k.user_id, k.network_id, k.created_at, (SELECT COUNT(*) FROM access_keys s WHERE s.invitation_id = k.invitation_id) AS siblings
+    // Le nombre de rôles se lit dans l'invitation elle-même, jamais dans les clés tirées (un échange repris en a tiré plus).
+    `SELECT k.sha256, k.role, k.user_id, k.network_id, k.created_at, json_array_length(i.grants) AS siblings
      FROM access_keys k JOIN access_invitations i ON i.id = k.invitation_id
      WHERE k.revoked_at IS NULL AND i.used_at IS NOT NULL ORDER BY k.created_at, k.sha256`,
   );
@@ -82,7 +83,7 @@ export async function invitedKeys(db: SqlDatabase, options: { now?: Date } = {})
 export async function retireApplicationKey(db: SqlDatabase, journal: JournalStore, sha256: string, actor: string, now: () => Date): Promise<boolean> {
   // Une clé d'une invitation à plusieurs rôles n'est pas retirée : l'autre rôle en dépend.
   const done = await db.run(
-    'UPDATE access_keys SET revoked_at = ? WHERE sha256 = ? AND revoked_at IS NULL AND (SELECT COUNT(*) FROM access_keys s WHERE s.invitation_id = access_keys.invitation_id) = 1',
+    'UPDATE access_keys SET revoked_at = ? WHERE sha256 = ? AND revoked_at IS NULL AND (SELECT json_array_length(i.grants) FROM access_invitations i WHERE i.id = access_keys.invitation_id) = 1',
     [now().toISOString(), sha256],
   );
   if (done.changes !== 1) return false;
