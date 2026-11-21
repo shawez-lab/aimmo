@@ -617,7 +617,7 @@ export class Publications {
       origin: row.origin,
       visuals: (JSON.parse(row.visuals) as SocialPayload['visuals']).map((v) => ({ ...v, check: byRef.get(v.ref) ?? null })),
       validated: val ? { by: val.validated_by, at: val.validated_at } : null,
-      sends: [...last.values()],
+      sends: [...last.values()].sort((x, y) => (x.channel === y.channel ? x.account.localeCompare(y.account) : x.channel.localeCompare(y.channel))),
       createdAt: row.created_at,
     };
   }

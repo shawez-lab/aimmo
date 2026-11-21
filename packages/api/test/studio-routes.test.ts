@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { studioCertificate, studioRoutes, type StudioServices } from '../src/studio.ts';
+import { liveSocialChannels, mediaBase } from '../src/reseaux-reels.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 
@@ -277,4 +278,74 @@ it('X09 · chaque route a un nom stable et une adresse unique par méthode', () 
   const keys = routes.map((r) => `${r.method} ${r.pattern.source}`);
   expect(new Set(keys).size).toBe(keys.length);
   expect(routes.every((r) => /^studio(\.[a-z_]+)*$/.test(r.name))).toBe(true);
+});
+
+describeWithSqlite('AU036 · la vraie route d’envoi avec les réseaux mis en service', () => {
+  it('[R134] Facebook et Instagram du réseau partent pour de vrai, avec leur lien ; les autres réseaux restent d’essai', async () => {
+    const t = await setup();
+    const calls: string[] = [];
+    let n = 0;
+    const fakeFetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input));
+      calls.push(`${init?.method ?? 'GET'} ${url.pathname}`);
+      if ((init?.method ?? 'GET') === 'GET') return Response.json({ permalink_url: 'https://www.facebook.com/p/1', permalink: 'https://www.instagram.com/p/2' });
+      return Response.json({ id: String(100 + ++n) });
+    }) as typeof fetch;
+    const social = liveSocialChannels({ RESEAUX_MODE: 'reel', META_PAGE_ID: '111', META_IG_USER_ID: '222', META_PAGE_TOKEN: 'jeton-invente', RESEAUX_MEDIA_BASE: 'https://reseau.exemple.test/medias/' }, fakeFetch)!;
+    t.s.channels = social.channels;
+    t.s.live = social.live;
+    const b = await t.property(1);
+    for (const [k, view] of VIEWS.entries()) expect((await t.call(t.agent, 'POST', `/studio/biens/${b.id}/guide/vues`, { viewKey: view, mediaRef: b.photos[k] })).status).toBe(200);
+    expect((await t.call(t.direction, 'POST', `/studio/biens/${b.id}/guide/validation`)).status).toBe(200);
+    for (const k of [0, 1]) {
+      const cert = await t.call(t.agent, 'POST', `/studio/biens/${b.id}/photos`, { resultRef: b.photos[k], resultSha256: 'b'.repeat(63) + String(k), originalRef: b.original(k), originalSha256: 'a'.repeat(64), operations: [{ op: 'exposition', ev: 0.5 }], processedOn: 'appareil' });
+      expect(cert.status, `photo ${k}`).toBe(200);
+    }
+    const prep = await t.call(t.agent, 'POST', `/studio/biens/${b.id}/publications`, { event: 'nouveau_bien', visuals: [b.photos[0], b.photos[1]] });
+    expect(prep.status).toBe(200);
+    const postId = prep.body!.data.id as string;
+    for (const k of [0, 1]) expect((await t.call(t.agent, 'POST', `/studio/publications/${postId}/visuels`, { ref: b.photos[k], addressVisible: false, personVisible: false })).status).toBe(200);
+    expect((await t.call(t.agent, 'POST', `/studio/publications/${postId}/validation`)).status).toBe(200);
+    const sent = await t.call(t.agent, 'POST', `/studio/publications/${postId}/envoi`, {
+      targets: [
+        { channel: 'facebook', account: 'reseau' },
+        { channel: 'instagram', account: 'reseau' },
+        { channel: 'linkedin', account: 'agent' },
+      ],
+    });
+    expect(sent.body?.data.sends).toEqual([
+      { channel: 'facebook', account: 'reseau', mode: 'reel', outcome: 'envoye', url: 'https://www.facebook.com/p/1', code: null, action: null },
+      { channel: 'instagram', account: 'reseau', mode: 'reel', outcome: 'envoye', url: 'https://www.instagram.com/p/2', code: null, action: null },
+      { channel: 'linkedin', account: 'agent', mode: 'essai', outcome: 'envoye', url: null, code: null, action: null },
+    ]);
+    expect(calls.filter((c) => c.startsWith('POST')).length).toBe(7);
+    expect(calls.every((c) => c.includes('/v21.0/'))).toBe(true);
+  });
+});
+
+it('[R26] [R134] sans chaque pièce rangée et bien formée, rien de réel : tous les réseaux restent d’essai', () => {
+  const full = { RESEAUX_MODE: 'reel', META_PAGE_ID: '111', META_IG_USER_ID: '222', META_PAGE_TOKEN: 'jeton-invente', RESEAUX_MEDIA_BASE: 'https://reseau.exemple.test/medias/' };
+  const on = liveSocialChannels(full)!;
+  expect(on.live).toBe(true);
+  expect(on.channels.map((c) => [c.channel, c.mode])).toEqual([
+    ['facebook', 'reel'],
+    ['instagram', 'reel'],
+    ['linkedin', 'essai'],
+    ['google', 'essai'],
+    ['tiktok', 'essai'],
+    ['youtube', 'essai'],
+  ]);
+  for (const off of [
+    { ...full, RESEAUX_MODE: undefined },
+    { ...full, RESEAUX_MODE: 'essai' },
+    { ...full, META_PAGE_ID: undefined },
+    { ...full, META_PAGE_ID: 'ma-page' },
+    { ...full, META_IG_USER_ID: '' },
+    { ...full, META_PAGE_TOKEN: '  ' },
+    { ...full, RESEAUX_MEDIA_BASE: 'http://reseau.exemple.test/medias/' },
+    { ...full, RESEAUX_MEDIA_BASE: 'https://reseau.exemple.test/photos/' },
+    { ...full, RESEAUX_MEDIA_BASE: 'https://moi:secret@reseau.exemple.test/medias/' },
+    { ...full, RESEAUX_MEDIA_BASE: 'pas une adresse' },
+  ]) expect(liveSocialChannels(off), JSON.stringify(off)).toBeNull();
+  expect(mediaBase('https://reseau.exemple.test/medias/?x=1')).toBeNull();
 });
