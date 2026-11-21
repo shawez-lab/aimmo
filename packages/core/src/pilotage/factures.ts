@@ -12,8 +12,10 @@
  * brouillon peut alors être préparé. La facture d'honoraires validée passe la commission à « facturée ». L'export
  * comptable, au format tableur, recompte les montants au centime.
  *
- * Décidé, lecture prudente : TVA de 20 % sur les honoraires du réseau ; aucune TVA sur les reversements tant que
- * l'expert-comptable n'a pas validé leurs modalités (H26), ce que la facture dit ; chaque facture d'essai porte
+ * Décidé, lecture prudente : TVA de 20 % sur les honoraires du réseau. Le reversement suit le régime de TVA de l'agent
+ * qui le facture, lu dans son identité réelle (AU093) : la part de l'agent est toutes taxes (R624) ; soumis à la TVA, il
+ * la facture TVA de 20 % comprise ; en franchise en base, sans TVA, avec la mention de son exonération ; son
+ * identité absente, aucune TVA, ce que la facture dit, en attendant la validation de l'expert-comptable (H26) ; chaque facture d'essai porte
  * « facture d'essai, sans valeur comptable » ; la prime de parrainage n'est facturée qu'après l'encaissement (K03, R83) ;
  * une part nulle ne donne pas de facture ; aucune coordonnée bancaire nulle part [R15].
  *
@@ -31,11 +33,23 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { Acces } from '../acces/acces.ts';
 import { Commissions } from './commissions.ts';
-import { FACTURX_PROFILE, factureElectronique, manquesFacturX, type IdentiteClient, type IdentiteEmetteur } from './facturx.ts';
+import { FACTURX_PROFILE, factureElectronique, manquesFacturX, type IdentiteClient, type IdentiteEmetteur, type RegimeTva } from './facturx.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 export const TRIAL_NOTICE = 'Facture d’essai, sans valeur comptable.';
 export const DEFAULT_VAT_BP = { honoraires: 2000, reversement: 0 } as const;
+/** AU093 · le taux normal de la TVA, pour le reversement d'un agent soumis à la TVA. */
+export const STANDARD_VAT_BP = 2000;
+
+/**
+ * AU093 · le taux du reversement, selon le régime de l'agent qui le facture. La part de l'agent est un montant toutes
+ * taxes, comme le coût de l'agent la compte (R624) : soumis à la TVA, il en facture 20 % comprise ; en franchise en
+ * base, aucune ; son régime inconnu, le taux réglé.
+ */
+export function reversementVatBp(regime: RegimeTva | null, fallbackBp: number): number {
+  if (regime === null) return fallbackBp;
+  return regime.category === 'S' ? STANDARD_VAT_BP : 0;
+}
 
 export type InvoiceKind = 'honoraires' | 'reversement' | 'avoir';
 export const CREDIT_REASONS = ['erreur_montant', 'erreur_destinataire', 'vente_annulee', 'autre'] as const;
@@ -285,7 +299,12 @@ export class Factures {
         "SELECT beneficiary_id, SUM(amount_cents) AS amount_cents FROM commission_shares WHERE file_id = ? AND kind IN ('agent', 'partage') GROUP BY beneficiary_id ORDER BY beneficiary_id",
         [f.file_id],
       );
-      for (const s of shares) if (s.amount_cents > 0) await add(f.file_id, 'reversement', `agent:${s.beneficiary_id}`, null, s.amount_cents, this.vat.reversement);
+      for (const s of shares) {
+        if (s.amount_cents <= 0) continue;
+        const issuer = `agent:${s.beneficiary_id}`;
+        const seller = await this.regimeOf(networkId, issuer);
+        await add(f.file_id, 'reversement', issuer, null, s.amount_cents, reversementVatBp(seller, this.vat.reversement));
+      }
     }
     return made;
   }
@@ -532,11 +551,21 @@ export class Factures {
     }
   }
 
+  /** Le régime de TVA de l'émetteur, s'il est connu ; une panne des identités n'arrête rien et ne devine rien. */
+  private async regimeOf(networkId: string, issuer: string): Promise<RegimeTva | null> {
+    try {
+      return (await this.identites.emetteur(networkId, issuer))?.regime ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Les mentions d'une facture d'essai : jamais sur une facture réelle. */
-  private mentions(vatBp: number): string[] {
+  private mentions(vatBp: number, regime: RegimeTva | null = null): string[] {
     return [
       TRIAL_NOTICE,
-      ...(vatBp === 0 ? ['TVA non appliquée en mode essai, en attente de la validation de l’expert-comptable.'] : []),
+      // AU093 · l'agent en franchise dit son exonération ; sans régime connu, la facture dit qu'elle attend.
+      ...(vatBp === 0 && regime?.category === 'E' ? [`${regime.exemptionReason.trim().replace(/\.$/, '')}.`] : vatBp === 0 ? ['TVA non appliquée en mode essai, en attente de la validation de l’expert-comptable.'] : []),
       // Aucune mention inventée : les identifiants de l'émetteur viennent de la société et de la plateforme réelles.
       'Identifiants de l’émetteur, adresse du destinataire et conditions de paiement : à compléter à la création de la société (H09) et à la mise en service de la plateforme agréée (H26).',
     ];
@@ -558,8 +587,8 @@ export class Factures {
    */
   async issueOnDeed(networkId: string): Promise<number> {
     const today = localTime(this.now(), TIME_ZONE).date;
-    const rows = await this.db.all<{ id: string; file_id: string; kind: 'honoraires' | 'reversement'; issuer: string; amount_cents: number }>(
-      `SELECT d.id, d.file_id, d.kind, d.issuer, d.amount_cents FROM invoice_drafts d JOIN sale_file_closings c ON c.file_id = d.file_id
+    const rows = await this.db.all<{ id: string; file_id: string; kind: 'honoraires' | 'reversement'; issuer: string; amount_cents: number; vat_bp: number }>(
+      `SELECT d.id, d.file_id, d.kind, d.issuer, d.amount_cents, d.vat_bp FROM invoice_drafts d JOIN sale_file_closings c ON c.file_id = d.file_id
        WHERE d.network_id = ? AND c.signed_on <= ? AND NOT EXISTS (SELECT 1 FROM invoices i WHERE i.draft_id = d.id)
        ORDER BY d.created_at, CASE d.kind WHEN 'honoraires' THEN 0 ELSE 1 END, d.issuer, d.round`,
       [networkId, today],
@@ -609,7 +638,7 @@ export class Factures {
       vatBp: d.vat_bp,
       vatCents,
       ttcCents: d.amount_cents,
-      mentions: this.mentions(d.vat_bp),
+      mentions: this.mentions(d.vat_bp, d.kind === 'reversement' ? await this.regimeOf(d.network_id, d.issuer) : null),
       corrects: null,
       reason: null,
     };
