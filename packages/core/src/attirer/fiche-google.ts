@@ -27,7 +27,7 @@ import type { DiffusionGate } from '../acquereurs/rapprochement.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import { Diffusion } from '../documents/retractation.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase, type SqlStatement } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 
@@ -46,12 +46,47 @@ export interface GbpInfo {
   websiteUri: string;
 }
 
+/**
+ * L'accusé que Google rend pour un envoi réussi (AU037) : la référence de ce qu'il a rangé (la réponse, la publication,
+ * la fiche) et, pour une publication, son lien public. Sans accusé lisible, rien n'est dit « envoyé ».
+ */
+export interface GbpAck {
+  ref: string;
+  url?: string | null;
+}
+
+/** Pourquoi un envoi réel a échoué, en liste fermée : jamais le texte de Google [R13]. */
+export type GbpErrorCode = 'connexion' | 'droits' | 'fiche_introuvable' | 'refuse_google' | 'limite' | 'panne' | 'accuse_absent';
+/** Le geste qui règle l'échec : reconnecter le compte Google, relier la fiche, corriger le texte, réessayer, vérifier sur Google. */
+export type GbpAction = 'reconnecter' | 'relier' | 'corriger' | 'reessayer' | 'verifier';
+
+export const GBP_ERROR_ACTIONS: Readonly<Record<GbpErrorCode, GbpAction>> = {
+  connexion: 'reconnecter',
+  droits: 'relier',
+  fiche_introuvable: 'relier',
+  refuse_google: 'corriger',
+  limite: 'reessayer',
+  panne: 'reessayer',
+  accuse_absent: 'verifier',
+};
+
+/**
+ * L'erreur qu'un vrai client Google lève. `incertain` : la demande est partie et sa réponse s'est perdue (délai, coupure,
+ * panne de Google) : une publication a pu être faite, elle n'est jamais refaite d'elle-même.
+ */
+export class GbpError extends Error {
+  constructor(readonly code: GbpErrorCode | 'incertain') {
+    super(`fiche Google : ${code}`);
+    this.name = 'GbpError';
+  }
+}
+
 /** L'API Google Business Profile, réduite à ce qu'AIMMO fait : aucune méthode pour écrire un avis [R64]. */
 export interface GbpClient {
   listReviews(locationRef: string): Promise<GbpReview[]>;
-  replyToReview(locationRef: string, reviewRef: string, text: string): Promise<void>;
-  createPost(locationRef: string, post: { text: string; linkUri: string }): Promise<void>;
-  updateInfo(locationRef: string, info: GbpInfo): Promise<void>;
+  replyToReview(locationRef: string, reviewRef: string, text: string): Promise<GbpAck>;
+  createPost(locationRef: string, post: { text: string; linkUri: string }): Promise<GbpAck>;
+  updateInfo(locationRef: string, info: GbpInfo): Promise<GbpAck>;
 }
 
 /** Ce que l'IA reçoit pour proposer une réponse : la note, le texte de l'avis et le prénom de l'agent, rien d'autre. */
@@ -65,7 +100,11 @@ export type GbpRefusal =
   | { ok: false; rule: 'R16'; code: 'role' | 'agent_inconnu' | 'agent_parti' | 'inconnu' }
   | { ok: false; rule: 'R154'; code: 'texte_refuse'; problems: GbpProblem[] }
   | { ok: false; rule: 'R154'; code: 'non_valide' | 'texte_change' | 'deja_valide' | 'deja_parti' | 'bien_retire' | 'deja_publie' | 'trop_tot' }
-  | { ok: false; rule: null; code: 'sans_fiche' | 'invalide' | 'occupe' | 'echec' | 'sans_service' };
+  | { ok: false; rule: null; code: 'sans_fiche' | 'invalide' | 'occupe' | 'sans_service' }
+  /** Un envoi réel refusé ou en panne chez Google : son code et le geste qui le règle (AU037). */
+  | { ok: false; rule: null; code: 'echec'; error: GbpErrorCode; action: GbpAction }
+  /** La réponse de Google s'est perdue : la publication a pu être faite, à vérifier sur la fiche avant tout nouvel essai. */
+  | { ok: false; rule: null; code: 'a_verifier'; action: 'verifier' };
 
 export interface GbpDraft {
   draftId: string;
@@ -94,6 +133,24 @@ export interface GbpScreenDraft {
   origin: GbpDraft['origin'];
   validatedAt: string | null;
   state: GbpDraftState;
+  /** L'accusé de Google d'un envoi réel réussi (AU037) ; sinon `null`. */
+  ackRef: string | null;
+  url: string | null;
+  /** Le dernier échec réel et son geste, tant que le texte n'est pas parti ; sinon `null`. */
+  error: GbpErrorCode | null;
+  action: GbpAction | null;
+}
+
+/**
+ * La liaison avec Google, dite par le code depuis le dernier envoi réel (AU037) : `essai` tant que rien de réel n'est
+ * en service, `sans_service` sans client, `a_reconnecter` quand Google refuse la connexion, `a_relier` quand la fiche
+ * n'est pas (ou plus) accessible au compte, `pret` sinon.
+ */
+export interface GbpLink {
+  state: 'essai' | 'sans_service' | 'pret' | 'a_reconnecter' | 'a_relier';
+  action: GbpAction | null;
+  /** Le dernier envoi des informations de la fiche : quand, et l'accusé ou l'échec de Google. */
+  info: { at: string; ackRef: string | null; error: GbpErrorCode | null; action: GbpAction | null } | null;
 }
 
 /** Ce que l'écran de la fiche Google montre, pour l'agent de la fiche ou la direction [R16]. */
@@ -103,6 +160,7 @@ export interface GbpScreen {
   /** Vrai seulement si l'interface Google existe (H07) : sinon l'écran le dit, sans erreur. */
   connected: boolean;
   mode: 'essai' | 'reel';
+  link: GbpLink;
   /** Seule la direction règle la fiche et clôt un envoi coupé. */
   canConfigure: boolean;
   location: Location | null;
@@ -235,6 +293,35 @@ export function listingPostText(title: string, agentFirstName: string): string {
 
 /** Les particules des noms de famille, qui sont aussi des mots courants. */
 const PARTICLES = new Set(['de', 'du', 'des', 'le', 'la', 'les', 'da', 'das', 'do', 'dos', 'di', 'del', 'della', 'van', 'von', 'der', 'den', 'el', 'al', 'ben', 'bin', 'mac', 'mc', 'st', 'saint', 'sainte', 'et', 'y', 'ou', 'au', 'aux', 'en']);
+
+/* ---------- Les accusés de Google (AU037) ---------- */
+
+type GoogleResult =
+  | { outcome: 'essai' }
+  | { outcome: 'sans_service' }
+  | { outcome: 'envoye'; ack: { ref: string; url: string | null } }
+  | { outcome: 'echec'; error: GbpErrorCode; action: GbpAction }
+  | { outcome: 'incertain' };
+
+/** Ce que le journal garde d'un échec : son code et son geste, jamais le texte de Google [R13]. */
+const errorData = (r: GoogleResult): Record<string, string> => (r.outcome === 'echec' ? { error: r.error, action: r.action } : {});
+
+/** L'accusé lu tel que Google l'a rendu : une référence imprimable, et un lien en https seulement ; sinon `null`. */
+export function readAck(answer: unknown): { ref: string; url: string | null } | null {
+  if (answer === null || typeof answer !== 'object') return null;
+  const { ref, url } = answer as { ref?: unknown; url?: unknown };
+  if (typeof ref !== 'string' || !/^[\x21-\x7e]{3,300}$/.test(ref)) return null;
+  let link: string | null = null;
+  if (typeof url === 'string' && url.length <= 500) {
+    try {
+      const u = new URL(url);
+      if (u.protocol === 'https:' && u.username === '' && u.password === '') link = u.toString();
+    } catch {
+      link = null;
+    }
+  }
+  return { ref, url: link };
+}
 
 /* ---------- Le service ---------- */
 
@@ -371,7 +458,8 @@ export class FicheGoogle {
     const ref = typeof input.locationRef === 'string' ? input.locationRef.trim() : '';
     const title = typeof input.title === 'string' ? input.title.trim() : '';
     const site = typeof input.websiteUri === 'string' ? input.websiteUri.trim() : '';
-    if (!/^locations\/[A-Za-z0-9_-]{1,190}$/.test(ref) || title.length < 2 || title.length > 100 || /[<>]/.test(title) || !/^https:\/\/[^\s"'<>]{4,290}$/.test(site)) return { ok: false, rule: null, code: 'invalide' };
+    // AU037 : la référence complète (`accounts/…/locations/…`), qu'il faut à Google pour les avis et les publications.
+    if (!/^(?:accounts\/[0-9]{1,30}\/)?locations\/[A-Za-z0-9_-]{1,150}$/.test(ref) || title.length < 2 || title.length > 100 || /[<>]/.test(title) || !/^https:\/\/[^\s"'<>]{4,290}$/.test(site)) return { ok: false, rule: null, code: 'invalide' };
     if ((await checkGbpText(title, { kind: 'publication', authorTokenHashes: [], clientFirstNames: new Set(), clientLastNames: new Set() }, viewer.networkId)).length > 0) return { ok: false, rule: null, code: 'invalide' };
     await this.db.run('INSERT INTO gbp_locations (id, network_id, agent_id, location_ref, title, website_uri, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
       this.newId(), viewer.networkId, agentId, ref, title, site, this.actor(viewer), this.now().toISOString(),
@@ -396,26 +484,52 @@ export class FicheGoogle {
       [networkId, agentId, this.mode],
     );
     if (last?.info_sha256 === hash) return { ok: true, changed: false, mode: this.mode };
-    const outcome = await this.callGoogle(() => this.client!.updateInfo(loc.locationRef, info));
-    if (outcome === 'sans_service') return { ok: false, rule: null, code: 'sans_service' };
-    await this.db.run("INSERT INTO gbp_sends (id, network_id, agent_id, draft_id, kind, info_sha256, mode, outcome, sent_by, sent_at) VALUES (?, ?, ?, NULL, 'informations', ?, ?, ?, 'system:fiche_google', ?)", [
-      this.newId(), networkId, agentId, hash, this.mode, outcome, this.now().toISOString(),
+    // La mise à jour de la fiche se refait sans risque : une réponse perdue est un échec à réessayer.
+    const result = await this.callGoogle(() => this.client!.updateInfo(loc.locationRef, info), true);
+    if (result.outcome === 'sans_service') return { ok: false, rule: null, code: 'sans_service' };
+    const outcome = result.outcome === 'incertain' ? 'echec' : result.outcome;
+    const sendId = this.newId();
+    // L'envoi et son accusé (ou son échec) s'écrivent ensemble, tout ou rien : jamais un « envoyé » sans sa preuve.
+    await runBatch(this.db, [
+      { sql: "INSERT INTO gbp_sends (id, network_id, agent_id, draft_id, kind, info_sha256, mode, outcome, sent_by, sent_at) VALUES (?, ?, ?, NULL, 'informations', ?, ?, ?, 'system:fiche_google', ?)", params: [sendId, networkId, agentId, hash, this.mode, outcome, this.now().toISOString()] },
+      ...this.receipt(sendId, result),
     ]);
-    await appendEvent(this.journal, { type: 'attirer.google.informations', actor: 'system:fiche_google', subject: `agent:${agentId}`, data: { rule: 'R26', mode: this.mode, outcome } }, this.now);
-    if (outcome === 'echec') return { ok: false, rule: null, code: 'echec' };
+    await appendEvent(this.journal, { type: 'attirer.google.informations', actor: 'system:fiche_google', subject: `agent:${agentId}`, data: { rule: 'R26', mode: this.mode, outcome, ...errorData(result) } }, this.now);
+    if (result.outcome === 'echec') return { ok: false, rule: null, code: 'echec', error: result.error, action: result.action };
     return { ok: true, changed: true, mode: this.mode };
   }
 
-  /** En mode essai, l'interface n'est jamais appelée pour écrire [R26]. Une panne est notée, jamais avalée. */
-  private async callGoogle(call: () => Promise<void>): Promise<'essai' | 'envoye' | 'echec' | 'sans_service'> {
-    if (this.mode === 'essai') return 'essai';
-    if (!this.client) return 'sans_service';
+  /**
+   * En mode essai, l'interface n'est jamais appelée pour écrire [R26]. Une panne est notée, jamais avalée. En mode réel,
+   * seul un accusé lisible de Google fait dire « envoyé » ; un échec porte son code et son geste (AU037). `replayable` :
+   * l'appel se refait sans risque (réponse à un avis, informations), une réponse perdue est alors un échec à réessayer ;
+   * sinon (publication) elle est `incertain`, jamais refaite d'elle-même.
+   */
+  private async callGoogle(call: () => Promise<GbpAck>, replayable: boolean): Promise<GoogleResult> {
+    if (this.mode === 'essai') return { outcome: 'essai' };
+    if (!this.client) return { outcome: 'sans_service' };
+    let answer: unknown;
     try {
-      await call();
-      return 'envoye';
-    } catch {
-      return 'echec';
+      answer = await call();
+    } catch (error) {
+      const code = error instanceof GbpError ? error.code : 'panne';
+      if (code === 'incertain') return replayable ? { outcome: 'echec', error: 'panne', action: 'reessayer' } : { outcome: 'incertain' };
+      return { outcome: 'echec', error: code, action: GBP_ERROR_ACTIONS[code] };
     }
+    const ack = readAck(answer);
+    if (!ack) return replayable ? { outcome: 'echec', error: 'accuse_absent', action: 'verifier' } : { outcome: 'incertain' };
+    return { outcome: 'envoye', ack };
+  }
+
+  /** L'accusé ou l'échec d'un envoi réel, écrit dans le même lot que l'envoi ; un essai n'en a pas [R26]. */
+  private receipt(sendId: string, result: GoogleResult): SqlStatement[] {
+    if (result.outcome === 'envoye') {
+      return [{ sql: 'INSERT INTO gbp_receipts (send_id, ack_ref, url, error_code, action, done_at) VALUES (?, ?, ?, NULL, NULL, ?)', params: [sendId, result.ack.ref, result.ack.url, this.now().toISOString()] }];
+    }
+    if (result.outcome === 'echec') {
+      return [{ sql: 'INSERT INTO gbp_receipts (send_id, ack_ref, url, error_code, action, done_at) VALUES (?, NULL, NULL, ?, ?, ?)', params: [sendId, result.error, result.action, this.now().toISOString()] }];
+    }
+    return [];
   }
 
   /** Les avis de la fiche, lus par l'interface et rangés sans le nom de leur auteur. Un avis déjà lu n'est pas repris. */
@@ -426,9 +540,12 @@ export class FicheGoogle {
     let reviews: GbpReview[];
     try {
       reviews = await this.client.listReviews(loc.locationRef);
-    } catch {
-      await appendEvent(this.journal, { type: 'attirer.google.avis_illisibles', actor: 'system:fiche_google', subject: `agent:${agentId}`, data: {} }, this.now);
-      return { ok: false, rule: null, code: 'echec' };
+    } catch (error) {
+      // La lecture se refait sans risque : une réponse perdue est une panne à réessayer. Le code et le geste sont dits.
+      const code: GbpErrorCode = error instanceof GbpError && error.code !== 'incertain' ? error.code : 'panne';
+      const action = GBP_ERROR_ACTIONS[code];
+      await appendEvent(this.journal, { type: 'attirer.google.avis_illisibles', actor: 'system:fiche_google', subject: `agent:${agentId}`, data: { error: code, action } }, this.now);
+      return { ok: false, rule: null, code: 'echec', error: code, action };
     }
     let added = 0;
     const base = await this.context(networkId, 'reponse', [], null);
@@ -696,20 +813,33 @@ export class FicheGoogle {
     }
     const reviewRef =
       row.kind === 'reponse' ? (await this.db.first<{ review_ref: string }>('SELECT review_ref FROM gbp_reviews WHERE id = ?', [row.review_id]))!.review_ref : null;
-    const outcome = await this.callGoogle(() =>
-      row.kind === 'reponse' ? this.client!.replyToReview(loc.locationRef, reviewRef!, row.body) : this.client!.createPost(loc.locationRef, { text: row.body, linkUri: row.link_uri! }),
+    // Une réponse à un avis remplace la précédente chez Google : elle se refait sans risque. Une publication, non.
+    const result = await this.callGoogle(
+      () => (row.kind === 'reponse' ? this.client!.replyToReview(loc.locationRef, reviewRef!, row.body) : this.client!.createPost(loc.locationRef, { text: row.body, linkUri: row.link_uri! })),
+      row.kind === 'reponse',
     );
-    if (outcome === 'sans_service') return { ok: false, rule: null, code: 'sans_service' };
+    if (result.outcome === 'sans_service') return { ok: false, rule: null, code: 'sans_service' };
+    if (result.outcome === 'incertain') {
+      // La réservation reste ouverte, sans résultat : rien ne repart avant que la direction ait regardé la fiche Google.
+      await appendEvent(this.journal, { type: 'attirer.google.envoi', actor: this.actor(viewer), subject: `agent:${row.agent_id}`, data: { rule: 'R154', kind: row.kind, mode: this.mode, outcome: 'incertain', validatedBy: row.validated_by } }, this.now);
+      return { ok: false, rule: null, code: 'a_verifier', action: 'verifier' };
+    }
+    const sendId = this.newId();
     try {
-      await this.db.run('INSERT INTO gbp_sends (id, network_id, agent_id, draft_id, kind, info_sha256, mode, outcome, sent_by, sent_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)', [
-        this.newId(), row.network_id, row.agent_id, row.id, row.kind, this.mode, outcome, this.actor(viewer), this.now().toISOString(),
+      // L'envoi et son accusé (ou son échec) s'écrivent ensemble, tout ou rien : jamais un « envoyé » sans sa preuve.
+      await runBatch(this.db, [
+        {
+          sql: 'INSERT INTO gbp_sends (id, network_id, agent_id, draft_id, kind, info_sha256, mode, outcome, sent_by, sent_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)',
+          params: [sendId, row.network_id, row.agent_id, row.id, row.kind, this.mode, result.outcome, this.actor(viewer), this.now().toISOString()],
+        },
+        ...this.receipt(sendId, result),
       ]);
     } catch (error) {
       if (/UNIQUE/i.test(String(error))) return { ok: false, rule: 'R154', code: 'deja_parti' };
       throw error;
     }
-    await appendEvent(this.journal, { type: 'attirer.google.envoi', actor: this.actor(viewer), subject: `agent:${row.agent_id}`, data: { rule: 'R154', kind: row.kind, mode: this.mode, outcome, validatedBy: row.validated_by } }, this.now);
-    if (outcome === 'echec') return { ok: false, rule: null, code: 'echec' };
+    await appendEvent(this.journal, { type: 'attirer.google.envoi', actor: this.actor(viewer), subject: `agent:${row.agent_id}`, data: { rule: 'R154', kind: row.kind, mode: this.mode, outcome: result.outcome, validatedBy: row.validated_by, ...errorData(result) } }, this.now);
+    if (result.outcome === 'echec') return { ok: false, rule: null, code: 'echec', error: result.error, action: result.action };
     return { ok: true, mode: this.mode };
   }
 
@@ -768,18 +898,56 @@ export class FicheGoogle {
     return this.duePost(viewer.networkId, agentId);
   }
 
+  /**
+   * La liaison avec Google, lue sur les envois réels depuis le dernier qu'il a confirmé : un refus de connexion demande de
+   * reconnecter le compte, un refus de droits ou une fiche introuvable demande de la relier, et cela tient jusqu'au
+   * prochain envoi confirmé, même si une panne vient après (AU037).
+   */
+  private link(sends: readonly { kind: string; sent_at: string; ack_ref: string | null; error_code: GbpErrorCode | null; action: GbpAction | null }[]): GbpLink {
+    const infos = sends.filter((x) => x.kind === 'informations');
+    const lastInfo = infos[infos.length - 1];
+    const info = this.mode === 'reel' && lastInfo ? { at: lastInfo.sent_at, ackRef: lastInfo.ack_ref, error: lastInfo.error_code, action: lastInfo.action } : null;
+    if (this.mode === 'essai') return { state: 'essai', action: null, info: null };
+    if (!this.client) return { state: 'sans_service', action: null, info };
+    let lastAck = -1;
+    sends.forEach((x, i) => {
+      if (x.ack_ref !== null) lastAck = i;
+    });
+    const blocking = sends.slice(lastAck + 1).filter((x) => x.error_code === 'connexion' || x.error_code === 'droits' || x.error_code === 'fiche_introuvable');
+    const last = blocking[blocking.length - 1];
+    if (last?.error_code === 'connexion') return { state: 'a_reconnecter', action: 'reconnecter', info };
+    if (last) return { state: 'a_relier', action: 'relier', info };
+    return { state: 'pret', action: null, info };
+  }
+
+  /**
+   * La mise à jour des informations de la fiche, demandée par la direction depuis l'écran (AU037) : en mode réel, elle
+   * rend l'accusé de Google, ou l'échec avec le geste qui le règle ; en essai, rien ne part [R26].
+   */
+  async sendInfo(viewer: Viewer, agentId: string): Promise<{ ok: true; changed: boolean; mode: 'essai' | 'reel' } | GbpRefusal> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, `network:${viewer.networkId}`, 'role');
+    const allowed = await this.allowed(viewer, agentId);
+    if (!allowed.ok) return allowed;
+    return this.syncInfo(viewer.networkId, agentId);
+  }
+
   /** La fiche, ses avis et ses publications, chaque texte avec son état, décidé ici. Lecture seule. */
   async screen(viewer: Viewer, agentId: string): Promise<{ ok: true; value: GbpScreen } | GbpRefusal> {
     const allowed = await this.allowed(viewer, agentId);
     if (!allowed.ok) return allowed;
     const networkId = viewer.networkId;
-    const sends = await this.db.all<{ draft_id: string; outcome: 'essai' | 'envoye' | 'echec'; sent_at: string }>(
-      "SELECT draft_id, outcome, sent_at FROM gbp_sends WHERE network_id = ? AND agent_id = ? AND mode = ? AND draft_id IS NOT NULL ORDER BY sent_at, rowid",
+    type SendRow = { draft_id: string | null; kind: string; outcome: 'essai' | 'envoye' | 'echec'; sent_at: string; ack_ref: string | null; url: string | null; error_code: GbpErrorCode | null; action: GbpAction | null };
+    const all = await this.db.all<SendRow>(
+      `SELECT s.draft_id, s.kind, s.outcome, s.sent_at, r.ack_ref, r.url, r.error_code, r.action
+         FROM gbp_sends s LEFT JOIN gbp_receipts r ON r.send_id = s.id
+        WHERE s.network_id = ? AND s.agent_id = ? AND s.mode = ? ORDER BY s.sent_at, s.rowid`,
       [networkId, agentId, this.mode],
     );
-    const sendsOf = new Map<string, { outcome: string; sent_at: string }[]>();
+    const sends = all.filter((x): x is SendRow & { draft_id: string } => x.draft_id !== null);
+    const sendsOf = new Map<string, SendRow[]>();
     for (const x of sends) sendsOf.set(x.draft_id, [...(sendsOf.get(x.draft_id) ?? []), x]);
-    const departed = (draftId: string): string | null => sendsOf.get(draftId)?.find((x) => x.outcome !== 'echec')?.outcome ?? null;
+    const departedSend = (draftId: string): SendRow | null => sendsOf.get(draftId)?.find((x) => x.outcome !== 'echec') ?? null;
+    const departed = (draftId: string): string | null => departedSend(draftId)?.outcome ?? null;
     const claims = await this.db.all<{ draft_id: string; target: string; claimed_at: string }>(
       'SELECT c.draft_id, c.target, c.claimed_at FROM gbp_claims c JOIN gbp_drafts d ON d.id = c.draft_id WHERE c.network_id = ? AND d.agent_id = ? AND c.mode = ? ORDER BY c.attempt',
       [networkId, agentId, this.mode],
@@ -801,7 +969,15 @@ export class FicheGoogle {
       if (!row.validated_at) return 'a_valider';
       return sendsOf.has(row.id) ? 'echec' : 'a_envoyer';
     };
-    const toScreen = async (row: DraftRow): Promise<GbpScreenDraft> => ({ draftId: row.id, body: row.body, linkUri: row.link_uri, origin: row.origin, validatedAt: row.validated_at, state: await stateOf(row) });
+    const toScreen = async (row: DraftRow): Promise<GbpScreenDraft> => {
+      const state = await stateOf(row);
+      const ok = departedSend(row.id);
+      const failed = state === 'echec' ? (sendsOf.get(row.id) ?? []).filter((x) => x.outcome === 'echec').pop() : undefined;
+      return {
+        draftId: row.id, body: row.body, linkUri: row.link_uri, origin: row.origin, validatedAt: row.validated_at, state,
+        ackRef: ok?.ack_ref ?? null, url: ok?.url ?? null, error: failed?.error_code ?? null, action: failed?.action ?? null,
+      };
+    };
     const count = await this.db.first<{ total: number; waiting: number }>(
       `SELECT count(*) AS total, coalesce(sum(CASE WHEN EXISTS (SELECT 1 FROM gbp_drafts d JOIN gbp_sends x ON x.draft_id = d.id WHERE d.review_id = r.id AND x.mode = ? AND x.outcome IN ('essai', 'envoye')) THEN 0 ELSE 1 END), 0) AS waiting
          FROM gbp_reviews r WHERE r.network_id = ? AND r.agent_id = ?`,
@@ -834,6 +1010,7 @@ export class FicheGoogle {
         agentFirstName: allowed.firstName,
         connected: this.client !== undefined,
         mode: this.mode,
+        link: this.link(all),
         canConfigure: viewer.role === 'direction',
         location: await this.location(networkId, agentId),
         reviewsTotal: Number(count?.total ?? 0),

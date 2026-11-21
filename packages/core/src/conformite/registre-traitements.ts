@@ -964,6 +964,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       gbp_validations: ['draft_id', 'text_sha256', 'validated_by'],
       gbp_sends: ['agent_id', 'draft_id', 'info_sha256', 'sent_by'],
       gbp_claims: ['draft_id', 'claimed_by'],
+      gbp_receipts: ['send_id', 'ack_ref', 'url'],
     },
   },
   {
@@ -1694,6 +1695,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   gbp_validations: ['validated_at'],
   gbp_sends: ['id', 'network_id', 'kind', 'mode', 'outcome', 'sent_at'],
   gbp_claims: ['id', 'network_id', 'target', 'mode', 'attempt', 'claimed_at'],
+  gbp_receipts: ['error_code', 'action', 'done_at'],
   public_sites: ['id', 'network_id', 'kind', 'active', 'set_at'],
   seo_signals: ['id', 'network_id', 'change', 'fingerprint', 'mode', 'outcome', 'at'],
   public_contents: ['id', 'network_id', 'kind', 'created_at'],

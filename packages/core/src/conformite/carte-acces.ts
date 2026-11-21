@@ -1134,6 +1134,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   gbp_drafts: out('agent', 'Texte de la fiche Google de l\'agent, sans nom de client par règle [R154].'),
   gbp_validations: out('agent', 'Validation d\'un texte de la fiche Google.'),
   gbp_sends: out('agent', 'Envoi à la fiche Google de l\'agent.'),
+  gbp_receipts: out('agent', 'Accusé de Google ou code de l\'échec d\'un envoi réel à la fiche Google de l\'agent (AU037).'),
   gbp_claims: out('agent', 'Réservation d\'un envoi à la fiche Google de l\'agent.'),
   public_sites: out('agent', 'Site public d\'un agent, ou du réseau : aucune personne cliente.'),
   seo_signals: out('sans_client', 'Adresses de pages publiques signalées aux moteurs : aucune personne.'),
