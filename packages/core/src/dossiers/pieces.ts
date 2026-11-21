@@ -25,6 +25,9 @@
  *   raccordé ; la zone vient d'une lecture datée de l'arrêté, rangée par la direction pour la commune du bien
  *   (`obligations-locales.ts`), et chaque ligne porte sa source. Une commune inconnue, une zone sans lecture à jour ou un
  *   raccordement non déclaré empêchent le dossier d'être complet : on ne laisse plus ces pièces au notaire ;
+ * - électricité et gaz (AU084) : demandés selon l'âge de chaque installation, ou de sa dernière rénovation complète,
+ *   déclaré avec sa preuve (`installations.ts`) ; sans gaz déclaré absent, pas de diagnostic gaz. Rien de déclaré, ou un
+ *   âge sans certificat ni facture : l'âge du bâtiment en tient lieu, comme avant ;
  * - un fonds de commerce relève de M16 : pas de liste ici ;
  * - une pièce d'identité, un document anti-blanchiment ou un RIB ne sont jamais des pièces du dossier [R15].
  */
@@ -37,6 +40,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { ControlesOffre } from '../offres/controles-offre.ts';
 import { gateSaleFile, refuseFile, type PropertyKind } from './acces-dossier.ts';
+import { NO_INSTALLATIONS, installationFactsOf, installationVerdict, type InstallationFacts, type InstallationReading } from './installations.ts';
 import { UNKNOWN_LOCAL, localFactsOf, type LocalFacts, type LocalHazard, type LocalSource, type LocalZone } from './obligations-locales.ts';
 
 const TIME_ZONE = 'Europe/Paris';
@@ -83,6 +87,10 @@ export type PieceReason =
   | 'installation_plus_15_ans'
   | 'chauffage_gaz'
   | 'installation_gaz_possible'
+  /** L'installation est déclarée, avec sa preuve, posée ou rénovée il y a 15 ans ou plus (AU084). */
+  | 'installation_declaree_plus_15_ans'
+  /** Le gaz est déclaré présent, sans année : l'âge du bâtiment en tient lieu (AU084). */
+  | 'installation_gaz_declaree'
   | 'terrain'
   | 'lot_copropriete'
   | 'classe_energie_soumise_audit'
@@ -152,6 +160,8 @@ export interface ExpectedList {
   unknown: UnknownData[];
   /** Les lectures locales qui ont servi (AU011), dans la zone ou non. */
   local: LocalReading[];
+  /** Ce que les déclarations des installations ont décidé, pour un logement (AU084) ; vide sinon. */
+  installations: InstallationReading[];
 }
 
 /** Les bâtiments : tout bien bâti, logement ou non. Un terrain et un fonds de commerce n'en sont pas. */
@@ -162,11 +172,12 @@ const BUILT: readonly PropertyKind[] = ['home', 'building', 'commercial', 'busin
  * Les pièces attendues, par des règles écrites, dans un ordre fixe. Fonction pure : mêmes données, même liste [R60].
  * `year` est l'année en cours, à Paris. Un fonds de commerce rend null (M16).
  */
-export function expectedPieces(kind: PropertyKind, sheet: PropertySheet | null, year: number, local: LocalFacts = UNKNOWN_LOCAL): ExpectedList | null {
+export function expectedPieces(kind: PropertyKind, sheet: PropertySheet | null, year: number, local: LocalFacts = UNKNOWN_LOCAL, installations: InstallationFacts = NO_INSTALLATIONS): ExpectedList | null {
   if (kind === 'business') return null;
   const pieces: ExpectedPiece[] = [];
   const unknown: UnknownData[] = [];
   const readings: LocalReading[] = [];
+  const installationReadings: InstallationReading[] = [];
   const add = (piece: Piece, side: Side, reason: PieceReason, source?: LocalSource) => pieces.push(source ? { piece, side, reason, source } : { piece, side, reason });
   add('titre_propriete', 'vendeur', 'toujours');
   add('fiche_renseignements_vendeur', 'vendeur', 'toujours');
@@ -185,14 +196,28 @@ export function expectedPieces(kind: PropertyKind, sheet: PropertySheet | null, 
       // Plomb (constat de risque d'exposition) : logement construit avant le 1er janvier 1949.
       if (buildYear === null) add('plomb', 'vendeur', 'annee_construction_inconnue');
       else if (buildYear < 1949) add('plomb', 'vendeur', 'construit_avant_1949');
-      // Électricité : installation de plus de 15 ans. Son âge n'est pas dans la fiche : celui du bâtiment en tient lieu,
-      // et seule l'année est connue : 15 ans pile comptent, une installation de janvier a ses 15 ans dans l'année.
+      // Électricité et gaz : installation intérieure de plus de 15 ans. Son âge, et la présence du gaz, viennent de la
+      // déclaration prouvée (AU084) ; sinon l'âge du bâtiment en tient lieu. Seule l'année est connue : 15 ans pile
+      // comptent, une installation de janvier a ses 15 ans dans l'année.
       const old = buildYear === null || year - buildYear >= 15;
-      if (buildYear === null) add('electricite', 'vendeur', 'annee_construction_inconnue');
-      else if (old) add('electricite', 'vendeur', 'installation_plus_15_ans');
-      // Gaz : toute installation intérieure de plus de 15 ans, chauffage, cuisson ou eau chaude. La fiche ne dit pas s'il
-      // y a du gaz : il est demandé pour tout logement ancien ; sans installation, la pièce est l'attestation d'absence.
-      if (old) add('gaz', 'vendeur', c?.heating === 'individuel_gaz' ? 'chauffage_gaz' : 'installation_gaz_possible');
+      for (const installation of ['electricite', 'gaz'] as const) {
+        const fact = installations[installation];
+        const verdict = installationVerdict(fact, year);
+        installationReadings.push({ installation, verdict: fact ? verdict : 'non_declaree', since: fact?.since ?? null, proof: fact?.proof ?? null });
+        if (verdict === 'absente' || verdict === 'recente') continue;
+        if (verdict === 'ancienne') {
+          add(installation, 'vendeur', 'installation_declaree_plus_15_ans');
+          continue;
+        }
+        // Non tranché : l'âge du bâtiment.
+        if (installation === 'electricite') {
+          if (buildYear === null) add('electricite', 'vendeur', 'annee_construction_inconnue');
+          else if (old) add('electricite', 'vendeur', 'installation_plus_15_ans');
+        } else if (old) {
+          // Le gaz sert au chauffage, à la cuisson, à l'eau chaude : sans déclaration, demandé pour tout logement ancien.
+          add('gaz', 'vendeur', fact?.present ? 'installation_gaz_declaree' : c?.heating === 'individuel_gaz' ? 'chauffage_gaz' : 'installation_gaz_possible');
+        }
+      }
     }
     if (sheet && sheet.coownership === null) unknown.push('copropriete');
     if (sheet?.coownership?.isCoownership) {
@@ -233,7 +258,7 @@ export function expectedPieces(kind: PropertyKind, sheet: PropertySheet | null, 
     }
   }
   add('fiche_renseignements_acquereur', 'acquereur', 'toujours');
-  return { pieces, unknown, local: readings };
+  return { pieces, unknown, local: readings, installations: installationReadings };
 }
 
 export interface ReceivedPiece {
@@ -257,6 +282,8 @@ export interface FileStatus {
   unknown: UnknownData[];
   /** Les lectures locales qui ont servi, avec leur source datée (AU011). */
   local: LocalReading[];
+  /** Ce que les déclarations des installations ont décidé (AU084). */
+  installations: InstallationReading[];
   /**
    * Un état, jamais une copie : vérifiée dans la fenêtre du réglage de D03, ou non [R15, R58]. `non_visible` : qui lit
    * ne voit pas la fiche de l'acquéreur en entier, l'état ne lui est pas dit et le dossier n'est pas dit complet [R16].
@@ -329,7 +356,9 @@ export class PiecesDossier {
     // Le lieu et l'installation (AU011) : lus au jour du calcul, car une lecture d'arrêté vieillit.
     const network = await this.db.first<{ network_id: string }>('SELECT network_id FROM sale_files WHERE id = ?', [fileId]);
     const local = network ? await localFactsOf(this.db, network.network_id, propertyId, localTime(this.now(), TIME_ZONE).date) : UNKNOWN_LOCAL;
-    return expectedPieces(kind, sheet, year, local);
+    // Les installations déclarées avec leur preuve (AU084).
+    const installations = network ? await installationFactsOf(this.db, network.network_id, propertyId) : NO_INSTALLATIONS;
+    return expectedPieces(kind, sheet, year, local, installations);
   }
 
   /** La liste des pièces du dossier, ce qui manque, et s'il est complet [R60]. */
@@ -356,7 +385,7 @@ export class PiecesDossier {
     if (buyer.ok && buyer.view === 'full') identity = (await this.controles.identitySeenAt(file.network_id, file.buyer_person_id, this.now())) !== null ? 'verifiee' : 'non_verifiee';
     else if (buyer.ok) await this.refuse(viewer, file.id, 'buyer_not_assigned');
     const complete = missing.length === 0 && list.unknown.length === 0 && identity === 'verifiee';
-    return { ok: true, value: { fileId: file.id, lines, missing, unknown: list.unknown, local: list.local, identity, complete } };
+    return { ok: true, value: { fileId: file.id, lines, missing, unknown: list.unknown, local: list.local, installations: list.installations, identity, complete } };
   }
 
   /**

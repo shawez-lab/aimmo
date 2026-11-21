@@ -64,6 +64,7 @@ it('[R60] la liste des pièces suit des règles écrites, chaque ligne avec sa r
     ],
     unknown: [],
     local: [],
+    installations: [],
   });
   // Ce qui ne se devine pas empêche le dossier d'être complet.
   expect(expectedPieces('home', null, 2027)?.unknown).toEqual(['fiche_bien', 'commune', 'assainissement']);

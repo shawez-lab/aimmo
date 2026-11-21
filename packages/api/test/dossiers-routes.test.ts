@@ -164,3 +164,20 @@ describeWithSqlite('AU011 · routes des obligations locales', () => {
     expect(pieces.body.data.missing).toEqual(expect.arrayContaining(['etat_termites', 'controle_assainissement']));
   });
 });
+
+describeWithSqlite('AU084 · route des installations du bien', () => {
+  it('[R16] [R60] l’agent déclare l’électricité rénovée et l’absence de gaz : les deux diagnostics ne sont plus demandés', async () => {
+    const t = await setup('maison');
+    const first = await t.call(t.agent, 'GET', `/dossiers/${t.fileId}/pieces`);
+    expect(first.body.data.missing).toEqual(expect.arrayContaining(['electricite', 'gaz']));
+    expect(await t.call(t.sam, 'POST', `/dossiers/${t.fileId}/installations`, { installation: 'gaz', present: false, proof: 'declaration_vendeur', proofRef: PROOF })).toMatchObject({ status: 403, body: { rule: 'R16' } });
+    expect(await t.call(t.agent, 'POST', '/dossiers/inconnu/installations', { installation: 'gaz', present: false, proof: 'declaration_vendeur', proofRef: PROOF })).toMatchObject({ status: 404, body: { code: 'unknown_file' } });
+    expect(await t.call(t.agent, 'POST', `/dossiers/${t.fileId}/installations`, { installation: 'electricite', present: true, since: 2016, proof: 'declaration_vendeur', proofRef: 'x.pdf' })).toMatchObject({ status: 400, body: { code: 'bad_proof' } });
+    expect(await t.call(t.agent, 'POST', `/dossiers/${t.fileId}/installations`, { installation: 'electricite', present: true, since: 2016, proof: 'certificat_conformite', proofRef: PROOF })).toMatchObject({ status: 200, body: { ok: true, data: { installation: 'electricite', version: 1 } } });
+    expect(await t.call(t.agent, 'POST', `/dossiers/${t.fileId}/installations`, { installation: 'gaz', present: false, proof: 'declaration_vendeur', proofRef: PROOF })).toMatchObject({ status: 200 });
+    const after = await t.call(t.agent, 'GET', `/dossiers/${t.fileId}/pieces`);
+    expect(after.body.data.missing).not.toEqual(expect.arrayContaining(['electricite']));
+    expect(after.body.data.missing).not.toEqual(expect.arrayContaining(['gaz']));
+    expect(after.body.data.installations.map((r: { verdict: string }) => r.verdict)).toEqual(['recente', 'absente']);
+  });
+});

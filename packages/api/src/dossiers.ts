@@ -12,7 +12,7 @@ import { journalError } from './app.ts';
 import { readCapped } from './studio.ts';
 import { Acces, FicheClient, FicheUnique, dossiers as m10, localTime, type JournalStore, type ScheduledJob, type SqlDatabase, type Viewer } from '@aimmo/core';
 
-const { ActeVente, ArretDossier, BouclierFonds, CheminCritique, ConditionsDossier, DepotsDossier, Echeancier, FinancementDossier, ObligationsLocales, PiecesDossier, RelancesPieces } = m10;
+const { ActeVente, ArretDossier, BouclierFonds, CheminCritique, ConditionsDossier, DepotsDossier, Echeancier, FinancementDossier, InstallationsBien, ObligationsLocales, PiecesDossier, RelancesPieces } = m10;
 export type PieceStore = m10.PieceStore;
 
 export const TRIAL_MODE = 'essai';
@@ -96,6 +96,7 @@ const services = (s: DossierServices) => ({
   echeancier: new Echeancier(s.db, s.acces, s.journal, { now: s.now, proofs: s.pieces }),
   financement: new FinancementDossier(s.db, s.acces, s.journal, { now: s.now }),
   conditions: new ConditionsDossier(s.db, s.acces, s.journal, { now: s.now, proofs: s.pieces }),
+  installations: new InstallationsBien(s.db, s.acces, s.journal, { now: s.now, proofs: s.pieces }),
   acte: new ActeVente(s.db, s.acces, s.journal, s.pieces, { now: s.now, proofs: s.pieces }),
   arret: new ArretDossier(s.db, s.acces, s.journal, s.pieces, { now: s.now }),
   chemin: new CheminCritique(s.db, s.acces, s.journal, s.pieces, { now: s.now }),
@@ -172,6 +173,18 @@ export function dossierRoutes(): DossierRoute[] {
         const file = await s.db.first<{ property_id: string }>('SELECT property_id FROM sale_files WHERE id = ? AND network_id = ?', [id!, v.networkId]);
         if (!file) return reply({ ok: false, rule: null, code: 'unknown_file' });
         return reply(await services(s).obligations.recordSanitation(v, file.property_id, b.mode));
+      }),
+    },
+    // AU084 : l'agent du bien ou la direction déclare une installation (électricité, gaz) du bien du dossier, présence,
+    // année et preuve ; la liste des pièces en déduit la demande exacte [R16, R60].
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/dossiers/${ID}/installations$`),
+      name: 'dossiers.installation',
+      handle: withBody(async (s, v, [id], b) => {
+        const file = await s.db.first<{ property_id: string }>('SELECT property_id FROM sale_files WHERE id = ? AND network_id = ?', [id!, v.networkId]);
+        if (!file) return reply({ ok: false, rule: null, code: 'unknown_file' });
+        return reply(await services(s).installations.record(v, file.property_id, { installation: b.installation, present: b.present, since: b.since, proof: b.proof, proofRef: b.proofRef }));
       }),
     },
     { method: 'GET', pattern: /^\/dossiers\/taches$/, name: 'dossiers.taches', handle: async (s, v) => reply((await services(s).echeancier.tasksOf(v)) as Outcome) },
