@@ -544,11 +544,13 @@ export class Pige {
     if (keys.length === 0) return false;
     let closed = false;
     for (const table of ['pige_no_agency', 'pige_oppositions'] as const) {
-      const hit = await this.db.first(`SELECT 1 AS x FROM ${table} WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?))`, [networkId, JSON.stringify(keys)]);
-      if (!hit) {
+      const exact = new Set(keys);
+      const hits = await this.db.all<{ fingerprint: string }>(`SELECT fingerprint FROM ${table} WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?))`, [networkId, JSON.stringify([...new Set([...keys, ...marks])])]);
+      if (hits.length === 0) continue;
+      if (!hits.some((h) => exact.has(h.fingerprint))) {
         // Fermé seulement dans le doute : l'annonce n'entre pas, mais rien n'est rangé sur elle. Le jour où ses pièces se
         // disent et la séparent du bien fermé, elle entre [R672].
-        if (marks.length > 0 && (await this.db.first(`SELECT 1 AS x FROM ${table} WHERE network_id = ? AND fingerprint IN (SELECT value FROM json_each(?))`, [networkId, JSON.stringify(marks)]))) closed = true;
+        closed = true;
         continue;
       }
       closed = true;
@@ -733,40 +735,43 @@ export class Pige {
     const fpsOf = (source: string, sourceRef: string) =>
       this.db.all<{ fingerprint: string }>('SELECT DISTINCT fingerprint FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ?', [networkId, source, sourceRef]);
     // Ce qu'une annonce fermée a dit d'elle en dernier, quand elle a été revue après sa dernière relève rangée.
+    // Deux descriptions notées au même instant comptent toutes deux : le doute ferme plus, jamais moins.
     const lastSaid = (key: string) =>
-      this.db.first<{ property_fingerprint: string; rooms_said: number; noted_at: string }>(
-        'SELECT property_fingerprint, rooms_said, noted_at FROM pige_closed_descriptions WHERE network_id = ? AND ref_key = ? ORDER BY noted_at DESC, rowid DESC LIMIT 1',
-        [networkId, key],
+      this.db.all<{ property_fingerprint: string; rooms_said: number; noted_at: string }>(
+        `SELECT property_fingerprint, rooms_said, noted_at FROM pige_closed_descriptions
+          WHERE network_id = ? AND ref_key = ? AND noted_at = (SELECT max(noted_at) FROM pige_closed_descriptions WHERE network_id = ? AND ref_key = ?)`,
+        [networkId, key, networkId, key],
       );
     const legacy = new Set(await nearFingerprints({ ...ad, rooms: null }));
     const fits = (d: { property_fingerprint: string; rooms_said: number }): boolean => legacy.has(d.property_fingerprint) && (!roomed || d.rooms_said === 0);
     const rows = await this.db.all<{ source: string; source_ref: string; commune: string; collected_at: string }>(
       `SELECT b.source, b.source_ref, b.commune, b.collected_at FROM pige_ads b
         WHERE b.network_id = ? AND b.kind = ? AND b.postal_code = ? AND b.surface_m2 BETWEEN ? AND ? ${roomed ? 'AND b.rooms IS NULL' : ''}
-          AND b.rowid = (SELECT c.rowid FROM pige_ads c WHERE c.network_id = b.network_id AND c.source = b.source AND c.source_ref = b.source_ref
-                          ORDER BY c.collected_at DESC, c.rowid DESC LIMIT 1)`,
+          AND b.collected_at = (SELECT max(c.collected_at) FROM pige_ads c WHERE c.network_id = b.network_id AND c.source = b.source AND c.source_ref = b.source_ref)`,
       [networkId, ad.kind, ad.postalCode, ad.surfaceM2 - SURFACE_TOLERANCE_M2, ad.surfaceM2 + SURFACE_TOLERANCE_M2],
     );
     const seen = new Set<string>();
     for (const r of rows) {
       if (communeSlug(r.commune) !== slug) continue;
       const key = await refKey(r.source, r.source_ref);
+      if (seen.has(key)) continue;
       seen.add(key);
       // Revue depuis, fermée, et ne pouvant plus être ce bien : elle ne compte plus pour le doute.
       const said = await lastSaid(key);
-      if (said && said.noted_at >= r.collected_at && !fits(said)) continue;
+      if (said.length > 0 && said[0]!.noted_at >= r.collected_at && !said.some(fits)) continue;
       await add(key, await fpsOf(r.source, r.source_ref));
     }
     // Et une annonce fermée revue depuis sa dernière relève, qui dit aujourd'hui ce qui pourrait être ce bien.
     const described = await this.db.all<{ ref_key: string; property_fingerprint: string; rooms_said: number; noted_at: string }>(
       `SELECT d.ref_key, d.property_fingerprint, d.rooms_said, d.noted_at FROM pige_closed_descriptions d
-        WHERE d.network_id = ? AND d.property_fingerprint IN (SELECT value FROM json_each(?))
-          AND d.rowid = (SELECT e.rowid FROM pige_closed_descriptions e WHERE e.network_id = d.network_id AND e.ref_key = d.ref_key ORDER BY e.noted_at DESC, e.rowid DESC LIMIT 1)`,
-      [networkId, JSON.stringify([...legacy])],
+        WHERE d.network_id = ? AND d.property_fingerprint IN (${[...legacy].map(() => '?').join(', ')})
+          AND d.noted_at = (SELECT max(e.noted_at) FROM pige_closed_descriptions e WHERE e.network_id = d.network_id AND e.ref_key = d.ref_key)`,
+      [networkId, ...legacy],
     );
     let byKey: Map<string, { source: string; source_ref: string }> | null = null;
     for (const d of described) {
       if (seen.has(d.ref_key) || !fits(d)) continue;
+      seen.add(d.ref_key);
       out.push(d.ref_key);
       // Ses empreintes rangées, anciennes comprises, pour qu'un message d'avant compte encore [R05]. La clé ne garde pas
       // l'annonce : ses relèves se retrouvent par le calcul de la clé, une fois par recherche.
@@ -800,10 +805,11 @@ export class Pige {
     await this.db.run(
       `INSERT INTO pige_closed_descriptions (network_id, ref_key, property_fingerprint, rooms_said, noted_at)
        SELECT ?, ?, ?, ?, ?
-        WHERE coalesce((SELECT property_fingerprint || '|' || rooms_said FROM pige_closed_descriptions WHERE network_id = ? AND ref_key = ? ORDER BY noted_at DESC, rowid DESC LIMIT 1), '') <> ?
+        WHERE NOT EXISTS (SELECT 1 FROM pige_closed_descriptions WHERE network_id = ? AND ref_key = ? AND property_fingerprint || '|' || rooms_said = ?
+                           AND noted_at = (SELECT max(noted_at) FROM pige_closed_descriptions WHERE network_id = ? AND ref_key = ?))
            OR EXISTS (SELECT 1 FROM pige_ads a WHERE a.network_id = ? AND a.source = ? AND a.source_ref = ?
                        AND a.collected_at > (SELECT max(noted_at) FROM pige_closed_descriptions WHERE network_id = ? AND ref_key = ?))`,
-      [networkId, k, fp, said, now.toISOString(), networkId, k, `${fp}|${said}`, networkId, ref.source, ref.sourceRef, networkId, k],
+      [networkId, k, fp, said, now.toISOString(), networkId, k, `${fp}|${said}`, networkId, k, networkId, ref.source, ref.sourceRef, networkId, k],
     );
   }
 
@@ -826,11 +832,11 @@ export class Pige {
     const doubts = new Set<string>(doubtSeeds);
     let frontier = start;
     while (frontier.length > 0 && refs.size < this.maxLinkedAds) {
-      const rows = await this.db.all<{ source: string; source_ref: string; fingerprint: string; kind: PigeKind; postal_code: string; commune: string; surface_m2: number; rooms: number | null; collected_at: string; rid: number }>(
-        `SELECT DISTINCT b.source, b.source_ref, b.fingerprint, b.kind, b.postal_code, b.commune, b.surface_m2, b.rooms, b.collected_at, b.rowid AS rid
+      const rows = await this.db.all<{ source: string; source_ref: string; fingerprint: string; kind: PigeKind; postal_code: string; commune: string; surface_m2: number; rooms: number | null; collected_at: string }>(
+        `SELECT DISTINCT b.source, b.source_ref, b.fingerprint, b.kind, b.postal_code, b.commune, b.surface_m2, b.rooms, b.collected_at
            FROM pige_ads x JOIN pige_ads b ON b.network_id = x.network_id AND b.source = x.source AND b.source_ref = x.source_ref
           WHERE x.network_id = ? AND x.fingerprint IN (SELECT value FROM json_each(?))
-          ORDER BY b.source, b.source_ref, b.collected_at DESC, b.rowid DESC`,
+          ORDER BY b.source, b.source_ref, b.collected_at DESC`,
         [networkId, JSON.stringify(frontier)],
       );
       const next: string[] = [];
@@ -842,12 +848,17 @@ export class Pige {
         }
       };
       let lastRef = '';
+      let lastAt = '';
+      const freshNow = new Set<string>();
       for (const r of rows) {
         const ref = `${r.source}\u0000${r.source_ref}`;
-        // Les relèves d'une annonce arrivent de la plus récente à la plus ancienne : la première est celle en cours.
-        const latest = ref !== lastRef;
+        // Les relèves d'une annonce arrivent de la plus récente à la plus ancienne : celles du dernier instant sont en
+        // cours, toutes, quand deux sont rangées au même instant.
+        if (ref !== lastRef) lastAt = r.collected_at;
+        const latest = r.collected_at === lastAt;
         lastRef = ref;
         const fresh = !refs.has(ref);
+        if (fresh) freshNow.add(ref);
         const isCurrent = current !== null && r.source === current.source && r.source_ref === current.sourceRef;
         if (fresh) {
           refs.add(ref);
@@ -863,7 +874,7 @@ export class Pige {
         // Une relève qui dit ses pièces relie le bien prouvé ; une relève sans pièces ne relie que sa propre annonce : ses
         // fermetures se rangent sur elle, et les autres les lisent dans le doute tant qu'elle tait ses pièces.
         if (r.rooms !== null) for (const f of await nearFingerprints(property)) add(f);
-        if (latest && fresh && !isCurrent) for (const f of await this.doubtsOf(networkId, property, { source: r.source, sourceRef: r.source_ref })) doubts.add(f);
+        if (latest && freshNow.has(ref) && !isCurrent) for (const f of await this.doubtsOf(networkId, property, { source: r.source, sourceRef: r.source_ref })) doubts.add(f);
       }
       frontier = next;
     }
