@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { applyMigrations, fromSyncSqlite, type SqlDatabase } from '@aimmo/core';
 import { handleRequest, sha256Hex, type ApiConfig } from '../src/index.ts';
 import { gzipSize } from '../../core/src/design/audit.ts';
-import { ETAPES, PORTEFEUILLE, RESEAU_MOBILE, SEUILS_P95, modeledMs, p95, parcoursProblems, type Echantillon, type Etape } from '../../core/src/design/parcours.ts';
+import { ETAPES, PLAFOND_REQUETES, PORTEFEUILLE, RESEAU_MOBILE, SEUILS_P95, modeledMs, p95, parcoursProblems, type Echantillon, type Etape } from '../../core/src/design/parcours.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 
@@ -35,6 +35,24 @@ async function setup() {
   }
   for (let b = 0; b < PORTEFEUILLE.biens; b++) property.run(`b-${b}`, `REF-${b}`, 40 + (b % 120), 1 + (b % 6), 90_000 + b * 1_000, at, at);
   raw.exec('COMMIT');
+  // La moitié des biens a un mandat signé, inscrit au registre, hors délai de rétractation : la recherche les montre,
+  // et demande pour chacun la porte de la diffusion, comme sur un vrai portefeuille [R42].
+  raw.exec('PRAGMA foreign_keys = OFF');
+  raw.exec('BEGIN');
+  const signedAt = '2026-06-01T09:00:00.000Z';
+  const mandate = raw.prepare("INSERT INTO mandates (id, network_id, agent_id, person_id, project_id, property_id, signed_at, source_kind, source_detail, source_id, recorded_by, created_at) VALUES (?, 'net-1', 'agent-1', ?, NULL, ?, ?, 'site', NULL, NULL, 'agent-1', ?)");
+  const doc = raw.prepare("INSERT INTO documents (id, network_id, template_id, template_version, template_hash, kind, mode, status, missing, agent_id, person_id, property_id, content, content_hash, facts, created_by, created_at) VALUES (?, 'net-1', 't', 1, 'h', 'mandat_vente_simple', 'reel', 'complet', '[]', 'agent-1', ?, ?, 'x', 'h', ?, 'agent', ?)");
+  const signedDoc = raw.prepare("INSERT INTO signed_documents (document_id, network_id, signed_at, place, scan_ref, mandate_id, number, copy_content, copy_hash, registered_by, created_at) VALUES (?, 'net-1', ?, 'agence', ?, ?, ?, 'exemplaire', 'h', 'agent', ?)");
+  const register = raw.prepare("INSERT INTO mandate_register (network_id, seq, kind, mandate_id, number_value, number, agent_id, property_id, signed_at, at, actor, prev_hash, hash) VALUES ('net-1', ?, 'inscription', ?, ?, ?, 'agent-1', ?, ?, ?, 'test', 'p', ?)");
+  for (let b = 0; b < PORTEFEUILLE.biens; b += 2) {
+    const n = b / 2 + 1;
+    mandate.run(`m-${b}`, `p-${b % PORTEFEUILLE.clients}`, `b-${b}`, signedAt, signedAt);
+    doc.run(`d-${b}`, `p-${b % PORTEFEUILLE.clients}`, `b-${b}`, JSON.stringify({ durationMonths: 12 }), signedAt);
+    signedDoc.run(`d-${b}`, signedAt, `mandats/b-${b}.pdf`, `m-${b}`, `T-${n}`, signedAt);
+    register.run(n, `m-${b}`, n, `T-${n}`, `b-${b}`, signedAt, signedAt, `h-${b}`);
+  }
+  raw.exec('COMMIT');
+  raw.exec('PRAGMA foreign_keys = ON');
 
   // Chaque requête à la base est comptée : le réseau modélisé en fait payer le coût d'une requête D1.
   let queries = 0;
@@ -51,7 +69,7 @@ async function setup() {
   const apiKeys = JSON.stringify([{ sha256: await sha256Hex(KEY), role: 'agent', userId: 'agent-1', networkId: 'net-1' }]);
   const config: ApiConfig = { db, apiKeys, mode: 'essai', now };
   /** Une étape, mesurée : le temps du serveur, ses requêtes, les octets qui voyagent. */
-  const measure = async (method: 'GET' | 'POST', path: string, body?: unknown): Promise<{ status: number; sample: Echantillon }> => {
+  const measure = async (method: "GET" | "POST", path: string, body?: unknown): Promise<{ status: number; body: unknown; sample: Echantillon }> => {
     const text = body === undefined ? '' : JSON.stringify(body);
     const headers: Record<string, string> = { authorization: `Bearer ${KEY}` };
     if (body !== undefined) headers['content-type'] = 'application/json';
@@ -61,7 +79,7 @@ async function setup() {
     const answer = await r.text();
     const serverMs = performance.now() - started;
     const requestBytes = Buffer.byteLength(`${method} /v1${path}`) + Object.entries(headers).reduce((n, [k, v]) => n + k.length + v.length + 4, 0) + Buffer.byteLength(text);
-    return { status: r.status, sample: { serverMs, queries: queries - before, requestBytes, responseBytes: gzipSize(answer) } };
+    return { status: r.status, body: JSON.parse(answer) as unknown, sample: { serverMs, queries: queries - before, requestBytes, responseBytes: gzipSize(answer) } };
   };
   return { measure };
 }
@@ -90,6 +108,8 @@ describeWithSqlite('AU106 · le parcours de l’agent sur téléphone, mesuré a
       samples.ouverture.push(open.sample);
       const search = await t.measure('POST', '/recherche/phrase', { phrase: `maison ${2 + (i % 4)} pièces à Dijon moins de ${200 + i * 5} 000 euros` });
       expect(search.status, 'recherche').toBe(200);
+      // La recherche montre des biens, chacun passé par la porte de la diffusion.
+      expect((search.body as { data: { results: unknown[] } }).data.results.length, 'résultats').toBeGreaterThan(0);
       samples.recherche.push(search.sample);
       const save = await t.measure('POST', `/rappels/t-${(i * 37) % PORTEFEUILLE.clients}-0/fait`);
       expect(save.status, 'sauvegarde').toBe(200);
@@ -99,7 +119,7 @@ describeWithSqlite('AU106 · le parcours de l’agent sur téléphone, mesuré a
     // Les mesures sont écrites dans le rapport de la vérification, étape par étape.
     console.info(`AU106 · ${RESEAU_MOBILE.name} : ${mesures.map((m) => `${m.etape} ${m.p95Ms} ms (seuil ${m.seuilMs})`).join(' ; ')}`);
     expect(problems).toEqual([]);
-    // Aucune étape ne relit le portefeuille entier : le nombre de requêtes ne dépend pas du nombre de clients.
-    for (const etape of ETAPES) expect(Math.max(...samples[etape].map((s) => s.queries)), etape).toBeLessThanOrEqual(40);
+    // Aucune étape ne relit le portefeuille entier : le nombre de requêtes ne dépend pas du nombre de clients ni de biens.
+    for (const etape of ETAPES) expect(Math.max(...samples[etape].map((s) => s.queries)), etape).toBeLessThanOrEqual(PLAFOND_REQUETES[etape]);
   });
 });

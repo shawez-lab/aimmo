@@ -27,6 +27,12 @@ export const PORTEFEUILLE = Object.freeze({ clients: 1000, messagesParClient: 4,
 
 /** Les seuils au 95e centile, en millisecondes, du geste à la réponse lue. */
 export const SEUILS_P95 = Object.freeze({ ouverture: 1000, recherche: 1500, sauvegarde: 1000 });
+/**
+ * Le plus de requêtes à la base par geste. Il ne dépend pas de la taille du portefeuille : une fiche se lit en quelques
+ * requêtes ; une recherche lit tous les biens en quelques requêtes, puis demande la porte de la diffusion aux seuls biens
+ * qu'elle montre (20 au plus par liste, environ six requêtes chacun) [R42].
+ */
+export const PLAFOND_REQUETES = Object.freeze({ ouverture: 40, recherche: 160, sauvegarde: 40 });
 export type Etape = keyof typeof SEUILS_P95;
 export const ETAPES = Object.keys(SEUILS_P95) as Etape[];
 
