@@ -1001,7 +1001,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU093 · Les reversements utilisent un taux de TVA nul par défaut
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M13 Pilotage et finances ; audit A093 (majeur), endroit : C/pilotage/factures.ts, `DEFAULT_VAT_BP`.
 - Constat de l'audit : Les reversements utilisent un taux de TVA nul par défaut, sans traitement opérationnel démontré des agents soumis à TVA.
@@ -1144,7 +1144,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU106 · Le budget vérifie des octets compressés, pas le temps réel d’accès à une fiche sur téléphone avec un…
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A106 (majeur), endroit : C/design/audit.ts, `budgetProblems` ; tests/design.
 - Constat de l'audit : Le budget vérifie des octets compressés, pas le temps réel d’accès à une fiche sur téléphone avec un portefeuille chargé.

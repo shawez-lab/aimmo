@@ -1563,3 +1563,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 02:56 · AU032 · les demandes des 8 portails lues dans le corps du mail, une seule fiche même relivrée, alerte à l'agent sans coordonnée, état « vérifiée / non vérifiée » de chaque portail pour la direction ; R669 ; Codex 4 P0 corrigés, 1 réfuté ; fusionnée (#739, 2603c63f) · prochaine : AU033
 - 2026-11-21 02:58 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU033
 - 2026-11-21 02:25 · voie 3 · AU107 (#743) fusionnée : rôles assistante et comptable, chacun sa clé et sa liste fermée de routes.
+- 2026-11-21 02:50 · voie 3 · AU106 (#745) fusionnée : parcours sur téléphone mesuré au 95e centile, recherche ramenée de 1 300 à une quinzaine de requêtes ; AU093 (#747) fusionnée : taux du reversement selon le régime de TVA de l'agent. AU092 proposée (#749).
