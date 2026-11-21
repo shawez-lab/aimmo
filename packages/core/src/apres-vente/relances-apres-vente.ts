@@ -14,9 +14,11 @@
  * - sans choix rangé, aucune relance : « ne pas s'y être opposé » se prouve, comme un accord [R03, R65] ; un `oui` ou un
  *   `un_an` range l'accord `relances_apres_vente` sur le mail, avec la même preuve ; un `non` le retire, fiches réunies
  *   comprises, pour tous les dossiers de la personne ;
- * - un `oui` ou un `un_an` ne se range qu'à l'acte, au plus 7 jours après pour une saisie en retard, et jamais après un
- *   `non` de la personne, pour quelque dossier que ce soit, fiches réunies comprises : une opposition est définitive et
- *   arrête tout ; un `non` se range à tout moment ;
+ * - un `oui` ou un `un_an` se range à l'acte, ou plus tard quand le client le donne réellement (AU086) : un accord
+ *   explicite, daté et prouvé, qui n'ouvre que les dates clés à venir, jamais une date passée ; jamais après un `non` de
+ *   la personne, pour quelque dossier que ce soit, fiches réunies comprises : une opposition est définitive et arrête
+ *   tout ; un `non` se range à tout moment ;
+ * - chaque date clé suit le choix rangé au plus tard ce jour-là : un accord donné après ne la rouvre pas ;
  * - sans lien de désinscription réglé, aucune relance ne part [R65] ;
  * - une relance refusée pour l'heure attend le passage suivant [R01], dans les 7 jours ; au-delà, elle est close, au
  *   journal ; toute autre règle la refuse pour de bon ;
@@ -51,7 +53,10 @@ export const AFTER_SALE_CHOICES = ['oui', 'un_an', 'non'] as const;
 export type AfterSaleChoice = (typeof AFTER_SALE_CHOICES)[number];
 /** Les dates clés : de un à cinq ans après l'acte. */
 export const KEY_YEARS = [1, 2, 3, 4, 5] as const;
-/** Un `oui` ou un `un_an` se range à l'acte : au plus ce nombre de jours après, pour une saisie faite en retard. */
+/**
+ * Un `oui` ou un `un_an` rangé dans ce nombre de jours après l'acte est une saisie en retard de l'accord donné à l'acte ;
+ * au-delà, c'est un accord donné plus tard, qui n'ouvre que les dates clés à venir (AU086).
+ */
 export const CHOICE_GRACE_DAYS = 7;
 /** Passé ce nombre de jours après la date clé, une relance qui n'a pas pu partir est close. */
 export const AFTER_SALE_WINDOW_DAYS = 7;
@@ -188,9 +193,9 @@ export class RelancesApresVente {
     if (!roots.includes(root)) return { ok: false, rule: null, code: 'not_client' };
     const at = this.now();
     if (input.choice !== 'non') {
-      // L'accord se donne à l'acte, et seulement là : rangé au plus 7 jours après, jamais après une opposition [R65].
+      // L'accord se donne à l'acte ou plus tard, jamais avant l'acte, jamais après une opposition [R65, AU086].
       const today = localTime(at, TIME_ZONE).date;
-      if (today < sale.closedOn || today > addDays(sale.closedOn, CHOICE_GRACE_DAYS)) return { ok: false, rule: 'R65', code: 'not_at_signing' };
+      if (today < sale.closedOn) return { ok: false, rule: 'R65', code: 'not_at_signing' };
       const ids = await this.unique.membersOf(root);
       const opposed = await this.db.first(`SELECT 1 AS x FROM after_sale_choices WHERE choice = 'non' AND person_id IN (${ids.map(() => '?').join(', ')})`, ids);
       if (opposed) return { ok: false, rule: 'R65', code: 'opposed' };
@@ -220,14 +225,16 @@ export class RelancesApresVente {
    * pour n'importe lequel de ses dossiers, l'emporte toujours, une opposition est définitive et arrête tout [R65] ;
    * sinon le dernier choix rangé pour ce dossier.
    */
-  private async choiceOf(fileId: string, personId: string): Promise<AfterSaleChoice | null> {
+  private async choiceOf(fileId: string, personId: string, dueDay?: string): Promise<AfterSaleChoice | null> {
     const ids = await this.unique.membersOf(personId);
     const opposed = await this.db.first(`SELECT 1 AS x FROM after_sale_choices WHERE choice = 'non' AND person_id IN (${ids.map(() => '?').join(', ')})`, ids);
     if (opposed) return 'non';
-    const row = await this.db.first<{ choice: AfterSaleChoice }>(
-      `SELECT choice FROM after_sale_choices WHERE file_id = ? AND person_id IN (${ids.map(() => '?').join(', ')}) ORDER BY recorded_at DESC, rowid DESC LIMIT 1`,
+    const rows = await this.db.all<{ choice: AfterSaleChoice; recorded_at: string }>(
+      `SELECT choice, recorded_at FROM after_sale_choices WHERE file_id = ? AND person_id IN (${ids.map(() => '?').join(', ')}) ORDER BY recorded_at DESC, rowid DESC`,
       [fileId, ...ids],
     );
+    // AU086 · pour une date clé, le dernier choix rangé au plus tard ce jour-là : un accord tardif ne rouvre rien de passé.
+    const row = dueDay === undefined ? rows[0] : rows.find((r) => localTime(new Date(r.recorded_at), TIME_ZONE).date <= dueDay);
     return row?.choice ?? null;
   }
 
@@ -365,7 +372,7 @@ export class RelancesApresVente {
             );
           }
           // Le choix du client, relu à chaque passage : une opposition dite entre-temps l'emporte [R65].
-          const choice = await this.choiceOf(sale.fileId, c.personId);
+          const choice = await this.choiceOf(sale.fileId, c.personId, dueDay);
           if (choice !== 'oui' && !(choice === 'un_an' && year === 1)) {
             await this.settle(sale, c.personId, year, 'refused', 'R65', null);
             continue;
