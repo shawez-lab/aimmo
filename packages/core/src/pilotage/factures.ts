@@ -12,8 +12,10 @@
  * brouillon peut alors être préparé. La facture d'honoraires validée passe la commission à « facturée ». L'export
  * comptable, au format tableur, recompte les montants au centime.
  *
- * Décidé, lecture prudente : TVA de 20 % sur les honoraires du réseau ; aucune TVA sur les reversements tant que
- * l'expert-comptable n'a pas validé leurs modalités (H26), ce que la facture dit ; chaque facture d'essai porte
+ * Décidé, lecture prudente : TVA de 20 % sur les honoraires du réseau. Le reversement suit le régime de TVA de l'agent
+ * qui le facture, lu dans son identité réelle (AU093) : la part de l'agent est hors taxe ; soumis à la TVA, il facture
+ * cette part et 20 % de TVA en plus ; en franchise en base, la part seule, avec la mention de son exonération ; son
+ * identité absente, aucune TVA, ce que la facture dit, en attendant la validation de l'expert-comptable (H26) ; chaque facture d'essai porte
  * « facture d'essai, sans valeur comptable » ; la prime de parrainage n'est facturée qu'après l'encaissement (K03, R83) ;
  * une part nulle ne donne pas de facture ; aucune coordonnée bancaire nulle part [R15].
  *
@@ -31,11 +33,26 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { Acces } from '../acces/acces.ts';
 import { Commissions } from './commissions.ts';
-import { FACTURX_PROFILE, factureElectronique, manquesFacturX, type IdentiteClient, type IdentiteEmetteur } from './facturx.ts';
+import { FACTURX_PROFILE, factureElectronique, manquesFacturX, type IdentiteClient, type IdentiteEmetteur, type RegimeTva } from './facturx.ts';
 
 const TIME_ZONE = 'Europe/Paris';
 export const TRIAL_NOTICE = 'Facture d’essai, sans valeur comptable.';
 export const DEFAULT_VAT_BP = { honoraires: 2000, reversement: 0 } as const;
+/** AU093 · le taux normal de la TVA, pour le reversement d'un agent soumis à la TVA. */
+export const STANDARD_VAT_BP = 2000;
+
+/**
+ * AU093 · le reversement d'une part hors taxe, selon le régime de l'agent qui le facture : le montant toutes taxes et
+ * son taux. Le hors taxe recompté par `splitVat` est toujours la part, au centime.
+ */
+export function reversementAmount(shareHtCents: number, regime: RegimeTva | null, fallbackBp: number): { ttcCents: number; vatBp: number } {
+  if (regime === null) return { ttcCents: shareHtCents, vatBp: fallbackBp };
+  if (regime.category === 'E') return { ttcCents: shareHtCents, vatBp: 0 };
+  let ttc = shareHtCents + Math.round((shareHtCents * STANDARD_VAT_BP) / 10_000);
+  // Un arrondi qui ne rendrait pas la part au centime est repris d'un centime, dans le sens qui la rend.
+  for (let i = 0; i < 3 && splitVat(ttc, STANDARD_VAT_BP).htCents !== shareHtCents; i++) ttc += splitVat(ttc, STANDARD_VAT_BP).htCents < shareHtCents ? 1 : -1;
+  return { ttcCents: ttc, vatBp: STANDARD_VAT_BP };
+}
 
 export type InvoiceKind = 'honoraires' | 'reversement' | 'avoir';
 export const CREDIT_REASONS = ['erreur_montant', 'erreur_destinataire', 'vente_annulee', 'autre'] as const;
@@ -285,7 +302,13 @@ export class Factures {
         "SELECT beneficiary_id, SUM(amount_cents) AS amount_cents FROM commission_shares WHERE file_id = ? AND kind IN ('agent', 'partage') GROUP BY beneficiary_id ORDER BY beneficiary_id",
         [f.file_id],
       );
-      for (const s of shares) if (s.amount_cents > 0) await add(f.file_id, 'reversement', `agent:${s.beneficiary_id}`, null, s.amount_cents, this.vat.reversement);
+      for (const s of shares) {
+        if (s.amount_cents <= 0) continue;
+        const issuer = `agent:${s.beneficiary_id}`;
+        const seller = await this.regimeOf(networkId, issuer);
+        const r = reversementAmount(s.amount_cents, seller, this.vat.reversement);
+        await add(f.file_id, 'reversement', issuer, null, r.ttcCents, r.vatBp);
+      }
     }
     return made;
   }
@@ -532,11 +555,21 @@ export class Factures {
     }
   }
 
+  /** Le régime de TVA de l'émetteur, s'il est connu ; une panne des identités n'arrête rien et ne devine rien. */
+  private async regimeOf(networkId: string, issuer: string): Promise<RegimeTva | null> {
+    try {
+      return (await this.identites.emetteur(networkId, issuer))?.regime ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   /** Les mentions d'une facture d'essai : jamais sur une facture réelle. */
-  private mentions(vatBp: number): string[] {
+  private mentions(vatBp: number, regime: RegimeTva | null = null): string[] {
     return [
       TRIAL_NOTICE,
-      ...(vatBp === 0 ? ['TVA non appliquée en mode essai, en attente de la validation de l’expert-comptable.'] : []),
+      // AU093 · l'agent en franchise dit son exonération ; sans régime connu, la facture dit qu'elle attend.
+      ...(vatBp === 0 && regime?.category === 'E' ? [`${regime.exemptionReason.trim().replace(/\.$/, '')}.`] : vatBp === 0 ? ['TVA non appliquée en mode essai, en attente de la validation de l’expert-comptable.'] : []),
       // Aucune mention inventée : les identifiants de l'émetteur viennent de la société et de la plateforme réelles.
       'Identifiants de l’émetteur, adresse du destinataire et conditions de paiement : à compléter à la création de la société (H09) et à la mise en service de la plateforme agréée (H26).',
     ];
@@ -609,7 +642,7 @@ export class Factures {
       vatBp: d.vat_bp,
       vatCents,
       ttcCents: d.amount_cents,
-      mentions: this.mentions(d.vat_bp),
+      mentions: this.mentions(d.vat_bp, d.kind === 'reversement' ? await this.regimeOf(d.network_id, d.issuer) : null),
       corrects: null,
       reason: null,
     };

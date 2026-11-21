@@ -9,6 +9,8 @@ import {
   TRIAL_NOTICE,
   pilotageHourlyJob,
   realMentions,
+  reversementAmount,
+  splitVat,
   totauxFacturX,
   type IdentitesFacturation,
   type InvoiceContent,
@@ -410,3 +412,54 @@ describeWithSqlite('AU013 · factures réelles, à côté des factures d’essai
     expect(all.filter((e) => e.type === 'facture.attente' && e.data.code === 'rejetee:FAC-2027-00001')).toHaveLength(1);
   });
 });
+
+it('[R254] AU093 · la part hors taxe se reverse au centime, quel que soit l’arrondi de la TVA', () => {
+  for (let ht = 1; ht <= 20_000; ht += 7) {
+    const r = reversementAmount(ht, { category: 'S' }, 0);
+    expect(splitVat(r.ttcCents, r.vatBp).htCents, String(ht)).toBe(ht);
+  }
+  expect(reversementAmount(700_000, { category: 'E', exemptionReason: 'TVA non applicable, art. 293 B du CGI' }, 0)).toEqual({ ttcCents: 700_000, vatBp: 0 });
+  expect(reversementAmount(700_000, null, 0)).toEqual({ ttcCents: 700_000, vatBp: 0 });
+});
+
+describeWithSqlite('AU093 · le reversement suit le régime de TVA de l’agent qui le facture', () => {
+  const ASSUJETTI = { ...AGENT, name: 'Sam Agent EURL', regime: { category: 'S' as const } };
+  const avec = (agent: typeof AGENT | typeof ASSUJETTI): IdentitesFacturation => ({ emetteur: async (_n, issuer) => (issuer === 'reseau' ? RESEAU : agent), client: async () => CLIENT });
+
+  it('[R254] constat : un agent soumis à la TVA recevait un reversement à 0 %, refusé en Factur-X ; il facture désormais sa part et 20 % de TVA', async () => {
+    const t = await deed();
+    const f = t.enReel(avec(ASSUJETTI));
+    await f.prepare(t.network.id);
+    const rv = (await drafts(t, f)).find((x) => x.kind === 'reversement')!;
+    expect(rv).toMatchObject({ amountCents: 840_000, vatBp: 2000 });
+    const r = await f.validate(t.direction, rv.id);
+    if (!r.ok) throw new Error(`reversement ${(r as { code: string }).code}`);
+    expect(r.value.content).toMatchObject({ htCents: 700_000, vatBp: 2000, vatCents: 140_000, ttcCents: 840_000, mode: 'reel' });
+    expect(r.value.content.mentions.join(' ')).not.toMatch(/293 B|non applicable/);
+    expect(r.value.content.mentions).toContain('TVA intracommunautaire de l’émetteur : FR00900000002.');
+    expect(totauxFacturX(t.reelle.xml.get(r.value.content.label)!)).toMatchObject({ ttcCents: 840_000 });
+  });
+
+  it('[R254] un agent en franchise en base reverse sa part seule, avec la mention de son exonération, en essai comme en réel', async () => {
+    const t = await deed();
+    await t.enEssai.prepare(t.network.id);
+    const rv = (await drafts(t, t.enEssai)).find((x) => x.kind === 'reversement')!;
+    expect(rv).toMatchObject({ amountCents: 700_000, vatBp: 0 });
+    const r = await t.enEssai.validate(t.direction, rv.id);
+    if (!r.ok) throw new Error('reversement');
+    expect(r.value.content).toMatchObject({ htCents: 700_000, vatCents: 0, ttcCents: 700_000 });
+    expect(r.value.content.mentions).toContain('TVA non applicable, art. 293 B du CGI.');
+    expect(r.value.content.mentions.join(' ')).not.toContain('en attente de la validation');
+  });
+
+  it('[R254] sans identité de l’agent, rien n’est deviné : aucune TVA, et la facture d’essai dit qu’elle attend', async () => {
+    const t = await deed();
+    const f = new Factures(t.db, t.acces, t.journal, { now: t.now, plateforme: t.essai });
+    await f.prepare(t.network.id);
+    const rv = (await drafts(t, f)).find((x) => x.kind === 'reversement')!;
+    expect(rv).toMatchObject({ amountCents: 700_000, vatBp: 0 });
+    const r = await f.validate(t.direction, rv.id);
+    expect(r.ok && r.value.content.mentions).toContain('TVA non appliquée en mode essai, en attente de la validation de l’expert-comptable.');
+  });
+});
+
