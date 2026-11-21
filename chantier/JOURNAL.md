@@ -1599,3 +1599,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 13:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 12:53 par une autre séance voie 2, active : push sur chantier/AU103 à 13:33)
 - 2026-11-21 13:50 · VOIE 3 : AU068 fusionnée (#761) : lecteur réel des pages d'annonces (schema.org puis texte de l'annonce seule), relecture à 7 h, 12 h, 18 h avec RELECTURE_PORTAILS=oui ; tâche datée sur écart ou annonce retirée encore visible [R473] ; suite AU068b (pages réelles, H10)
 - 2026-11-21 14:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 12:53 par une autre séance voie 2, active : push sur chantier/AU103 à 14:50)
+- 2026-11-21 15:35 · VOIE 3 : AU073b fusionnée (#764) : secteur dessiné au doigt sur une carte chargée au geste, centrée sur un lieu géocodé, tuiles par le Worker (CARTE_TUILES_URL, H76), 3 à 40 points [R51]
