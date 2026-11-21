@@ -319,6 +319,9 @@ export const APP_JS = `'use strict';
   function writeDirectionKey(v) { try { localStorage.setItem(KEY_DIRECTION, v); return true; } catch (e) { return false; } }
   // Sans argument : la sortie efface les deux clés. Avec une clé refusée : seule celle-ci est effacée, l'autre reste.
   function forgetKey(refused) {
+    // AU104 : le mode privé de la clé oubliée s'efface [R676].
+    var k = refused || readKey();
+    if (k) offline(function (H) { H.oublier(k); });
     [KEY, KEY_DIRECTION].forEach(function (slot) {
       try { if (refused === undefined || localStorage.getItem(slot) === refused) localStorage.removeItem(slot); } catch (e) { /* rien à effacer */ }
     });
@@ -2208,8 +2211,6 @@ ${LOUER_JS}
       $('hors-ligne').appendChild(s);
     });
   }
-  // Le même chargeur, sous un nom qu'aucun écouteur ne recouvre (AU104).
-  var withOffline = offline;
   function enter(key) {
     session += 1;
     var mine = session;
@@ -2228,8 +2229,6 @@ ${LOUER_JS}
       // tout autre rôle est refusé ici.
       if (res.refused || (res.body && (!me || (me.role !== 'agent' && me.role !== 'direction' && me.role !== 'compliance')))) {
         forgetKey(key);
-        // AU104 : le mode privé de la visite gardé sous cette clé s'efface avec elle [R676].
-        offline(function (H) { return H.oublier ? H.oublier(key) : null; });
         // L'autre clé de l'appareil, si elle reste, garde son accès.
         // Celle de la direction, seule restante, devient la clé de l'appareil.
         if (!readKey() && readDirectionKey()) { var kept = readDirectionKey(); forgetKey(); writeKey(kept); }
@@ -2393,11 +2392,6 @@ ${LOUER_JS}
     $('alerte').addEventListener('click', function () { raiseAlert(false); });
     $('sortir').addEventListener('click', function () {
       session += 1;
-      // AU104 : la sortie efface le mode privé de la visite de la clé qui sort, la visite sans réseau chargée au besoin,
-      // même si la journée n'a pas fini de s'ouvrir [R676].
-      var leaving = currentKey || readKey();
-      if (OFF && OFF.sortie) OFF.sortie();
-      if (leaving) withOffline(function (H) { return H.oublier ? H.oublier(leaving) : null; });
       currentKey = null;
       forgetKey();
       try { localStorage.removeItem('aimmo.brouillons'); } catch (e) { /* rien */ }

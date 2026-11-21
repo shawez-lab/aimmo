@@ -24,7 +24,7 @@ export const PRIVATE_IDLE_LOCK_MS = 5 * 60_000;
 
 export interface PrivateVisit {
   appointmentId: string;
-  /** L'adresse du bien, telle que rangée dans sa désignation, ou reprise de l'ancien logiciel ; null si aucune. */
+  /** L'adresse du bien, telle que rangée dans sa désignation ; null si aucune. */
   address: { street: string; postalCode: string; city: string } | null;
   /** La personne rencontrée : son nom et un numéro, jamais son mail. */
   contact: { name: string | null; phone: string | null };
@@ -46,16 +46,14 @@ interface Row {
   end_at: string;
 }
 
-/** L'adresse du bien : sa désignation la plus récente, sinon l'adresse reprise de l'ancien logiciel (AU031). */
+/**
+ * L'adresse du bien : sa désignation la plus récente, rangée pour le mandat (AU002), ou null. L'adresse reprise de l'ancien
+ * logiciel reste dans son espace privé, que seule sa lecture contrôlée ouvre [R46].
+ */
 async function propertyAddress(db: SqlDatabase, networkId: string, propertyId: string | null): Promise<PrivateVisit['address']> {
   if (!propertyId) return null;
   const d = await latestDesignation(db, networkId, propertyId);
-  if (d) return { street: d.address.street, postalCode: d.address.postalCode, city: d.address.city };
-  const r = await db.first<{ street: string; postal_code: string; city: string }>(
-    'SELECT street, postal_code, city FROM agent_import_property_addresses WHERE network_id = ? AND property_id = ?',
-    [networkId, propertyId],
-  );
-  return r ? { street: r.street, postalCode: r.postal_code, city: r.city } : null;
+  return d ? { street: d.address.street, postalCode: d.address.postalCode, city: d.address.city } : null;
 }
 
 /**
