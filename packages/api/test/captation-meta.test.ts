@@ -144,6 +144,23 @@ describeWithSqlite('AU033 · Instagram, Facebook et WhatsApp, canal par canal', 
     expect(channelOf(s, 'facebook')).toMatchObject({ status: 'non_verifiee', last30Days: 0, unreadable30Days: 1 });
   });
 
+  it('[R670] une réponse rangée mais jamais livrée (envoi coupé) ne vérifie pas le canal', async () => {
+    const w = await world();
+    const at = new Date(T0).toISOString();
+    const row = { net: w.network.id, agent: w.agent.id, person: w.known.id };
+    // Un envoi coupé entre la réponse rangée et sa livraison : ni boîte d'essai, ni accusé du canal, ni alerte.
+    await w.db.run("INSERT INTO messages (id, network_id, agent_id, person_id, conversation_id, channel, direction, author_kind, body, occurred_at, created_at) VALUES ('m-in', ?, ?, ?, 'conv-coupee', 'instagram', 'in', 'person', 'Bonjour', ?, ?)", [row.net, row.agent, row.person, at, at]);
+    await w.db.run("INSERT INTO messages (id, network_id, agent_id, person_id, conversation_id, channel, direction, author_kind, body, occurred_at, created_at) VALUES ('m-out', ?, ?, ?, 'conv-coupee', 'instagram', 'out', 'ai', 'Réponse', ?, ?)", [row.net, row.agent, row.person, at, at]);
+    await w.db.run(
+      "INSERT INTO inbound_messages (id, network_id, agent_id, dedup_key, channel, kind, body, status, person_id, message_id, received_at, created_at) VALUES ('in-1', ?, ?, 'instagram:coupe', 'instagram', 'direct', 'Bonjour', 'processed', ?, 'm-in', ?, ?)",
+      [row.net, row.agent, row.person, at, at],
+    );
+    expect(channelOf((await w.state()).body.data!, 'instagram')).toMatchObject({ status: 'non_verifiee', last30Days: 1, treated30Days: 0 });
+    // La même réponse livrée dans la boîte d'essai : le canal est vérifié.
+    await w.db.run("INSERT INTO trial_outbox (message_id, channel, created_at) VALUES ('m-out', 'instagram', ?)", [at]);
+    expect(channelOf((await w.state()).body.data!, 'instagram')).toMatchObject({ status: 'verifiee', treated30Days: 1 });
+  });
+
   it('[R670] un message vieux de plus de 30 jours garde le canal vérifié, mais ne compte plus dans les 30 jours', async () => {
     const w = await world();
     expect((await w.post(waMessage('33600000066', 'Bonjour', T0))).status).toBe(200);
