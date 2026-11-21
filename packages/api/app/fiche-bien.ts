@@ -85,11 +85,24 @@ const LABELS: Record<string, string> = {
 export const FICHE_BIEN_SCRIPT = `'use strict';
 globalThis.AIMMO_FICHE_BIEN = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, checkbox = t.checkbox;
+  // AU105 · chaque champ dessiné est suivi : une saisie non enregistrée devient un brouillon de cet appareil.
+  var tracking = null;
+  function fieldT(box, id, label, kind) { var f = field(box, id, label, kind); if (tracking) tracking.push({ f: f, id: id, check: false }); return f; }
+  function checkboxT(box, id, label) { var f = checkbox(box, id, label); if (tracking) tracking.push({ f: f, id: id, check: true }); return f; }
+  // AU105 · les brouillons de cet appareil, rangés par ce qu'ils concernent ; la sortie les efface.
+  var DRAFTS = 'aimmo.brouillons';
+  function dAll() { try { var a = JSON.parse(localStorage.getItem(DRAFTS) || '{}'); return a && typeof a === 'object' && !Array.isArray(a) ? a : {}; } catch (e) { return {}; } }
+  function dPut(a) { try { localStorage.setItem(DRAFTS, JSON.stringify(a)); return true; } catch (e) { return false; } }
+  var drafts = {
+    get: function (k) { var d = dAll()[k]; return d && typeof d === 'object' ? d : null; },
+    set: function (k, v) { var a = dAll(); a[k] = { at: new Date().toISOString(), value: v }; return dPut(a); },
+    drop: function (k) { var a = dAll(); if (k in a) { delete a[k]; dPut(a); } },
+  };
   var HEATING = ${JSON.stringify(HEATING)}, OUTDOOR = ${JSON.stringify(OUTDOOR)}, AMENITY = ${JSON.stringify(AMENITY)}, CONDITION = ${JSON.stringify(CONDITION)}, SURFACE_SOURCE = ${JSON.stringify(SURFACE_SOURCE)}, NUMBERS = ${JSON.stringify(NUMBERS)}, LABELS = ${JSON.stringify(LABELS)}, CLASSES = ${JSON.stringify(ENERGY_CLASSES)}, SUBJECTS = ${JSON.stringify(SUBJECTS)};
   var YES_NO = { oui: 'Oui', non: 'Non' };
   var DWELLING = { house: 'Maison', apartment: 'Appartement' };
   function select(box, id, label, options, value) {
-    var f = field(box, id, label, 'select');
+    var f = fieldT(box, id, label, 'select');
     var blank = el('option', 'Je ne sais pas encore');
     blank.setAttribute('value', '');
     f.appendChild(blank);
@@ -105,12 +118,13 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
   function bool(v) { return v === 'oui' ? true : v === 'non' ? false : null; }
   function text(v) { return v === null || v === undefined ? '' : String(v); }
   function number(box, id, label, value) {
-    var f = field(box, id, label);
+    var f = fieldT(box, id, label);
     f.setAttribute('inputmode', 'numeric');
     f.value = text(value);
     return f;
   }
-  function draw(zone, o, version, sheet) {
+  function draw(zone, o, version, sheet, resumed) {
+    tracking = [];
     var c = sheet.characteristics || {}, e = sheet.energy || {}, k = sheet.coownership || {}, media = sheet.media || [];
     clear(zone);
     if (o.validated) zone.appendChild(el('p', 'Cette annonce est validée. Une nouvelle version de la fiche annule cette validation : au passage suivant, l’annonce est retirée de tous les canaux jusqu’à ce qu’un texte à jour soit validé.', 'retard'));
@@ -123,12 +137,12 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
     var dwelling = select(zone, 'fiche-bien-logement', 'Logement : maison ou appartement', DWELLING, c.dwelling);
     var outs = {};
     Object.keys(OUTDOOR).forEach(function (kind) {
-      outs[kind] = checkbox(zone, 'fiche-bien-ext-' + kind, OUTDOOR[kind]);
+      outs[kind] = checkboxT(zone, 'fiche-bien-ext-' + kind, OUTDOOR[kind]);
       outs[kind].checked = (c.outdoor || []).indexOf(kind) >= 0;
     });
     var ams = {};
     Object.keys(AMENITY).forEach(function (kind) {
-      ams[kind] = checkbox(zone, 'fiche-bien-equip-' + kind, AMENITY[kind]);
+      ams[kind] = checkboxT(zone, 'fiche-bien-equip-' + kind, AMENITY[kind]);
       ams[kind].checked = (c.amenities || []).indexOf(kind) >= 0;
     });
     var condition = select(zone, 'fiche-bien-etat', 'État du bien', CONDITION, c.condition || '');
@@ -136,8 +150,8 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
     zone.appendChild(el('h4', 'Surfaces'));
     var srcs = c.surfaceSources || {};
     var surfaces = {
-      carrez: field(zone, 'fiche-bien-carrez', 'Surface Carrez (lot de copropriété), en m²'),
-      utile: field(zone, 'fiche-bien-utile', 'Surface utile (local, bureau), en m²'),
+      carrez: fieldT(zone, 'fiche-bien-carrez', 'Surface Carrez (lot de copropriété), en m²'),
+      utile: fieldT(zone, 'fiche-bien-utile', 'Surface utile (local, bureau), en m²'),
     };
     surfaces.carrez.setAttribute('inputmode', 'decimal');
     surfaces.utile.setAttribute('inputmode', 'decimal');
@@ -157,10 +171,10 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       annualCostMinEur: number(zone, 'fiche-bien-cout-min', 'Coût annuel le plus bas, en euros', e.annualCostMinEur),
       annualCostMaxEur: number(zone, 'fiche-bien-cout-max', 'Coût annuel le plus haut, en euros', e.annualCostMaxEur),
       // AU065 · une année, ou celles que le diagnostic cite (« 2021, 2022, 2023 »), telles qu'il les écrit.
-      costReferenceYear: field(zone, 'fiche-bien-cout-annee', 'Année ou années des prix de l’énergie, comme sur le diagnostic'),
-      diagnosedOn: field(zone, 'fiche-bien-diagnostic', 'Jour du diagnostic'),
+      costReferenceYear: fieldT(zone, 'fiche-bien-cout-annee', 'Année ou années des prix de l’énergie, comme sur le diagnostic'),
+      diagnosedOn: fieldT(zone, 'fiche-bien-diagnostic', 'Jour du diagnostic'),
       // AU064 · repris du diagnostic pour les portails, sans ressaisie ensuite.
-      ademeNumber: field(zone, 'fiche-bien-dpe-numero', 'Numéro ADEME du diagnostic (13 caractères)'),
+      ademeNumber: fieldT(zone, 'fiche-bien-dpe-numero', 'Numéro ADEME du diagnostic (13 caractères)'),
       primaryEnergyKwhM2: number(zone, 'fiche-bien-dpe-ep', 'Énergie primaire, en kWh/m²/an', e.primaryEnergyKwhM2),
       ghgKgM2: number(zone, 'fiche-bien-dpe-ges', 'Émissions, en kg CO₂/m²/an', e.ghgKgM2),
     };
@@ -262,6 +276,47 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
     var said = el('p', null, 'doux');
     said.setAttribute('role', 'status');
     var start = JSON.stringify(read().sheet);
+    // AU105 · la saisie se garde telle quelle, champ par champ (même incomplète ou pas encore valable), à côté de la
+    // fiche rangée : reprise, elle se repose sur la version lue, photos comprises.
+    var key = 'fiche-bien:' + o.base;
+    var fields = tracking;
+    tracking = null;
+    function raw() {
+      var out = {};
+      fields.forEach(function (x) { out[x.id] = x.check ? !!x.f.checked : String(x.f.value || ''); });
+      return out;
+    }
+    var pristine = JSON.stringify(raw());
+    // Tant qu'une saisie gardée attend « reprendre » ou « abandonner », rien ne la remplace : la fiche est en lecture.
+    var waiting = false;
+    function lockFields(on) { fields.forEach(function (x) { x.f.disabled = on; }); }
+    function keep() {
+      if (waiting) return;
+      var now = raw();
+      if (JSON.stringify(now) === pristine) { drafts.drop(key); return; }
+      if (!drafts.set(key, { version: version, raw: now })) said.textContent = 'Cet appareil ne peut pas garder cette saisie : enregistrez-la avant de quitter l’écran.';
+    }
+    fields.forEach(function (x) { x.f.addEventListener('input', keep); x.f.addEventListener('change', keep); });
+    if (resumed && resumed.raw) {
+      fields.forEach(function (x) {
+        if (!(x.id in resumed.raw)) return;
+        var v = resumed.raw[x.id];
+        if (x.check) x.f.checked = v === true; else x.f.value = String(v);
+      });
+    }
+    var kept = resumed ? null : drafts.get(key);
+    if (kept && kept.value && kept.value.raw && JSON.stringify(kept.value.raw) !== pristine) {
+      var note = el('div', null, 'retard');
+      note.setAttribute('role', 'status');
+      var same = Number(kept.value.version) === version;
+      note.appendChild(el('p', same ? 'Une saisie de cette fiche n’a pas été enregistrée sur cet appareil.' : 'Une saisie de cette fiche n’a pas été enregistrée sur cet appareil, mais la fiche a changé depuis : la reprendre la pose sur la version rangée, relisez chaque champ.'));
+      note.appendChild(el('p', 'Choisissez d’abord : la fiche se modifie une fois la saisie reprise ou abandonnée.', 'doux'));
+      note.appendChild(button('Reprendre la saisie', function () { draw(zone, o, version, sheet, { raw: kept.value.raw }); }));
+      note.appendChild(button('Abandonner la saisie', function () { drafts.drop(key); waiting = false; lockFields(false); go.disabled = false; zone.removeChild(note); }));
+      zone.insertBefore(note, zone.firstChild);
+      waiting = true;
+      lockFields(true);
+    }
     var go = button('Enregistrer la fiche', function () {
       if (t.sending()) return;
       var form = read();
@@ -271,11 +326,15 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       var mine = t.current();
       t.sending(true);
       go.disabled = true;
+      // Pendant l'envoi, rien ne se tape : ce qui part est ce qui sera rangé, et le brouillon ne s'efface qu'avec lui.
+      lockFields(true);
+      var sentRaw = JSON.stringify(raw());
       said.textContent = 'Envoi…';
       return send(o.base + '/fiche?siVersion=' + version, 'POST', form.sheet).then(function (res) {
         t.sending(false);
         if (res.gone) return false;
         go.disabled = false;
+        lockFields(false);
         // Coupée ou en panne, la réponse ne dit pas si la version a été rangée.
         if (res.offline || res.status >= 500 || !res.body) { said.textContent = 'Réponse perdue : la fiche a peut-être été rangée. Rouvrez-la pour le voir, ce que vous avez saisi reste ici.'; return false; }
         if (res.status === 403) { said.textContent = 'Ce bien n’est pas dans vos droits.'; return false; }
@@ -287,9 +346,13 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
             : 'La fiche n’a pas pu être rangée.';
           return false;
         }
+        // Seule la saisie envoyée s'efface : une saisie plus récente, d'un autre onglet, reste gardée.
+        var stored = drafts.get(key);
+        if (!stored || !stored.value || JSON.stringify(stored.value.raw) === sentRaw) drafts.drop(key);
         return t.saved(mine, res.body.data && res.body.data.version);
       });
     });
+    if (waiting) go.disabled = true;
     zone.appendChild(go);
     zone.appendChild(said);
   }

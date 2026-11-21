@@ -2391,6 +2391,7 @@ ${LOUER_JS}
       session += 1;
       currentKey = null;
       forgetKey();
+      try { localStorage.removeItem('aimmo.brouillons'); } catch (e) { /* rien */ }
       $('bonjour').textContent = '';
       wipe();
       show('connexion');
