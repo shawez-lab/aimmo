@@ -328,7 +328,9 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
       if (url.startsWith('/v1/hors-ligne/')) {
         if (net.dropPack) throw new TypeError('hors ligne');
         if (method === 'POST' && net.hold) await net.hold;
-        const r = await w.call(viewer, method, url, init.body, init.headers?.['content-type'] ? { 'content-type': init.headers['content-type'] } : {});
+        // Le serveur au travail compte comme un calcul en cours : l'attente des tests attend sa réponse.
+        inflight++;
+        const r = await w.call(viewer, method, url, init.body, init.headers?.['content-type'] ? { 'content-type': init.headers['content-type'] } : {}).finally(() => inflight--);
         if (net.loseAnswer && method === 'POST') throw new TypeError('réponse perdue');
         return r;
       }
