@@ -950,7 +950,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU087 · Les demandes d’avis expirent après sept jours alors que le plafond de deux envois par jour peut empêcher…
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M11 Après-vente ; audit A087 (majeur), endroit : C/apres-vente/demandes-avis.ts, `REVIEW_WINDOW_DAYS`, R11.
 - Constat de l'audit : Les demandes d’avis expirent après sept jours alors que le plafond de deux envois par jour peut empêcher de solliciter tous les clients.
@@ -995,7 +995,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU092 · Ma rémunération ne peut pas suivre automatiquement une grille progressive selon mon chiffre d’affaires cumulé
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M13 Pilotage et finances ; audit A092 (majeur), endroit : C/pilotage/commissions.ts, `GridInput`.
 - Constat de l'audit : Ma rémunération ne peut pas suivre automatiquement une grille progressive selon mon chiffre d’affaires cumulé.
