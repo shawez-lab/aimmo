@@ -992,7 +992,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU092 · Ma rémunération ne peut pas suivre automatiquement une grille progressive selon mon chiffre d’affaires cumulé
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M13 Pilotage et finances ; audit A092 (majeur), endroit : C/pilotage/commissions.ts, `GridInput`.
 - Constat de l'audit : Ma rémunération ne peut pas suivre automatiquement une grille progressive selon mon chiffre d’affaires cumulé.
