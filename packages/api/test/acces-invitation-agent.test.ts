@@ -316,5 +316,18 @@ describeWithSqlite('AU023 · une invitation nominative mène à une connexion pa
     expect(handoff).toBe(true);
     expect((await t.call('GET', '/moi', { bearer: key })).status).toBe(401);
   });
+
+  it('[R600] AU108 · « téléphone perdu » pour la personne aux deux rôles coupe aussi sa clé de direction restée sur le téléphone', async () => {
+    const t = await setup();
+    const token = randomToken(32);
+    const grants = JSON.stringify([{ role: 'agent', userId: t.sam.userId }, { role: 'direction', userId: t.direction.userId }]);
+    await t.db.run('INSERT INTO access_invitations (id, network_id, token_sha256, grants, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)', ['inv-recours', t.network.id, await sha256Hex(token), grants, new Date(t.now().getTime() + 86_400_000).toISOString(), t.now().toISOString()]);
+    const keys = (await t.call('POST', '/acces/invitation', { body: { jeton: token } })).body.data.cles as { role: string; cle: string }[];
+    const directionKey = keys.find((k) => k.role === 'direction')!.cle;
+    expect((await t.call('GET', '/moi', { bearer: directionKey })).status).toBe(200);
+    expect((await t.invite(t.sam.userId, true)).status).toBe(200);
+    expect((await t.call('GET', '/moi', { bearer: directionKey })).status).toBe(401);
+    expect((await t.call('GET', '/moi', { bearer: DIRECTION_KEY })).status).toBe(200);
+  });
 });
 

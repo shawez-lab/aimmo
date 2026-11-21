@@ -278,7 +278,12 @@ export async function inviteAgent(
       linksVoided += (await db.run('UPDATE access_invitations SET used_at = ? WHERE id = ? AND used_at IS NULL', [nowIso, inv.id])).changes;
     }
     keysRevoked = (
-      await db.run("UPDATE access_keys SET revoked_at = ? WHERE network_id = ? AND role = 'agent' AND user_id = ? AND revoked_at IS NULL", [nowIso, viewer.networkId, userId])
+      // Ses clés d'application, et avec elles les autres clés des mêmes liens (AU108 : la clé de la direction d'une
+      // invitation à deux rôles, restée sur le téléphone perdu).
+      await db.run(
+        "UPDATE access_keys SET revoked_at = ? WHERE network_id = ? AND revoked_at IS NULL AND invitation_id IN (SELECT invitation_id FROM access_keys WHERE network_id = ? AND role = 'agent' AND user_id = ?)",
+        [nowIso, viewer.networkId, viewer.networkId, userId],
+      )
     ).changes;
     const devices = await db.all<{ id: string }>("SELECT id FROM security_devices WHERE network_id = ? AND user_role = 'agent' AND user_id = ? AND status <> 'retire'", [viewer.networkId, userId]);
     for (const d of devices) if (await revokeDevice(d.id)) devicesRevoked += 1;
