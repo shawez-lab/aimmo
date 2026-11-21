@@ -441,6 +441,18 @@ describeWithSqlite('F04 · relance un an après la vente, sans jamais relancer u
     expect(await t.relances.recordChoice(t.agent, 'f1', b, { choice: 'oui', proof: 'appel, test' })).toEqual({ ok: false, rule: 'R65', code: 'opposed' });
     await t.passes('2030-03-08', '2030-03-09');
     expect(await t.inbox(b)).toHaveLength(0);
+    // Sans passage le jour de l'anniversaire, un accord donné le lendemain ne le fait pas partir dans le délai de 7 jours.
+    const c = await t.client('Cyr');
+    t.close('f2', '2027-04-12', [{ personId: c, side: 'vendeur' }]);
+    t.setClock(paris('2028-04-13', 11));
+    expect(await t.relances.recordChoice(t.agent, 'f2', c, { choice: 'oui', proof: 'appel du 13 avril, test' })).toEqual({ ok: true });
+    await t.passes('2028-04-13', '2028-04-18');
+    expect(await t.inbox(c)).toHaveLength(0);
+    const late = await t.relances.list(t.agent);
+    expect(late.ok && late.value.find((r) => r.personId === c && r.year === 1)).toMatchObject({ status: 'refused', rule: 'R65' });
+    // L'an deux part.
+    await t.passes('2029-04-12', '2029-04-13');
+    expect(await t.inbox(c)).toHaveLength(1);
     // L'accord tardif est rangé avec sa date et sa preuve.
     const row = await t.db.first<{ proof: string; recorded_at: string }>("SELECT proof, recorded_at FROM after_sale_choices WHERE person_id = ? AND choice = 'oui'", [a]);
     expect(row).toEqual({ proof: 'appel du 15 septembre, test', recorded_at: paris('2028-09-15', 11).toISOString() });
