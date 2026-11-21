@@ -225,15 +225,19 @@ export class Commissions {
       const row = await this.db.first<{ network_id: string }>('SELECT network_id FROM agents WHERE id = ?', [a.agentId]);
       if (!row || row.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown_agent' };
     }
-    // Sans paliers dits, la nouvelle version garde ceux de la dernière : un écran qui ne les montre pas ne les efface pas.
+    // Sans paliers dits, la nouvelle version garde ceux de la grille qui vaut à son premier jour : un écran qui ne les
+    // montre pas ne les efface pas.
     // Une liste vide les retire.
     const tiers =
       input.tiers !== undefined
         ? input.tiers
         : (
             await this.db.all<{ from_cents: number; rate_bp: number }>(
-              'SELECT t.from_cents, t.rate_bp FROM commission_grid_tiers t JOIN commission_grids g ON g.id = t.grid_id WHERE g.network_id = ? AND g.version = (SELECT MAX(version) FROM commission_grids WHERE network_id = ?) ORDER BY t.seq',
-              [viewer.networkId, viewer.networkId],
+              // Ceux de la grille qui vaut au jour de la nouvelle version, jamais ceux d'une version programmée plus tard.
+              `SELECT t.from_cents, t.rate_bp FROM commission_grid_tiers t
+                WHERE t.grid_id = (SELECT g.id FROM commission_grids g WHERE g.network_id = ? AND g.valid_from <= ? ORDER BY g.valid_from DESC, g.version DESC LIMIT 1)
+                ORDER BY t.seq`,
+              [viewer.networkId, input.validFrom],
             )
           ).map((t) => ({ fromCents: Number(t.from_cents), rateBp: Number(t.rate_bp) }));
     if (!Array.isArray(tiers) || tiers.length === 1 || tiers.length > 10) return { ok: false, rule: null, code: 'bad_tiers' };

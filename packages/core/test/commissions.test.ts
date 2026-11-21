@@ -313,6 +313,17 @@ describeWithSqlite('AU092 · une grille à paliers selon le chiffre d’affaires
     expect(g.ok && [g.value.version, g.value.inForce!.tiers]).toEqual([3, []]);
   });
 
+  it('[R17] une grille programmée plus tard ne prête pas ses paliers à la version qui vaut aujourd’hui', async () => {
+    const t = await setup();
+    const c = t.commissions();
+    const JUNE = [{ fromCents: 0, rateBp: 8000 }, { fromCents: 1_000_000, rateBp: 9000 }];
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, tiers: TIERS });
+    await c.setGrid(t.direction, { validFrom: '2027-06-01', defaultRateBp: 7000, tiers: JUNE });
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000, agents: [{ agentId: t.sam.userId, rateBp: 6500 }] });
+    const g = await c.currentGrid(t.direction);
+    expect(g.ok && [g.value.version, g.value.inForce!.tiers, g.value.upcoming.map((u) => u.tiers)]).toEqual([3, TIERS, [JUNE]]);
+  });
+
   it('les paliers se disent bien : le premier à 0, chacun au-dessus du précédent, deux à dix', async () => {
     const t = await setup();
     const c = t.commissions();
