@@ -399,6 +399,8 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
               // La Base adresse nationale pour le secteur d'une recherche et la position d'un bien (AU073), en GET : seuls un
               // lieu ou l'adresse désignée partent, jamais un envoi.
               'secteursGeocoder: new BanGeocoder(fetch.bind(globalThis)),',
+              // AU073b : les tuiles de la carte des secteurs, en GET chez le fournisseur réglé ; seuls le niveau et les numéros partent.
+              'mapTiles: tileTemplateOf(env.CARTE_TUILES_URL) ? new HttpTileSource(tileTemplateOf(env.CARTE_TUILES_URL)!, fetch.bind(globalThis)) : null,',
               // La base ouverte des diagnostics de l'ADEME pour la veille (HX16, BR26), en lecture seule : seuls le code
               // postal et le jour partent, jamais un envoi.
               // La Base adresse nationale puis le Géoportail de l'urbanisme pour la zone du résumé de copropriété (BR87),

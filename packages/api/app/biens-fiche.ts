@@ -218,6 +218,7 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     inner.appendChild(open);
   }
   // AU073 · Le secteur privé d'une recherche : un rayon autour d'un lieu précis, géocodé par le serveur.
+  var areaTool = null, areaBusy = false;
   function areaBlock(box, projects) {
     var section = el('section', null, 'bloc');
     section.appendChild(el('h3', 'Secteur de la recherche'));
@@ -240,7 +241,8 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     var place = field(section, id + '-lieu', 'Lieu précis (adresse, gare, école…)', false);
     var km = field(section, id + '-rayon', 'Rayon, en km', true);
     var label = field(section, id + '-nom', 'Nom du secteur, pour vous', false);
-    function said(a) { now.textContent = a ? (a.shape === 'cercle' ? 'Secteur « ' + a.label + ' » : ' + String(a.radiusM / 1000).replace('.', ',') + ' km autour du lieu dit.' : 'Secteur « ' + a.label + ' » dessiné.') : 'Aucun secteur : les communes de la recherche suffisent.'; }
+    var current = null;
+    function said(a) { current = a; now.textContent = a ? (a.shape === 'cercle' ? 'Secteur « ' + a.label + ' » : ' + String(a.radiusM / 1000).replace('.', ',') + ' km autour du lieu dit.' : 'Secteur « ' + a.label + ' » dessiné.') : 'Aucun secteur : les communes de la recherche suffisent.'; }
     // Une réponse arrivée après un changement de projet ne s'affiche pas sous le nouveau projet.
     function answer(mine) { return function (res) {
       if (res.gone || mine !== seen) return false;
@@ -256,6 +258,36 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
       return t.send(base(), 'POST', { shape: 'cercle', place: place.value.trim(), radiusM: Math.round(r * 1000), label: label.value.trim() }).then(answer(seen));
     }));
     section.appendChild(t.accordButton('Retirer le secteur', function () { return known ? t.send(base(), 'POST', { shape: 'aucun' }).then(answer(seen)) : unread(); }));
+    // AU073b · dessiner le contour au doigt sur une carte : le script n'est chargé qu'au geste.
+    var drawBox = el('div');
+    var drawOpen = el('button', 'Dessiner sur la carte');
+    drawOpen.setAttribute('type', 'button');
+    drawOpen.className = 'secondaire';
+    function drawShow() {
+      if (drawOpen.parentNode) drawBox.removeChild(drawOpen);
+      areaTool(drawBox, { base: base, ready: function () { return known; }, label: function () { return label.value.trim(); }, current: function () { return current; }, done: function (a) { said(a); state.textContent = 'Secteur rangé.'; } });
+    }
+    drawOpen.addEventListener('click', function () {
+      if (areaTool) return drawShow();
+      if (areaBusy) return;
+      areaBusy = true;
+      state.textContent = 'Chargement de la carte…';
+      var s = el('script');
+      s.setAttribute('src', '/app/secteur-carte.js');
+      s.addEventListener('load', function () {
+        areaBusy = false;
+        var make = globalThis.AIMMO_SECTEUR_CARTE;
+        try { delete globalThis.AIMMO_SECTEUR_CARTE; } catch (e) { /* rien */ }
+        if (typeof make !== 'function') { state.textContent = 'Pas de réseau. Réessayez dans un moment.'; return; }
+        areaTool = make(t);
+        state.textContent = '';
+        drawShow();
+      });
+      s.addEventListener('error', function () { areaBusy = false; state.textContent = 'Pas de réseau. Réessayez dans un moment.'; });
+      section.appendChild(s);
+    });
+    drawBox.appendChild(drawOpen);
+    section.appendChild(drawBox);
     section.appendChild(state);
     box.appendChild(section);
     function load() {

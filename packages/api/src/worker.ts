@@ -7,6 +7,7 @@ import { letterUnsubscribeBase } from './marketing-passage.ts';
 import { isQuarterMinute, runNotificationsPass } from './notifications.ts';
 import { R2PieceStore, type R2Like } from './dossiers.ts';
 import { runListingSync, type MediaStore } from './vitrine.ts';
+import { HttpTileSource, tileTemplateOf } from './carte.ts';
 import type { AnnonceOptions } from './annonces.ts';
 import { R2AgentPieceStore, type R2AgentBucket, type ReseauOptions } from './reseau.ts';
 import { D1SandboxStorage } from './bac-a-sable.ts';
@@ -25,6 +26,8 @@ import { HttpPigeSource, missingPigeSettings, type PigeFetcher, type PigeProvide
  * `MAIL_NETWORK_ID`, `MAIL_FORWARD_TO` et `MAIL_OWN_ADDRESSES` servent à la réception des mails (C06).
  */
 export interface Env {
+  /** AU073b · le modèle d'adresse des tuiles de la carte des secteurs (`https://…/{z}/{x}/{y}.png`) ; absent, pas de carte. */
+  CARTE_TUILES_URL?: string;
   /** AU068 · « oui » : la relecture des annonces en ligne lit les pages publiques des portails (H10). Absent : aucune relecture. */
   RELECTURE_PORTAILS?: string;
   DB: D1Database;
@@ -229,6 +232,9 @@ export default {
       // de l'agent du bien ; aucun secret, jamais un envoi. Sans lecteur IA (H13), la prélecture laisse tout à lire.
       // AU073 : les secteurs des recherches et la position des biens, à la Base adresse nationale, même sans DVF.
       secteursGeocoder: new BanGeocoder(fetch.bind(globalThis)),
+      // AU073b : les tuiles de la carte des secteurs, lues en GET chez le fournisseur réglé ; seuls le niveau et les
+      // numéros de la tuile partent, jamais un envoi.
+      mapTiles: tileTemplateOf(env.CARTE_TUILES_URL) ? new HttpTileSource(tileTemplateOf(env.CARTE_TUILES_URL)!, fetch.bind(globalThis)) : null,
       copropriete: { geocoder: new BanGeocoder(fetch.bind(globalThis)), urbanism: new GpuUrbanism(fetch.bind(globalThis)) },
       mail: { networkId: env.MAIL_NETWORK_ID, forwardTo: env.MAIL_FORWARD_TO, ownAddresses: env.MAIL_OWN_ADDRESSES },
       meta: {

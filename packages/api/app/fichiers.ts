@@ -243,6 +243,7 @@ ${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${REGLAGES_M
  */
 export const APP_CSS = DESIGN_CSS + `
 body { min-height: 100dvh; }
+.carte-secteur { display: block; width: 100%; max-width: 300px; aspect-ratio: 1; touch-action: none; border: 1px solid var(--trait); border-radius: var(--r-m); background: var(--surface); margin: var(--e-3) 0; }
 .tete { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: var(--e-4); padding: max(var(--e-3), env(safe-area-inset-top)) var(--e-4) var(--e-3); background: var(--papier); }
 .tete h1 { font-size: var(--t-s); }
 .tete button { margin: 0; min-height: 40px; padding: var(--e-2) var(--e-4); font-size: var(--t-s); }
