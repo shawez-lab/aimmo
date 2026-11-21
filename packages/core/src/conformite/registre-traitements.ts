@@ -501,7 +501,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       commission_grids: ['agent_rates', 'created_by'],
       commissions: ['agent_id', 'fee_cents', 'fee_charge'],
       commission_tier_picks: ['cumul_cents', 'rate_bp'],
-      commission_revisions: ['fee_before_cents', 'fee_after_cents', 'reason', 'shares_before', 'shares_after', 'approved_by'],
+      commission_revisions: ['fee_before_cents', 'fee_after_cents', 'charge_before', 'charge_after', 'reason', 'shares_before', 'shares_after', 'approved_by'],
       commission_shares: ['beneficiary_id', 'reason', 'amount_cents'],
       commission_steps: ['proof_ref', 'by'],
       invoice_drafts: ['issuer', 'recipient_person_id', 'amount_cents'],

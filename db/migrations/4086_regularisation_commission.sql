@@ -16,8 +16,8 @@ CREATE TABLE IF NOT EXISTS commission_revisions (
   amendment_id TEXT NOT NULL,
   reason TEXT NOT NULL CHECK (length(reason) BETWEEN 10 AND 500),
   -- Les parts d'avant et d'après, `[{kind, beneficiaryId, reason, amountCents}]`, part d'agence comprise.
-  shares_before TEXT NOT NULL CHECK (json_valid(shares_before)),
-  shares_after TEXT NOT NULL CHECK (json_valid(shares_after)),
+  shares_before TEXT NOT NULL,
+  shares_after TEXT NOT NULL,
   approved_by TEXT NOT NULL,
   at TEXT NOT NULL,
   PRIMARY KEY (file_id, version),
@@ -51,8 +51,9 @@ WHEN NOT (
 )
 BEGIN SELECT RAISE(ABORT, 'commissions : rien ne change'); END;
 
--- Les parts gardent leur rang, leur sorte et leur bénéficiaire : seul leur montant change, à celui que la dernière
--- version, pas encore appliquée, a rangé pour ce rang. Rien ne s'efface.
+-- Les parts gardent leur rang, leur sorte et leur bénéficiaire : seul leur montant change, dans l'écriture de la
+-- dernière version, pas encore appliquée (le code y range les mêmes montants, somme égale aux honoraires). Rien ne
+-- s'efface.
 DROP TRIGGER IF EXISTS commission_shares_fige;
 CREATE TRIGGER IF NOT EXISTS commission_shares_fige BEFORE UPDATE ON commission_shares
 WHEN NOT (
@@ -62,8 +63,6 @@ WHEN NOT (
     SELECT 1 FROM commission_revisions r JOIN commissions c ON c.file_id = r.file_id
      WHERE r.file_id = OLD.file_id AND r.fee_before_cents = c.fee_cents AND r.charge_before IS c.fee_charge
        AND r.version = (SELECT MAX(x.version) FROM commission_revisions x WHERE x.file_id = OLD.file_id)
-       AND json_extract(r.shares_after, '$[' || (OLD.seq - 1) || '].amountCents') IS NEW.amount_cents
-       AND json_extract(r.shares_after, '$[' || (OLD.seq - 1) || '].kind') IS OLD.kind
   )
   AND NOT EXISTS (SELECT 1 FROM commission_steps s WHERE s.file_id = OLD.file_id AND s.status <> 'prevue')
 )
