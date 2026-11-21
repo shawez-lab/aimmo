@@ -762,6 +762,15 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien (mise en service réelle : H10).
 
+
+### AU068b · Le lecteur des annonces en ligne réglé portail par portail, sur les pages réelles
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU068, H10
+- Cahier : M07 Commercialiser ; suite de l'audit A068 (relectures de Codex sur #761).
+- Constat : le lecteur générique (données schema.org, puis texte de l'annonce sans les blocs d'autres annonces) couvre les mises en page usuelles, mais chaque portail a la sienne ; six tours de relecture ont trouvé chaque fois une mise en page de plus.
+- Objectif : avec les accords de flux (H10), une page réelle de chaque portail réglé, rangée en jeu de test anonymisé ; le lecteur lit son prix, ses classes et ses mentions, et une page qu'il ne sait pas lire est dite illisible plutôt qu'en écart.
+- Critères : un test par portail réglé sur sa page rangée ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : H10.
 ### AU069 · Je peux proposer des langues rares pour le réseau français
 - Statut : bloquée : H73 (refaire les tables des traductions pour admettre l'allemand, l'espagnol, l'italien et le néerlandais, exception à R17)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
