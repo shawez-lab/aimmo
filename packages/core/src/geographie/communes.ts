@@ -63,7 +63,7 @@ export class GeographieReseau {
   /** Les communes inscrites du réseau, la version la plus haute de chacune. */
   private async rows(networkId: string): Promise<{ insee_code: string; name: string; is_listed: number; version: number }[]> {
     return this.db.all(
-      `SELECT c.insee_code, c.name, c.is_listed, c.version FROM network_communes c
+      `SELECT c.insee_code, c.commune AS name, c.is_listed, c.version FROM network_communes c
         WHERE c.network_id = ? AND c.version = (SELECT MAX(d.version) FROM network_communes d WHERE d.network_id = c.network_id AND d.insee_code = c.insee_code)`,
       [networkId],
     );
@@ -136,7 +136,7 @@ export class GeographieReseau {
     const version = Number(last?.version ?? 0) + 1;
     try {
       await this.db.run(
-        'INSERT INTO network_communes (network_id, insee_code, version, name, is_listed, reason, decided_by, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        'INSERT INTO network_communes (network_id, insee_code, version, commune, is_listed, reason, decided_by, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
         [viewer.networkId, inseeCode, version, name, raw.listed ? 1 : 0, reason, this.actor(viewer), this.now().toISOString()],
       );
     } catch {

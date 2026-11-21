@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS network_communes (
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
   insee_code TEXT NOT NULL CHECK (length(insee_code) = 5 AND (insee_code GLOB '[0-9][0-9][0-9][0-9][0-9]' OR insee_code GLOB '2[AB][0-9][0-9][0-9]')),
   version INTEGER NOT NULL CHECK (version >= 1),
-  name TEXT NOT NULL CHECK (length(trim(name)) BETWEEN 1 AND 80),
+  commune TEXT NOT NULL CHECK (length(trim(commune)) BETWEEN 1 AND 80),
   is_listed INTEGER NOT NULL CHECK (is_listed IN (0, 1)),
   reason TEXT NOT NULL CHECK (length(trim(reason)) BETWEEN 3 AND 200),
   decided_by TEXT NOT NULL CHECK (decided_by LIKE 'direction:%'),

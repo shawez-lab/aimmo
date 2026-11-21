@@ -130,17 +130,17 @@ describeWithSqlite('AU039 · les communes viennent du paramétrage géographique
   it('la base refuse de changer ou d’effacer une version, et une version hors suite [R679] [R17]', async () => {
     const t = await setup();
     await inscribe(t, LYON);
-    await expect(t.db.run("UPDATE network_communes SET name = 'Autre'")).rejects.toThrow(/ne change plus/);
+    await expect(t.db.run("UPDATE network_communes SET commune = 'Autre'")).rejects.toThrow(/ne change plus/);
     await expect(t.db.run('DELETE FROM network_communes')).rejects.toThrow(/rien ne s'efface/);
     await expect(
       t.db.run(
-        "INSERT INTO network_communes (network_id, insee_code, version, name, is_listed, reason, decided_by, decided_at) VALUES (?, '69123', 3, 'Lyon', 0, 'Saut', 'direction:x', ?)",
+        "INSERT INTO network_communes (network_id, insee_code, version, commune, is_listed, reason, decided_by, decided_at) VALUES (?, '69123', 3, 'Lyon', 0, 'Saut', 'direction:x', ?)",
         [t.lyon.id, TUESDAY_10H.toISOString()],
       ),
     ).rejects.toThrow(/hors suite/);
     await expect(
       t.db.run(
-        "INSERT INTO network_communes (network_id, insee_code, version, name, is_listed, reason, decided_by, decided_at) VALUES (?, '69266', 1, 'Villeurbanne', 1, 'Ouverture', 'agent:x', ?)",
+        "INSERT INTO network_communes (network_id, insee_code, version, commune, is_listed, reason, decided_by, decided_at) VALUES (?, '69266', 1, 'Villeurbanne', 1, 'Ouverture', 'agent:x', ?)",
         [t.lyon.id, TUESDAY_10H.toISOString()],
       ),
     ).rejects.toThrow();
