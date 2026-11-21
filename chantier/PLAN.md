@@ -417,13 +417,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#739, `2603c63f`), migration `4055` (ajout seul), règle R669. Constat confirmé : une demande de portail sans « répondre à » vers le client ne recevait aucune réponse et ne prévenait personne. Décidé : `readPortalBody` lit les lignes « Libellé : valeur » du corps (mail, téléphone, nom, référence de la demande), s'arrête au message du client et à tout mail cité ; la référence de la demande est la clé de réception, l'identifiant du mail gardé comme autre clé (`inbound_message_keys`) ; une demande de portail sans réponse partie donne une alerte `needs_reply` ; `GET /v1/captation/mail` (direction) dit les réglages `MAIL_*` manquants et chaque portail « vérifiée » après son premier vrai mail. Codex : 4 P0 corrigés ; un cinquième (deux livraisons simultanées du même identifiant lues différemment) réfuté dans la proposition. Les vrais formats des portails restent à confirmer au premier vrai mail (H16).
 
 ### AU033 · Les leads Instagram, Facebook et WhatsApp dépendent d’autorisations Meta encore ouvertes dans le chantier
-- Statut : en cours
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A033 (majeur), endroit : chantier/HUMAIN.md, H06/H17 ; A/worker.ts, `meta`.
 - Constat de l'audit : Les leads Instagram, Facebook et WhatsApp dépendent d’autorisations Meta encore ouvertes dans le chantier.
 - Objectif : Un message réel sur chacun des trois canaux rejoint la bonne fiche avec son origine et un traitement visible ; activation actuelle non vérifiée.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien (mise en service réelle : H06, H17).
+- Reste : fusionnée (#748, `a46c699e`), règle R670, sans migration. Décidé : `GET /v1/captation/meta` (direction) nomme les réglages `META_*` et `MODE` manquants, signale un autre réseau, et dit chaque canal « vérifiée » seulement après un vrai message rattaché à une fiche et traité : réponse livrée (boîte d'essai, accusé du canal, ou réponse humaine en écho), dans l'ordre des faits, ou alerte ouverte, rouverte ou vue après ce message. Le rattachement à la bonne fiche (téléphone connu, compte chez le canal) et l'origine (`sources`) sont prouvés de bout en bout par une notification signée. Codex : 4 P0 corrigés en 4 tours, puis rien. Pas d'écran.
 
 ### AU034 · La pige a ses règles et son écran
 - Statut : à faire
