@@ -467,13 +467,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#766, da1f338a), migration `4077` (`gbp_receipts`), R154 mise à jour. Vrai client Google Business Profile (`fiche-google-reel.ts`), rangé par le Worker seulement quand tout est réglé (`GBP_MODE=reel`, client OAuth, secret, jeton de rafraîchissement : H07) ; la fiche seule passe en réel, pages et IndexNow restent d'essai. Accusé de Google gardé dans le même lot que l'envoi ; échec en code fermé et geste (reconnecter, relier, corriger, réessayer, vérifier), « à reconnecter » ou « à relier » tient jusqu'au prochain envoi confirmé ; publication à réponse perdue jamais refaite. Référence complète `accounts/…/locations/…` acceptée (le constat). Route `POST /v1/attirer/google/agents/<agent>/informations`, direction seule. Codex : 1 P0 et 2 P2, puis 1 P0, corrigés ; 1 P0 réfuté (lien public facultatif, R154 précisée) ; puis rien. Restent : lecture des avis et mise à jour non planifiées (geste à l'écran seulement).
 
 ### AU038 · Le module de publicité ne me permet pas encore de lancer une campagne réelle avec son suivi jusqu’au mandat
-- Statut : en cours
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A038 (majeur), endroit : chantier/HUMAIN.md, H63 ; A/worker.ts.
 - Constat de l'audit : Le module de publicité ne me permet pas encore de lancer une campagne réelle avec son suivi jusqu’au mandat.
 - Objectif : Une campagne test à budget plafonné est créée sur le compte réel et ses dépenses et demandes se rapprochent de la campagne.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien (mise en service réelle : H63).
+- Reste : fusionnée (#768, 9083dc81), migration `4090` (mode au lancement, accusés, échecs, demandes arrivées). Vrais Google Ads (v26) et Meta (catégorie « logement ») dans `publicite-reelle.ts`, mis en réel plateforme par plateforme par le Worker seulement quand tout est rangé, avec un plafond du budget total relu à la validation et au lancement (H63). Accusé rangé avant la réponse ; échec en code et geste ; une campagne partie en réel n'a jamais sa pause confirmée par l'essai. Passage du quart d'heure : demandes `?o=<code>` rapprochées des fiches, dépense des trois derniers jours lue, seuil contrôlé ; R587 et R588 mises à jour. Codex : 2 P0 et 2 P1 corrigés, puis rien. Restent : les lieux des communes se règlent à la main dans `ADS_LIEUX` ; chez Google, le rayon n'est pas envoyé (communes seules) ; textes des annonces réglés au Worker, pas encore à l'écran.
 
 ### AU039 · La qualification et la recherche restent bornées par défaut aux communes du pilote dijonnais
 - Statut : à faire
