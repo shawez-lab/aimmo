@@ -689,7 +689,6 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // commissions-factures
   sale_commissions: out('agent', 'Honoraires et rémunération de l\'agent.'),
   commission_grids: out('sans_client', 'Grille de rémunération des agents.'),
-  commission_grid_tiers: out('sans_client', 'Paliers de la grille de rémunération des agents.'),
   commission_tier_picks: out('agent', 'Palier retenu pour la rémunération d’une vente.'),
   commissions: out('agent', 'Rémunération de l\'agent.'),
   commission_shares: out('agent', 'Partage de la rémunération entre agents.'),
