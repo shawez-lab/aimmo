@@ -315,7 +315,7 @@ export class DemandesAvis {
       }
     }
     // Une demande d'un dossier que M10 ne rend plus : close, l'agent prévenu.
-    for (const f of await this.db.all<{ file_id: string }>("SELECT DISTINCT file_id FROM review_requests WHERE network_id = ? AND status IN ('waiting', 'failed') AND due_day < ? AND next_try_day IS NULL ORDER BY file_id", [networkId, deadline])) {
+    for (const f of await this.db.all<{ file_id: string }>("SELECT DISTINCT file_id FROM review_requests WHERE network_id = ? AND status IN ('waiting', 'failed') AND due_day < ? ORDER BY file_id", [networkId, deadline])) {
       await this.expire(networkId, f.file_id, null);
     }
     return sent;
@@ -330,15 +330,16 @@ export class DemandesAvis {
    */
   private async expire(networkId: string, fileId: string, clients: ReadonlySet<string> | null): Promise<void> {
     const at = this.now().toISOString();
-    const rows = await this.db.all<{ person_id: string; agent_id: string; side: string }>(
-      // Jamais une demande retenue par le seul plafond du jour : elle partira à son tour (AU087).
-      "SELECT person_id, agent_id, side FROM review_requests WHERE file_id = ? AND status IN ('waiting', 'failed') AND NOT (status = 'waiting' AND next_try_day IS NOT NULL) ORDER BY person_id",
+    const rows = await this.db.all<{ person_id: string; agent_id: string; side: string; capped: number }>(
+      "SELECT person_id, agent_id, side, CASE WHEN status = 'waiting' AND next_try_day IS NOT NULL THEN 1 ELSE 0 END AS capped FROM review_requests WHERE file_id = ? AND status IN ('waiting', 'failed') ORDER BY person_id",
       [fileId],
     );
     for (const r of rows) {
       const root = await this.unique.rootOf(r.person_id);
       const merged = root !== r.person_id && !!(await this.db.first("SELECT 1 AS x FROM review_requests WHERE file_id = ? AND person_id = ? AND status = 'sent'", [fileId, root]));
       const reason = merged ? 'fiche_reunie' : clients && !clients.has(root) ? 'plus_client' : 'delai_depasse';
+      // Jamais close pour le seul délai une demande retenue par le plafond du jour : elle partira à son tour (AU087).
+      if (reason === 'delai_depasse' && Number(r.capped) === 1) continue;
       const { changes } = await this.db.run("UPDATE review_requests SET status = 'closed', rule = ?, updated_at = ? WHERE file_id = ? AND person_id = ? AND status IN ('waiting', 'failed')", [reason, at, fileId, r.person_id]);
       if (changes !== 1) continue;
       await appendEvent(this.journal, { type: 'apres_vente.demande_avis', actor: 'system:apres-vente', subject: `sale_file:${fileId}`, data: { mode: 'essai', side: r.side, client: `person:${r.person_id}`, status: 'closed', rule: reason } }, this.now);
