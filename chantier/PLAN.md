@@ -968,7 +968,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H09, H47).
 
 ### AU089 · Le dispositif LCB-FT a du code
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M12 Conformité ; audit A089 (majeur), endroit : chantier/HUMAIN.md, H29 ; C/conformite/identification.ts.
 - Constat de l'audit : Le dispositif LCB-FT a du code, mais pas de preuve fournie de responsable nommé et de procédure validée utilisables au quotidien.
