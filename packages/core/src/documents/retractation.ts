@@ -129,6 +129,20 @@ export class Diffusion {
    * Le bien peut-il être diffusé maintenant ? La seule porte de toute publication [R42]. Sans droits : c'est le
    * système qui la consulte avant de publier ; la décision ne porte aucune donnée personnelle.
    */
+  /**
+   * AU106 · les biens qui ont au moins un exemplaire signé d'un mandat complet : hors d'eux, `canDiffuse` répond
+   * toujours « pas de mandat ». Une requête pour tout le réseau, au lieu d'une par bien.
+   */
+  async diffusionCandidates(networkId: string): Promise<Set<string>> {
+    const rows = await this.db.all<{ property_id: string }>(
+      `SELECT DISTINCT m.property_id FROM signed_documents s
+       JOIN documents d ON d.id = s.document_id JOIN mandates m ON m.id = s.mandate_id
+       WHERE s.network_id = ? AND m.property_id IS NOT NULL AND s.mandate_id IS NOT NULL AND s.copy_content IS NOT NULL`,
+      [networkId],
+    );
+    return new Set(rows.map((r) => r.property_id));
+  }
+
   async canDiffuse(networkId: string, propertyId: string, at: Date = this.now()): Promise<DiffusionDecision> {
     const rows = await this.db.all<SignedMandateRow>(
       `SELECT s.mandate_id, s.network_id, s.signed_at, s.place, s.number, d.facts FROM signed_documents s

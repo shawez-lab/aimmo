@@ -270,6 +270,8 @@ export type RapprochementRefusal = { ok: false; rule: 'R16' | 'R42'; code: strin
 /** La porte de toute diffusion, `Diffusion.canDiffuse` de D05 [R42]. */
 export interface DiffusionGate {
   canDiffuse(networkId: string, propertyId: string, at?: Date): Promise<{ allowed: boolean; reason: string }>;
+  /** AU106 · les seuls biens que `canDiffuse` peut ouvrir, en une requête ; les autres sont fermés sans la demander. */
+  diffusionCandidates?(networkId: string): Promise<Set<string>>;
 }
 
 export interface RapprochementOptions {
@@ -434,6 +436,55 @@ export class Rapprochement {
 
   /** Le bien vu par le rapprochement : sa fiche de base, et sa fiche complète (P01) quand elle existe. */
   async propertyForMatch(p: Property): Promise<MatchProperty> {
+    const sheet = await this.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [p.id]);
+    return this.matchFrom(p, sheet?.data ?? null, await shownPrice(this.db, p.id, p.price_eur), await positionOf(this.db, p.id));
+  }
+
+  /**
+   * AU106 · la lecture de tous les biens en vente du réseau pour une recherche, en trois requêtes au lieu de trois par
+   * bien : la dernière fiche, le dernier prix publié et la position de l'adresse désignée de chacun. Même résultat que
+   * `propertyForMatch`, bien par bien.
+   */
+  async propertiesForMatch(networkId: string, rows: readonly Property[]): Promise<Map<string, MatchProperty>> {
+    const sheets = new Map(
+      (
+        await this.db.all<{ property_id: string; data: string }>(
+          `SELECT property_id, data FROM (SELECT s.property_id, s.data, ROW_NUMBER() OVER (PARTITION BY s.property_id ORDER BY s.version DESC) AS rn
+             FROM property_sheets s JOIN properties p ON p.id = s.property_id WHERE p.network_id = ? AND p.status = 'available') x WHERE rn = 1`,
+          [networkId],
+        )
+      ).map((r) => [r.property_id, r.data]),
+    );
+    const listings = new Map(
+      (
+        await this.db.all<{ property_id: string; state: string; price_eur: number | null }>(
+          `SELECT property_id, state, price_eur FROM (SELECT v.property_id, v.state, v.price_eur, ROW_NUMBER() OVER (PARTITION BY v.property_id ORDER BY v.seq DESC) AS rn
+             FROM listing_versions v JOIN properties p ON p.id = v.property_id WHERE p.network_id = ? AND p.status = 'available') x WHERE rn = 1`,
+          [networkId],
+        )
+      ).map((r) => [r.property_id, r]),
+    );
+    const positions = new Map(
+      (
+        await this.db.all<{ property_id: string; lat: number; lon: number }>(
+          `SELECT property_id, lat, lon FROM (SELECT pp.property_id, pp.lat, pp.lon, ROW_NUMBER() OVER (PARTITION BY pp.property_id ORDER BY pp.version DESC) AS rn
+             FROM property_positions pp JOIN properties p ON p.id = pp.property_id
+            WHERE p.network_id = ? AND p.status = 'available'
+              AND pp.designation_version = (SELECT MAX(d.version) FROM property_designations d WHERE d.property_id = pp.property_id)) x WHERE rn = 1`,
+          [networkId],
+        )
+      ).map((r) => [r.property_id, { lat: Number(r.lat), lon: Number(r.lon) }]),
+    );
+    const out = new Map<string, MatchProperty>();
+    for (const p of rows) {
+      const v = listings.get(p.id);
+      const price = v && v.state !== 'retiree' && v.price_eur !== null ? Number(v.price_eur) : p.price_eur;
+      out.set(p.id, await this.matchFrom(p, sheets.get(p.id) ?? null, price, positions.get(p.id) ?? null));
+    }
+    return out;
+  }
+
+  private async matchFrom(p: Property, sheetData: string | null, priceEur: number | null, position: GeoPoint | null): Promise<MatchProperty> {
     let bedrooms: number | null = null;
     // La fiche du bien, plus récente, l'emporte sur ce qui a été dit à la création ou à l'import (AU070).
     let dwelling: Dwelling | null = p.kind === 'home' ? (p.dwelling ?? null) : null;
@@ -441,10 +492,9 @@ export class Rapprochement {
     let landM2: number | null = null;
     let energyClass: string | null = null;
     const features: BuyerFeature[] = [];
-    const sheet = await this.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [p.id]);
-    if (sheet) {
+    if (sheetData !== null) {
       try {
-        const parsed: unknown = JSON.parse(sheet.data);
+        const parsed: unknown = JSON.parse(sheetData);
         const raw = typeof parsed === 'object' && parsed !== null ? (parsed as { characteristics?: unknown }).characteristics : undefined;
         if (typeof raw !== 'object' || raw === null) throw new Error('fiche du bien sans caractéristiques');
         const c = raw as { bedrooms?: unknown; outdoor?: unknown; elevator?: unknown; parkingSpaces?: unknown; dwelling?: unknown; floor?: unknown; landM2?: unknown; amenities?: unknown };
@@ -468,7 +518,7 @@ export class Rapprochement {
         );
       }
     }
-    return { kind: p.kind, dwelling: p.kind === 'home' ? dwelling : null, city: p.city, priceEur: await shownPrice(this.db, p.id, p.price_eur), surfaceM2: p.surface_m2, rooms: p.rooms, bedrooms, features, floor, energyClass, landM2, position: await positionOf(this.db, p.id) };
+    return { kind: p.kind, dwelling: p.kind === 'home' ? dwelling : null, city: p.city, priceEur, surfaceM2: p.surface_m2, rooms: p.rooms, bedrooms, features, floor, energyClass, landM2, position };
   }
 
   /**
