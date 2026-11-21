@@ -344,6 +344,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX11 : la pige des annonces de particuliers ; le bien sans adresse, jamais le particulier. Commune et code postal
       // du bien inscrits par prudence ; le message préparé et l'agent qui l'a validé.
       pige_no_agency: [],
+      // AU035 : ce qu'une annonce fermée dit d'elle en dernier, des empreintes seulement.
+      pige_closed_descriptions: [],
       // AU034 : les passages de la relève, des nombres et une raison de panne de liste fermée, jamais une annonce.
       pige_runs: [],
       pige_ads: ['commune', 'postal_code'],
@@ -1300,6 +1302,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   visit_shot_skips: ['id', 'network_id', 'appointment_id', 'shot', 'written_at', 'received_at'],
   presentation_ratings: ['appointment_id', 'network_id', 'property_id', 'rooms', 'rated_at'],
   pige_no_agency: ['network_id', 'fingerprint', 'noted_at'],
+  pige_closed_descriptions: ['network_id', 'ref_key', 'property_fingerprint', 'rooms_said', 'noted_at'],
   pige_runs: ['id', 'network_id', 'ran_at', 'outcome', 'received', 'added', 'no_agency', 'outside', 'unreadable', 'failure'],
   pige_ads: ['id', 'network_id', 'source', 'source_ref', 'fingerprint', 'kind', 'surface_m2', 'rooms', 'price_eur', 'published_at', 'collected_at'],
   pige_oppositions: ['network_id', 'fingerprint', 'noted_at'],

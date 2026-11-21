@@ -813,6 +813,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   address_score_mandates: out('non_rattachable', 'Mandat signé relié à une adresse notée, pour mesurer le score.'),
   // HX11 : la pige des annonces de particuliers, sans nom, numéro, mail ni texte de l'annonce.
   pige_runs: out('sans_client', 'Passage de la relève de la pige : réussi ou en panne, des nombres, aucune annonce.'),
+  pige_closed_descriptions: out('sans_client', 'Ce qu\'une annonce fermée dit d\'elle en dernier, en empreintes : lu pour le doute, jamais pour la file.'),
   pige_no_agency: out('sans_client', 'Empreinte d\'un bien vu « pas d\'agence » : il n\'entre jamais dans la file.'),
   pige_ads: out('sans_client', 'Annonce de particulier : le bien sans adresse et sa source, jamais le particulier.'),
   pige_oppositions: out('sans_client', 'Bien de pige fermé après un non du particulier, par son empreinte.'),

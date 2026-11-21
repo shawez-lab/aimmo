@@ -327,7 +327,7 @@ describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien cr
       s.db.run("INSERT INTO pige_properties (property_id, network_id, source, ad_id, fingerprint, ad_site, ad_kind, published_at, agent_id, created_at) VALUES (?, ?, 'pige', ?, ?, 'Site A', 'house', '2026-12-06', ?, '2026-12-07')", [prop.id, s.network.id, big, fp, s.alex.id]),
     ).rejects.toThrow(/bien fermé/);
     // Une empreinte libre qui n'est pas celle de l'annonce fermée : refusée aussi.
-    const free = await adFingerprint({ kind: 'house', postalCode: '21240', commune: 'Talant', surfaceM2: 300 });
+    const free = await adFingerprint({ kind: 'house', postalCode: '21240', commune: 'Talant', surfaceM2: 300, rooms: 9 });
     await expect(
       s.db.run("INSERT INTO pige_properties (property_id, network_id, source, ad_id, fingerprint, ad_site, ad_kind, published_at, agent_id, created_at) VALUES (?, ?, 'pige', ?, ?, 'Site A', 'house', '2026-12-06', ?, '2026-12-07')", [prop.id, s.network.id, big, free, s.alex.id]),
     ).rejects.toThrow(/bien fermé/);
@@ -335,7 +335,7 @@ describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien cr
     await s.pige.ingest(s.network.id, [s.ad({ surfaceM2: 300, rooms: 9 })]);
     const open = (await s.db.first<{ id: string }>('SELECT id FROM pige_ads WHERE fingerprint = ?', [free]))!.id;
     await s.db.run("INSERT INTO pige_properties (property_id, network_id, source, ad_id, fingerprint, ad_site, ad_kind, published_at, agent_id, created_at) VALUES (?, ?, 'pige', ?, ?, 'Site A', 'house', '2026-12-06', ?, '2026-12-07')", [prop.id, s.network.id, open, free, s.alex.id]);
-    const near = await adFingerprint({ kind: 'house', postalCode: '21240', commune: 'Talant', surfaceM2: 92 });
+    const near = await adFingerprint({ kind: 'house', postalCode: '21240', commune: 'Talant', surfaceM2: 92, rooms: 4 });
     await expect(s.db.run('INSERT INTO pige_property_keys (network_id, key, property_id) VALUES (?, ?, ?)', [s.network.id, near, prop.id])).rejects.toThrow(/bien fermé/);
   });
 
