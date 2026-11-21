@@ -1011,7 +1011,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU094 · Un règlement partiel ou un virement groupé ne peut pas se rapprocher des factures, même à la main
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M13 Pilotage et finances ; audit A094 (majeur), endroit : C/facturation/banque.ts, rapprochement un à un.
 - Constat de l'audit : Un règlement partiel ou un virement groupé ne peut pas se rapprocher des factures, même à la main.
