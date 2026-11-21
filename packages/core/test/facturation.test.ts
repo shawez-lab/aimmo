@@ -488,6 +488,43 @@ describeWithSqlite('HX49 · factures fournisseurs, rapprochement bancaire et rel
     await expect(t.db.run("UPDATE invoice_reminders SET text = 'autre' WHERE id = ?", [id])).rejects.toThrow();
   });
 
+  it('[R553] AU094b · un texte refait pendant la lecture ne se valide pas ; une part arrivée pendant la réécriture la laisse à refaire', async () => {
+    const t = await invoiced();
+    await t.store.addIdentifier({ networkId: t.network.id, personId: t.buyerId, kind: 'email', value: 'acheteur@example.test' });
+    await t.store.addConsent({ networkId: t.network.id, personId: t.buyerId, purpose: SALE_FOLLOW_UP_PURPOSE, channel: 'email', proof: 'mandat', givenAt: new Date('2027-02-10T09:00:00.000Z') });
+    let racing = false;
+    const watched = {
+      ...t.db,
+      run: async (sql: string, params?: unknown[]) => {
+        // Une part arrive juste avant l'écriture du texte refait, après le calcul du reste.
+        if (racing && sql.includes('SET text = ?')) {
+          racing = false;
+          await t.db.run("INSERT INTO bank_lines (id, network_id, day, amount_cents, invoice_refs, imported_by, created_at) VALUES ('course', ?, '2027-07-19', 50000, '[]', 'x', 'y')", [t.network.id]);
+          await t.db.run("INSERT INTO bank_allocations (line_id, invoice_id, network_id, amount_cents, by, created_at) VALUES ('course', ?, ?, 50000, 'x', 'y')", [t.invoice.id, t.network.id]);
+        }
+        return t.db.run(sql, params as never);
+      },
+    } as typeof t.db;
+    const relances = new RelancesImpayes(watched, t.journal, { now: t.now });
+    t.setClock(at9('2027-07-20'));
+    expect(await relances.prepare(t.network.id)).toBe(1);
+    const seen = (await t.db.first<{ id: string; prepared_at: string }>('SELECT id, prepared_at FROM invoice_reminders'))!;
+    // La direction a lu ce texte ; une part arrive, le texte est refait avant sa confirmation.
+    await t.db.run("INSERT INTO bank_lines (id, network_id, day, amount_cents, invoice_refs, imported_by, created_at) VALUES ('part-a', ?, '2027-07-16', 100000, '[]', 'x', 'y')", [t.network.id]);
+    expect((await t.banque.allocate(t.direction, 'part-a', [{ invoiceId: t.invoice.id, amountCents: 100_000 }])).ok).toBe(true);
+    t.setClock(at9('2027-07-21'));
+    racing = true;
+    expect(await relances.prepare(t.network.id)).toBe(0);
+    // La part arrivée pendant la réécriture : rien n'est écrit, le texte reste à refaire.
+    expect(await t.db.first('SELECT rule, prepared_at FROM invoice_reminders WHERE id = ?', [seen.id])).toEqual({ rule: 'paiement_partiel', prepared_at: seen.prepared_at });
+    expect(await relances.prepare(t.network.id)).toBe(1);
+    const now = (await t.db.first<{ text: string; prepared_at: string; rule: string | null }>('SELECT text, prepared_at, rule FROM invoice_reminders WHERE id = ?', [seen.id]))!;
+    expect(now.rule).toBeNull();
+    expect(now.text).toContain('Nous en avons reçu 1 500,00 €');
+    expect(await relances.validate(t.direction, seen.id, { preparedAt: seen.prepared_at })).toMatchObject({ ok: false, code: 'texte_change' });
+    expect(await relances.validate(t.direction, seen.id, { preparedAt: now.prepared_at })).toEqual({ ok: true });
+  });
+
   it('[R16] [R551] AU094 · la direction seule partage ; une ligne déjà rapprochée un à un, un débit ou une facture corrigée n’en prennent pas', async () => {
     const t = await invoiced();
     t.setClock(at9('2027-07-15'));

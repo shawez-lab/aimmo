@@ -85,7 +85,7 @@ function figuresOf(f: ReminderFacts): string[] {
   return [f.label, `${euros(f.amountCents)} €`, ...received, frenchDay(f.issuedOn), frenchDay(f.dueOn)];
 }
 
-type Problem = { ok: false; rule: null | 'R553'; code: 'unknown' | 'not_pending' | 'texte_a_refaire' };
+type Problem = { ok: false; rule: null | 'R553'; code: 'unknown' | 'not_pending' | 'texte_a_refaire' | 'texte_change' };
 
 export class RelancesImpayes {
   private readonly now: () => Date;
@@ -250,8 +250,10 @@ export class RelancesImpayes {
     if (fundsInOutgoing(text)) return false;
     const at = this.now().toISOString();
     const { changes } = await this.db.run(
-      "UPDATE invoice_reminders SET text = ?, prepared_at = ?, rule = NULL, updated_at = ? WHERE invoice_id = ? AND rank = ? AND status = 'a_valider' AND rule = 'paiement_partiel'",
-      [text, at, at, inv.id, rank],
+      // Le reste lu est encore celui de la base : une part arrivée pendant le calcul laisse le texte à refaire [R553].
+      `UPDATE invoice_reminders SET text = ?, prepared_at = ?, rule = NULL, updated_at = ? WHERE invoice_id = ? AND rank = ? AND status = 'a_valider' AND rule = 'paiement_partiel'
+         AND (SELECT COALESCE(SUM(amount_cents), 0) FROM bank_allocations WHERE invoice_id = ?) = ?`,
+      [text, at, at, inv.id, rank, inv.id, facts.receivedCents ?? 0],
     );
     if (changes !== 1) return false;
     await appendEvent(this.journal, { type: 'facture.relance', actor: 'system:facturation', subject: `sale_file:${inv.file_id}`, data: { rule: 'R553', client: `person:${inv.person_id}`, invoice: inv.id, rank, status: 'a_valider', refaite: true } }, this.now);
@@ -259,7 +261,11 @@ export class RelancesImpayes {
   }
 
   /** La direction valide le texte préparé, tel quel : il partira au passage suivant [R553]. */
-  async validate(viewer: Viewer, reminderId: string): Promise<{ ok: true } | Refusal | Problem> {
+  /**
+   * `expected.preparedAt` : le texte que la direction a lu, par le jour de sa préparation. Un texte refait depuis (une
+   * part reçue entre la lecture et la confirmation) n'est pas validé : l'écran se relit (AU094b) [R553].
+   */
+  async validate(viewer: Viewer, reminderId: string, expected?: { preparedAt: unknown }): Promise<{ ok: true } | Refusal | Problem> {
     const refusal = await directionRefusal(this.journal, this.now, viewer, 'invoice_reminder');
     if (refusal) return refusal;
     await this.closeSettled(viewer.networkId);
@@ -268,12 +274,14 @@ export class RelancesImpayes {
     const at = this.now().toISOString();
     const { changes } = await this.db.run(
       // Un texte à refaire (une part reçue depuis) ne se valide pas : le passage de préparation le refait d'abord.
-      "UPDATE invoice_reminders SET status = 'validee', validated_by = ?, validated_at = ?, updated_at = ? WHERE id = ? AND status = 'a_valider' AND rule IS NOT 'paiement_partiel'",
-      [actorOf(viewer), at, at, reminderId],
+      `UPDATE invoice_reminders SET status = 'validee', validated_by = ?, validated_at = ?, updated_at = ? WHERE id = ? AND status = 'a_valider' AND rule IS NOT 'paiement_partiel'${expected ? ' AND prepared_at = ?' : ''}`,
+      [actorOf(viewer), at, at, reminderId, ...(expected ? [typeof expected.preparedAt === 'string' ? expected.preparedAt : ''] : [])],
     );
     if (changes !== 1) {
       const stale = await this.db.first("SELECT 1 AS one FROM invoice_reminders WHERE id = ? AND status = 'a_valider' AND rule = 'paiement_partiel'", [reminderId]);
-      return { ok: false, rule: 'R553', code: stale ? 'texte_a_refaire' : 'not_pending' };
+      if (stale) return { ok: false, rule: 'R553', code: 'texte_a_refaire' };
+      const other = expected ? await this.db.first("SELECT 1 AS one FROM invoice_reminders WHERE id = ? AND status = 'a_valider'", [reminderId]) : null;
+      return { ok: false, rule: 'R553', code: other ? 'texte_change' : 'not_pending' };
     }
     const file = await this.db.first<{ file_id: string }>('SELECT file_id FROM invoices WHERE id = ?', [row.invoice_id]);
     await appendEvent(this.journal, { type: 'facture.relance', actor: actorOf(viewer), subject: `sale_file:${file?.file_id ?? ''}`, data: { rule: 'R553', client: `person:${row.person_id}`, invoice: row.invoice_id, status: 'validee' } }, this.now);
