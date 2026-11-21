@@ -30,7 +30,7 @@
 import type { Viewer } from '../acces/droits.ts';
 import { randomContentCode } from '../attirer/origine-contacts.ts';
 import { FicheClient } from '../db/fiche-client.ts';
-import type { SqlDatabase } from '../db/sql.ts';
+import { runBatch, type SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -133,6 +133,8 @@ export const AD_FAILURE_ACTIONS = {
   lieu_inconnu: 'corriger',
   rayon: 'corriger',
   indisponible: 'reessayer',
+  /** La plateforme réelle d'un lancement n'est plus réglée : rien ne peut lui être demandé, ni tenu pour fait. */
+  hors_service: 'reconnecter',
   inconnue: 'verifier',
 } as const;
 export type AdFailureCode = keyof typeof AD_FAILURE_ACTIONS;
@@ -485,17 +487,21 @@ export class PublicitePayante {
     if (Number(used?.n) > 0) return this.refuse(viewer, 'ad_start', 'R587', 'deja_lancee_ou_arretee', { campaign: c.id });
     if (await this.launchPending(c.id)) return this.refuse(viewer, 'ad_start', 'R587', 'lancement_en_cours', { campaign: c.id });
     if (await this.pausePending(c.id)) return this.refuse(viewer, 'ad_start', 'R588', 'pause_en_attente', { campaign: c.id });
+    // Le plafond du réel se relit au lancement : une validation faite en essai, ou avant un plafond baissé, ne passe
+    // jamais au-delà (AU038, H63) [R587].
+    const platform = this.platforms[c.platform];
+    if (platform.mode === 'reel' && Number(a.total_budget_cents) > this.realCapCents!) return this.refuse(viewer, 'ad_start', 'R587', 'plafond', { campaign: c.id, totalBudgetCents: Number(a.total_budget_cents), capCents: this.realCapCents });
     // Déjà au-delà du seuil ou du budget avec ce qui est dépensé : rien ne repart [R588].
     const over = this.overLimit(a, await this.totals(c.id));
     if (over) return this.refuse(viewer, 'ad_start', 'R588', over, { campaign: c.id });
     let changes = 0;
     try {
-      ({ changes } = await this.db.run("INSERT INTO ad_campaign_starts (approval_id, campaign_id, mode, started_by, started_at) VALUES (?, ?, 'essai', ?, ?) ON CONFLICT DO NOTHING", [
-        a.id,
-        c.id,
-        this.actor(viewer),
-        this.now().toISOString(),
-      ]));
+      // Le lancement et le mode de la plateforme, dans un même lot : un lancement réel n'est jamais sans son mode.
+      const [inserted] = await runBatch(this.db, [
+        { sql: "INSERT INTO ad_campaign_starts (approval_id, campaign_id, mode, started_by, started_at) VALUES (?, ?, 'essai', ?, ?) ON CONFLICT DO NOTHING", params: [a.id, c.id, this.actor(viewer), this.now().toISOString()] },
+        { sql: 'INSERT INTO ad_campaign_start_modes (approval_id, mode) VALUES (?, ?) ON CONFLICT DO NOTHING', params: [a.id, platform.mode] },
+      ]);
+      changes = inserted?.changes ?? 0;
     } catch {
       changes = 0;
     }
@@ -503,7 +509,6 @@ export class PublicitePayante {
     if (changes !== 1) return this.refuse(viewer, 'ad_start', 'R587', 'deja_lancee_ou_arretee', { campaign: c.id });
     const launch: AdLaunch = { code: c.code, communes: JSON.parse(c.communes) as string[], radiusKm: c.radius_km === null ? null : Number(c.radius_km), dailyBudgetCents: Number(a.daily_budget_cents), totalBudgetCents: Number(a.total_budget_cents) };
     let answered = false;
-    const platform = this.platforms[c.platform];
     const call = platform.start(launch);
     try {
       const receipt = await this.withinTimeout(call);
@@ -640,7 +645,11 @@ export class PublicitePayante {
 
   private async pause(c: CampaignRow, approvalId: string, again = false): Promise<void> {
     const receipt = await this.db.first<{ external_ref: string }>('SELECT external_ref FROM ad_campaign_receipts WHERE approval_id = ?', [approvalId]);
+    const started = await this.db.first<{ mode: AdMode }>('SELECT mode FROM ad_campaign_start_modes WHERE approval_id = ?', [approvalId]);
     try {
+      // Parti en réel, la pause n'est demandée qu'à la plateforme réelle : une plateforme d'essai mise à sa place ne
+      // confirme rien, la pause reste à confirmer et l'échec dit quoi faire (AU038) [R588].
+      if (started?.mode === 'reel' && this.platforms[c.platform].mode !== 'reel') throw new AdPlatformError('hors_service');
       await this.platforms[c.platform].pause(c.code, receipt?.external_ref ?? null);
     } catch (e) {
       await this.fail(c, 'pause', e instanceof AdPlatformError ? e.failure : 'inconnue');

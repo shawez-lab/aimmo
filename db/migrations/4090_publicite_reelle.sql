@@ -1,6 +1,16 @@
 -- AU038 · La vraie campagne de publicité, son accusé, ses échecs actionnables et les demandes qu'elle amène.
 -- Rien ne change ni ne s'efface [R17]. Aucune personne ni aucun texte de message ici [R13, R156].
 
+-- Le mode de la plateforme au moment du lancement, rangé dans le même lot que le lancement : une campagne partie en
+-- réel n'est jamais tenue pour mise en pause par une plateforme d'essai mise à sa place ensuite [R588]. Sans ligne
+-- ici (lancements d'avant AU038), le lancement était d'essai.
+CREATE TABLE IF NOT EXISTS ad_campaign_start_modes (
+  approval_id TEXT PRIMARY KEY REFERENCES ad_campaign_starts (approval_id) ON DELETE RESTRICT,
+  mode TEXT NOT NULL CHECK (mode IN ('essai', 'reel'))
+);
+CREATE TRIGGER IF NOT EXISTS ad_campaign_start_modes_garde BEFORE DELETE ON ad_campaign_start_modes BEGIN SELECT RAISE(ABORT, 'ad_campaign_start_modes : rien ne s''efface'); END;
+CREATE TRIGGER IF NOT EXISTS ad_campaign_start_modes_fige BEFORE UPDATE ON ad_campaign_start_modes BEGIN SELECT RAISE(ABORT, 'ad_campaign_start_modes : rien ne se réécrit'); END;
+
 -- L'accusé de la plateforme au lancement : sa référence de la campagne et le mode dans lequel elle est partie. La
 -- ligne de `ad_campaign_starts` reste le lancement tenu par la base ; celle-ci dit ce que la plateforme a répondu.
 CREATE TABLE IF NOT EXISTS ad_campaign_receipts (
@@ -19,7 +29,7 @@ CREATE TABLE IF NOT EXISTS ad_campaign_failures (
   id TEXT PRIMARY KEY,
   campaign_id TEXT NOT NULL REFERENCES ad_campaigns (id) ON DELETE RESTRICT,
   step TEXT NOT NULL CHECK (step IN ('lancement', 'pause', 'depense')),
-  code TEXT NOT NULL CHECK (code IN ('reconnecter', 'acces', 'refusee', 'lieu_inconnu', 'rayon', 'indisponible', 'inconnue')),
+  code TEXT NOT NULL CHECK (code IN ('reconnecter', 'acces', 'refusee', 'lieu_inconnu', 'rayon', 'indisponible', 'hors_service', 'inconnue')),
   action TEXT NOT NULL CHECK (action IN ('reconnecter', 'donner_acces', 'corriger', 'reessayer', 'verifier')),
   at TEXT NOT NULL
 );

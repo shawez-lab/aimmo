@@ -618,6 +618,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   ad_campaign_repauses: out('sans_client', 'Pauses redemandées d\'une campagne (HX54) : aucune personne.'),
   ad_campaign_launches: out('sans_client', 'Réponses des plateformes aux lancements d\'une campagne (HX54) : aucune personne.'),
   ad_campaign_contacts: { locate: by('person_id') },
+  ad_campaign_start_modes: out('sans_client', 'Mode de la plateforme au lancement d\'une campagne (AU038) : essai ou réel ; aucune personne.'),
   ad_campaign_receipts: out('sans_client', 'Accusé de la plateforme au lancement d\'une campagne (AU038) : sa référence et le mode ; aucune personne.'),
   ad_campaign_failures: out('sans_client', 'Échecs d\'appel à la plateforme d\'une campagne (AU038), en code et en geste ; aucune personne.'),
   ad_campaign_arrivals: { locate: [via('inbound_id', 'inbound_messages')] },

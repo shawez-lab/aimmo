@@ -88,6 +88,33 @@ describeWithSqlite('AU038 · une campagne réelle à budget plafonné, suivie ju
     await expect(t.db.run("UPDATE ad_campaign_receipts SET external_ref = 'x'")).rejects.toThrow(/change/);
   });
 
+  it('[R587] [R588] le plafond se relit au lancement ; une plateforme d’essai mise à la place d’une réelle ne confirme jamais sa pause', async () => {
+    const real = fakeReal();
+    const t = await setup(real.platform);
+    const c = await t.campaign();
+    await t.pub.approve(t.dir, c.id, BUDGET);
+    // Le plafond baissé après la validation : rien ne part au-delà.
+    const lower = new PublicitePayante(t.db, t.journal, { google_ads: trialAdPlatform(), meta: real.platform }, { now: t.now, realCapCents: 10_000 });
+    expect(await lower.start(t.dir, c.id)).toMatchObject({ ok: false, rule: 'R587', code: 'plafond' });
+    expect(real.started).toEqual([]);
+    expect(await t.pub.start(t.dir, c.id)).toMatchObject({ ok: true });
+    expect(await t.db.first('SELECT mode FROM ad_campaign_start_modes')).toEqual({ mode: 'reel' });
+    // Les réglages réels perdus : la plateforme d'essai prend la place, l'arrêt ne tient pas la pause pour faite.
+    const trial = trialAdPlatform();
+    const lost = new PublicitePayante(t.db, t.journal, { google_ads: trialAdPlatform(), meta: trial }, { now: t.now });
+    expect(await lost.stop(t.dir, c.id)).toMatchObject({ ok: true });
+    expect(trial.paused).toEqual([]);
+    expect(await t.db.first('SELECT paused_at FROM ad_campaign_stops')).toEqual({ paused_at: null });
+    expect((await t.report()).failure).toEqual({ step: 'pause', code: 'hors_service', action: 'reconnecter' });
+    // Rien de neuf ne se valide tant que la pause n'est pas confirmée ; les réglages rétablis, le passage la redemande.
+    expect(await lost.approve(t.dir, c.id, BUDGET)).toMatchObject({ ok: false, code: 'pause_en_attente' });
+    await lost.runChecks(t.network.id);
+    expect(await t.db.first('SELECT paused_at FROM ad_campaign_stops')).toEqual({ paused_at: null });
+    await t.pub.runChecks(t.network.id);
+    expect(real.paused).toEqual([[c.code, '120000000000001']]);
+    expect(await t.db.first<{ paused_at: string | null }>('SELECT paused_at FROM ad_campaign_stops')).not.toEqual({ paused_at: null });
+  });
+
   it('[R587] un lancement réel sans accusé est un échec, la pause cherchée par le code ; un jeton expiré se dit « reconnecter »', async () => {
     const silent = fakeReal({ receipt: undefined });
     const t = await setup(silent.platform);

@@ -58,6 +58,7 @@ export const PUBLICITE_FAILURES: Readonly<Record<string, string>> = Object.freez
   lieu_inconnu: 'Une commune n’est pas encore connue de la plateforme : ajoutez-la aux lieux réglés, puis relancez.',
   rayon: 'Ce rayon est trop petit pour une annonce de logement sur cette plateforme : portez-le à 25 km au moins.',
   indisponible: 'La plateforme n’a pas répondu : réessayez dans un moment.',
+  hors_service: 'Cette campagne est partie en réel, mais la plateforme n’est plus réglée : rétablissez ses réglages pour que sa pause lui soit demandée.',
   inconnue: 'La plateforme a répondu sans qu’on sache si la campagne est partie : vérifiez sur la plateforme.',
 });
 
