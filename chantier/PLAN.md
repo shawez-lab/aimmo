@@ -447,13 +447,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : branche `chantier/AU035` gardée, #757 ouverte sans fusion (2026-11-21, voie 1). Fait sur la branche : empreinte avec les pièces quand elles sont dites, empreinte propre à l'annonce sans pièces, parcours sur preuve seulement, doute lu pour fermer (fermetures, messages préparés et remis), description notée d'une annonce fermée revue (migration 4064, table `pige_closed_descriptions`), R672 ; 11 tests [R672]. Codex : 9 P0 corrigés en six tours ; le dernier (juste) reste : une conversion directe en base d'une annonce fermée seulement dans le doute passe, car les déclencheurs de `pige_properties` et `pige_property_keys` ne lisent que l'empreinte exacte. Prochaine approche : rendre le doute lisible par la base, en ajout seul : pour chaque relève, une table de ses empreintes « bien sans pièces » à 1 m² près ; pour chaque fermeture d'une annonce sans pièces, ces empreintes tant que sa dernière description tait ses pièces ; puis les déclencheurs de fermeture (`pige_ads`, `pige_drafts`, `pige_handovers`, `pige_properties`, `pige_property_keys`) joignent ces tables. Repartir de la branche.
 
 ### AU036 · Valider mes contenus ne les publie pas réellement sur mes réseaux sociaux
-- Statut : en cours
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A036 (majeur), endroit : C/annonces/publication.ts, `trialChannel` ; A/app.ts, marketing.
 - Constat de l'audit : Valider mes contenus ne les publie pas réellement sur mes réseaux sociaux : les canaux de l’application restent d’essai.
 - Objectif : Une publication autorisée apparaît sur chaque compte choisi avec lien, statut réel et traitement d’échec.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : fusionnée (#762, 6e701665), migration `4076`, R134 mise à jour. Vrais Facebook et Instagram du compte du réseau (`reseaux-meta.ts`), mis en service par le Worker seulement quand tout est rangé (H77, après H06) ; lien public relu chez le réseau ; échecs avec code et action ; issue inconnue jamais refaite ; confirmation réelle par cible vérifiée par le serveur ; retrait chez le réseau à l'annulation ou la rétractation, puis par le passage planifié, même envois coupés [R42]. Codex : 8 P0 et 2 P1 corrigés en six tours, puis rien à signaler. Restent : relier les comptes personnels des agents (aujourd'hui « relier ») ; LinkedIn, Google, TikTok, YouTube restent d'essai ; le calendrier (HX52) reste sur les canaux d'essai ; une publication « à vérifier » n'a pas encore de geste pour la rapprocher.
 
 ### AU037 · La fiche Google et les signaux de référencement restent servis en essai malgré les écrans disponibles
 - Statut : à faire
