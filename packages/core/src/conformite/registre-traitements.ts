@@ -76,6 +76,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       send_reservations: ['person_id'],
       inbound_messages: ['agent_id', 'external_id', 'conversation_ref', 'sender_channel_id', 'sender_name', 'sender_identifiers', 'subject', 'body', 'post_ref', 'raw_payload', 'person_id'],
       reception_log: ['agent_id', 'reason'],
+      // AU032 : les autres clés d'un même message reçu, pour qu'une relivraison reste un doublon.
+      inbound_message_keys: [],
       // HX23 : la transcription d'une note vocale et le lien vers son audio chez le canal.
       voice_notes: ['external_id', 'media_ref', 'transcript'],
       // HX21 : l'appel rattaché à la fiche, son enregistrement accepté, sa transcription et ce qui en est tiré.
@@ -1127,6 +1129,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   voice_assistant_lines: ['network_id', 'enabled', 'updated_at'],
   calls: ['id', 'network_id', 'provider', 'status', 'failure', 'attach', 'started_at', 'ended_at', 'language', 'confidence', 'category', 'route', 'qualification_source', 'origin_kind', 'created_at'],
   reception_log: ['id', 'network_id', 'inbound_id', 'channel', 'kind', 'outcome', 'occurred_at', 'created_at'],
+  inbound_message_keys: ['network_id', 'dedup_key', 'inbound_id', 'created_at'],
   contact_keys: ['network_id', 'key', 'created_at'],
   attach_log: ['id', 'network_id', 'inbound_id', 'message_id', 'outcome', 'exclusion', 'silenced', 'occurred_at', 'created_at'],
   attach_claims: ['inbound_id', 'claimed_at'],

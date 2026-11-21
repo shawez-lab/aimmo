@@ -290,6 +290,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   vitrine: { excluded: 'sans_client', why: 'Un écran de vitrine du réseau ou d\'un agent : sa création, sans donnée d\'un client.' },
   scenario: { excluded: 'sans_client', why: 'Un scénario automatique de la direction : sa composition, ses essais, ses allumages, sans donnée d\'un client.' },
   avis_verifie: { excluded: 'sans_client', why: 'Un avis vérifié publié (HX46) : la remise de sa preuve à la conformité, ou un refus d\'accès, sans donnée d\'un client.' },
+  captation: { excluded: 'pas_un_sujet', why: 'L\'état de la réception des mails (AU032) : un refus de lecture, des réglages et des comptes, jamais une personne.' },
   copy: { excluded: 'pas_un_sujet', why: 'Une copie de la base : des comptes, jamais une donnée d\'une personne.' },
   person: 'journal',
   mandate: 'journal',
@@ -432,6 +433,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   send_reservations: { locate: by('person_id') },
   inbound_messages: { locate: by('person_id') },
   reception_log: { locate: [via('inbound_id', 'inbound_messages')] },
+  inbound_message_keys: { locate: [via('inbound_id', 'inbound_messages')] },
   virtual_tour_contacts: { locate: [via('inbound_id', 'inbound_messages')] },
   // Une note vocale se reconnaît au message reçu qu'elle est devenue : même réseau, même canal, même identifiant.
   voice_notes: { locate: [via('external_id', 'inbound_messages', 'external_id', { alsoMatch: { network_id: 'network_id', channel: 'channel' } })] },

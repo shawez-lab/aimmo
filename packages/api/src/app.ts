@@ -11,6 +11,8 @@ import {
   Automatisations,
   OUTBOUND_CHANNELS,
   PaliersBascule,
+  mailIntakeState,
+  type MailIntakeSettings,
   ROLLOUT_INCIDENTS,
   captationAutomation,
   type OutboundChannelName,
@@ -179,6 +181,8 @@ export interface ApiConfig {
   captationRollout?: { open: boolean; connected: readonly OutboundChannelName[] };
   /** Notifications de Meta (C07) : secrets et variables `META_*`, voir meta.ts. */
   meta?: Omit<MetaConfig, 'db' | 'now'>;
+  /** AU032 : les réglages de la réception des mails (`MAIL_*`), dont l'état se lit sur `/captation/mail`. */
+  mail?: Omit<MailIntakeSettings, 'mode'>;
   /** Limites d'appels de l'assistant du site (C08) ; absentes : les réglages par défaut. */
   assistantLimits?: AssistantLimits;
   /** L'IA qui rédige les réponses de l'assistant du site, une fois branchée (H13). */
@@ -1280,6 +1284,22 @@ function captationRolloutRoutes(rollout: ApiConfig['captationRollout']): RouteDe
         if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: { stage: r.stage } });
         if (r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
         return json(409, { ok: false, rule: r.rule, code: r.code === 'not_open' && open ? 'no_real_channel' : r.code });
+      },
+    },
+  ];
+}
+
+/** AU032 : ce qui manque à la réception des mails, et chaque portail vérifié ou non par un vrai mail reçu [R669]. */
+function mailIntakeRoutes(settings: MailIntakeSettings): RouteDef[] {
+  return [
+    {
+      method: 'GET',
+      pattern: /^\/captation\/mail$/,
+      name: 'captation.mail',
+      handle: async (s, viewer) => {
+        const r = await mailIntakeState(s.db, s.journal, viewer, settings, s.now);
+        if (!r.ok) return refusal({ rule: r.rule, code: r.code });
+        return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
       },
     },
   ];
@@ -2472,6 +2492,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...reseauRoutes(config.reseau ?? {}),
     ...rolloutRoutes(config.automationRolloutOpen === true),
     ...captationRolloutRoutes(config.captationRollout),
+    ...mailIntakeRoutes({ mode: config.mode, networkId: config.mail?.networkId, forwardTo: config.mail?.forwardTo, ownAddresses: config.mail?.ownAddresses }),
     ...m15Routes(config.pieces ?? null, config.location ?? {}),
     ...coproprieteRoutesDef(coproprieteSourcesOf(config)),
     ...avantContratRoutesDef(config.pieces ?? null, config.avantContrat ?? {}),

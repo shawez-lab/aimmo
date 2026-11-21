@@ -104,6 +104,7 @@ Toutes sous `/v1`. Sauf la santé, chaque appel porte `Authorization: Bearer <cl
 | POST | `/v1/automatisations/incident` | le site signale un écart non expliqué ou une panne : l'automatisation revient en ombre | clé de dépôt `site_auto` (`INTAKE_KEYS`) |
 | GET | `/v1/automatisations/paliers` | le palier de chaque automatisation : des nombres et des dates | direction, conformité (R16, R26) |
 | POST | `/v1/automatisations/paliers/{automation}/avancer` | de l'ombre à 10 %, refusé si l'ombre n'a pas tenu | direction (R16, R26) |
+| GET | `/v1/captation/mail` | les réglages `MAIL_*` qui manquent, et pour chaque portail et les mails directs : « vérifiée » après un premier vrai mail rattaché à une fiche, sinon « non vérifiée », date du dernier et nombre sur 30 jours ; jamais une adresse (AU032) | direction (R16, R669) |
 | GET | `/v1/captation/paliers` | le palier de chaque canal de captation et s'il est vraiment branché : des nombres et des dates | direction, conformité (R16, R26) |
 | POST | `/v1/captation/paliers/{canal}/avancer` | de l'essai à 10 %, refusé si le passage est fermé, si le canal n'est pas branché ou si l'essai n'a pas tenu | direction (R16, R26) |
 | POST | `/v1/estimation/commune` | fourchette de prix au m² d'une commune, pour un type de logement, et proposition de rendez-vous ; jamais le prix d'un bien | clé de dépôt `site_estimate` (`INTAKE_KEYS`) |

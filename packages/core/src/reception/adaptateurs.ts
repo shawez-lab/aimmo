@@ -437,6 +437,56 @@ function firstMessageId(value: unknown): string | null {
   return value.match(/<[^>]+>/)?.[0] ?? optStr(value);
 }
 
+/**
+ * Ce qu'un mail de portail écrit dans son corps (AU032) : beaucoup de portails n'ont pas de « répondre à » vers le
+ * client, ou une adresse relais du portail, et donnent les coordonnées en lignes « Libellé : valeur ». Seules ces lignes
+ * sont lues, jamais un texte libre : une adresse citée par le client dans son message n'est pas la sienne.
+ */
+export interface PortalBodyFields {
+  email: string | null;
+  phone: string | null;
+  name: string | null;
+  /** La référence de la demande chez le portail : la même demande relivrée sous un autre identifiant de mail. */
+  leadRef: string | null;
+}
+
+const FIELD = /^[\s*•-]*([A-Za-zÀ-ÿ'’°. -]{2,40}?)\s*:\s*(.+?)\s*$/;
+/** Le début du texte écrit par le client, ou d'un mail cité : rien n'est plus lu après lui. */
+const FREE_TEXT = /^(message|votre message|son message|commentaire|commentaires|texte|demande|question|precisions?|informations? complementaires?)$/;
+const QUOTE = /^\s*(>|-{2,}\s*(message|original|forwarded)|le .+ a ecrit\s*:|on .+ wrote\s*:|de\s*:|from\s*:)/i;
+
+export function readPortalBody(text: string): PortalBodyFields {
+  const out: PortalBodyFields = { email: null, phone: null, name: null, leadRef: null };
+  let first: string | null = null;
+  let last: string | null = null;
+  for (const line of text.split('\n').slice(0, 200)) {
+    // Un mail cité ou transféré : ce qui suit n'est plus le portail qui parle.
+    if (QUOTE.test(line.normalize('NFD').replace(/[\u0300-\u036f]/g, ''))) break;
+    const m = FIELD.exec(line);
+    if (!m) continue;
+    const label = m[1]!.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[’']/g, "'").replace(/\s+/g, ' ').trim();
+    // Le message du client commence : une adresse ou un numéro qu'il y écrit n'est pas forcément le sien [R669].
+    if (FREE_TEXT.test(label)) break;
+    const value = m[2]!.trim();
+    if (out.email === null && /^(e-?mail|courriel|mail|adresse (e-?mail|mail|electronique))( du contact)?$/.test(label)) {
+      const found = value.match(/[^\s<>()"',;:]+@[^\s<>()"',;:]+\.[a-z]{2,}/i)?.[0];
+      if (found) out.email = found;
+    } else if (out.phone === null && /^(telephone|tel\.?|portable|mobile|numero de telephone)( du contact)?$/.test(label)) {
+      if (/^[+0-9 .()-]{8,25}$/.test(value)) out.phone = value;
+    } else if (out.name === null && /^(nom et prenom|prenom et nom|nom complet|nom du contact|contact)$/.test(label)) {
+      out.name = value.slice(0, 80);
+    } else if (first === null && label === 'prenom') {
+      first = value.slice(0, 40);
+    } else if (last === null && label === 'nom') {
+      last = value.slice(0, 40);
+    } else if (out.leadRef === null && /^(reference|ref\.?|n°|numero|identifiant) (de la |du )?(demande|contact|lead|message)$/.test(label)) {
+      if (/^[A-Za-z0-9._-]{4,64}$/.test(value)) out.leadRef = value;
+    }
+  }
+  if (out.name === null && (first !== null || last !== null)) out.name = [first, last].filter((v) => v !== null).join(' ');
+  return out;
+}
+
 function adaptEmail(raw: unknown, ctx: AdaptContext): InboundMessage | null | 'ignored' {
   const mail = obj(raw, 'mail');
   const from = parseAddress(mail.from);
@@ -453,15 +503,23 @@ function adaptEmail(raw: unknown, ctx: AdaptContext): InboundMessage | null | 'i
   const attachments = typeof mail.attachments === 'number' ? mail.attachments : list(mail.attachments).length;
   if (body === '' && subject === null && attachments === 0) return null;
   const messageId = str(mail.messageId, 'identifiant du mail');
+  // Un mail de portail : les coordonnées du client lues aussi dans le corps (AU032) [R669]. Jamais une adresse du portail
+  // ni l'une des nôtres ; la référence de la demande fait reconnaître la même demande relivrée sous un autre identifiant.
+  const fields = portal ? readPortalBody(body) : null;
+  const bodyEmail = fields?.email ? normalizeEmail(fields.email) : null;
+  const bodyMail = bodyEmail && !portalOf(bodyEmail) && !own.has(bodyEmail) ? emailId(bodyEmail) : null;
+  const bodyPhone = fields?.phone ? phoneId(fields.phone) : null;
   return {
     channel: 'email',
     kind: portal ? 'portal_email' : 'email',
-    externalId: messageId,
+    externalId: portal && fields?.leadRef ? `${portal}:demande:${fields.leadRef}` : messageId,
+    // Le même mail déjà rangé sous son identifiant de mail reste un doublon [R18].
+    ...(portal && fields?.leadRef ? { previousExternalIds: [messageId] } : {}),
     conversationRef: firstMessageId(mail.references) ?? firstMessageId(mail.inReplyTo) ?? messageId,
     sender: {
       channelId: null,
-      name: client.name ?? (portal ? null : from.name),
-      identifiers: ids(client.address && !portalOf(client.address) ? { kind: 'email', value: client.address } : null),
+      name: client.name ?? (portal ? (fields?.name ?? null) : from.name),
+      identifiers: ids(client.address && !portalOf(client.address) && !own.has(client.address) ? { kind: 'email', value: client.address } : null, bodyMail, bodyPhone),
     },
     subject,
     text: body,
