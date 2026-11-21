@@ -7,7 +7,7 @@
  * l'annonce, rien ne part d'AIMMO, et seul ce canal est proposé [R275]. Chaque adresse probable dit sa confiance, son
  * niveau et ses points, chacun avec sa source et sa date [R294] ; la fiche du bien se crée d'un geste, avec une
  * adresse proposée ou sans adresse [R295]. Ce que la pige rapporte : des nombres, par niveau [R296]. Un refus se dit en
- * mots, jamais par son code. Tout texte reçu est posé avec `textContent` ; rien n'est gardé sur l'appareil.
+ * mots, jamais par son code. La date de la dernière relève et son alerte de panne sont dites en tête (AU034, R671). Tout texte reçu est posé avec `textContent` ; rien n'est gardé sur l'appareil.
  */
 
 const KINDS: Readonly<Record<string, string>> = { apartment: 'Appartement', house: 'Maison' };
@@ -41,12 +41,21 @@ export const PIGE_REFUSALS: Readonly<Record<string, string>> = {
   unknown_field: 'La demande n’a pas pu être lue.',
 };
 
+/** L'alerte de la relève (AU034), dite à l'agent : jamais un code [R671]. */
+export const PIGE_ALERTS: Readonly<Record<string, string>> = {
+  panne: 'La dernière relève des annonces a échoué : la direction est prévenue. La file peut manquer les annonces récentes.',
+  en_retard: 'Les annonces n’ont pas été relevées depuis plus d’un jour : la file peut manquer les annonces récentes.',
+  jamais_relevee: 'Aucune relève des annonces n’a encore réussi : la file est vide tant que le fournisseur n’a rien envoyé.',
+  non_reglee: 'Aucun fournisseur d’annonces n’est encore raccordé : la file ne se remplit pas d’elle-même.',
+};
+
 export const PIGE_SCRIPT = `'use strict';
 globalThis.AIMMO_PIGE = function (t) {
   var el = t.el, clear = t.clear, send = t.send, button = t.button, date = t.date, ID = t.ID;
   var KINDS = ${JSON.stringify(KINDS)};
   var LEVELS = ${JSON.stringify(LEVELS)};
   var REFUSALS = ${JSON.stringify(PIGE_REFUSALS)};
+  var ALERTS = ${JSON.stringify(PIGE_ALERTS)};
   var root = null, note = null, load = 0;
   function euros(n) { return typeof n === 'number' && isFinite(n) ? String(Math.round(n)).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ') + ' €' : ''; }
   function said(res, fallback) {
@@ -71,6 +80,19 @@ globalThis.AIMMO_PIGE = function (t) {
     var ul = el('ul', null, 'liste');
     (Array.isArray(r.rows) ? r.rows : []).forEach(function (row) { ul.appendChild(el('li', (LEVELS[row.level] || 'autre') + ' : ' + row.properties + ' fiche(s), ' + row.mandates + ' mandat(s)')); });
     box.appendChild(ul);
+    return box;
+  }
+  /** La date de la dernière relève réussie et, s'il y en a une, l'alerte de panne [R671]. */
+  function freshness(res) {
+    var e = res.ok && res.body.data;
+    if (!e) return null;
+    var box = el('div', null, 'releve');
+    box.appendChild(el('p', e.lastCollectedAt ? 'Annonces relevées le ' + day(e.lastCollectedAt) + '.' : 'Annonces jamais relevées.', 'doux'));
+    if (e.alert && ALERTS[e.alert]) {
+      var a = el('p', ALERTS[e.alert], 'alerte');
+      a.setAttribute('role', 'alert');
+      box.appendChild(a);
+    }
     return box;
   }
   /** Le texte remis, à copier : jamais envoyé d'ici [R275]. */
@@ -171,11 +193,13 @@ globalThis.AIMMO_PIGE = function (t) {
     note = el('p', 'Chargement…', 'etat');
     note.setAttribute('role', 'status');
     box.appendChild(note);
-    return Promise.all([send('/v1/pige/rapport', 'GET'), send('/v1/pige', 'GET')]).then(function (all) {
+    return Promise.all([send('/v1/pige/rapport', 'GET'), send('/v1/pige', 'GET'), send('/v1/pige/etat', 'GET')]).then(function (all) {
       // Seule la dernière lecture dessine : une réponse plus ancienne, arrivée après, est oubliée.
       if (box !== root || mine !== load || all.some(function (r) { return r.gone; })) return false;
       if (all.every(function (r) { return r.offline; })) { note.textContent = 'Pas de réseau. Réessayez dans un moment.'; return false; }
       note.textContent = message || '';
+      var fresh = freshness(all[2]);
+      if (fresh) box.appendChild(fresh);
       box.appendChild(report(all[0]));
       var q = all[1];
       var items = q.ok && Array.isArray(q.body.data) ? q.body.data : null;
