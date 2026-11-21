@@ -12,7 +12,9 @@ import {
   OUTBOUND_CHANNELS,
   PaliersBascule,
   mailIntakeState,
+  metaIntakeState,
   type MailIntakeSettings,
+  type MetaIntakeSettings,
   ROLLOUT_INCIDENTS,
   captationAutomation,
   type OutboundChannelName,
@@ -1305,6 +1307,22 @@ function mailIntakeRoutes(settings: MailIntakeSettings): RouteDef[] {
   ];
 }
 
+/** AU033 : ce qui manque à la captation Meta, et chaque canal vérifié ou non par un vrai message traité [R670]. */
+function metaIntakeRoutes(settings: MetaIntakeSettings): RouteDef[] {
+  return [
+    {
+      method: 'GET',
+      pattern: /^\/captation\/meta$/,
+      name: 'captation.meta',
+      handle: async (s, viewer) => {
+        const r = await metaIntakeState(s.db, s.journal, viewer, settings, s.now);
+        if (!r.ok) return refusal({ rule: r.rule, code: r.code });
+        return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      },
+    },
+  ];
+}
+
 function m15Routes(pieces: PieceStore | null, options: Pick<LocationServices, 'adWriter' | 'inventoryFormatter'>): RouteDef[] {
   return locationRoutes().map((r: LocationRoute) => ({
     method: r.method,
@@ -2493,6 +2511,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...rolloutRoutes(config.automationRolloutOpen === true),
     ...captationRolloutRoutes(config.captationRollout),
     ...mailIntakeRoutes({ mode: config.mode, networkId: config.mail?.networkId, forwardTo: config.mail?.forwardTo, ownAddresses: config.mail?.ownAddresses }),
+    ...metaIntakeRoutes({ mode: config.mode, ...(config.meta ?? { appSecret: undefined, verifyTokenSha256: undefined, networkId: undefined, ownIds: undefined, appIds: undefined }) }),
     ...m15Routes(config.pieces ?? null, config.location ?? {}),
     ...coproprieteRoutesDef(coproprieteSourcesOf(config)),
     ...avantContratRoutesDef(config.pieces ?? null, config.avantContrat ?? {}),
