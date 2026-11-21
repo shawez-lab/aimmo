@@ -16,6 +16,7 @@ import type { Project } from '../db/types.ts';
 import { plain } from '../envoi/texte.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { GeographieReseau } from '../geographie/communes.ts';
 import { DEADLINES, DEFAULT_COMMUNES, FINANCINGS, isCriterion, type Deadline, type Financing } from '../qualification/regles.ts';
 
 /** Les types de bien recherchés : une liste fermée. */
@@ -403,16 +404,21 @@ interface QualificationRow {
 export class FicheAcquereur {
   private readonly now: () => Date;
   private readonly newId: () => string;
-  private readonly communes: readonly string[];
+  private readonly geographie: GeographieReseau;
 
   constructor(
     private readonly db: SqlDatabase,
     private readonly journal: JournalStore,
-    options: FicheAcquereurOptions = {},
+    private readonly options: FicheAcquereurOptions = {},
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
-    this.communes = options.communes ?? DEFAULT_COMMUNES;
+    this.geographie = new GeographieReseau(db, journal, { now: this.now });
+  }
+
+  /** Les communes du réseau, lues dans son paramétrage géographique, jamais dans le code [R679]. */
+  private async communesOf(networkId: string): Promise<readonly string[]> {
+    return this.options.communes ?? (await this.geographie.names(networkId));
   }
 
   /** La dernière version, sans contrôle d'accès : pour le code du système (rapprochement). */
@@ -472,7 +478,7 @@ export class FicheAcquereur {
     if (!read.ok) return refuse(read.code, undefined, 'R16');
     if (read.view !== 'full') return this.refused(viewer, projectId, 'not_assigned');
 
-    const checked = checkSearchChanges(input, this.communes);
+    const checked = checkSearchChanges(input, await this.communesOf(viewer.networkId));
     if (!checked.ok) {
       await appendEvent(
         this.journal,
@@ -512,7 +518,7 @@ export class FicheAcquereur {
     if (kinds.length > 0) said.propertyKinds = kinds;
     const features = criteria.filter((c): c is BuyerFeature => (BUYER_FEATURES as readonly string[]).includes(c));
     if (features.length > 0) said.features = features;
-    const city = q.city === null ? undefined : this.communes.find((c) => termKey(c) === termKey(q.city ?? ''));
+    const city = q.city === null ? undefined : (await this.communesOf(q.network_id)).find((c) => termKey(c) === termKey(q.city ?? ''));
     if (city) said.communes = [city];
     for (const c of criteria) {
       const m = /^(rooms|bedrooms):(\d{1,2})$/.exec(c);

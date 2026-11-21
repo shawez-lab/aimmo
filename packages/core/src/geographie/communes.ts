@@ -125,7 +125,7 @@ export class GeographieReseau {
     let name: string;
     if (raw.listed) {
       name = typeof raw.name === 'string' ? clean(raw.name) : '';
-      if (name.length < 1 || name.length > 80 || !/\p{L}/u.test(name)) return this.refuse(viewer, { ok: false, rule: 'R679', code: 'bad_name' });
+      if (name.length < 1 || name.length > 80 || !/\p{L}/u.test(name) || plainName(name) === '') return this.refuse(viewer, { ok: false, rule: 'R679', code: 'bad_name' });
       const key = plainName(name);
       if (rows.some((r) => Number(r.is_listed) === 1 && r.insee_code !== inseeCode && plainName(r.name) === key)) return this.refuse(viewer, { ok: false, rule: 'R679', code: 'nom_deja_pris' });
     } else {
@@ -136,12 +136,13 @@ export class GeographieReseau {
     const version = Number(last?.version ?? 0) + 1;
     try {
       await this.db.run(
-        'INSERT INTO network_communes (network_id, insee_code, version, commune, is_listed, reason, decided_by, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [viewer.networkId, inseeCode, version, name, raw.listed ? 1 : 0, reason, this.actor(viewer), this.now().toISOString()],
+        'INSERT INTO network_communes (network_id, insee_code, version, commune, commune_key, is_listed, reason, decided_by, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [viewer.networkId, inseeCode, version, name, plainName(name), raw.listed ? 1 : 0, reason, this.actor(viewer), this.now().toISOString()],
       );
-    } catch {
-      // Une autre décision sur la même commune est passée entre la lecture et l'écriture : rien n'est rangé.
-      return this.refuse(viewer, { ok: false, rule: 'R679', code: 'conflit' });
+    } catch (e) {
+      // Une autre décision est passée entre la lecture et l'écriture : la base refuse, rien n'est rangé.
+      const taken = /nom déjà inscrit/.test(e instanceof Error ? e.message : String(e));
+      return this.refuse(viewer, { ok: false, rule: 'R679', code: taken ? 'nom_deja_pris' : 'conflit' });
     }
     await appendEvent(
       this.journal,

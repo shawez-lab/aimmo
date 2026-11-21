@@ -655,7 +655,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX72 : l'ouverture ou la fermeture d'une région, avec sa raison et qui l'a décidée.
       region_decisions: ['reason', 'decided_by'],
       // AU039 : les communes du réseau, inscrites ou retirées par la direction, avec sa raison.
-      network_communes: ['commune', 'reason', 'decided_by'],
+      network_communes: ['commune', 'commune_key', 'reason', 'decided_by'],
       // HX73 : le tarif et les licences du logiciel aux agences hors réseau, avec qui les a décidés ; le nom d'une
       // agence et sa carte peuvent être ceux d'un entrepreneur individuel.
       licence_tariffs: ['reason', 'decided_by'],

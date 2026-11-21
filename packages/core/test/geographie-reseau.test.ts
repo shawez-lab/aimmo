@@ -11,6 +11,8 @@ import {
   type DiffusionGate,
   type SqlDatabase,
 } from '../src/index.ts';
+import { Acces } from '../src/acces/acces.ts';
+import { FicheAcquereur } from '../src/acquereurs/fiche-acquereur.ts';
 import { Rapprochement } from '../src/acquereurs/rapprochement.ts';
 import { RechercheLangage } from '../src/recherche/langage-courant.ts';
 import { DEFAULT_COMMUNES } from '../src/qualification/regles.ts';
@@ -43,7 +45,9 @@ async function setup() {
   const diffusion: DiffusionGate = { canDiffuse: async () => ({ allowed: true, reason: 'allowed' }) };
   const rapprochement = new Rapprochement(db, fiche, diffusion, journal, { now });
   const recherche = new RechercheLangage(db, rapprochement, diffusion, journal, { now });
-  return { db, journal, qualification, geographie, lyon, pilote, direction, form, recherche };
+  const acces = new Acces(db, store, fiche, journal, { now });
+  const acquereurs = new FicheAcquereur(db, journal, { now });
+  return { db, journal, qualification, geographie, lyon, pilote, direction, form, recherche, store, acces, acquereurs };
 }
 
 const inscribe = (t: Awaited<ReturnType<typeof setup>>, c: { inseeCode: string; name: string }) =>
@@ -134,17 +138,47 @@ describeWithSqlite('AU039 · les communes viennent du paramétrage géographique
     await expect(t.db.run('DELETE FROM network_communes')).rejects.toThrow(/rien ne s'efface/);
     await expect(
       t.db.run(
-        "INSERT INTO network_communes (network_id, insee_code, version, commune, is_listed, reason, decided_by, decided_at) VALUES (?, '69123', 3, 'Lyon', 0, 'Saut', 'direction:x', ?)",
+        "INSERT INTO network_communes (network_id, insee_code, version, commune, commune_key, is_listed, reason, decided_by, decided_at) VALUES (?, '69123', 3, 'Lyon', 'lyon', 1, 'Saut', 'direction:x', ?)",
         [t.lyon.id, TUESDAY_10H.toISOString()],
       ),
     ).rejects.toThrow(/hors suite/);
     await expect(
       t.db.run(
-        "INSERT INTO network_communes (network_id, insee_code, version, commune, is_listed, reason, decided_by, decided_at) VALUES (?, '69266', 1, 'Villeurbanne', 1, 'Ouverture', 'agent:x', ?)",
+        "INSERT INTO network_communes (network_id, insee_code, version, commune, commune_key, is_listed, reason, decided_by, decided_at) VALUES (?, '69266', 1, 'Villeurbanne', 'villeurbanne', 1, 'Ouverture', 'agent:x', ?)",
         [t.lyon.id, TUESDAY_10H.toISOString()],
       ),
     ).rejects.toThrow();
     const inscribed = await t.db.all("SELECT 1 FROM journal WHERE type = 'geographie.commune'");
     expect(inscribed).toHaveLength(1);
+  });
+  it('deux inscriptions du même nom en même temps : une seule passe, la base refuse l’autre [R679]', async () => {
+    const t = await setup();
+    const [a, b] = await Promise.all([
+      t.geographie.decide(t.direction, { inseeCode: '69123', name: 'Lyon', listed: true, reason: 'Ouverture' }),
+      t.geographie.decide(t.direction, { inseeCode: '69381', name: 'LYON', listed: true, reason: 'Ouverture' }),
+    ]);
+    expect([a.ok, b.ok].sort()).toEqual([false, true]);
+    expect([a, b].find((r) => !r.ok)).toMatchObject({ rule: 'R679', code: 'nom_deja_pris' });
+    expect(await t.geographie.names(t.lyon.id)).toHaveLength(1);
+    await expect(
+      t.db.run(
+        "INSERT INTO network_communes (network_id, insee_code, version, commune, commune_key, is_listed, reason, decided_by, decided_at) VALUES (?, '69382', 1, 'Lyon', 'lyon', 1, 'Direct', 'direction:x', ?)",
+        [t.lyon.id, TUESDAY_10H.toISOString()],
+      ),
+    ).rejects.toThrow(/nom déjà inscrit/);
+  });
+
+  it('la fiche acquéreur range une commune du réseau, celle que la recherche a lue [R679]', async () => {
+    const t = await setup();
+    await inscribe(t, LYON);
+    const agent = await t.store.createAgent({ networkId: t.lyon.id, firstName: 'Alex', lastName: 'Agent' });
+    const person = await t.store.createPerson({ networkId: t.lyon.id, agentId: agent.id, firstName: 'Camille' });
+    const project = await t.store.createProject({ networkId: t.lyon.id, agentId: agent.id, personId: person.id, kind: 'buy' });
+    const viewer = { role: 'agent' as const, userId: agent.id, networkId: t.lyon.id };
+    const r = await t.acquereurs.update(t.acces, viewer, project.id, { communes: ['Lyon'] });
+    expect(r).toMatchObject({ ok: true });
+    expect((await t.acquereurs.current(project.id))?.search.communes).toEqual(['Lyon']);
+    const dijon = await t.acquereurs.update(t.acces, viewer, project.id, { communes: ['Dijon'] });
+    expect(dijon.ok).toBe(false);
   });
 });
