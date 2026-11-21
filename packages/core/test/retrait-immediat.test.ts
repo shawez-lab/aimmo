@@ -9,9 +9,11 @@ class FakePortal implements PortalConnector {
   readonly mode = 'reel' as const;
   received: { action: PortalAction; listing: ListingPayload }[] = [];
   failNext = 0;
+  gate: Promise<void> | null = null;
   private n = 0;
   constructor(readonly portal: string) {}
   async send(op: { key: string; order: number; action: PortalAction; listing: ListingPayload }): Promise<PortalReceipt | null> {
+    if (this.gate) await this.gate;
     if (this.failNext > 0) {
       this.failNext--;
       throw new Error('portail_indisponible');
@@ -128,5 +130,36 @@ describeWithSqlite('AU067 · le retrait urgent part tout de suite, sans attendre
     release();
     expect(await running).toMatchObject({ state: 'retiree', created: true });
     for (const c of t.channels) expect(c.received.map((p) => p.state), c.channel).toEqual(['en_vente', 'retiree']);
+  });
+  it('[R668] un passage des portails déjà en cours retire lui-même : la réponse porte quand même son accusé', async () => {
+    const t = await setup();
+    t.setClock(new Date('2027-02-12T10:00:00.000Z'));
+    await t.annonces.validate(t.agent, t.draftId);
+    t.setClock(new Date('2027-03-01T08:00:00.000Z'));
+    const a = new FakePortal('seloger');
+    const surveillance = new DiffusionSurveillee(t.db, t.acces, t.journal, { now: t.now });
+    expect(await surveillance.setPortal(t.direction, { code: 'seloger', label: 'seloger', host: 'www.seloger.com', requiredFields: [], minPhotos: 0, active: true })).toEqual({ ok: true });
+    expect(await surveillance.choose(t.agent, t.propertyId, 'seloger', true)).toEqual({ ok: true });
+    await t.publication.sync(t.network.id, t.propertyId);
+    // Le passage planifié des portails publie, bloqué sur un portail lent.
+    let release!: () => void;
+    a.gate = new Promise<void>((r) => (release = r));
+    const running = new DiffusionPortails(t.db, t.acces, t.journal, { now: t.now, connectors: [a] }).sync(t.network.id, t.propertyId);
+    await new Promise((r) => setTimeout(r, 20));
+    expect((await new RegistreMandats(t.db, t.journal, { now: t.now }).cancel(t.direction, t.mandateId, 'termination')).ok).toBe(true);
+    const retraits = new RetraitsImmediats(t.db, t.acces, t.journal, {
+      now: t.now,
+      channels: t.channels,
+      portals: [a],
+      sleep: async () => {
+        a.gate = null;
+        release();
+        await running;
+      },
+    });
+    const r = await retraits.run(t.network.id, t.propertyId, 'direction:direction-1');
+    expect(a.received.map((x) => x.action)).toEqual(['publier', 'retirer']);
+    expect(r).toMatchObject({ state: 'retiree', busy: false, portals: [{ portal: 'seloger', outcome: 'accuse', receipt: 'seloger-ACK-2' }] });
+    expect(r.channels.pushed.length).toBe(t.channels.length);
   });
 });

@@ -71,24 +71,32 @@ export class RetraitsImmediats {
       await this.sleep(RETRY_MS);
       p = await this.portails.sync(networkId, propertyId);
     }
-    const receipts = await this.db.all<{ portal: string; receipt: string | null }>(
-      `SELECT o.portal, o.receipt FROM portal_operations o
-        WHERE o.property_id = ? AND o.outcome = 'accuse'
-          AND o.n = (SELECT MAX(x.n) FROM portal_operations x WHERE x.property_id = o.property_id AND x.portal = o.portal AND x.outcome = 'accuse')`,
-      [propertyId],
-    );
-    const receiptOf = new Map(receipts.map((x) => [x.portal, x.receipt]));
-    const portals: RetraitImmediat['portals'] = [
-      ...p.acknowledged.map((portal) => ({ portal, outcome: 'accuse' as const, receipt: receiptOf.get(portal) ?? null })),
-      ...p.trial.map((portal) => ({ portal, outcome: 'essai' as const, receipt: null })),
-      ...p.failed.map((portal) => ({ portal, outcome: 'echec' as const, receipt: null })),
-    ].sort((a, b) => (a.portal < b.portal ? -1 : a.portal > b.portal ? 1 : 0));
+    // Ce qui est rangé pour la dernière version, quel que soit le passage qui l'a fait : le nôtre, ou celui qui tenait
+    // le bien et a retiré l'annonce lui-même avant de rendre la main.
+    const latest = await this.db.first<{ id: string; seq: number }>('SELECT id, seq FROM listing_versions WHERE property_id = ? ORDER BY seq DESC LIMIT 1', [propertyId]);
+    const pushes = latest ? await this.db.all<{ channel: string; outcome: string }>('SELECT channel, outcome FROM listing_pushes WHERE version_id = ?', [latest.id]) : [];
+    const ok = new Set(pushes.filter((x) => x.outcome === 'ok').map((x) => x.channel));
+    const channels = {
+      pushed: [...ok].sort() as Channel[],
+      failed: [...new Set([...r.failed, ...pushes.filter((x) => x.outcome !== 'ok').map((x) => x.channel)])].filter((c) => !ok.has(c)).sort() as Channel[],
+    };
+    const ops = latest
+      ? await this.db.all<{ portal: string; outcome: string; receipt: string | null }>(
+          `SELECT o.portal, o.outcome, o.receipt FROM portal_operations o
+            WHERE o.property_id = ? AND o.seq = ? AND o.n = (SELECT MAX(x.n) FROM portal_operations x WHERE x.property_id = o.property_id AND x.portal = o.portal AND x.seq = o.seq)`,
+          [propertyId, Number(latest.seq)],
+        )
+      : [];
+    const byPortal = new Map<string, RetraitImmediat['portals'][number]>();
+    for (const o of ops) byPortal.set(o.portal, { portal: o.portal, outcome: o.outcome === 'accuse' ? 'accuse' : o.outcome === 'essai' ? 'essai' : 'echec', receipt: o.outcome === 'accuse' ? o.receipt : null });
+    for (const portal of p.failed) if (byPortal.get(portal)?.outcome !== 'accuse') byPortal.set(portal, { portal, outcome: 'echec', receipt: null });
+    const portals = [...byPortal.values()].sort((a, b) => (a.portal < b.portal ? -1 : a.portal > b.portal ? 1 : 0));
     const busy = p.busy === true;
     await appendEvent(
       this.journal,
-      { type: 'annonce.retrait_immediat', actor, subject: `property:${propertyId}`, data: { rule: 'R42', state: r.state, pushed: r.pushed, failed: [...r.failed, ...p.failed] } },
+      { type: 'annonce.retrait_immediat', actor, subject: `property:${propertyId}`, data: { rule: 'R42', state: r.state, pushed: channels.pushed, failed: [...channels.failed, ...portals.filter((x) => x.outcome === 'echec').map((x) => x.portal)] } },
       this.now,
     );
-    return { propertyId, state: r.state, channels: { pushed: r.pushed, failed: r.failed }, portals, busy };
+    return { propertyId, state: r.state, channels, portals, busy };
   }
 }
