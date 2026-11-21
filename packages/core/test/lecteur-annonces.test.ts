@@ -38,6 +38,16 @@ describe('AU068 · la lecture d’une page d’annonce', () => {
     expect([eurosOf('210.000'), eurosOf('210000,00'), eurosOf(' 1 250 000 € '), eurosOf('abc'), eurosOf(-3)]).toEqual([210000, 210000, 1250000, null, null]);
   });
 
+  it('[R473] les références de caractères sont décodées ; un prix structuré vide laisse lire le prix du texte', () => {
+    const html = '<html><body><p>Prix&nbsp;: 210&#8239;000&#x20AC; honoraires inclus.</p><p>Classe &eacute;nergie D, classe climat C. Cuisine &agrave; l&rsquo;&Eacute;tage.</p></body></html>';
+    const ld = `<script type="application/ld+json">${JSON.stringify({ '@type': 'Offer', price: null })}</script>`;
+    const r = parseListingPage(ld + html);
+    expect(r).toMatchObject({ found: true, priceEur: 210000, energyClass: 'D', climateClass: 'C' });
+    expect(r.found && r.text).toContain('Classe énergie D');
+    expect(r.found && r.text).toContain('à l’Étage');
+    expect(parseListingPage(`<script type="application/ld+json">${JSON.stringify({ '@type': 'Offer', price: 'sur demande', priceSpecification: { price: 199000 } })}</script><p>x</p>`)).toMatchObject({ priceEur: 199000 });
+  });
+
   it('[R473] 404 et 410 : plus en ligne ; une redirection, une autre réponse ou une page qui n’est pas du HTML : illisible ; jamais de redirection suivie', async () => {
     const f = fakeFetch();
     const reader = new HttpListingReader(f.fetch);

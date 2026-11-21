@@ -65,17 +65,33 @@ export function structuredData(html: string): Record<string, unknown>[] {
 }
 
 /** Le texte visible de la page, sans balises, scripts ni styles. */
+const NAMED: Record<string, string> = {
+  nbsp: '\u00a0', ensp: ' ', emsp: ' ', thinsp: '\u2009', euro: '€', amp: '&', quot: '"', apos: "'", lt: '<', gt: '>',
+  laquo: '«', raquo: '»', lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”', hellip: '…', ndash: '–', mdash: '—', middot: '·',
+  deg: '°', sup2: '²', sup3: '³', times: '×', oelig: 'œ', OElig: 'Œ', aelig: 'æ', AElig: 'Æ', szlig: 'ß',
+};
+const MARKS: Record<string, string> = { '\u0300': 'grave', '\u0301': 'acute', '\u0302': 'circ', '\u0303': 'tilde', '\u0308': 'uml', '\u030a': 'ring', '\u0327': 'cedil' };
+for (const ch of 'àáâãäåèéêëìíîïòóôõöùúûüýÿçñ') {
+  const [letter, mark] = [...ch.normalize('NFD')] as [string, string];
+  NAMED[`${letter}${MARKS[mark]}`] = ch;
+  if (ch !== 'ÿ') NAMED[`${letter.toUpperCase()}${MARKS[mark]}`] = ch.toUpperCase();
+}
+
+/** Les références de caractères HTML décodées : numériques (`&#8239;`, `&#x202F;`) et nommées courantes (`&eacute;`). */
+export function decodeEntities(text: string): string {
+  return text.replace(/&(#\d{1,7}|#x[0-9a-f]{1,6}|[A-Za-z][A-Za-z0-9]{1,10});/gi, (all, ref: string) => {
+    if (ref[0] === '#') {
+      const code = ref[1] === 'x' || ref[1] === 'X' ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
+      return Number.isInteger(code) && code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : all;
+    }
+    return NAMED[ref] ?? all;
+  });
+}
+
+/** Le texte visible de la page, sans balises, scripts ni styles, références de caractères décodées. */
 export function visibleText(html: string): string {
-  return html
-    .replace(/<(script|style|noscript)[^>]*>[\s\S]*?<\/\1>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;|&#160;/g, ' ')
-    .replace(/&euro;/g, '€')
-    .replace(/&amp;/g, '&')
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/&quot;/g, '"')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const bare = html.replace(/<(script|style|noscript)[^>]*>[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ');
+  return decodeEntities(bare).replace(/\s+/g, ' ').trim();
 }
 
 const classIn = (text: string, words: RegExp): string | null => {
@@ -87,9 +103,14 @@ const classIn = (text: string, words: RegExp): string | null => {
 export function parseListingPage(html: string): OnlineListing {
   const data = structuredData(html);
   if (data.some((d) => typeof d.availability === 'string' && GONE.test(d.availability))) return { found: false };
-  const offer = data.find((d) => d.price !== undefined || (d.priceSpecification && typeof d.priceSpecification === 'object'));
   const text = visibleText(html);
-  let priceEur = offer ? eurosOf(offer.price ?? (offer.priceSpecification as Record<string, unknown>).price) : null;
+  // Le premier prix lisible des données structurées ; un prix vide ou illisible laisse la place au texte.
+  let priceEur: number | null = null;
+  for (const d of data) {
+    const spec = d.priceSpecification && typeof d.priceSpecification === 'object' && !Array.isArray(d.priceSpecification) ? (d.priceSpecification as Record<string, unknown>) : null;
+    priceEur = eurosOf(typeof d.price === 'string' ? decodeEntities(d.price) : d.price) ?? eurosOf(spec?.price);
+    if (priceEur !== null) break;
+  }
   if (priceEur === null) {
     // Sans donnée structurée : le premier prix écrit en euros dans la page.
     const m = text.match(/(\d{1,3}(?:[\s  .]\d{3})+|\d{4,9})\s*(?:€|euros?\b)/i);
