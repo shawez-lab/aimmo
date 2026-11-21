@@ -63,21 +63,28 @@ export const APP_KEY_DAYS = 7;
 export const DEVICE_KEY_ROLES: readonly string[] = ['agent', 'direction', 'compliance'];
 
 export async function invitedKeys(db: SqlDatabase, options: { now?: Date } = {}): Promise<ApiKeyEntry[]> {
-  const rows = await db.all<{ sha256: string; role: string; user_id: string; network_id: string; created_at: string }>(
+  const rows = await db.all<{ sha256: string; role: string; user_id: string; network_id: string; created_at: string; siblings: number }>(
     // Seulement les clés d'une invitation qui a servi : celles d'un échange interrompu n'ouvrent rien.
-    `SELECT k.sha256, k.role, k.user_id, k.network_id, k.created_at FROM access_keys k JOIN access_invitations i ON i.id = k.invitation_id
+    `SELECT k.sha256, k.role, k.user_id, k.network_id, k.created_at, (SELECT COUNT(*) FROM access_keys s WHERE s.invitation_id = k.invitation_id) AS siblings
+     FROM access_keys k JOIN access_invitations i ON i.id = k.invitation_id
      WHERE k.revoked_at IS NULL AND i.used_at IS NOT NULL ORDER BY k.created_at, k.sha256`,
   );
   const since = options.now ? new Date(options.now.getTime() - APP_KEY_DAYS * 86_400_000).toISOString() : null;
   return rows
     .filter((r) => (ROLES as readonly string[]).includes(r.role))
-    .filter((r) => since === null || !DEVICE_KEY_ROLES.includes(r.role) || r.created_at >= since)
+    // Les clés d'une invitation à plusieurs rôles (Z02 : agent et direction) restent : une séance d'appareil ne porte
+    // qu'une identité, l'application passe d'un rôle à l'autre par ces deux clés. Limite dite dans docs/API.md.
+    .filter((r) => since === null || !DEVICE_KEY_ROLES.includes(r.role) || Number(r.siblings) > 1 || r.created_at >= since)
     .map((r) => ({ sha256: r.sha256, role: r.role as ApiKeyEntry['role'], userId: r.user_id, networkId: r.network_id, fromInvitation: true as const }));
 }
 
 /** AU108 · la clé d'application qui vient de ranger la clé de cet appareil cesse : l'appareil entre par ses séances. */
 export async function retireApplicationKey(db: SqlDatabase, journal: JournalStore, sha256: string, actor: string, now: () => Date): Promise<boolean> {
-  const done = await db.run('UPDATE access_keys SET revoked_at = ? WHERE sha256 = ? AND revoked_at IS NULL', [now().toISOString(), sha256]);
+  // Une clé d'une invitation à plusieurs rôles n'est pas retirée : l'autre rôle en dépend.
+  const done = await db.run(
+    'UPDATE access_keys SET revoked_at = ? WHERE sha256 = ? AND revoked_at IS NULL AND (SELECT COUNT(*) FROM access_keys s WHERE s.invitation_id = access_keys.invitation_id) = 1',
+    [now().toISOString(), sha256],
+  );
   if (done.changes !== 1) return false;
   await appendEvent(journal, { type: 'acces.cle_application_retiree', actor, subject: null, data: { rule: 'R600', reason: 'cle_appareil_rangee' } }, now);
   return true;

@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { FicheClient } from '@aimmo/core';
 import { handleRequest, type ApiConfig } from '../src/app.ts';
 import { sha256Hex } from '../src/index.ts';
-import { exchangeInvitation, invitedKeys, inviteAgent } from '../src/acces.ts';
+import { exchangeInvitation, invitedKeys, inviteAgent, randomToken } from '../src/acces.ts';
 import type { SqlDatabase } from '@aimmo/core';
 import type { Challenge } from '../../core/src/securite/index.ts';
 import { FakeAuthenticator, ORIGIN, RP } from '../../core/test/appareil-simule.ts';
@@ -266,4 +266,25 @@ describeWithSqlite('AU023 · une invitation nominative mène à une connexion pa
     // Sans site WebAuthn réglé, aucune séance n'existe : la clé reste le seul accès.
     expect((await handleRequest(new Request('https://aimmo-api.example.test/v1/moi', { headers: { authorization: `Bearer ${KEY}` } }), without)).status).toBe(200);
   });
+
+  it('[R600] AU108 · une invitation à deux rôles (agent et direction) garde ses deux clés : une séance d’appareil ne porte qu’une identité', async () => {
+    const t = await setup();
+    const token = randomToken(32);
+    const grants = JSON.stringify([{ role: 'agent', userId: t.sam.userId }, { role: 'direction', userId: t.direction.userId }]);
+    await t.db.run('INSERT INTO access_invitations (id, network_id, token_sha256, grants, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?)', ['inv-deux', t.network.id, await sha256Hex(token), grants, new Date(t.now().getTime() + 86_400_000).toISOString(), t.now().toISOString()]);
+    const r = await t.call('POST', '/acces/invitation', { body: { jeton: token } });
+    const keys = r.body.data.cles as { role: string; cle: string }[];
+    const agentKey = keys.find((k) => k.role === 'agent')!.cle;
+    const directionKey = keys.find((k) => k.role === 'direction')!.cle;
+    const { handoff } = await t.enroll(agentKey, 61);
+    expect(handoff).toBe(false);
+    expect((await t.call('GET', '/moi', { bearer: agentKey })).status).toBe(200);
+    expect((await t.call('GET', '/moi', { bearer: directionKey })).status).toBe(200);
+    // Ni l'une ni l'autre ne cesse au bout de 7 jours : c'est la limite dite, pour la personne aux deux rôles.
+    const later: ApiConfig = { ...t.config, now: () => new Date(t.now().getTime() + 8 * 86_400_000) };
+    for (const key of [agentKey, directionKey]) {
+      expect((await handleRequest(new Request('https://aimmo-api.example.test/v1/moi', { headers: { authorization: `Bearer ${key}` } }), later)).status).toBe(200);
+    }
+  });
 });
+
