@@ -1012,7 +1012,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU091b · La régularisation d'honoraires d'une vente avec une agence partenaire
-- Statut : en cours (voie 2)
+- Statut : bloquée (voie 2) : « Vérifier » coupé à 35 min quatre fois (limite de `verifications.yml`, socle voie 1) ; tests locaux verts, #769 ouverte, à fusionner dès qu une vérification passe
 - Où : #769 ouverte (becf2e8), Codex sans remarque, tests locaux verts (7419) ; « Vérifier » coupé deux fois à 35 min : la relancer, puis fusionner.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : AU091
 - Cahier : M13 Pilotage et finances ; M18 Partenaires (HX59) ; audit A091.
