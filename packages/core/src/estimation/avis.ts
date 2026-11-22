@@ -13,7 +13,7 @@ import { checkText } from '../envoi/texte.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { PublicFacts } from './collecte.ts';
-import { DEFAULT_MANUAL_SETTINGS, MANUAL_REASON_TEXT, REFERENCE_PROOFS, manualRangeAllowed, referencesMedian, type ManualInput, type ManualSettings } from './avis-manuel.ts';
+import { DEFAULT_MANUAL_SETTINGS, MANUAL_REASON_TEXT, REFERENCE_PROOFS, manualRangeAllowed, perM2Shown, perM2Text, referencesMedian, type ManualInput, type ManualSettings } from './avis-manuel.ts';
 import type { DataInfo, NoRangeReason, RangeResult } from './fourchette.ts';
 
 type Range = Extract<RangeResult, { ok: true }>;
@@ -328,12 +328,12 @@ export class AvisDeValeur {
     lines.push('Pour la mise en vente, votre agent vous propose un plan de commercialisation adapté à votre bien et à votre calendrier.');
     // Ce que l'avis motivé doit toujours dire est dans le pied, que le code garde à chaque correction du texte [R690].
     const footer = [
-      `Il n’y a pas de fourchette automatique pour ce bien : ${MANUAL_REASON_TEXT[input.reason] ?? 'les ventes publiées ne suffisent pas'}. La fourchette est celle de votre agent. Elle s’appuie sur ${references.length} ventes réelles de biens comparables qu’il a vérifiées lui-même, dont la plus récente date de ${monthLabel(latest)}. Leur prix médian est de ${euros(median)} le m².`,
+      `Il n’y a pas de fourchette automatique pour ce bien : ${MANUAL_REASON_TEXT[input.reason] ?? 'les ventes publiées ne suffisent pas'}. La fourchette est celle de votre agent. Elle s’appuie sur ${references.length} ventes réelles de biens comparables qu’il a vérifiées lui-même, dont la plus récente date de ${monthLabel(latest)}. Leur prix médian est de ${perM2Text(median)} le m².`,
       MANUAL_ADVICE_NOTICE,
     ].join('\n\n');
     const text = `${lines.join('\n\n')}\n\n${footer}`;
     const years = [...new Set(references.map((r) => r.month.slice(0, 4)))];
-    const figures: (string | number)[] = [low, high, median, references.length, input.surface, ...years, ...references.map((r) => r.pricePerM2)];
+    const figures: (string | number)[] = [low, high, perM2Shown(median), references.length, input.surface, ...years, ...references.map((r) => r.pricePerM2)];
     if (checkText(text, { audience: 'client', channel: 'email', figures }).length > 0) throw new Error('Le texte de l’avis motivé ne passe pas le contrôle du texte.');
     const computed = {
       // Pas de calcul : la fourchette est celle de l'agent, et l'avis le garde à part de tout avis calculé [R690].

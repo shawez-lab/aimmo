@@ -281,6 +281,22 @@ describeWithSqlite('AU047 · l’avis d’un terrain et d’un immeuble', () => 
     expect(await w.prep.prepare(w.paulV, w.p.id, { address: ADDRESS, kind: 'land', manual })).toMatchObject({ code: 'invalid' });
   });
 
+  it('[R690] un terrain à moins d’un euro le m² garde ses centimes, du contrôle de la fourchette au texte', async () => {
+    const w = await withKind('land', 5000);
+    const cheap = [0, 1, 2].map((i) => ({ month: `2025-0${i + 1}`, surface: 5000, price: 3_000, proof: 'acte' }));
+    expect(await w.prep.prepare(w.paulV, w.p.id, { address: ADDRESS, kind: 'land', manual: { low: 4_500, high: 5_500, verified: true, references: cheap } })).toEqual({ ok: false, rule: 'R690', code: 'range_far_from_references' });
+    const r = await w.prep.prepare(w.paulV, w.p.id, { address: ADDRESS, kind: 'land', manual: { low: 2_800, high: 3_400, verified: true, references: cheap } });
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value.text).toContain('Leur prix médian est de 0,6 € le m².');
+    expect(JSON.parse(r.value.computed)).toMatchObject({ referencesMedianPerM2: 0.6 });
+    const avis = new AvisDeValeur(w.db, w.journal, { now: NOW });
+    expect(await avis.adjust(w.paulV, r.value.id, { low: 4_500, high: 5_500 })).toEqual({ ok: false, rule: 'R30', code: 'invalid_range' });
+    expect(await avis.validate(w.paulV, r.value.id)).toMatchObject({ ok: true });
+    const page = await new AvisImprime(w.db, w.acces, w.journal, { now: NOW }).print(w.paulV, r.value.id);
+    if (!page.ok) throw new Error(page.code);
+    expect(page.html).toContain('0,6 €/m²');
+  });
+
   it('[R30] seul l’agent qui suit le terrain ouvre son avis', async () => {
     const w = await withKind('land', 800);
     const manual = { low: 90_000, high: 104_000, verified: true, references: LAND_REFS };
