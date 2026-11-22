@@ -95,13 +95,16 @@ export class ReservationEnLigne {
   }
 
   /** Les créneaux libres d'un agent : début et fin seulement, rien d'autre de son agenda. */
-  async slots(input: { networkId: string; agentId: string; kind: AppointmentKind; from: Date; to: Date }): Promise<SlotsResult> {
+  async slots(input: { networkId: string; agentId: string; kind: AppointmentKind; from: Date; to: Date; propertyId?: string | null }): Promise<SlotsResult> {
     if (!ONLINE_KINDS.includes(input.kind)) return { ok: false, code: 'bad_kind' };
     if (Number.isNaN(input.from.getTime()) || Number.isNaN(input.to.getTime()) || input.to <= input.from || input.to.getTime() - input.from.getTime() > MAX_SLOT_DAYS * DAY_MS) {
       return { ok: false, code: 'bad_range' };
     }
     if (!(await this.agentIn(input.networkId, input.agentId))) return { ok: false, code: 'unknown_agent' };
-    const free = await this.rdv.freeSlotsFor(input.agentId, input.kind, input.from, input.to);
+    // AU055 : la marge du même lieu ne s'ouvre que pour un bien de ce réseau ; un autre bien, ou inconnu, rend les
+    // créneaux sans elle, comme sans bien : rien n'est dit de lui.
+    const propertyId = input.propertyId ? ((await this.db.first<{ id: string }>('SELECT id FROM properties WHERE id = ? AND network_id = ?', [input.propertyId, input.networkId]))?.id ?? null) : null;
+    const free = await this.rdv.freeSlotsFor(input.agentId, input.kind, input.from, input.to, undefined, propertyId);
     return { ok: true, slots: free.map((s) => ({ start: s.start.toISOString(), end: s.end.toISOString() })) };
   }
 
