@@ -6,7 +6,8 @@
 -- l'inscrit ; chaque version suivante dit le contraire de la précédente. Aucune personne n'y figure.
 CREATE TABLE IF NOT EXISTS network_communes (
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
-  insee_code TEXT NOT NULL CHECK (length(insee_code) = 5 AND (insee_code GLOB '[0-9][0-9][0-9][0-9][0-9]' OR insee_code GLOB '2[AB][0-9][0-9][0-9]')),
+  -- Cinq chiffres, ou 2A / 2B et trois chiffres : la forme est vérifiée par le code (`isInseeCode`).
+  insee_code TEXT NOT NULL CHECK (length(insee_code) = 5),
   version INTEGER NOT NULL CHECK (version >= 1),
   commune TEXT NOT NULL CHECK (length(trim(commune)) BETWEEN 1 AND 80),
   -- Le nom sans accent, en minuscules, mots séparés d'une espace : « fontaine les dijon ». Deux communes inscrites

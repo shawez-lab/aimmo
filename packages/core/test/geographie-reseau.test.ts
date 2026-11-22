@@ -9,6 +9,8 @@ import {
   fromSyncSqlite,
   isInseeCode,
   type DiffusionGate,
+  type QualifyBrief,
+  type Qualifier,
   type SqlDatabase,
 } from '../src/index.ts';
 import { Acces } from '../src/acces/acces.ts';
@@ -47,7 +49,7 @@ async function setup() {
   const recherche = new RechercheLangage(db, rapprochement, diffusion, journal, { now });
   const acces = new Acces(db, store, fiche, journal, { now });
   const acquereurs = new FicheAcquereur(db, journal, { now });
-  return { db, journal, qualification, geographie, lyon, pilote, direction, form, recherche, store, acces, acquereurs };
+  return { db, journal, qualification, geographie, lyon, pilote, direction, form, recherche, store, acces, acquereurs, fiche, reception };
 }
 
 const inscribe = (t: Awaited<ReturnType<typeof setup>>, c: { inseeCode: string; name: string }) =>
@@ -166,6 +168,23 @@ describeWithSqlite('AU039 · les communes viennent du paramétrage géographique
         [t.lyon.id, TUESDAY_10H.toISOString()],
       ),
     ).rejects.toThrow(/nom déjà inscrit/);
+  });
+
+  it('avec une IA, une commune du réseau n’est pas retirée du texte comme un nom, et la ville reste lue [R679]', async () => {
+    const t = await setup();
+    await inscribe(t, LYON);
+    const briefs: QualifyBrief[] = [];
+    const qualifier: Qualifier = {
+      qualify: async (brief) => {
+        briefs.push(brief);
+        return { category: 'buyer', route: null, city: 'Lyon', budgetMinEur: null, budgetMaxEur: null, priceEur: null, deadline: null, financing: null, criteria: ['apartment'] };
+      },
+    };
+    const withAi = new Qualification(t.db, t.store, t.fiche, t.reception, new ReconnaissanceBien(t.db), t.journal, { now: () => TUESDAY_10H, qualifier });
+    const q = await withAi.qualify(await t.form(t.lyon.id, 'Je cherche un appartement.\nLyon'));
+    expect(briefs[0]!.text).toMatch(/Lyon/);
+    expect(briefs[0]!.communes).toEqual(['Lyon']);
+    expect(q?.city).toBe('Lyon');
   });
 
   it('la fiche acquéreur range une commune du réseau, celle que la recherche a lue [R679]', async () => {

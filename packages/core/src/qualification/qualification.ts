@@ -175,7 +175,7 @@ export class Qualification {
     if (this.options.qualifier) {
       const brief: QualifyBrief = {
         // Ni coordonnée, ni nom : l'IA n'en a pas besoin pour classer [R15].
-        text: withoutNames(withoutContactDetails(text), await this.namesOf(row.person_id, row.sender_name)),
+        text: withoutNames(withoutContactDetails(text), await this.namesOf(row.person_id, row.sender_name), communes),
         channel: row.channel,
         propertyRecognized: propertyId !== null,
         communes,
@@ -400,10 +400,11 @@ export class Qualification {
       [viewer.networkId, MEASURE_CASES_MAX],
     );
     const value: MeasureCase[] = [];
+    const communes = this.options.communes ?? (await this.geographie.names(viewer.networkId));
     for (const row of rows.reverse()) {
       const text = [row.subject, row.body].filter((t): t is string => !!t).join('\n');
       if (text.trim() === '') continue;
-      const clean = withoutNames(withoutContactDetails(text), await this.namesOf(row.person_id, row.sender_name));
+      const clean = withoutNames(withoutContactDetails(text), await this.namesOf(row.person_id, row.sender_name), communes);
       if (clean === '') continue;
       value.push({ text: clean, category: row.category, route: row.route });
     }
