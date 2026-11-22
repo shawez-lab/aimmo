@@ -257,7 +257,7 @@ export async function eraseForReal(
     // demande donnée, rien n'est vidé, et la ligne reste dite restante [R17].
     if (wipe && target && typeof p.row.id === 'string') {
       try {
-        await db.run('INSERT INTO erasure_text_wipes (table_name, row_id, request_id, wiped_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', [p.table, p.row.id, target.requestId, target.at]);
+        await db.run('INSERT INTO erasure_text_wipes (wiped_table, row_id, request_id, network_id, wiped_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [p.table, p.row.id, target.requestId, target.networkId, target.at]);
         const set = Object.keys(wipe).sort();
         done = (await db.run(`UPDATE "${p.table}" SET ${set.map((c) => `"${c}" = ?`).join(', ')} WHERE ${where.sql}`, [...set.map((c) => wipe[c]!), ...where.params])).changes > 0;
       } catch {
