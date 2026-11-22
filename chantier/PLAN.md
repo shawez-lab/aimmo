@@ -591,7 +591,7 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU049b · L'écran de l'avis montre les ventes citées et permet de les écarter
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 (socle : `app.ts`) · Relecture : normale · Dépend de : AU049
 - Cahier : M04 Estimer ; suite de l'audit A049.
 - Objectif : `avisView` (`packages/api/src/app.ts`) rend les ventes citées (`cited` avec `id`, mois, surface, prix au m², distance, voie sans numéro), les ventes écartées (`excluded`) et la version précédente (`previous`) ; l'écran de l'avis (`packages/api/app/avis.ts`) propose d'écarter une vente citée avec un motif de la liste de R692, ce qui appelle `POST /v1/biens/{id}/avis` avec `previous` et `exclude`.
