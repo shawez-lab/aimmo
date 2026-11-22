@@ -208,4 +208,20 @@ describeWithSqlite('AU042 · un service de rappel réglé autrement vaut partout
     t.setClock(Date.parse(due) - 60_000);
     expect(await t.attribution.reassignOverdue(t.network.id)).toEqual([]);
   });
+
+  it('[R682] une tâche rangée avec d’autres heures du service se lit avec les heures en vigueur', async () => {
+    const open7 = { timeZone: 'Europe/Paris', from: 8 * 60, until: 20 * 60, days: [1, 2, 3, 4, 5, 6, 7], closedOnHolidays: true };
+    const t = await setup(open7);
+    t.setClock(Date.parse('2026-12-12T20:00:00.000Z'));
+    const hot = await t.contact('Hugo', 'Je souhaite vendre ma maison à Talant rapidement.');
+    // Rangée quand le dimanche était fermé : lundi 16 h ; le service ouvre désormais le dimanche, limite dimanche 16 h.
+    await t.db.run('UPDATE callback_tasks SET due_at = ? WHERE id = ?', ['2026-12-14T15:00:00.000Z', hot.task!.id]);
+    const due = '2026-12-13T15:00:00.000Z';
+    const list = await t.rappels.hotList(t.acces, t.as('direction', 'dir-1'));
+    expect(list.ok && list.value.contacts[0]).toMatchObject({ dueAt: due });
+    const fiche = await t.ficheAgent.read(t.as('agent', t.alex.id), hot.q.person_id);
+    expect(fiche.ok && fiche.value.callbacks).toEqual([expect.objectContaining({ dueAt: due })]);
+    t.setClock(Date.parse(due));
+    expect(await t.attribution.reassignOverdue(t.network.id)).toHaveLength(1);
+  });
 });

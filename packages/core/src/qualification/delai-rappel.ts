@@ -95,17 +95,16 @@ export function callbackDeadline(createdAt: number, hours: number, window: Callb
 }
 
 /**
- * L'heure limite d'une tâche « rappeler » telle qu'elle se lit : celle de son attribution par le service de rappel
- * [R682], jamais plus tôt que celle rangée. Une tâche rangée avant R682, en heures écoulées, suit donc la même limite
- * que la réattribution, sans rien réécrire.
+ * L'heure limite d'une tâche « rappeler » telle qu'elle se lit : celle de son attribution, recalculée par le service
+ * de rappel en vigueur [R682], jamais plus tôt que l'heure écoulée. Une tâche rangée avant R682, ou avant un changement
+ * des heures du service, suit donc la même limite que la réattribution, sans rien réécrire. Sans attribution, la limite
+ * rangée.
  */
 export function callbackTaskDue(
   storedDueAt: string,
   attribution: { created_at: string | null; callback_hours: number | null } | null,
   window: CallbackWindow = DEFAULT_CALLBACK_WINDOW,
 ): string {
-  const stored = Date.parse(storedDueAt);
   if (!attribution || attribution.created_at === null || attribution.callback_hours === null) return storedDueAt;
-  const computed = callbackDeadline(Date.parse(attribution.created_at), attribution.callback_hours, window);
-  return computed > stored ? new Date(computed).toISOString() : storedDueAt;
+  return new Date(callbackDeadline(Date.parse(attribution.created_at), attribution.callback_hours, window)).toISOString();
 }
