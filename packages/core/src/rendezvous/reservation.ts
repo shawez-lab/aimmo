@@ -327,9 +327,10 @@ export class RendezVous {
     // sur place, l'après de l'un et l'avant de l'autre font exactement le trajet réglé, comme dans conflictOf [R32].
     const { before, after } = this.travelUnits();
     const onSite = isOnSite(kind) ? 1 : 0;
-    // AU055 : au même bien, une tranche de trajet déjà tenue par un rendez-vous pris de ce bien est partagée, pas reprise ;
-    // la marge du même lieu se revérifie dans l'instruction même : aucun rendez-vous sur place, ni un autre en train
-    // d'être pris, ne tient une tranche de la marge. Rien n'est tenu si elle manque.
+    const place = onSite && propertyId ? propertyId : null;
+    // AU055 : au même bien, une tranche de trajet déjà tenue pour ce bien (par un rendez-vous pris ou en train de l'être)
+    // est partagée, pas reprise ; chaque tranche porte son bien. La marge du même lieu se revérifie dans l'instruction
+    // même : aucun rendez-vous sur place, ni un autre en train d'être pris, ne tient une tranche de la marge.
     const margin = onSite ? (samePlaceMinutesOf(this.settings) * MINUTE) / UNIT_MS : 0;
     const marginFree = `NOT EXISTS (SELECT 1 FROM appointment_holds m LEFT JOIN appointments x ON x.id = m.appointment_id
        WHERE m.agent_id = ? AND m.layer = 'own' AND m.released_at IS NULL
@@ -338,15 +339,14 @@ export class RendezVous {
     const marginParams = [agentId, first - margin, first, last, last + margin];
     try {
       const { changes } = await this.db.run(
-        `INSERT INTO appointment_holds (agent_id, layer, unit, appointment_id)
+        `INSERT INTO appointment_holds (agent_id, layer, unit, appointment_id, property_id)
          WITH RECURSIVE own(u) AS (SELECT ? UNION ALL SELECT u + 1 FROM own WHERE u + 1 < ?),
                         site(u) AS (SELECT ? UNION ALL SELECT u + 1 FROM site WHERE u + 1 < ?)
-         SELECT ?, 'own', u, ? FROM own WHERE ${marginFree}
-         UNION ALL SELECT ?, 'site', u, ? FROM site WHERE ? = 1 AND ${marginFree}
-           AND NOT EXISTS (SELECT 1 FROM appointment_holds h JOIN appointments a ON a.id = h.appointment_id
-             WHERE h.agent_id = ? AND h.layer = 'site' AND h.unit = site.u AND h.released_at IS NULL
-               AND a.agent_id = ? AND a.status = 'booked' AND a.kind <> 'appel' AND a.property_id = ?)`,
-        [first, last, first - before, last + after, agentId, appointmentId, ...marginParams, agentId, appointmentId, onSite, ...marginParams, agentId, agentId, propertyId],
+         SELECT ?, 'own', u, ?, ? FROM own WHERE ${marginFree}
+         UNION ALL SELECT ?, 'site', u, ?, ? FROM site WHERE ? = 1 AND ${marginFree}
+           AND NOT EXISTS (SELECT 1 FROM appointment_holds h
+             WHERE h.agent_id = ? AND h.layer = 'site' AND h.unit = site.u AND h.released_at IS NULL AND h.property_id = ?)`,
+        [first, last, first - before, last + after, agentId, appointmentId, place, ...marginParams, agentId, appointmentId, place, onSite, ...marginParams, agentId, place],
       );
       return changes > 0;
     } catch (error) {
@@ -379,27 +379,20 @@ export class RendezVous {
         if (moved.changes > 0) return;
       }
     }
-    await this.passSharedTravel(appointmentId);
-    await this.db.run('UPDATE appointment_holds SET released_at = ? WHERE appointment_id = ? AND released_at IS NULL', [this.now().toISOString(), appointmentId]);
-  }
-
-  /**
-   * AU055 : les tranches de trajet partagées avec un rendez-vous encore pris au même bien lui passent, par une seule
-   * instruction qui revérifie qu'il l'est toujours : son trajet vers les autres lieux reste tenu par la base [R32].
-   */
-  private async passSharedTravel(appointmentId: string): Promise<void> {
-    const own = await this.db.first<{ property_id: string | null; kind: AppointmentKind }>('SELECT property_id, kind FROM appointments WHERE id = ?', [appointmentId]);
-    if (!own?.property_id || !isOnSite(own.kind)) return;
+    // AU055 : une tranche de trajet partagée au même bien passe, dans la même instruction, au rendez-vous de ce bien
+    // qui la demande encore (pris ou en train de l'être) ; les autres sont libérées. Rien entre les deux ne la perd [R32].
     const { before, after } = this.travelUnits();
-    const heir = `SELECT b.id FROM appointments b
-      WHERE b.agent_id = appointment_holds.agent_id AND b.status = 'booked' AND b.id <> ? AND b.kind <> 'appel' AND b.property_id = ?
-        AND appointment_holds.unit >= CAST(strftime('%s', b.start_at) AS INTEGER) / 300 - ?
-        AND appointment_holds.unit < (CAST(strftime('%s', b.end_at) AS INTEGER) + 299) / 300 + ?`;
-    const params = [appointmentId, own.property_id, before, after];
+    const heir = `SELECT o.appointment_id FROM appointment_holds o
+      WHERE appointment_holds.layer = 'site' AND appointment_holds.property_id IS NOT NULL
+        AND o.agent_id = appointment_holds.agent_id AND o.layer = 'own' AND o.released_at IS NULL AND o.appointment_id <> ?
+        AND o.property_id = appointment_holds.property_id AND o.unit >= appointment_holds.unit - ? AND o.unit <= appointment_holds.unit + ?
+      ORDER BY o.unit, o.appointment_id LIMIT 1`;
     await this.db.run(
-      `UPDATE appointment_holds SET appointment_id = (${heir} ORDER BY b.start_at, b.id LIMIT 1)
-       WHERE appointment_id = ? AND layer = 'site' AND released_at IS NULL AND EXISTS (${heir})`,
-      [...params, appointmentId, ...params],
+      `UPDATE appointment_holds
+       SET released_at = CASE WHEN EXISTS (${heir}) THEN NULL ELSE ? END,
+           appointment_id = COALESCE((${heir}), appointment_id)
+       WHERE appointment_id = ? AND released_at IS NULL`,
+      [appointmentId, after, before, this.now().toISOString(), appointmentId, after, before, appointmentId],
     );
   }
 

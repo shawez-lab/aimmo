@@ -149,6 +149,31 @@ describeWithSqlite('AU055 · deux visites au même bien s’enchaînent, réserv
     expect(await w.liveHolds(second.appointment.id)).toBe(0);
   });
 
+  it('[R700] [R32] la première visite annulée pendant que la seconde est en train d’être prise : son trajet reste tenu', async () => {
+    const w = await world();
+    const first = await w.book(at(DAY, '09:00'), w.p);
+    if (!first.ok) throw new Error('réservation refusée');
+    let cancelled = false;
+    const racing: SqlDatabase = {
+      ...w.db,
+      exec: w.db.exec.bind(w.db),
+      all: w.db.all.bind(w.db),
+      first: w.db.first.bind(w.db),
+      run: (async (sql: string, params?: unknown[]) => {
+        // Entre les tranches tenues et l'écriture du rendez-vous, la première visite est annulée.
+        if (!cancelled && sql.startsWith('INSERT INTO appointments')) {
+          cancelled = true;
+          expect((await w.rdv.cancelAsAgent({ role: 'agent', userId: w.paul.id, networkId: w.net.id }, first.appointment.id)).ok).toBe(true);
+        }
+        return w.db.run(sql, params as never);
+      }) as SqlDatabase['run'],
+    };
+    const second = await w.book(at(DAY, '09:55'), w.p, { via: new RendezVous(racing, w.journal, { now: () => NOW }), personId: w.tom.id });
+    expect(cancelled).toBe(true);
+    expect(second.ok).toBe(true);
+    expect(await w.book(at(DAY, '09:00'), w.q, { via: w.blind })).toMatchObject({ ok: false, rule: 'R32', code: 'taken' });
+  });
+
   it('[R700] décaler la seconde visite au même bien garde la marge, sans perdre l’une ni l’autre', async () => {
     const w = await world();
     expect((await w.book(at(DAY, '09:00'), w.p)).ok).toBe(true);
