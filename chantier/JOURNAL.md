@@ -1681,3 +1681,5 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-22 21:11 · VOIE 2 : AU054, 8d195536 (main), relancé non
 - 2026-11-22 21:50 · AU045 · vrai raccordement Twilio de l'assistant vocal (R710, migration 4112), 18 tests, vérification verte ; Codex 1+1+5 P0 corrigés en trois tours, puis 2 P0 encore (réservation sans référence propre à l'appel, finish du cœur sur appel en_cours) ; bloquée selon SECOURS, branche et #785 gardées · prochaine : AU049b
 - 2026-11-22 21:50 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU049b
+- 2026-11-22 21:54 · VOIE 2 : plus aucune tâche faisable pour la voie 2 : tous les groupes de l'audit et des phases réservés à la voie 2 sont faits ; restent AU049b, AU053 (worker.ts), AU075b, AU103b réservées à la voie 1 (socle), AU014/AU096b/AU069 (H73), AU100 (H72), AU068b (H10), B04/C09 (humain) ; aucun module de la Feuille de route non découpé ; propositions ouvertes #785, #771, #757 bloquées voie 1, laissées
+- 2026-11-22 21:54 · VOIE 2 : rien, rien, relancé non (plus de travail faisable pour la voie 2)
