@@ -509,7 +509,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#772, 7c0de947), migration `4097` (`agent_capacities`, `attribution_capacity`), R681. Capacité déclarée par l'agent pour lui ou par la direction (0 à 200, ou sans plafond, avec raison, versions en ajout seul) ; un agent plein est passé, file de secours fixe dans l'ordre des identifiants à partir du tiré, puis direction ; client déjà suivi gardé ; charge = fiches entières (réunies comprises) dont la dernière attribution est à l'agent sans message d'un agent depuis, revérifiée par la base dans le lot qui attribue ; égalité à la milliseconde lue prudemment (pas de `rowid`, R633). Routes `GET`/`POST /v1/attribution/capacites`. Codex : 3 P0 (course à l'écriture, fiches réunies, file arrêtée trop tôt) corrigés, 1 P0 (égalité d'heure) traité par la lecture prudente, puis rien. Restent : l'écran de déclaration ; la disponibilité de rappel par heures d'ouverture (AU042).
 
 ### AU042 · Le délai de rappel court en heures écoulées
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A042 (majeur), endroit : C/qualification/attribution.ts, `callback_hours`, réattribution.
 - Constat de l'audit : Le délai de rappel court en heures écoulées : un contact du samedi soir peut changer d’agent pendant une période où le rappel est fermé.
