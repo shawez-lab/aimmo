@@ -106,7 +106,7 @@ export const TABLES_RESEAU: readonly string[] = `
   viager_calculations video_montages video_text_checks   
   virtual_stagings virtual_tour_contacts virtual_tours visit_dossiers visit_field_notes visit_photo_files visit_photos visit_reports
   visit_safety visit_energy_audit_handovers visit_shot_skips visit_slip_signatures visit_slip_templates visit_slips visit_tasks visits vitrine_screens
-  voice_assistant_calls voice_assistant_lines voice_notes weekly_points
+  voice_assistant_calls voice_assistant_lines voice_note_recoveries voice_notes weekly_points
 `.trim().split(/\s+/);
 
 /** Les autres tables : un chemin vers une table reprise, ou la raison de les laisser. */
@@ -328,7 +328,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   person_request_answers person_request_outputs person_requests erasure_object_targets erasure_text_wipes exclusions gbp_claims gbp_receipts gbp_sends gbp_validations
   gbp_drafts gbp_locations gbp_reviews attach_claims attach_log contact_ai_engines contact_origins contact_vitrines
   first_reply_claims callback_tasks contact_scores qualification_corrections qualifications reception_log
-  virtual_tour_contacts inbound_message_keys inbound_messages mailbox_attachment_links mailbox_attachments mailbox_drafts mailbox_mails
+  voice_note_recoveries virtual_tour_contacts inbound_message_keys inbound_messages mailbox_attachment_links mailbox_attachments mailbox_drafts mailbox_mails
   mandate_tasks mandate_early_starts mandate_register mandate_withdrawals property_on_sale weekly_points mandates
   mcp_drafts message_kinds human_replies message_subjects outbound_refs property_alerts prospecting_sequence_steps
   sale_file_fund_alerts send_log send_reservations trial_outbox value_tracking_alerts messages missed_promise_tasks

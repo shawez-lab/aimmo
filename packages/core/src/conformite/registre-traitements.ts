@@ -82,6 +82,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       inbound_message_keys: [],
       // HX23 : la transcription d'une note vocale et le lien vers son audio chez le canal.
       voice_notes: ['external_id', 'media_ref', 'transcript'],
+      // AU044 : la reprise d'une note non transcrite, avec le lien vers son audio chez le canal, et qui l'a faite.
+      voice_note_recoveries: ['voice_note_id', 'media_ref', 'done_by'],
       // HX21 : l'appel rattaché à la fiche, son enregistrement accepté, sa transcription et ce qui en est tiré.
       calls: ['call_id', 'person_id', 'recording_ref', 'transcript', 'fields', 'consent_announced_at', 'consent_given_at', 'origin_content_id'],
       call_journal: [],
@@ -1139,6 +1141,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   send_quota_slots: ['network_id', 'kind', 'day', 'slot', 'reservation_id', 'created_at'],
   inbound_messages: ['id', 'network_id', 'dedup_key', 'channel', 'kind', 'property_ref', 'portal', 'has_attachment', 'status', 'message_id', 'received_at', 'created_at'],
   voice_notes: ['id', 'network_id', 'channel', 'status', 'failure', 'mime', 'language', 'confidence', 'created_at'],
+  voice_note_recoveries: ['id', 'network_id', 'inbound_id', 'channel', 'failure', 'mime', 'created_at', 'done_at'],
   call_journal: ['call_id', 'claimed_at', 'done'],
   voice_assistant_calls: ['id', 'network_id', 'provider', 'property_id', 'appointment_kind', 'appointment_start', 'created_at'],
   automation_scenarios: ['id', 'version', 'network_id', 'definition', 'created_at'],

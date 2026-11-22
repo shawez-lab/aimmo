@@ -326,6 +326,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   shop_order: { excluded: 'sans_client', why: 'Commande de supports de l\'agent : l\'annonce publiée et sa carte professionnelle, sans donnée d\'un client.' },
   inbound: 'journal',
   voice_note: 'journal',
+  voice_recovery: { excluded: 'non_rattachable', why: 'Reprise d\'une note vocale non transcrite (AU044) : canal et raison seuls, sans référence de l\'audio ni texte ; la note est un message illisible sans fiche.' },
   call: 'journal',
   prospecting_sequence: 'journal',
   prospecting_sequence_step: { excluded: 'pas_un_sujet', why: 'Refus d\'accès à une étape de séquence inconnue ou d\'un autre agent : la ligne ne porte que l\'identifiant demandé.' },
@@ -440,6 +441,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   virtual_tour_contacts: { locate: [via('inbound_id', 'inbound_messages')] },
   // Une note vocale se reconnaît au message reçu qu'elle est devenue : même réseau, même canal, même identifiant.
   voice_notes: { locate: [via('external_id', 'inbound_messages', 'external_id', { alsoMatch: { network_id: 'network_id', channel: 'channel' } })] },
+  // AU044 : la reprise d'une note non transcrite suit son message illisible.
+  voice_note_recoveries: { locate: [via('inbound_id', 'inbound_messages')] },
   // HX21 : un appel se retrouve par sa fiche ; un appel masqué ne garde rien de personnel.
   calls: { locate: by('person_id') },
   // HX20 : les séquences de prospection d'une personne, et le texte écrit pour elle à chaque étape.
