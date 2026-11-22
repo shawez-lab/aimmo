@@ -20,7 +20,7 @@ import { AvisDeValeur, type ValuationReport, type ValuationWriter } from './avis
 import { CollecteBien, type CollecteServices, type PublicFacts } from './collecte.ts';
 import type { SaleDetail } from './dvf-site.ts';
 import type { DetailedSales } from './en-ligne.ts';
-import { Fourchette, type Condition, type EnergyClass, type EstimatedProperty, type Era, type NoRangeReason, type RangeResult } from './fourchette.ts';
+import { Fourchette, type Condition, type DataInfo, type EnergyClass, type EstimatedProperty, type Era, type NoRangeReason, type RangeResult } from './fourchette.ts';
 
 export interface PreparationServices {
   collecte: CollecteServices;
@@ -120,11 +120,15 @@ export class PreparationAvis {
     if (!allowed.ok) return allowed;
     if (!this.services) return { ok: false, rule: null, code: 'not_configured' };
     const { property } = allowed;
-    if (property.kind !== 'home') return { ok: false, rule: null, code: 'not_a_home' };
+    // Un terrain ou un immeuble : le calcul ne les traite pas, l'avis motivé par les ventes de l'agent les traite [R690].
+    // Les commerces et les entreprises ont leur propre estimation (M16).
+    const manualOnly = property.kind === 'land' || property.kind === 'building';
+    if (property.kind !== 'home' && !manualOnly) return { ok: false, rule: null, code: 'not_a_home' };
     if (property.surface_m2 === null) return { ok: false, rule: null, code: 'no_surface' };
     const { address, kind, condition } = input;
     if (typeof address !== 'string' || address.trim().length < 5 || address.length > 200) return { ok: false, rule: null, code: 'invalid' };
-    if (kind !== 'apartment' && kind !== 'house') return { ok: false, rule: null, code: 'invalid' };
+    if (manualOnly ? kind !== property.kind : kind !== 'apartment' && kind !== 'house') return { ok: false, rule: null, code: 'invalid' };
+    const sort = kind as 'apartment' | 'house' | 'land' | 'building';
     if (condition !== undefined && condition !== null && (typeof condition !== 'string' || !CONDITIONS.includes(condition))) return { ok: false, rule: null, code: 'invalid' };
     const settings = this.options.manual ?? DEFAULT_MANUAL_SETTINGS;
     let manual: ManualInput | null = null;
@@ -144,18 +148,28 @@ export class PreparationAvis {
     const sheet = await this.sheet(propertyId);
     const at = this.now().toISOString();
     // La même classe au calcul et au texte : celle de la fiche ; sinon la publique, pour une maison seulement [R10].
-    const energy: PublicFacts['energy'] = sheet?.energy
+    const energy: PublicFacts['energy'] = sheet?.energy && sort !== 'land'
       ? { ok: true, source: 'Fiche du bien', collectedAt: at, value: { energyClass: sheet.energy.energyClass, ghgClass: sheet.energy.climateClass, date: sheet.energy.diagnosedOn, diagnosisNumber: null } }
-      : kind === 'house'
+      : sort === 'house'
         ? collected.energy
         : { ok: false, source: collected.energy.source, collectedAt: at, reason: 'introuvable' };
     const facts: PublicFacts = { ...collected, energy, missing: energy.ok ? collected.missing.filter((m) => m !== 'energy') : [...new Set([...collected.missing, 'energy' as const])] };
     const energyClass: EnergyClass | null = energy.ok ? energy.value.energyClass : null;
+    if (sort === 'land' || sort === 'building') {
+      // Aucun calcul : sans les ventes vérifiées de l'agent, la raison est dite et rien n'est rangé [R27, R690].
+      if (!manual) {
+        await appendEvent(this.journal, { type: 'avis.sans_fourchette', actor: `agent:${viewer.userId}`, subject: `property:${propertyId}`, data: { rule: 'R27', reason: 'type', comparablesFound: 0 } }, this.now);
+        return { ok: false, rule: 'R27', code: 'type', comparablesFound: 0, manualPossible: true };
+      }
+      const data: DataInfo = { lastSale: null, years: [], source: null, recentMissing: false, monthsSinceLastSale: null, dvfNotCovered: false };
+      const report = await this.avis.draftManual({ networkId: property.network_id, propertyId, kind: sort, surface: property.surface_m2, manual, reason: 'type', comparablesFound: 0, data, facts, limits: { maxSpread: settings.maxSpread, maxGapFromReferences: settings.maxGapFromReferences } });
+      return { ok: true, value: report };
+    }
     let range: RangeResult;
     try {
       range = await within(
         new Fourchette(this.services.sales, undefined, this.now).estimate({
-          kind,
+          kind: sort,
           surface: property.surface_m2,
           lat: place.lat,
           lon: place.lon,
@@ -174,7 +188,7 @@ export class PreparationAvis {
       const manualPossible = MANUAL_REASONS.includes(range.reason);
       // Sans fourchette du calcul, l'avis motivé de l'agent, s'il l'a apporté et si la raison le permet [R690].
       if (manual && manualPossible) {
-        const report = await this.avis.draftManual({ networkId: property.network_id, propertyId, kind, surface: property.surface_m2, manual, reason: range.reason, comparablesFound: range.comparablesFound, data: range.data, facts, limits: { maxSpread: settings.maxSpread, maxGapFromReferences: settings.maxGapFromReferences } });
+        const report = await this.avis.draftManual({ networkId: property.network_id, propertyId, kind: sort, surface: property.surface_m2, manual, reason: range.reason, comparablesFound: range.comparablesFound, data: range.data, facts, limits: { maxSpread: settings.maxSpread, maxGapFromReferences: settings.maxGapFromReferences } });
         return { ok: true, value: report };
       }
       await appendEvent(this.journal, { type: 'avis.sans_fourchette', actor: `agent:${viewer.userId}`, subject: `property:${propertyId}`, data: { rule: 'R27', reason: range.reason, comparablesFound: range.comparablesFound } }, this.now);
@@ -183,7 +197,7 @@ export class PreparationAvis {
     // Le calcul a donné une fourchette : l'avis part de lui, jamais d'une fourchette saisie à côté [R27, R690].
     if (manual) return { ok: false, rule: 'R690', code: 'range_available' };
     const details = await this.details(range.comparables.slice(0, CITED_SALES).map((c) => c.id));
-    const report = await this.avis.draft({ networkId: property.network_id, propertyId, kind, surface: property.surface_m2, range, facts, details });
+    const report = await this.avis.draft({ networkId: property.network_id, propertyId, kind: sort, surface: property.surface_m2, range, facts, details });
     return { ok: true, value: report };
   }
 

@@ -39,6 +39,7 @@ export const MANUAL_REASONS: readonly NoRangeReason[] = ['peu_de_ventes', 'dvf_n
 
 /** Pourquoi il n'y a pas de fourchette automatique, dit au client. */
 export const MANUAL_REASON_TEXT: Readonly<Record<string, string>> = {
+  type: 'le calcul automatique ne traite que les appartements et les maisons, à partir des ventes publiées',
   peu_de_ventes: 'les ventes publiées de biens comparables près de chez vous sont trop peu nombreuses pour un calcul fiable',
   dvf_non_couvert: 'les ventes publiées par l’État ne couvrent pas ce département',
   donnees_absentes: 'les données de ventes publiées ne sont pas disponibles pour ce secteur',
@@ -105,17 +106,27 @@ export function readManual(value: unknown, now: Date, settings: ManualSettings =
     const town = place(r.town);
     if (street === null || town === null) return { ok: false, code: 'invalid_references' };
     const surface = Math.round(r.surface * 10) / 10;
-    references.push({ month: r.month, surface, price: r.price, pricePerM2: Math.round(r.price / surface), proof: r.proof as ReferenceProof, ...(street ? { street } : {}), ...(town ? { town } : {}) });
+    references.push({ month: r.month, surface, price: r.price, pricePerM2: Math.round((r.price / surface) * 100) / 100, proof: r.proof as ReferenceProof, ...(street ? { street } : {}), ...(town ? { town } : {}) });
   }
   references.sort((a, b) => (a.month < b.month ? 1 : a.month > b.month ? -1 : 0));
   return { ok: true, value: { low, high, references } };
 }
 
-/** Le prix médian au m² des références. */
+/** Le prix médian au m² des références, au centime : un terrain peut valoir moins d'un euro le m². */
 export function referencesMedian(references: readonly AgentReference[]): number {
   const v = references.map((r) => r.pricePerM2).sort((a, b) => a - b);
   const mid = Math.floor(v.length / 2);
-  return Math.round(v.length % 2 === 1 ? v[mid]! : (v[mid - 1]! + v[mid]!) / 2);
+  return Math.round((v.length % 2 === 1 ? v[mid]! : (v[mid - 1]! + v[mid]!) / 2) * 100) / 100;
+}
+
+/** Le prix au m² tel qu'il est écrit : à l'euro dès 100 €, sinon au centime, sans zéro inutile. */
+export function perM2Shown(n: number): number {
+  return n >= 100 ? Math.round(n) : Math.round(n * 100) / 100;
+}
+
+export function perM2Text(n: number): string {
+  const shown = perM2Shown(n);
+  return shown >= 100 ? `${String(shown).replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} €` : `${String(shown).replace('.', ',')} €`;
 }
 
 /**

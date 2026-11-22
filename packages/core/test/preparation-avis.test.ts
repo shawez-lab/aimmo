@@ -116,7 +116,11 @@ describeWithSqlite('E09 · l’agent prépare un avis', () => {
     const w = await world();
     const land = await w.store.createProperty({ networkId: w.net.id, agentId: w.paul.id, reference: 'B-2', kind: 'land', postalCode: '21000', city: 'Dijon', surfaceM2: 400 });
     const empty = await w.store.createProperty({ networkId: w.net.id, agentId: w.paul.id, reference: 'B-3', kind: 'home', postalCode: '21000', city: 'Dijon' });
-    expect(await w.prep.prepare(w.as('agent', w.paul.id), land.id, { address: ADDRESS, kind: 'house' })).toMatchObject({ code: 'not_a_home' });
+    const shop = await w.store.createProperty({ networkId: w.net.id, agentId: w.paul.id, reference: 'B-4', kind: 'commercial', postalCode: '21000', city: 'Dijon', surfaceM2: 90 });
+    expect(await w.prep.prepare(w.as('agent', w.paul.id), shop.id, { address: ADDRESS, kind: 'house' })).toMatchObject({ code: 'not_a_home' });
+    // AU047 : un terrain se prépare comme terrain, par l'avis motivé de l'agent seulement [R690].
+    expect(await w.prep.prepare(w.as('agent', w.paul.id), land.id, { address: ADDRESS, kind: 'house' })).toMatchObject({ code: 'invalid' });
+    expect(await w.prep.prepare(w.as('agent', w.paul.id), land.id, { address: ADDRESS, kind: 'land' })).toMatchObject({ rule: 'R27', code: 'type', manualPossible: true });
     expect(await w.prep.prepare(w.as('agent', w.paul.id), empty.id, { address: ADDRESS, kind: 'house' })).toMatchObject({ code: 'no_surface' });
     const closed = await world(null);
     expect(await closed.prep.prepare(closed.as('agent', closed.paul.id), closed.property.id, { address: ADDRESS, kind: 'apartment' })).toMatchObject({ code: 'not_configured' });

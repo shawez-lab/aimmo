@@ -17,6 +17,7 @@ import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { AvisDeValeur, euros, type CitedSale, type ValuationReport } from './avis.ts';
+import { perM2Text } from './avis-manuel.ts';
 import { renderMarketSection, type MarketSection } from './marche-avis.ts';
 
 /** Ce que l'avis garde du calcul et que la page montre. */
@@ -102,10 +103,10 @@ export function renderValuationPrint(input: ValuationPrintInput): string {
   // L'avis motivé : les ventes que l'agent a vérifiées, chacune avec sa preuve, sous un titre qui ne les fait jamais
   // passer pour des ventes publiées [R690, R29].
   const references = facts.method === 'manual' && facts.references && facts.references.length > 0
-    ? `<h2>Ventes vérifiées par votre agent</h2><table><caption>Il n’y a pas de fourchette automatique pour ce bien. Les ${facts.references.length} ventes réelles retenues par votre agent${facts.referencesMedianPerM2 ? `, de prix médian ${escapeHtml(euros(facts.referencesMedianPerM2))} le m²` : ''}.</caption><thead><tr><th scope="col">Vente</th><th scope="col">Lieu</th><th scope="col" class="nombre">Surface</th><th scope="col" class="nombre">Prix</th><th scope="col">Preuve</th></tr></thead><tbody>${facts.references
+    ? `<h2>Ventes vérifiées par votre agent</h2><table><caption>Il n’y a pas de fourchette automatique pour ce bien. Les ${facts.references.length} ventes réelles retenues par votre agent${facts.referencesMedianPerM2 ? `, de prix médian ${escapeHtml(perM2Text(facts.referencesMedianPerM2))} le m²` : ''}.</caption><thead><tr><th scope="col">Vente</th><th scope="col">Lieu</th><th scope="col" class="nombre">Surface</th><th scope="col" class="nombre">Prix</th><th scope="col">Preuve</th></tr></thead><tbody>${facts.references
         .map((r) => {
           const placeName = [safeStreet(r.street), r.town].filter((x): x is string => Boolean(x)).join(', ');
-          return `<tr><td>${escapeHtml(monthLabel(r.month))}</td><td>${escapeHtml(placeName)}</td><td class="nombre">${decimal(r.surface)} m²</td><td class="nombre">${escapeHtml(euros(r.pricePerM2))}/m²</td><td>${escapeHtml(r.proofLabel)}</td></tr>`;
+          return `<tr><td>${escapeHtml(monthLabel(r.month))}</td><td>${escapeHtml(placeName)}</td><td class="nombre">${decimal(r.surface)} m²</td><td class="nombre">${escapeHtml(perM2Text(r.pricePerM2))}/m²</td><td>${escapeHtml(r.proofLabel)}</td></tr>`;
         })
         .join('')}</tbody></table>`
     : '';
