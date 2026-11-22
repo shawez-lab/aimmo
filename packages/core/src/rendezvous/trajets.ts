@@ -11,8 +11,11 @@
  *   - au même bien que le rendez-vous voisin, la marge du même lieu remplace le trajet minimal (AU055) ;
  *   - un lieu inconnu (bien sans position) ne fait rien inventer : le créneau reste proposé, après les autres, avec la
  *     règle du trajet minimal seule, et le dit.
- * L'estimation est faite à vol d'oiseau, majorée pour la route, sans service extérieur ni adresse envoyée. Le motif
- * donné à l'agent ne porte que des minutes, jamais une adresse ni un nom [R09].
+ * Le temps de route (AU054, R701) : quand un service d'itinéraires est branché, son temps routier sourcé remplace
+ * l'estimation, et le créneau est « garanti » ; sinon, ou si le service échoue ou rend une valeur absurde, l'estimation
+ * à vol d'oiseau majorée reste, et le créneau est dit « non garanti, à confirmer » : un pont, une voie ferrée ou une
+ * rivière peuvent allonger la route bien au-delà. Seules deux positions partent vers le service, jamais une adresse,
+ * une référence ni un nom. Le motif donné à l'agent ne porte que des minutes et le nom du service [R09].
  */
 import type { SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
@@ -30,6 +33,27 @@ export interface PlaceSource {
 
 /** Le temps de route estimé entre deux lieux, en minutes. */
 export type TravelEstimator = (from: Place, to: Place) => number;
+
+/** Un temps routier sourcé : les minutes du trajet et le nom du service qui l'a calculé. */
+export interface RoadTime {
+  minutes: number;
+  source: string;
+}
+
+/** Un service d'itinéraires routiers : ne reçoit que deux positions ; `null` s'il n'a pas de route. */
+export interface RoadTimeSource {
+  roadMinutes(from: Place, to: Place): Promise<RoadTime | null>;
+}
+
+/** Un trajet plus long que 10 heures n'est pas un trajet d'agent : le service s'est trompé. */
+export const MAX_ROAD_MINUTES = 600;
+
+/** Le nom d'un service, nettoyé pour le motif : lettres, chiffres, espaces et tirets, 30 signes au plus. */
+const cleanSource = (source: unknown): string | null => {
+  if (typeof source !== 'string') return null;
+  const s = source.replace(/[^\p{L}\p{N} .-]/gu, '').replace(/\d{2,}/g, '').replace(/\s+/g, ' ').trim().slice(0, 30).trim();
+  return s.length >= 2 ? s : null;
+};
 
 /** Coefficient de détour de la route sur le vol d'oiseau, vitesse moyenne en ville et alentours, et temps pour se garer. */
 export const TRAVEL_DETOUR = 1.3;
@@ -62,9 +86,21 @@ export interface RankedSlot extends Slot {
   /** Minutes depuis le rendez-vous précédent (ou l'agence), et vers le suivant ; `null` si inconnu. */
   travelBefore: number | null;
   travelAfter: number | null;
+  /** Le trajet de chaque côté vient d'un temps routier sourcé (ou il n'y a pas de route) ; sinon, à confirmer (AU054). */
+  guaranteed: boolean;
+  /** Les services qui ont donné les temps routiers de ce créneau. */
+  sources: string[];
   /** Le motif en une ligne : des minutes seulement. */
   reason: string;
 }
+
+/** Un côté du trajet : ses minutes, et le service qui les garantit, ou `null` pour une estimation. */
+interface Leg {
+  minutes: number;
+  source: string | null;
+}
+
+const NOT_GUARANTEED = " Estimation à vol d'oiseau, non garantie : trajet à confirmer avant de valider.";
 
 export interface BestSlotsInput {
   agentId: string;
@@ -99,7 +135,33 @@ export class MeilleursCreneaux {
   constructor(
     private readonly db: SqlDatabase,
     private readonly places: PlaceSource,
+    private readonly roads: RoadTimeSource | null = null,
   ) {}
+
+  /** Le temps routier sourcé s'il est sûr, sinon l'estimation, non garantie. Le même lieu : 0, sans service. */
+  private async legOf(a: Place, b: Place, estimate: TravelEstimator, cache: Map<string, Promise<Leg>>): Promise<Leg> {
+    const key = `${a.lat},${a.lon}>${b.lat},${b.lon}`;
+    let leg = cache.get(key);
+    if (!leg) {
+      leg = (async (): Promise<Leg> => {
+        const guess = estimate(a, b);
+        if (distanceKm(a, b) < 0.05) return { minutes: guess, source: 'même lieu' };
+        if (!this.roads) return { minutes: guess, source: null };
+        try {
+          const r = await this.roads.roadMinutes({ lat: a.lat, lon: a.lon }, { lat: b.lat, lon: b.lon });
+          const source = r ? cleanSource(r.source) : null;
+          if (!r || !source || typeof r.minutes !== 'number' || !Number.isFinite(r.minutes) || r.minutes < 0 || r.minutes > MAX_ROAD_MINUTES) {
+            return { minutes: guess, source: null };
+          }
+          return { minutes: Math.ceil(r.minutes / 5) * 5, source };
+        } catch {
+          return { minutes: guess, source: null };
+        }
+      })();
+      cache.set(key, leg);
+    }
+    return leg;
+  }
 
   private async onSiteOf(agentId: string, from: Date, to: Date): Promise<Neighbour[]> {
     const rows = await this.db.all<{ kind: AppointmentKind; start_at: string; end_at: string; property_id: string | null }>(
@@ -124,7 +186,7 @@ export class MeilleursCreneaux {
     if (input.free.length === 0) return [];
     // Un appel se fait à distance : aucune route, les créneaux restent dans l'ordre.
     if (!isOnSite(input.kind)) {
-      return input.free.slice(0, limit).map((s) => ({ ...s, addedMinutes: 0, travelBefore: null, travelAfter: null, reason: 'Appel : aucun trajet.' }));
+      return input.free.slice(0, limit).map((s) => ({ ...s, addedMinutes: 0, travelBefore: null, travelAfter: null, guaranteed: true, sources: [], reason: 'Appel : aucun trajet.' }));
     }
     const from = new Date(Math.min(...input.free.map((s) => s.start.getTime())) - 86_400_000);
     const to = new Date(Math.max(...input.free.map((s) => s.end.getTime())) + 86_400_000);
@@ -133,6 +195,7 @@ export class MeilleursCreneaux {
     const self = { kind: input.kind, propertyId: input.propertyId ?? null };
     // Le trajet minimal avec un voisin : la marge du même lieu au même bien (AU055), sinon celui de R32.
     const floorWith = (n: Neighbour): number => gapMinutes(self, n, settings);
+    const cache = new Map<string, Promise<Leg>>();
     const known: RankedSlot[] = [];
     const unknown: RankedSlot[] = [];
     for (const slot of input.free) {
@@ -143,27 +206,33 @@ export class MeilleursCreneaux {
       const fromPlace = prev ? prev.place : base;
       const toPlace = next ? next.place : base;
       // Sans voisin et sans agence connue, ce côté ne coûte rien ; un voisin sans lieu rend le côté inconnu.
-      const leg = (a: Place | null, b: Place | null, neighbour: Neighbour | null): number | null => {
+      const leg = async (a: Place | null, b: Place | null, neighbour: Neighbour | null): Promise<Leg | null> => {
         if (!target) return null;
-        if (!neighbour && !base) return 0;
-        return a && b ? estimate(a, b) : null;
+        if (!neighbour && !base) return { minutes: 0, source: 'aucun trajet' };
+        return a && b ? this.legOf(a, b, estimate, cache) : null;
       };
-      const before = leg(fromPlace, target, prev);
-      const after = leg(target, toPlace, next);
+      const legBefore = await leg(fromPlace, target, prev);
+      const legAfter = await leg(target, toPlace, next);
+      const before = legBefore ? legBefore.minutes : null;
+      const after = legAfter ? legAfter.minutes : null;
+      const guaranteed = !!legBefore && !!legAfter && legBefore.source !== null && legAfter.source !== null;
+      const sources = [...new Set([legBefore?.source, legAfter?.source].filter((x): x is string => !!x && x !== 'même lieu' && x !== 'aucun trajet'))];
       // Le trajet réel doit tenir dans l'écart avec le voisin ; jamais moins que le trajet minimal de R32.
       if (prev && before !== null && slot.start.getTime() - prev.end.getTime() < Math.max(floorWith(prev), before) * MINUTE) continue;
       if (next && after !== null && next.start.getTime() - slot.end.getTime() < Math.max(floorWith(next), after) * MINUTE) continue;
       if (before === null || after === null) {
-        unknown.push({ ...slot, addedMinutes: null, travelBefore: before, travelAfter: after, reason: `Lieu inconnu : ${floor} min de trajet laissées de chaque côté.` });
+        unknown.push({ ...slot, addedMinutes: null, travelBefore: before, travelAfter: after, guaranteed: false, sources, reason: `Lieu inconnu : ${floor} min de trajet laissées de chaque côté, trajet à confirmer avant de valider.` });
         continue;
       }
-      const direct = fromPlace && toPlace ? estimate(fromPlace, toPlace) : 0;
+      const direct = fromPlace && toPlace ? (await this.legOf(fromPlace, toPlace, estimate, cache)).minutes : 0;
       const added = Math.max(0, before + after - direct);
       const origin = prev ? 'le rendez-vous précédent' : base ? "l'agence" : 'le départ';
       const destination = next ? 'le suivant' : base ? "l'agence" : 'la fin de journée';
-      known.push({ ...slot, addedMinutes: added, travelBefore: before, travelAfter: after, reason: `${before} min depuis ${origin}, ${after} min vers ${destination} : ${added} min de route en plus.` });
+      const proof = guaranteed ? (sources.length ? ` Temps routier : ${sources.join(', ')}.` : '') : NOT_GUARANTEED;
+      known.push({ ...slot, addedMinutes: added, travelBefore: before, travelAfter: after, guaranteed, sources, reason: `${before} min depuis ${origin}, ${after} min vers ${destination} : ${added} min de route en plus.${proof}` });
     }
-    known.sort((a, b) => a.addedMinutes! - b.addedMinutes! || a.start.getTime() - b.start.getTime());
+    // À route égale, le créneau garanti passe devant celui qui reste à confirmer.
+    known.sort((a, b) => a.addedMinutes! - b.addedMinutes! || Number(b.guaranteed) - Number(a.guaranteed) || a.start.getTime() - b.start.getTime());
     unknown.sort((a, b) => a.start.getTime() - b.start.getTime());
     return [...known, ...unknown].slice(0, limit);
   }
