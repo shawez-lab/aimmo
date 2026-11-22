@@ -53,7 +53,8 @@ export const ATTRIBUTION_RULES: readonly string[] = Object.freeze([
   'Un nouveau message ne repousse jamais le délai en cours : tant que personne n’a rappelé, le délai le plus court fait foi.',
   'Un agent absent ce jour-là, par une absence déclarée, n’est jamais candidat : un client qu’il suit va au binôme de son absence, s’il est en activité et présent, sinon à la direction ; la fiche reste à l’absent, qui la retrouve à son retour.',
   'Un nouveau contact dont tous les agents de la commune sont absents va, par le même tirage fixe, au binôme présent de l’un d’eux, sinon à la direction.',
-  'Un contact en attente chez un agent qui devient absent passe dès le premier passage, sans attendre la fin du délai, au binôme de son absence, sinon à la direction.',
+  'Un contact en attente chez un agent qui devient absent passe dès le premier passage, sans attendre la fin du délai, au binôme de son absence, sinon à la direction ; tant que la fiche est à un absent, un binôme qui ne rappelle pas dans le délai la rend à la direction, jamais à un autre agent.',
+  'L’absent rentré retrouve le contact que son binôme n’a pas rappelé dans le délai.',
   'Chaque agent écarté pour absence est noté avec l’absence qui l’a écarté.',
   'Aucune IA ne participe à l’attribution.',
 ]);
@@ -242,25 +243,38 @@ export class Attribution {
       seen.add(a.id);
       if (await this.excluded(ids)) continue;
       const history = await this.history(ids);
-      const absence = away.get(a.agent_id);
+      // L'absent qui compte : celui qui suit la fiche, s'il est absent, sinon l'agent qui a le contact, s'il l'est.
+      // Tant que la fiche est à un absent, chaque passage suit la même règle, même après son binôme [R680].
+      const ownerAway = [root.agent_id, ...view.members.map((m) => m.agent_id)].find((id): id is string => id !== null && away.has(id));
+      const absentId = ownerAway ?? (away.has(a.agent_id) ? a.agent_id : null);
+      const absence = absentId === null ? undefined : away.get(absentId);
       const delay = await this.openDelay(a, history, ids);
-      // Un agent qui a rappelé depuis n'a rien en attente, absent ou non.
-      if (delay === null || (delay.deadline > at.getTime() && !absence)) continue;
+      // Un agent qui a rappelé depuis n'a rien en attente, absent ou non ; seul un agent absent n'attend pas le délai.
+      if (delay === null || (delay.deadline > at.getTime() && !away.has(a.agent_id))) continue;
 
       const tried = new Set(history.map((c) => c.agent_id).filter((id): id is string => id !== null));
       let next: string | null = null;
       let skipped: Skipped[] = [];
-      if (absence) {
+      if (absentId !== null && absence) {
         // Le contact d'un absent est devenu son client : il passe à son binôme, s'il ne l'a pas déjà eu, sinon à la
         // direction, jamais à un autre agent qui ne pourrait pas ouvrir la fiche restée à l'absent [R680].
         const cover = await this.coverOf(networkId, absence, away);
         if (cover !== null && !tried.has(cover)) next = cover;
-        skipped = [{ agentId: a.agent_id, absenceId: absence.absenceId, coverId: next }];
+        skipped = [{ agentId: absentId, absenceId: absence.absenceId, coverId: next }];
+        // L'agent qui avait le contact, absent lui aussi, est écarté de même.
+        const current = away.get(a.agent_id);
+        if (current && a.agent_id !== absentId) skipped.push({ agentId: a.agent_id, absenceId: current.absenceId, coverId: null });
       } else {
-        const commune = await this.lastCommune(history);
-        const picked = commune ? await this.pick(networkId, root.id, await this.agentsOf(networkId, commune), tried, away) : { agentId: null, skipped: [] };
-        next = picked.agentId;
-        skipped = picked.skipped;
+        // Le binôme qui avait le contact d'un absent rentré le rend à l'agent qui suit la fiche, qui l'a retrouvée.
+        const owner = await this.followedBy(networkId, [root.agent_id, ...view.members.map((m) => m.agent_id)]);
+        const coverOfOwner = owner !== null && owner !== a.agent_id && (await this.coveredFor(a.id, owner));
+        if (coverOfOwner) next = owner;
+        else {
+          const commune = await this.lastCommune(history);
+          const picked = commune ? await this.pick(networkId, root.id, await this.agentsOf(networkId, commune), tried, away) : { agentId: null, skipped: [] };
+          next = picked.agentId;
+          skipped = picked.skipped;
+        }
       }
       const id = this.newId();
       const [inserted] = await runBatch(this.db, [
@@ -272,7 +286,7 @@ export class Attribution {
         ...this.skippedRows(id, networkId, skipped),
         // Toutes les fiches réunies que suivait l'agent, ou un agent parti, changent de mains : jamais deux agents.
         // Les fiches d'un absent lui restent : il les retrouve à son retour, son binôme les lit pendant l'absence.
-        absence
+        absentId !== null
           ? {
               sql: `UPDATE persons SET agent_id = ?, updated_at = ? WHERE id IN (${placeholders(ids.length)}) AND agent_id IN (SELECT id FROM agents WHERE status = 'left')`,
               params: [next, at.toISOString(), ...ids],
@@ -389,6 +403,15 @@ export class Attribution {
     const away = new Map<string, AwayAgent>();
     for (const r of rows) away.set(r.agent_id, { absenceId: r.id, coverId: r.cover_agent_id });
     return away;
+  }
+
+  /** Vrai si l'attribution est allée au binôme de cet absent, à sa place [R680]. */
+  private async coveredFor(attributionId: string, absentId: string): Promise<boolean> {
+    const row = await this.db.first<{ n: number }>(
+      'SELECT count(*) AS n FROM attribution_absences WHERE attribution_id = ? AND absent_agent_id = ? AND cover_agent_id IS NOT NULL',
+      [attributionId, absentId],
+    );
+    return Number(row?.n ?? 0) > 0;
   }
 
   /** Le binôme de l'absence, s'il est en activité et présent lui-même ; null sinon [R680]. */

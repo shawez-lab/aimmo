@@ -598,6 +598,42 @@ describeWithSqlite('AU040 · un agent absent n’est jamais candidat à l’attr
     expect((await t.store.getPerson(await t.personOf(q)))!.agent_id).toBe(t.alex.id);
   });
 
+  it('[R680] le binôme qui ne rappelle pas dans le délai rend le contact de l’absent à la direction, jamais à un autre agent', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    const first = (await t.attribution.attribute(q))!;
+    await t.attribution.addZone(t.network.id, t.lou.id, 'Talant');
+    await absent(t, t.alex.id, t.sam.id, '2026-12-08', '2026-12-12');
+    t.setClock(TUESDAY_10H + HOUR);
+    const [toCover] = await t.attribution.reassignOverdue(t.network.id);
+    expect(toCover).toMatchObject({ agent_id: t.sam.id, replaces_id: first.id });
+    // Dans le délai du binôme : rien.
+    t.setClock(TUESDAY_10H + 2 * HOUR);
+    expect(await t.attribution.reassignOverdue(t.network.id)).toEqual([]);
+    t.setClock(TUESDAY_10H + 26 * HOUR);
+    const [toDirection, ...rest] = await t.attribution.reassignOverdue(t.network.id);
+    expect(rest).toEqual([]);
+    expect(toDirection).toMatchObject({ agent_id: null, reason: 'reassigned', replaces_id: toCover!.id });
+    expect(await skippedOf(t, toDirection!.id)).toEqual([expect.objectContaining({ absent_agent_id: t.alex.id, cover_agent_id: null })]);
+    expect((await t.store.getPerson(await t.personOf(q)))!.agent_id).toBe(t.alex.id);
+  });
+
+  it('[R680] un contact passé au binôme revient à l’absent rentré si le binôme ne rappelle pas dans le délai', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.lou.id, 'Talant');
+    const zoe = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Zoé' });
+    await absent(t, t.alex.id, t.sam.id, '2026-12-08', '2026-12-08');
+    const qz = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    await t.fiche.merge({ survivorId: await t.personOf(qz), mergedId: zoe.id, reason: 'même personne' });
+    expect(await t.attribution.attribute(qz)).toMatchObject({ agent_id: t.sam.id });
+    // Le lendemain, l'absent est rentré : le délai échu du binôme lui rend le contact, et sa fiche lui reste.
+    t.setClock(TUESDAY_10H + 25 * HOUR);
+    const [next] = await t.attribution.reassignOverdue(t.network.id);
+    expect(next).toMatchObject({ agent_id: t.alex.id, reason: 'reassigned' });
+    expect((await t.store.getPerson(zoe.id))!.agent_id).toBe(t.alex.id);
+  });
+
   it('les règles publiées disent le sort d’un agent absent', () => {
     expect(ATTRIBUTION_RULES.join(' ')).toMatch(/absent/);
   });
