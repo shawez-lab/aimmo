@@ -529,7 +529,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#782, `8b8e44f9`), `packages/core/src/automatismes/boite-mail-reelle.ts`, `packages/api/src/boite.ts`, R683. Constat confirmé (interface et faux seulement, aucune route). Vrais Gmail (API v1) et Outlook (Graph `me/messages`, toute la boîte hors brouillons, supprimés, indésirables ; clés immuables), lecture seule, jeton de rafraîchissement par agent dans le secret `BOITE_JETONS` (`BOITE_MODE=reel`, clients OAuth) ; 50 mails au plus par lecture, les plus anciens d'abord, mails déjà triés autour du curseur hors du lot (`skip`, ajouté à `MailboxProvider`) ; texte au bon jeu de caractères et entités du HTML rendues (arrêt lu) ; copies cachées ; pièces lourdes jamais téléchargées. `GET /v1/boite` (la file) et `POST /v1/boite/lecture`, agent en activité seul ; passage des quarts d'heure. Codex : 13 P0 et 1 P1 en cinq tours, corrigés, puis rien. Restent : l'écran de la boîte ; les routes des pièces en attente et des réponses préparées ; l'accord pris à l'écran (OAuth dans l'application) au lieu du secret ; le jeton renouvelé par Microsoft n'est pas gardé ; le nombre d'appels du passage grandit avec les agents reliés.
 
 ### AU044 · Les vocaux n’ont pas de transcripteur réel branché et retombent sur la reprise manuelle
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A044 (majeur), endroit : A/worker.ts ; H52 ; C/voix/notes-vocales.ts.
 - Constat de l'audit : Les vocaux n’ont pas de transcripteur réel branché et retombent sur la reprise manuelle.
