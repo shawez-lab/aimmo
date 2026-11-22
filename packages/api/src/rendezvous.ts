@@ -7,7 +7,7 @@ import { VISITOR, takeSlot } from './assistant.ts';
  * La réservation des rendez-vous depuis le site, l'assistant et l'espace client (V08), en mode essai, avec la seule clé
  * de dépôt `site_booking`, qui ne lit aucune fiche :
  *
- *   POST /v1/rendez-vous/creneaux     { visitorId, agentId, kind, from: "AAAA-MM-JJ", days }
+ *   POST /v1/rendez-vous/creneaux     { visitorId, agentId, kind, from: "AAAA-MM-JJ", days, propertyId? }
  *   POST /v1/rendez-vous/reservation  { visitorId, agentId, kind, start, source, firstName?, email | phone, consentProof, propertyId? }
  *
  * Les créneaux ne portent que début et fin [R33]. La réservation enregistre l'accord « rendez-vous » avec sa preuve
@@ -41,7 +41,7 @@ const MAX_BODY = 4_000;
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?Z$/;
-const SLOT_FIELDS = new Set(['visitorId', 'agentId', 'kind', 'from', 'days']);
+const SLOT_FIELDS = new Set(['visitorId', 'agentId', 'kind', 'from', 'days', 'propertyId']);
 const BOOKING_FIELDS = new Set(['visitorId', 'agentId', 'kind', 'start', 'source', 'firstName', 'email', 'phone', 'consentProof', 'propertyId']);
 
 const json = (status: number, body: unknown): Response =>
@@ -77,6 +77,8 @@ export async function handleBooking(request: Request, path: string, config: Book
   if (typeof visitorId !== 'string' || !VISITOR.test(visitorId)) return failure(400, 'invalid_visitor', 'visitorId : identifiant opaque de 16 à 128 caractères.');
   if (typeof agentId !== 'string' || !ID.test(agentId)) return failure(400, 'invalid_agent', 'agentId manquant ou mal formé.');
   if (typeof kind !== 'string' || !(ONLINE_KINDS as readonly string[]).includes(kind)) return failure(400, 'invalid_kind', `kind attendu parmi : ${ONLINE_KINDS.join(', ')}.`);
+  const { propertyId } = body;
+  if (propertyId !== undefined && propertyId !== null && (typeof propertyId !== 'string' || !ID.test(propertyId))) return failure(400, 'invalid_property', 'propertyId mal formé.');
 
   const at = config.now();
   const limits = config.limits ?? DEFAULT_BOOKING_LIMITS;
@@ -98,12 +100,20 @@ export async function handleBooking(request: Request, path: string, config: Book
     if (typeof days !== 'number' || !Number.isInteger(days) || days < 1 || days > 14) return failure(400, 'invalid_days', 'days : de 1 à 14.');
     const start = parisInstant(from, 0);
     if (!start) return failure(400, 'invalid_from', 'from : une date AAAA-MM-JJ.');
-    const result = await service.slots({ networkId: intake.networkId, agentId, kind: kind as AppointmentKind, from: start, to: new Date(start.getTime() + days * 86_400_000) });
+    // Avec le bien, un créneau juste après un rendez-vous au même bien est proposé avec la marge du même lieu (AU055).
+    const result = await service.slots({
+      networkId: intake.networkId,
+      agentId,
+      kind: kind as AppointmentKind,
+      from: start,
+      to: new Date(start.getTime() + days * 86_400_000),
+      propertyId: (propertyId as string | null | undefined) ?? null,
+    });
     // Un agent inconnu rend une liste vide, comme un agent sans créneau : rien n'est dit de l'équipe.
     return json(200, { ok: true, mode: 'essai', slots: result.ok ? result.slots : [] });
   }
 
-  const { start, source, firstName, email, phone, consentProof, propertyId } = body;
+  const { start, source, firstName, email, phone, consentProof } = body;
   if (typeof start !== 'string' || !INSTANT.test(start) || Number.isNaN(Date.parse(start))) return failure(400, 'invalid_start', 'start : un instant ISO en UTC, tel que rendu par les créneaux.');
   if (typeof source !== 'string' || !(ONLINE_SOURCES as readonly string[]).includes(source)) return failure(400, 'invalid_source', `source attendue parmi : ${ONLINE_SOURCES.join(', ')}.`);
   if (firstName !== undefined && firstName !== null && (typeof firstName !== 'string' || firstName.length > 60)) return failure(400, 'invalid_first_name', 'firstName : 60 caractères au plus.');
@@ -112,7 +122,6 @@ export async function handleBooking(request: Request, path: string, config: Book
   if (typeof consentProof !== 'string' || consentProof.trim() === '' || consentProof.length > 300) {
     return failure(400, 'invalid_consent', 'consentProof : ce que la personne a accepté, et où (300 caractères au plus) [R03].');
   }
-  if (propertyId !== undefined && propertyId !== null && (typeof propertyId !== 'string' || !ID.test(propertyId))) return failure(400, 'invalid_property', 'propertyId mal formé.');
   const result = await service.book({
     networkId: intake.networkId,
     agentId,
