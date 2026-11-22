@@ -2,7 +2,8 @@
  * Préparer un avis de valeur pour un bien (M04, E09) : ce qui manquait pour que `AvisDeValeur` serve en production.
  *
  * L'agent qui suit le bien donne l'adresse et le type de logement ; le code collecte (E03), calcule (E01) et range le
- * brouillon (E04). L'adresse sert à la collecte et n'est gardée nulle part : ni colonne, ni journal [R13, R46]. Sans
+ * brouillon (E04). L'adresse sert à la collecte ; vérifiée, elle est gardée à part, dans `valuation_addresses`, pour le
+ * prochain avis, sans ressaisie (AU052, R695). Elle n'est jamais dans l'avis ni au journal [R13, R46]. Sans
  * fourchette possible, la raison est dite et rien n'est rangé [R27]. Les caractéristiques viennent de la dernière
  * version de la fiche du bien (P01), jamais d'une saisie à part ; ce que la fiche ne dit pas ne compte pas. Le calcul et
  * le texte disent la même classe énergie : celle de la fiche, sinon, pour une maison seulement, la dernière publiée à
@@ -33,6 +34,7 @@ export type PreparationRefusal =
   | { ok: false; rule: 'R692'; code: 'invalid_exclusion' | 'unknown_previous' | 'too_many_exclusions' }
   | { ok: false; rule: 'R693'; code: 'invalid_adjustment' | 'too_many_adjustments' }
   | { ok: false; rule: 'R690'; code: 'invalid_references' | 'invalid_range' | 'not_verified' | 'range_far_from_references' | 'range_available' }
+  | { ok: false; rule: null; code: 'address_needed' }
   | { ok: false; rule: null; code: 'unknown' | 'invalid' | 'not_configured' | 'not_a_home' | 'no_surface' | 'address_not_found' | 'other_town' | 'sales_unavailable' };
 
 const CONDITIONS: readonly string[] = ['travaux', 'rafraichir', 'bon', 'neuf'];
@@ -110,6 +112,36 @@ export class PreparationAvis {
       return { ok: false, rule: 'R30', code: 'not_following_agent' };
     }
     return { ok: true, property: read.value };
+  }
+
+  /**
+   * L'adresse vérifiée du bien pour un nouvel avis, sans ressaisie [R695] : la dernière gardée par un avis, sinon celle
+   * de la dernière désignation du mandat.
+   */
+  private async savedAddress(networkId: string, propertyId: string): Promise<string | null> {
+    const kept = await this.db.first<{ address: string }>('SELECT address FROM valuation_addresses WHERE network_id = ? AND property_id = ? ORDER BY version DESC LIMIT 1', [networkId, propertyId]);
+    if (kept) return kept.address;
+    const d = await this.db.first<{ street: string; postal_code: string; city: string }>(
+      'SELECT street, postal_code, city FROM property_designations WHERE network_id = ? AND property_id = ? ORDER BY version DESC LIMIT 1',
+      [networkId, propertyId],
+    );
+    return d ? `${d.street} ${d.postal_code} ${d.city}` : null;
+  }
+
+  /**
+   * Garde l'adresse vérifiée, si elle change, en une seule écriture : la version suivante est prise dans la même
+   * instruction, deux gardes en même temps donnent deux versions, jamais une adresse perdue [R695, R18].
+   */
+  private async keepAddress(viewer: Viewer, networkId: string, propertyId: string, address: string, postalCode: string): Promise<void> {
+    const done = await this.db.run(
+      `INSERT INTO valuation_addresses (id, network_id, property_id, version, address, postal_code, set_by, set_at)
+       SELECT ?, ?, ?, COALESCE(MAX(version), 0) + 1, ?, ?, ?, ? FROM valuation_addresses WHERE property_id = ?
+       HAVING COALESCE((SELECT address FROM valuation_addresses WHERE property_id = ? ORDER BY version DESC LIMIT 1), '') <> ?`,
+      [crypto.randomUUID(), networkId, propertyId, address, postalCode, viewer.userId, this.now().toISOString(), propertyId, propertyId, address],
+    );
+    if (done.changes !== 1) return;
+    const versions = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM valuation_addresses WHERE property_id = ?', [propertyId]);
+    await appendEvent(this.journal, { type: 'avis.adresse_gardee', actor: `agent:${viewer.userId}`, subject: `property:${propertyId}`, data: { replaced: (versions?.n ?? 1) > 1 } }, this.now);
   }
 
   /** La dernière version de la fiche, ou rien. */
@@ -195,7 +227,11 @@ export class PreparationAvis {
     const manualOnly = property.kind === 'land' || property.kind === 'building';
     if (property.kind !== 'home' && !manualOnly) return { ok: false, rule: null, code: 'not_a_home' };
     if (property.surface_m2 === null) return { ok: false, rule: null, code: 'no_surface' };
-    const { address, kind, condition } = input;
+    const { kind, condition } = input;
+    // Sans adresse donnée, l'adresse vérifiée du bien ; une adresse donnée est une modification explicite [R695].
+    const given = input.address !== undefined && input.address !== null && input.address !== '';
+    const address = given ? input.address : await this.savedAddress(property.network_id, propertyId);
+    if (!given && address === null) return { ok: false, rule: null, code: 'address_needed' };
     if (typeof address !== 'string' || address.trim().length < 5 || address.length > 200) return { ok: false, rule: null, code: 'invalid' };
     if (manualOnly ? kind !== property.kind : kind !== 'apartment' && kind !== 'house') return { ok: false, rule: null, code: 'invalid' };
     const sort = kind as 'apartment' | 'house' | 'land' | 'building';
@@ -226,6 +262,8 @@ export class PreparationAvis {
     const place = collected.address.value;
     // L'adresse d'une autre commune que celle du bien : un avis sur le mauvais bien, refusé.
     if (property.postal_code && property.postal_code !== place.postalCode) return { ok: false, rule: null, code: 'other_town' };
+    // Vérifiée : gardée pour le prochain avis, seulement si elle a été donnée et qu'elle change.
+    if (given) await this.keepAddress(viewer, property.network_id, propertyId, address.trim(), place.postalCode);
 
     const sheet = await this.sheet(propertyId);
     const at = this.now().toISOString();

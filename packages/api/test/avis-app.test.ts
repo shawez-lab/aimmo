@@ -85,6 +85,57 @@ describe('E10 · écran de l’avis de valeur', () => {
     expect(t.body().all().some((e) => String((e as unknown as { value?: string }).value ?? '').includes('Essai'))).toBe(false);
   });
 
+  it('[R695] AU052 · adresse laissée vide : elle n’est pas envoyée, le serveur reprend l’adresse vérifiée ; sans adresse gardée, c’est dit', async () => {
+    const t = await run({ 'GET /v1/biens/b1/avis': ok([]), 'POST /v1/biens/b1/avis': no(422, 'address_needed') });
+    await t.open();
+    t.input('avis-type').value = 'apartment';
+    t.input('avis-etat-bien').value = 'bon';
+    await t.click(t.byText('Préparer le brouillon'));
+    expect(t.calls.find((c) => c.method === 'POST')?.body).toEqual({ kind: 'apartment', condition: 'bon' });
+    expect(t.state()).toBe('Donnez l’adresse du bien : aucune adresse vérifiée n’est encore gardée pour lui.');
+  });
+
+  it('[R690] AU046 · sans fourchette possible, l’écran ouvre l’avis motivé et envoie les ventes vérifiées de l’agent', async () => {
+    const t = await run({ 'GET /v1/biens/b1/avis': ok([]), 'POST /v1/biens/b1/avis': async () => Response.json({ ok: false, rule: 'R27', code: 'peu_de_ventes', comparablesFound: 2, manualPossible: true }, { status: 422 }) });
+    await t.open();
+    t.input('avis-adresse').value = '1 Rue de l’Essai 21000 Dijon';
+    t.input('avis-type').value = 'house';
+    t.input('avis-etat-bien').value = 'bon';
+    await t.click(t.byText('Préparer le brouillon'));
+    expect(t.input('avis-motive-bas')).toBeDefined();
+    t.input('avis-motive-bas').value = '148 000';
+    t.input('avis-motive-haut').value = '164000';
+    for (const [n, month, surface, price, proof] of [[1, '2026-03', '62', '148800', 'agence'], [2, '2025-11', '70', '168000', 'acte'], [3, '2024-09', '58,5', '142100', 'notaire']] as const) {
+      t.input(`avis-vente-mois-${n}`).value = month;
+      t.input(`avis-vente-surface-${n}`).value = surface;
+      t.input(`avis-vente-prix-${n}`).value = price;
+      t.input(`avis-vente-preuve-${n}`).value = proof;
+    }
+    t.input('avis-vente-commune-1').value = 'Dijon';
+    // La sorte corrigée après le premier refus est celle qui part.
+    t.input('avis-type').value = 'land';
+    (t.input('avis-motive-verifie') as unknown as { checked: boolean }).checked = true;
+    t.table['POST /v1/biens/b1/avis'] = ok(DRAFT);
+    t.table['GET /v1/biens/b1/avis'] = ok([DRAFT]);
+    await t.click(t.byText('Préparer l’avis motivé'));
+    expect(t.calls.filter((c) => c.method === 'POST').at(-1)?.body).toEqual({
+      kind: 'land',
+      condition: 'bon',
+      address: '1 Rue de l’Essai 21000 Dijon',
+      manual: {
+        low: 148000,
+        high: 164000,
+        verified: true,
+        references: [
+          { month: '2026-03', surface: 62, price: 148800, proof: 'agence', town: 'Dijon' },
+          { month: '2025-11', surface: 70, price: 168000, proof: 'acte' },
+          { month: '2024-09', surface: 58.5, price: 142100, proof: 'notaire' },
+        ],
+      },
+    });
+    expect(t.state()).toContain('Brouillon de l’avis motivé prêt');
+  });
+
   it('un refus est dit en français, sans code', async () => {
     const t = await run({ 'GET /v1/biens/b1/avis': ok([]), 'POST /v1/biens/b1/avis': no(422, 'peu_de_ventes') });
     await t.open();

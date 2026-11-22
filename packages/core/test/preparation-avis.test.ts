@@ -81,7 +81,7 @@ describeWithSqlite('E09 · l’agent prépare un avis', () => {
     expect(computed.cited.filter((c) => c.street === undefined)).toHaveLength(1);
   });
 
-  it('[R13] [R46] l’adresse sert à la collecte et n’est gardée nulle part', async () => {
+  it('[R13] [R46] l’adresse sert à la collecte, et n’est ni dans l’avis ni au journal', async () => {
     const seen: string[] = [];
     const w = await world(services({ seen }));
     const r = await w.prep.prepare(w.as('agent', w.paul.id), w.property.id, { address: ADDRESS, kind: 'apartment' });
@@ -240,5 +240,83 @@ describeWithSqlite('E09 · l’agent prépare un avis', () => {
     if (!r.ok) throw new Error(r.code);
     const imprime = new AvisImprime(w.db, w.acces, w.journal, { now: NOW });
     expect(await imprime.print(w.as('agent', w.paul.id), r.value.id)).toMatchObject({ ok: false, rule: 'R30' });
+  });
+});
+
+describeWithSqlite('AU052 · l’adresse vérifiée se reprend au prochain avis', () => {
+  const OTHER = '9 Avenue de l’Essai 21000 Dijon';
+  const kept = (w: Awaited<ReturnType<typeof world>>) => w.db.all<{ version: number; address: string; postal_code: string; set_by: string }>('SELECT version, address, postal_code, set_by FROM valuation_addresses WHERE property_id = ? ORDER BY version', [w.property.id]);
+
+  it('constat : sans adresse, la préparation était refusée ; maintenant l’adresse vérifiée du dernier avis est reprise [R695]', async () => {
+    const seen: string[] = [];
+    const w = await world(services({ seen }));
+    const paul = w.as('agent', w.paul.id);
+    expect(await w.prep.prepare(paul, w.property.id, { kind: 'apartment' })).toEqual({ ok: false, rule: null, code: 'address_needed' });
+    expect((await w.prep.prepare(paul, w.property.id, { address: ADDRESS, kind: 'apartment' })).ok).toBe(true);
+    const again = await w.prep.prepare(paul, w.property.id, { kind: 'apartment' });
+    expect(again.ok).toBe(true);
+    expect(seen).toEqual([ADDRESS, ADDRESS]);
+    expect(await kept(w)).toEqual([{ version: 1, address: ADDRESS, postal_code: '21000', set_by: w.paul.id }]);
+  });
+
+  it('[R695] une autre adresse donnée la remplace par une nouvelle version ; la même ne fait rien de plus', async () => {
+    const seen: string[] = [];
+    const w = await world(services({ seen }));
+    const paul = w.as('agent', w.paul.id);
+    await w.prep.prepare(paul, w.property.id, { address: ADDRESS, kind: 'apartment' });
+    await w.prep.prepare(paul, w.property.id, { address: ADDRESS, kind: 'apartment' });
+    await w.prep.prepare(paul, w.property.id, { address: OTHER, kind: 'apartment' });
+    await w.prep.prepare(paul, w.property.id, { address: '', kind: 'apartment' });
+    expect(seen.at(-1)).toBe(OTHER);
+    expect((await kept(w)).map((k) => [k.version, k.address])).toEqual([[1, ADDRESS], [2, OTHER]]);
+    await expect(w.db.run("UPDATE valuation_addresses SET address = 'x'")).rejects.toThrow(/ne change pas/);
+    await expect(w.db.run('DELETE FROM valuation_addresses')).rejects.toThrow(/rien ne s'efface/);
+  });
+
+  it('[R695] une adresse non vérifiée n’est pas gardée', async () => {
+    for (const s of [services({ score: 0.2 }), services({ postalCode: '75001' })]) {
+      const w = await world(s);
+      expect((await w.prep.prepare(w.as('agent', w.paul.id), w.property.id, { address: ADDRESS, kind: 'apartment' })).ok).toBe(false);
+      expect(await kept(w)).toEqual([]);
+    }
+  });
+
+  it('[R695] sans avis précédent, l’adresse de la dernière désignation du mandat est reprise', async () => {
+    const seen: string[] = [];
+    const w = await world(services({ seen }));
+    await w.db.run("INSERT INTO property_designations (id, network_id, property_id, version, street, postal_code, city, parcels, set_by, set_at) VALUES ('d1', ?, ?, 1, '4 Rue du Mandat', '21000', 'Dijon', '[]', 'x', ?)", [w.net.id, w.property.id, NOW().toISOString()]);
+    const r = await w.prep.prepare(w.as('agent', w.paul.id), w.property.id, { kind: 'apartment' });
+    expect(r.ok).toBe(true);
+    expect(seen).toEqual(['4 Rue du Mandat 21000 Dijon']);
+    // Reprise, elle n'est pas gardée une seconde fois : la désignation reste sa source.
+    expect(await kept(w)).toEqual([]);
+  });
+
+  it('[R13] [R46] [R16] l’adresse gardée n’est ni dans l’avis ni au journal, et seul l’agent qui suit le bien s’en sert', async () => {
+    const w = await world();
+    const r = await w.prep.prepare(w.as('agent', w.paul.id), w.property.id, { address: ADDRESS, kind: 'apartment' });
+    if (!r.ok) throw new Error(r.code);
+    expect(JSON.stringify(r.value)).not.toContain('Essai 21000');
+    const journal = await w.journal.all();
+    expect(journal.find((e) => e.type === 'avis.adresse_gardee')?.data).toEqual({ replaced: false });
+    expect(JSON.stringify(journal)).not.toContain('Rue de l’Essai');
+    expect(await w.prep.prepare(w.as('agent', w.lise.id), w.property.id, { kind: 'apartment' })).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await w.prep.prepare(w.as('direction', 'd1'), w.property.id, { kind: 'apartment' })).toMatchObject({ ok: false, rule: 'R30' });
+  });
+});
+
+describeWithSqlite('AU052 · deux adresses données en même temps', () => {
+  it('[R695] [R18] deux préparations simultanées avec deux adresses donnent deux versions, aucune perdue', async () => {
+    const w = await world();
+    const paul = w.as('agent', w.paul.id);
+    const [a, b] = await Promise.all([
+      w.prep.prepare(paul, w.property.id, { address: ADDRESS, kind: 'apartment' }),
+      w.prep.prepare(paul, w.property.id, { address: '9 Avenue de l’Essai 21000 Dijon', kind: 'apartment' }),
+    ]);
+    expect(a.ok && b.ok).toBe(true);
+    const rows = await w.db.all<{ version: number; address: string }>('SELECT version, address FROM valuation_addresses WHERE property_id = ? ORDER BY version', [w.property.id]);
+    expect(rows.map((r) => r.version)).toEqual([1, 2]);
+    expect(rows.map((r) => r.address).sort()).toEqual([ADDRESS, '9 Avenue de l’Essai 21000 Dijon'].sort());
+    expect((await w.journal.all()).filter((e) => e.type === 'avis.adresse_gardee').map((e) => e.data)).toEqual([{ replaced: false }, { replaced: true }]);
   });
 });
