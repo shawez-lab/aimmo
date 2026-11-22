@@ -519,7 +519,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#775, 6ff9c1f2), `packages/core/src/qualification/delai-rappel.ts`, R682. Décidé, lecture prudente (le cahier dit seulement « délai de la charte de service ») : service de rappel du lundi au samedi, 8 h à 20 h, Paris, hors jours fériés (réglage `callbackWindow`) ; le délai part de la première ouverture, ne court pas un jour fermé, une limite hors des heures passe à l'ouverture suivante ; la nuit d'un jour ouvert compte, pour qu'un contact ne reste pas plus de deux jours sans rappel ; jamais plus tôt que l'heure écoulée. La réattribution, la tâche « rappeler », la liste des contacts chauds et la fiche de l'agent lisent la même limite, recalculée à la lecture (rien n'est réécrit). Codex : 4 P0 corrigés en trois tours (tâches déjà rangées, changement d'heure, réglage transmis à la fiche, heures élargies), puis rien. Restent : le réglage des heures par réseau à l'écran ; les absences d'agent (AU040).
 
 ### AU043 · Le Worker ne branche pas de fournisseur de boîte Gmail ou Outlook pour le tri annoncé
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A043 (majeur), endroit : A/worker.ts ; H55 ; module boîte mail.
 - Constat de l'audit : Le Worker ne branche pas de fournisseur de boîte Gmail ou Outlook pour le tri annoncé.
