@@ -539,13 +539,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#783, `cd7d61e1`), migration `4108` (ajout seul), R696. Constat confirmé (aucun transcripteur, et `/v1/meta/notifications` n'appelait pas la chaîne des notes vocales). `transcripteur-reel.ts` : audio lu chez Meta (WhatsApp par l'API Graph et `WHATSAPP_MEDIA_TOKEN`, Instagram et Messenger à l'adresse donnée ; serveurs de fichiers de Meta seuls, 25 Mo, délai sur tout le corps), service compatible OpenAI `verbose_json`, confiance des segments (nulle sans eux). Panne : reprise unique liée au message illisible, `GET /v1/notes-vocales/reprises`, `…/<id>/audio`, `POST …/<id>/faite`, agent en activité ou direction. Codex : 1 P2 corrigé (délai), puis rien ; « Vérifier » rouge une fois (cascade interdite par R17), corrigé. Restent : l'écran de la file des reprises ; H52.
 
 ### AU045 · Aucun raccordement téléphonique réel du Worker ne prouve la réception des appels et le renvoi vers…
-- Statut : en cours
+- Statut : bloquée : trois tours de P0 de Codex sur #785 (rendez-vous retrouvé sans référence propre à l'appel ; `AssistantVocal.finish` range le passage de main d'un appel encore `en_cours`, à corriger dans le cœur)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A045 (majeur), endroit : A/worker.ts ; C/voix/appels.ts et assistant.ts.
 - Constat de l'audit : Aucun raccordement téléphonique réel du Worker ne prouve la réception des appels et le renvoi vers l’assistant vocal.
 - Objectif : Un appel sur le numéro déclaré produit le parcours d’accord, la fiche et le relais attendus, vérifiés depuis un téléphone extérieur.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
-- Attend : rien.
+- Attend : rien (mise en service réelle : H78).
+- Reste : branche `chantier/AU045`, proposition #785, vérification verte. Fait : `packages/api/src/telephonie.ts` (Twilio, signature, `/v1/telephonie/appel`, `/tour?n=`, `/fin`), migration `4112` (`voice_assistant_sessions`, `voice_call_endings`), motif de renvoi `conditional`, passage de reprise du quart d'heure, R710, H78, 18 tests. À reprendre : rattacher la réservation à l'appel par une référence écrite avec le rendez-vous ; `AssistantVocal.finish` ne doit rien ranger tant que `Appels.receive` rend `en_cours`.
 
 Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22, la voie 1 étant sur l'attribution)
 

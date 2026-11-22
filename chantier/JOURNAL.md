@@ -1679,3 +1679,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-22 21:11 · AU054 · temps routier sourcé par un service d'itinéraires branchable (positions seules), sinon créneau dit non garanti, à confirmer (R701) ; Codex 1 P0 corrigé (lieux à quelques mètres) puis rien ; vérification verte ; fusionnée (#786, 8d195536) · prochaine : groupe suivant non commencé (voie 2)
 - 2026-11-22 21:11 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 17:54 et 18:53 n'ont rien produit)
 - 2026-11-22 21:11 · VOIE 2 : AU054, 8d195536 (main), relancé non
+- 2026-11-22 21:50 · AU045 · vrai raccordement Twilio de l'assistant vocal (R710, migration 4112), 18 tests, vérification verte ; Codex 1+1+5 P0 corrigés en trois tours, puis 2 P0 encore (réservation sans référence propre à l'appel, finish du cœur sur appel en_cours) ; bloquée selon SECOURS, branche et #785 gardées · prochaine : AU049b
