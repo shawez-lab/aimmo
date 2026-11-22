@@ -577,7 +577,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU049 · Je ne peux ni écarter une vente aberrante ni sélectionner mes comparables avant de recalculer l’avis
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#778, `88d90ef5`). Constat confirmé (aucune sélection possible, ventes citées sans identifiant). `previous` + `exclude` (motif d'une liste fermée) : nouvelle version recalculée, précédente intacte, écarts cumulés (10 au plus) et dits dans le pied ; R692. Codex rien ; vérification verte. Écran : AU049b (voie 1, socle).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A049 (majeur), endroit : C/estimation/preparation-avis.ts, `prepare`.
 - Constat de l'audit : Je ne peux ni écarter une vente aberrante ni sélectionner mes comparables avant de recalculer l’avis.
@@ -590,11 +591,12 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Qui : Claude, voie 1 (socle : `app.ts`) · Relecture : normale · Dépend de : AU049
 - Cahier : M04 Estimer ; suite de l'audit A049.
 - Objectif : `avisView` (`packages/api/src/app.ts`) rend les ventes citées (`cited` avec `id`, mois, surface, prix au m², distance, voie sans numéro), les ventes écartées (`excluded`) et la version précédente (`previous`) ; l'écran de l'avis (`packages/api/app/avis.ts`) propose d'écarter une vente citée avec un motif de la liste de R692, ce qui appelle `POST /v1/biens/{id}/avis` avec `previous` et `exclude`.
+- Avec AU050 : la vue rend aussi les ajustements (`adjustments`, `source`, `motive`) et l'écran propose d'en retenir un, avec un motif de R693.
 - Critères : la vue ne rend ni nom ni numéro de voie [R29] ; écarter depuis l'écran donne une nouvelle version, la précédente reste listée [R692] ; refus dits en français.
 - Attend : rien.
 
 ### AU050 · Les décotes et surcotes sont des pourcentages fixes sans calibration locale attachée au calcul
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A050 (majeur), endroit : C/estimation/fourchette.ts, `adjustmentsFor`.
 - Constat de l'audit : Les décotes et surcotes sont des pourcentages fixes sans calibration locale attachée au calcul.
@@ -603,7 +605,7 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU051 · La piscine, le garage, la cave et le plain-pied prévus dans le calcul ne lui sont pas transmis depuis la…
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A051 (majeur), endroit : C/estimation/preparation-avis.ts, `featuresOf`.
 - Constat de l'audit : La piscine, le garage, la cave et le plain-pied prévus dans le calcul ne lui sont pas transmis depuis la fiche utilisée par le parcours réel.
