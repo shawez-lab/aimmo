@@ -4,7 +4,9 @@
  * Il s'ouvre depuis un bien de la liste « Mes biens ».
  *
  * L'écran ne lit et n'écrit que par les routes de l'avis [R16, R30]. Il ne calcule rien : la fourchette vient du code,
- * et l'agent l'ajuste. L'adresse saisie part à la préparation, n'est ni gardée ni remontrée [R46]. L'avis validé se
+ * et l'agent l'ajuste. L'adresse saisie part à la préparation ; vérifiée, le serveur la garde pour le prochain avis, et
+ * l'écran ne la remontre jamais : laissée vide, elle est reprise, donnée, elle la remplace (AU052, R695) [R46]. Sans
+ * fourchette possible, l'agent ouvre un avis motivé par ses propres ventes vérifiées (AU046, R690). L'avis validé se
  * télécharge en page à imprimer ; rien ne part d'ici vers le vendeur [R26]. Tout texte reçu est posé avec `textContent`.
  */
 
@@ -13,11 +15,16 @@ const REFUSALS = {
   invalid: 'Vérifiez l’adresse et le type de logement.',
   not_configured: 'Les ventes ne sont pas encore branchées : l’avis ne peut pas se préparer.',
   sales_unavailable: 'Les ventes ne répondent pas : réessayez dans un moment.',
-  not_a_home: 'Un avis de valeur se prépare ici pour un logement.',
+  not_a_home: 'Un avis de valeur se prépare ici pour un logement, un terrain ou un immeuble.',
+  address_needed: 'Donnez l’adresse du bien : aucune adresse vérifiée n’est encore gardée pour lui.',
+  invalid_references: 'Vérifiez vos ventes : de 3 à 20, chacune avec son mois (moins de 5 ans), sa surface, son prix et sa preuve ; la voie sans numéro.',
+  not_verified: 'Cochez la case : chaque vente doit avoir été vérifiée par vous.',
+  range_far_from_references: 'Cette fourchette s’écarte trop de vos ventes vérifiées.',
+  range_available: 'Le calcul donne une fourchette pour ce bien : préparez l’avis sans vos ventes.',
   no_surface: 'Renseignez d’abord la surface du bien.',
   address_not_found: 'Adresse introuvable ou incertaine : précisez-la.',
   other_town: 'Cette adresse n’est pas dans la commune du bien.',
-  type: 'Un avis de valeur se prépare ici pour un logement.',
+  type: 'Le calcul ne traite que les appartements et les maisons : donnez vos ventes vérifiées.',
   adresse: 'Il manque l’adresse ou la surface pour calculer.',
   hors_zone: 'Ce département n’est pas encore couvert par nos ventes.',
   dvf_non_couvert: 'Les ventes publiques ne couvrent pas ce département.',
@@ -128,11 +135,11 @@ globalThis.AIMMO_AVIS = function (t) {
   function form() {
     var box = el('section', null, 'bloc');
     box.appendChild(el('h3', 'Préparer un avis'));
-    box.appendChild(el('p', 'L’adresse sert au calcul et aux données publiques. Elle n’est pas gardée. Le reste vient de la fiche du bien.', 'doux'));
-    var address = field(box, 'avis-adresse', 'Adresse du bien');
+    box.appendChild(el('p', 'L’adresse sert au calcul et aux données publiques. Vérifiée, elle est gardée pour le prochain avis : laissez vide pour la reprendre, donnez-en une autre pour la changer. Le reste vient de la fiche du bien.', 'doux'));
+    var address = field(box, 'avis-adresse', 'Adresse du bien (vide : celle déjà vérifiée)');
     address.setAttribute('autocomplete', 'off');
     var kind = field(box, 'avis-type', 'Type de logement', 'select');
-    [['', 'À choisir'], ['apartment', 'Appartement'], ['house', 'Maison']].forEach(function (k) {
+    [['', 'À choisir'], ['apartment', 'Appartement'], ['house', 'Maison'], ['land', 'Terrain'], ['building', 'Immeuble']].forEach(function (k) {
       var o = el('option', k[1]);
       o.value = k[0];
       kind.appendChild(o);
@@ -146,14 +153,76 @@ globalThis.AIMMO_AVIS = function (t) {
     box.appendChild(button('Préparer le brouillon', function () {
       state('Calcul en cours…');
       var mine = ++seq;
-      return send(base(), 'POST', { address: address.value, kind: kind.value, condition: condition.value }).then(function (res) {
+      var payload = { kind: kind.value, condition: condition.value };
+      if (address.value.trim() !== '') payload.address = address.value;
+      return send(base(), 'POST', payload).then(function (res) {
         if (res.gone || mine !== seq) return false;
-        if (!res.ok) { state(why(res, 'Le brouillon n’a pas pu être préparé.')); return false; }
+        if (!res.ok) {
+          state(why(res, 'Le brouillon n’a pas pu être préparé.'));
+          // Sans fourchette du calcul : l'avis motivé par les ventes vérifiées de l'agent [R690].
+          if (res.body && res.body.manualPossible === true) manual(box, payload);
+          return false;
+        }
         address.value = '';
         return load('Brouillon prêt : relisez-le, ajustez-le, puis validez.');
       });
     }));
     body().appendChild(box);
+  }
+  var PROOFS = [['agence', 'Vente conclue par l’agence'], ['acte', 'Acte de vente consulté'], ['notaire', 'Référence notariale'], ['confrere', 'Vente d’un confrère, preuve vue']];
+  function manual(box, payload) {
+    if (box.motive) return;
+    box.motive = true;
+    var m = el('section', null, 'bloc');
+    m.setAttribute('id', 'avis-motive');
+    m.appendChild(el('h3', 'Avis motivé par vos ventes'));
+    m.appendChild(el('p', 'Pas de fourchette automatique : donnez de 3 à 20 ventes réelles que vous avez vérifiées, et votre fourchette. L’avis dira que la fourchette est la vôtre, et pourquoi.', 'doux'));
+    var low = field(m, 'avis-motive-bas', 'Bas de votre fourchette, en euros');
+    var high = field(m, 'avis-motive-haut', 'Haut de votre fourchette, en euros');
+    low.setAttribute('inputmode', 'numeric');
+    high.setAttribute('inputmode', 'numeric');
+    var rows = [];
+    function row() {
+      var n = rows.length + 1;
+      var r = {
+        month: field(m, 'avis-vente-mois-' + n, 'Vente ' + n + ' : mois (AAAA-MM)'),
+        surface: field(m, 'avis-vente-surface-' + n, 'Vente ' + n + ' : surface en m²'),
+        price: field(m, 'avis-vente-prix-' + n, 'Vente ' + n + ' : prix en euros'),
+        proof: field(m, 'avis-vente-preuve-' + n, 'Vente ' + n + ' : preuve', 'select'),
+        town: field(m, 'avis-vente-commune-' + n, 'Vente ' + n + ' : commune (facultatif)'),
+      };
+      r.surface.setAttribute('inputmode', 'decimal');
+      r.price.setAttribute('inputmode', 'numeric');
+      PROOFS.forEach(function (k) { var o = el('option', k[1]); o.value = k[0]; r.proof.appendChild(o); });
+      rows.push(r);
+    }
+    row(); row(); row();
+    m.appendChild(button('Ajouter une vente', function () { if (rows.length < 20) row(); return Promise.resolve(true); }));
+    var check = el('input');
+    check.setAttribute('id', 'avis-motive-verifie');
+    check.setAttribute('type', 'checkbox');
+    var lab = el('label', 'J’ai vérifié chacune de ces ventes');
+    lab.setAttribute('for', 'avis-motive-verifie');
+    m.appendChild(check);
+    m.appendChild(lab);
+    function num(x) { var v = String(x.value).replace(/[\\s\\u00a0\\u202f]/g, '').replace(',', '.'); return v === '' ? null : Number(v); }
+    m.appendChild(button('Préparer l’avis motivé', function () {
+      var refs = rows.filter(function (r) { return r.month.value.trim() !== '' || r.price.value.trim() !== ''; }).map(function (r) {
+        var x = { month: r.month.value.trim(), surface: num(r.surface), price: num(r.price), proof: r.proof.value };
+        if (r.town.value.trim() !== '') x.town = r.town.value.trim();
+        return x;
+      });
+      var body2 = { kind: payload.kind, condition: payload.condition, manual: { low: num(low), high: num(high), verified: check.checked === true, references: refs } };
+      if (payload.address) body2.address = payload.address;
+      state('Préparation en cours…');
+      var mine = ++seq;
+      return send(base(), 'POST', body2).then(function (res) {
+        if (res.gone || mine !== seq) return false;
+        if (!res.ok) { state(why(res, 'L’avis motivé n’a pas pu être préparé.')); return false; }
+        return load('Brouillon de l’avis motivé prêt : relisez-le, puis validez.');
+      });
+    }));
+    box.appendChild(m);
   }
   /*
    * AU105 · les corrections gardées sur cet appareil pour un avis qui n'est plus celui qu'on corrige (validé depuis

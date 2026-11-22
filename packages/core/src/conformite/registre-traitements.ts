@@ -143,6 +143,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)', 'Fournisseur d\'IA (textes proposés, jamais décidés)'],
     tables: {
       valuation_reports: ['agent_id', 'agent_low', 'agent_high', 'text', 'text_by', 'validated_by'],
+      // AU052 : l'adresse vérifiée d'un bien, gardée pour le prochain avis de valeur.
+      valuation_addresses: ['address', 'postal_code', 'set_by'],
       valuation_deliveries: ['report_id', 'person_id', 'conversation_id', 'noted_by'],
       valuation_follow_ups: ['report_id'],
       // HX32 : le relevé du marché joint à l'avis par l'agent qui suit le bien ; ni nom ni adresse de concurrent.
@@ -1223,6 +1225,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   document_proxies: ['document_id', 'network_id', 'power_kind', 'granted_on', 'recorded_at'],
   document_mandant_rights: ['document_id', 'network_id', 'right_kind', 'recorded_at'],
   property_designations: ['id', 'network_id', 'property_id', 'version', 'set_at'],
+  valuation_addresses: ['id', 'network_id', 'property_id', 'version', 'set_at'],
   property_positions: ['id', 'network_id', 'property_id', 'version', 'source', 'designation_version', 'set_at'],
   person_domiciles: ['id', 'network_id', 'version', 'set_at'],
   fee_schedules: ['id', 'network_id', 'max_rate_bp', 'min_eur', 'set_at'],

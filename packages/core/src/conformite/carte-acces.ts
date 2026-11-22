@@ -548,6 +548,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // AU002 : le domicile du mandant, par sa fiche ; la désignation du bien, par le bien.
   person_domiciles: { locate: by('person_id') },
   property_designations: { locate: [via('property_id', 'properties')] },
+  valuation_addresses: { locate: [via('property_id', 'properties')] },
   property_positions: { locate: [via('property_id', 'properties')] },
   property_sanitation: { locate: [via('property_id', 'properties')] },
   property_installations: { locate: [via('property_id', 'properties')] },
