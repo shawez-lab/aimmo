@@ -232,7 +232,7 @@ describeWithSqlite('AU044 · un vrai vocal devient un texte traçable, une panne
     expect(t.http.calls.filter((c) => c.url === SPEECH)).toHaveLength(1);
     const unread = await t.captation.reception.forAgent(t.network.id);
     expect(unread).toHaveLength(1);
-    expect(unread[0]!.body).toContain('222');
+    expect(unread[0]!.raw_payload).toContain('222');
 
     const list = await t.reprises.list({ role: 'agent', networkId: t.network.id, userId: t.alex.id });
     expect(list.ok).toBe(true);
