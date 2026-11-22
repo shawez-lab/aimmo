@@ -560,6 +560,18 @@ describeWithSqlite('AU041 · capacité déclarée des agents', () => {
     expect(await t.attribution.waiting(t.network.id, t.alex.id)).toBe(0);
   });
 
+  it('[R681] deux attributions d’une fiche à la même heure : la capacité n’est jamais dépassée', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    const q1 = await t.contact('a', 'Je souhaite vendre ma maison à Beaune.');
+    const q2 = await t.contact('b', 'Je souhaite vendre ma maison à Talant.');
+    expect(await t.attribution.attribute(q1)).toMatchObject({ agent_id: null });
+    expect(await t.attribution.attribute(q2)).toMatchObject({ agent_id: t.alex.id });
+    await t.fiche.merge({ survivorId: await t.personOf(q1), mergedId: await t.personOf(q2), reason: 'même personne' });
+    expect((await t.attribution.current(await t.personOf(q1)))!.agent_id).toBe(t.alex.id);
+    expect(await t.attribution.waiting(t.network.id, t.alex.id)).toBe(1);
+  });
+
   it('[R681] un client déjà suivi reste à son agent même plein ; la réattribution passe aussi l’agent plein', async () => {
     const t = await setup();
     await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');

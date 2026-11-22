@@ -58,7 +58,9 @@ const placeholders = (n: number): string => Array.from({ length: n }, () => '?')
 /**
  * Les contacts en attente de rappel chez un agent (paramètres : réseau, réseau, agent) [R681]. Chaque fiche est prise
  * entière, fiches réunies comprises, comme `current` la lit : elle compte une fois si sa dernière attribution
- * qu'aucune autre ne remplace est à l'agent, et qu'aucun agent n'a écrit à l'une de ses fiches depuis.
+ * qu'aucune autre ne remplace est à l'agent, et qu'aucun agent n'a écrit à l'une de ses fiches depuis. Deux
+ * attributions de la même fiche à la même milliseconde : elle compte chez chacun des deux agents, jamais chez aucun ;
+ * la capacité peut alors refuser une place de trop, jamais en donner une de trop (lecture prudente, sans `rowid`).
  */
 const WAITING_SQL = `(WITH RECURSIVE up(start, id) AS (
     SELECT p.id, p.id FROM persons p WHERE p.network_id = ?
@@ -67,15 +69,15 @@ const WAITING_SQL = `(WITH RECURSIVE up(start, id) AS (
   fiche(person_id, root) AS (
     SELECT u.start, u.id FROM up u WHERE NOT EXISTS (SELECT 1 FROM person_merges m WHERE m.merged_id = u.id AND m.undone_at IS NULL)
   ),
-  cur(root, agent_id, created_at, rid) AS (
-    SELECT f.root, a.agent_id, a.created_at, a.id FROM attributions a JOIN fiche f ON f.person_id = a.person_id
+  cur(root, agent_id, created_at) AS (
+    SELECT f.root, a.agent_id, a.created_at FROM attributions a JOIN fiche f ON f.person_id = a.person_id
      WHERE a.network_id = ? AND NOT EXISTS (SELECT 1 FROM attributions r WHERE r.replaces_id = a.id)
   ),
   latest(root, agent_id, created_at) AS (
     SELECT c.root, c.agent_id, c.created_at FROM cur c
-     WHERE NOT EXISTS (SELECT 1 FROM cur d WHERE d.root = c.root AND (d.created_at > c.created_at OR (d.created_at = c.created_at AND d.rid > c.rid)))
+     WHERE NOT EXISTS (SELECT 1 FROM cur d WHERE d.root = c.root AND d.created_at > c.created_at)
   )
-  SELECT count(*) FROM latest l WHERE l.agent_id = ?
+  SELECT count(DISTINCT l.root) FROM latest l WHERE l.agent_id = ?
     AND NOT EXISTS (
       SELECT 1 FROM messages m JOIN fiche f ON f.person_id = m.person_id
        WHERE f.root = l.root AND m.direction = 'out' AND m.author_kind = 'agent' AND m.occurred_at >= l.created_at
