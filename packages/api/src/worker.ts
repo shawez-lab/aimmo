@@ -163,6 +163,13 @@ export interface Env {
   TRANSCRIPTION_MODEL?: string;
   TRANSCRIPTION_KEY?: string;
   WHATSAPP_MEDIA_TOKEN?: string;
+  /**
+   * AU045 : `reel` ouvre le vrai raccordement téléphonique de l'assistant vocal (`telephonie.ts`), avec la variable
+   * `TWILIO_ACCOUNT_SID` et le secret `TWILIO_AUTH_TOKEN` (H78) ; sinon les adresses répondent 503.
+   */
+  TELEPHONIE_MODE?: string;
+  TWILIO_ACCOUNT_SID?: string;
+  TWILIO_AUTH_TOKEN?: string;
 }
 
 /** AU043 : les vraies boîtes des agents, et le rangement de leurs pièces dans `PIECES` ; sinon rien n'est lu [R683]. */
@@ -314,6 +321,7 @@ export default {
       // numéros de la tuile partent, jamais un envoi.
       mapTiles: tileTemplateOf(env.CARTE_TUILES_URL) ? new HttpTileSource(tileTemplateOf(env.CARTE_TUILES_URL)!, fetch.bind(globalThis)) : null,
       copropriete: { geocoder: new BanGeocoder(fetch.bind(globalThis)), urbanism: new GpuUrbanism(fetch.bind(globalThis)) },
+      telephonie: { mode: env.TELEPHONIE_MODE, accountSid: env.TWILIO_ACCOUNT_SID, authToken: env.TWILIO_AUTH_TOKEN },
       mail: { networkId: env.MAIL_NETWORK_ID, forwardTo: env.MAIL_FORWARD_TO, ownAddresses: env.MAIL_OWN_ADDRESSES },
       meta: {
         appSecret: env.META_APP_SECRET,

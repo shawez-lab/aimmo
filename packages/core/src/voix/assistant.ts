@@ -44,7 +44,11 @@ import type { ReservationEnLigne } from '../rendezvous/en-ligne.ts';
 import { appointmentWhen } from '../rendezvous/reservation.ts';
 import type { Appels, CallView } from './appels.ts';
 
-export const FORWARD_REASONS = ['no_answer', 'busy', 'unreachable'] as const;
+/**
+ * Le motif du renvoi. `conditional` (AU045) : un renvoi conditionnel réglé chez l'opérateur de l'agent (non-réponse,
+ * occupation, absence de réseau), dont le service téléphonique ne transmet pas le motif précis [R246, R710].
+ */
+export const FORWARD_REASONS = ['no_answer', 'busy', 'unreachable', 'conditional'] as const;
 export type ForwardReason = (typeof FORWARD_REASONS)[number];
 
 /** Un appel renvoyé vers l'assistant, tel que le service téléphonique le décrit en le décrochant. */

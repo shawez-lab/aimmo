@@ -81,6 +81,7 @@ import { localTime as parisLocalTime } from '../../core/src/envoi/horaires.ts';
 import { ASSISTANT_PATH, handleAssistant, type AssistantLimits } from './assistant.ts';
 import type { ReplyWriter, ReportWriter } from '@aimmo/core';
 import { META_PATH, handleMeta, type MetaConfig } from './meta.ts';
+import { TELEPHONIE_PATHS, handleTelephonie, type TelephonieSettings } from './telephonie.ts';
 import { handleAgentApp } from './agent-app.ts';
 import { ESTIMATION_PATH, handleEstimation, type EstimationLimits } from './estimation.ts';
 import { BOOKING_PATH, BOOKING_SLOTS_PATH, handleBooking, type BookingLimits } from './rendezvous.ts';
@@ -196,6 +197,8 @@ export interface ApiConfig {
   captationRollout?: { open: boolean; connected: readonly OutboundChannelName[] };
   /** Notifications de Meta (C07) : secrets et variables `META_*`, voir meta.ts. */
   meta?: Omit<MetaConfig, 'db' | 'now'>;
+  /** AU045 : le vrai raccordement téléphonique de l'assistant vocal (`TELEPHONIE_MODE`, `TWILIO_*`), voir telephonie.ts. */
+  telephonie?: TelephonieSettings;
   /** AU032 : les réglages de la réception des mails (`MAIL_*`), dont l'état se lit sur `/captation/mail`. */
   mail?: Omit<MailIntakeSettings, 'mode'>;
   /** Limites d'appels de l'assistant du site (C08) ; absentes : les réglages par défaut. */
@@ -2492,6 +2495,21 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       });
     } catch (error) {
       await journalError(new SqlJournalStore(config.db), 'intake:site_booking', 'rendez-vous', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
+
+  // AU045 : les appels renvoyés vers l'assistant vocal, signés par le service téléphonique [R710].
+  if (path === TELEPHONIE_PATHS.appel || path === TELEPHONIE_PATHS.tour || path === TELEPHONIE_PATHS.fin) {
+    try {
+      return await handleTelephonie(request, path, {
+        ...(config.telephonie ?? { mode: undefined, accountSid: undefined, authToken: undefined }),
+        db: config.db,
+        now,
+        linkBase: config.appointmentLinkBase ?? null,
+      });
+    } catch (error) {
+      await journalError(new SqlJournalStore(config.db), 'telephonie', 'voix.telephonie', error, now);
       return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
     }
   }
