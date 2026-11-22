@@ -638,7 +638,7 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 
 ### AU054 · Le meilleur créneau repose sur une distance à vol d’oiseau majorée
 - Statut : à faire
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M05 Rendez-vous ; audit A054 (majeur), endroit : C/rendezvous/trajets.ts.
 - Constat de l'audit : Le meilleur créneau repose sur une distance à vol d’oiseau majorée, sans itinéraire routier réel.
 - Objectif : Un trajet avec obstacle ou détour important utilise un temps routier sourcé ou reste explicitement non garanti avant confirmation.
@@ -646,8 +646,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU055 · Les 30 minutes minimales de trajet empêchent d’enchaîner simplement deux visites dans le même immeuble
-- Statut : à faire
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M05 Rendez-vous ; audit A055 (majeur), endroit : C/rendezvous/creneaux.ts, `DEFAULT_SLOT_SETTINGS`.
 - Constat de l'audit : Les 30 minutes minimales de trajet empêchent d’enchaîner simplement deux visites dans le même immeuble.
 - Objectif : Deux visites au même lieu peuvent s’enchaîner avec une marge spécifique paramétrée, sans affaiblir les contrôles des autres trajets.
