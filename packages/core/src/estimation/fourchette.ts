@@ -2,8 +2,10 @@
  * La fourchette de prix d'un bien, calculée par le code (M04, E01). L'IA n'y touche pas.
  *
  * Méthode reprise du site (`functions/_lib/estimation.js` de shawez-immo), qui tourne déjà :
- *   1. comparables : même type, surface proche, les plus proches du bien ; le rayon s'élargit tant qu'il y a moins
- *      de 12 ventes ;
+ *   1. comparables : même type, surface proche, vendus dans la fenêtre de temps (36 mois avant l'estimation, réglage),
+ *      les plus proches du bien ; le rayon s'élargit tant qu'il y a moins de 12 ventes. Une vente plus ancienne n'est
+ *      jamais retenue, ni corrigée : la fenêtre, sa raison et le nombre de ventes écartées sont rendus (audit A048,
+ *      R691) ;
  *   2. prix au m² de référence : la médiane des comparables (40 au plus, les plus proches) ;
  *   3. ajustements écrits et bornés : état, époque, étage et ascenseur, extérieur, stationnement, et le diagnostic
  *      énergétique, que le cahier demande en plus ;
@@ -121,10 +123,28 @@ export type RangeResult =
       radius: number;
       adjustments: Adjustment[];
       data: DataInfo;
+      /** La fenêtre de temps des ventes retenues, et pourquoi [R691]. */
+      window: SalesWindow;
     }
   | { ok: false; reason: NoRangeReason; comparablesFound: number; data: DataInfo };
 
+/** La fenêtre de temps des comparables : rien d'avant `from` n'est retenu [R691]. */
+export interface SalesWindow {
+  months: number;
+  /** Premier mois retenu, `AAAA-MM`. */
+  from: string;
+  /** Ventes de même sorte et de surface proche, dans le rayon retenu, écartées parce que trop anciennes. */
+  excludedOld: number;
+  justification: string;
+}
+
+/** Pourquoi une vente trop ancienne n'est pas retenue : écrit une fois, rendu avec chaque fourchette [R691]. */
+export const WINDOW_JUSTIFICATION =
+  'Au-delà de cette fenêtre, les prix ont trop changé pour comparer une vente sans la corriger ; elle n’est donc pas retenue.';
+
 export interface RangeSettings {
+  /** Une vente plus ancienne que ce nombre de mois, avant le mois de l'estimation, n'est pas retenue [R691]. */
+  maxSaleAgeMonths: number;
   radii: Record<EstimatedKind, readonly number[]>;
   /** Nombre de ventes visé avant d'arrêter d'élargir. */
   target: number;
@@ -142,6 +162,7 @@ export interface RangeSettings {
 }
 
 export const DEFAULT_RANGE_SETTINGS: RangeSettings = Object.freeze<RangeSettings>({
+  maxSaleAgeMonths: 36,
   radii: { apartment: [300, 500, 800, 1200, 2000, 3000, 5000], house: [500, 1000, 2000, 3000, 5000, 8000, 12000] },
   target: 12,
   minimum: 5,
@@ -249,6 +270,10 @@ export class Fourchette {
     if (department !== coverage.department) return none('hors_zone');
 
     const kind = p.kind;
+    const now = this.now();
+    const start = now.getUTCFullYear() * 12 + now.getUTCMonth() - this.settings.maxSaleAgeMonths;
+    const from = `${String(Math.floor(start / 12)).padStart(4, '0')}-${String((start % 12) + 1).padStart(2, '0')}`;
+    let excludedOld = 0;
     const [minRatio, maxRatio] = this.settings.surfaceRatio[kind];
     const radii = this.settings.radii[kind];
     let found: Comparable[] = [];
@@ -257,12 +282,16 @@ export class Fourchette {
       searched = radius;
       const sales = await this.source.within(kind, p.lat, p.lon, radius);
       found = [];
+      excludedOld = 0;
       for (const s of sales) {
         if (s.kind !== kind) continue;
         const ratio = s.surface / p.surface;
         if (ratio < minRatio || ratio > maxRatio) continue;
         const d = distance(p.lat, p.lon, s.lat, s.lon);
-        if (d <= radius) found.push({ ...s, distance: d });
+        if (d > radius) continue;
+        // Trop ancienne : écartée, et comptée [R691].
+        if (s.month < from) excludedOld += 1;
+        else found.push({ ...s, distance: d });
       }
       if (found.length >= this.settings.target) break;
     }
@@ -293,6 +322,7 @@ export class Fourchette {
       radius,
       adjustments: adj.lines.map(([label, v]) => ({ label, pct: Math.round(v * 100) })),
       data,
+      window: { months: this.settings.maxSaleAgeMonths, from, excludedOld, justification: WINDOW_JUSTIFICATION },
     };
   }
 }

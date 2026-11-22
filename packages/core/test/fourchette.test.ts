@@ -47,6 +47,8 @@ class MemorySales implements SalesSource {
 const ALL = [...sales(7, 400, 47.322, 5.041, 0.02, 'a'), ...sales(11, 60, 47.3, 5.1, 0.08, 'b')];
 const OCT_2026 = () => new Date('2026-10-27T10:00:00.000Z');
 const range = (src: SalesSource = new MemorySales(ALL), now = OCT_2026) => new Fourchette(src, DEFAULT_RANGE_SETTINGS, now);
+// La méthode du site ne borne pas l'ancienneté des ventes : la comparer demande une fenêtre ouverte (AU048).
+const siteMethod = () => new Fourchette(new MemorySales(ALL), { ...DEFAULT_RANGE_SETTINGS, maxSaleAgeMonths: 1200 }, OCT_2026);
 const flat = (over: Partial<EstimatedProperty>): EstimatedProperty => ({ kind: 'apartment', surface: 65, lat: 47.3225, lon: 5.0412, postalCode: '21000', ...over });
 
 describe('E01 · fourchette de prix par le code', () => {
@@ -67,7 +69,7 @@ describe('E01 · fourchette de prix par le code', () => {
       ],
     ];
     for (const [property, expected] of cases) {
-      const r = await range().estimate(property);
+      const r = await siteMethod().estimate(property);
       if (!r.ok) throw new Error(`pas de fourchette : ${r.reason}`);
       expect({
         low: r.low,
@@ -100,9 +102,9 @@ describe('E01 · fourchette de prix par le code', () => {
     const few = ALL.filter((s) => s.kind === 'apartment').slice(0, 200);
     const r = await range(new MemorySales(few)).estimate(flat({ lat: 47.2, lon: 5.3, postalCode: '21110' }));
     expect(r).toMatchObject({ ok: false, reason: 'peu_de_ventes', comparablesFound: 0 });
-    const four = ALL.filter((s) => s.kind === 'apartment').slice(0, 4).map((s) => ({ ...s, lat: 47.3225, lon: 5.0412, surface: 65 }));
+    const four = ALL.filter((s) => s.kind === 'apartment').slice(0, 4).map((s) => ({ ...s, lat: 47.3225, lon: 5.0412, surface: 65, month: '2025-03' }));
     expect(await range(new MemorySales(four)).estimate(flat({}))).toMatchObject({ ok: false, reason: 'peu_de_ventes', comparablesFound: 4 });
-    const five = ALL.filter((s) => s.kind === 'apartment').slice(0, 5).map((s) => ({ ...s, lat: 47.3225, lon: 5.0412, surface: 65 }));
+    const five = ALL.filter((s) => s.kind === 'apartment').slice(0, 5).map((s) => ({ ...s, lat: 47.3225, lon: 5.0412, surface: 65, month: '2025-03' }));
     expect((await range(new MemorySales(five)).estimate(flat({}))).ok).toBe(true);
   });
 
@@ -123,9 +125,9 @@ describe('E01 · fourchette de prix par le code', () => {
     if (!late.ok) throw new Error(late.reason);
     expect(late.latestUsedSale).toBe(late.comparables.map((c) => c.month).sort().at(-1));
     // Des comparables anciens dans des données récentes : c'est la date des ventes utilisées qui est dite.
-    const old = ALL.filter((s) => s.kind === 'apartment').slice(0, 6).map((s) => ({ ...s, lat: 47.3225, lon: 5.0412, surface: 65, month: '2020-01' }));
+    const old = ALL.filter((s) => s.kind === 'apartment').slice(0, 6).map((s) => ({ ...s, lat: 47.3225, lon: 5.0412, surface: 65, month: '2024-01' }));
     const aged = await range(new MemorySales(old, { ...COVERAGE, lastSale: '2026-10-01' })).estimate(flat({}));
-    expect(aged).toMatchObject({ ok: true, latestUsedSale: '2020-01', data: { lastSale: '2026-10-01' } });
+    expect(aged).toMatchObject({ ok: true, latestUsedSale: '2024-01', data: { lastSale: '2026-10-01' } });
     const refused = await range().estimate(flat({ kind: 'land' }));
     expect(refused.data.lastSale).toBe('2025-12-30');
   });
@@ -156,5 +158,41 @@ describe('E01 · fourchette de prix par le code', () => {
     expect(departmentOf('97600')).toBe('976');
     expect(departmentOf('20000')).toBe('20');
     expect(departmentOf('2100')).toBeNull();
+  });
+});
+
+describe('AU048 · la fenêtre de temps des ventes retenues', () => {
+  const near = (month: string, i: number): Sale => ({ id: `w${i}-${month}`, kind: 'apartment', lat: 47.3225, lon: 5.0412 + i * 0.00001, surface: 65, pricePerM2: 2500 + i, month });
+
+  it('constat : des ventes de 2020 suffisaient pour une fourchette ; elles sont maintenant écartées [R691]', async () => {
+    const old = Array.from({ length: 6 }, (_, i) => near('2020-01', i));
+    const r = await range(new MemorySales(old)).estimate(flat({}));
+    expect(r).toMatchObject({ ok: false, reason: 'peu_de_ventes', comparablesFound: 0 });
+  });
+
+  it('[R691] seules les ventes des 36 mois avant l’estimation sont retenues ; la fenêtre, sa raison et les ventes écartées sont rendues', async () => {
+    const mixed = [...Array.from({ length: 6 }, (_, i) => near('2025-06', i)), near('2023-10', 7), near('2023-09', 8), near('2019-05', 9)];
+    const r = await range(new MemorySales(mixed)).estimate(flat({}));
+    if (!r.ok) throw new Error(r.reason);
+    expect(r.window).toEqual({ months: 36, from: '2023-10', excludedOld: 2, justification: expect.stringContaining('trop changé') });
+    expect(r.comparables.map((c) => c.month).sort()).toEqual(['2023-10', '2025-06', '2025-06', '2025-06', '2025-06', '2025-06', '2025-06']);
+    expect(r.comparables.every((c) => c.month >= r.window.from)).toBe(true);
+  });
+
+  it('[R691] la fenêtre suit la date de l’estimation et son réglage ; les ventes anciennes font élargir le rayon', async () => {
+    const jan = await range(new MemorySales(ALL), () => new Date('2026-01-31T23:00:00.000Z')).estimate(flat({}));
+    if (!jan.ok) throw new Error(jan.reason);
+    expect(jan.window.from).toBe('2023-01');
+    const two = await new Fourchette(new MemorySales(ALL), { ...DEFAULT_RANGE_SETTINGS, maxSaleAgeMonths: 24 }, OCT_2026).estimate(flat({}));
+    if (!two.ok) throw new Error(two.reason);
+    expect(two.window).toMatchObject({ months: 24, from: '2024-10' });
+    expect(two.comparables.every((c) => c.month >= '2024-10')).toBe(true);
+    // Moins de ventes récentes près du bien : le rayon s'élargit plutôt que de garder des ventes anciennes.
+    const close = [...Array.from({ length: 8 }, (_, i) => near('2019-01', i)), ...Array.from({ length: 12 }, (_, i) => ({ ...near('2025-01', 20 + i), lat: 47.3225 + 0.0045 }))];
+    const wide = await range(new MemorySales(close)).estimate(flat({}));
+    if (!wide.ok) throw new Error(wide.reason);
+    expect(wide.comparables).toHaveLength(12);
+    expect(wide.radius).toBeGreaterThan(300);
+    expect(wide.window.excludedOld).toBe(8);
   });
 });
