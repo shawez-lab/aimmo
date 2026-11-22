@@ -1012,6 +1012,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU091b · La régularisation d'honoraires d'une vente avec une agence partenaire
 - Statut : en cours (voie 2)
+- Où : #769 ouverte (becf2e8), Codex sans remarque, tests locaux verts (7419) ; « Vérifier » coupé deux fois à 35 min : la relancer, puis fusionner.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : AU091
 - Cahier : M13 Pilotage et finances ; M18 Partenaires (HX59) ; audit A091.
 - Objectif : une vente rattachée à une délégation d'agence partenaire se régularise aussi après un avenant d'honoraires : la part de l'agence (`commission_agency_shares`) et le relevé de l'agence (`PartageAgences.ensureStatement`, garde `agency_fee_statements_calcul`, aujourd'hui sur `sale_commissions.fee_eur`) suivent la version approuvée, sans payer deux fois un relevé déjà fait.
