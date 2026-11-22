@@ -1672,3 +1672,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-22 17:26 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU045
 - 2026-11-22 17:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 15:54 par une séance active : AU055, push à 17:44)
 - 2026-11-22 18:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 15:54 par une séance active : AU055 (#784), push à 18:25)
+- 2026-11-22 19:07 · AU055 · deux visites au même bien s'enchaînent avec la marge du même lieu (R700, migration 4110), trajet ailleurs inchangé et tenu par la base ; Codex 3 P0 corrigés puis rien ; vérification verte ; fusionnée (#784, 9799592b) · AU054 réservée à la voie 2 · prochaine : AU054 (voie 2)
+- 2026-11-22 19:07 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 17:54 et 18:53 n'ont rien produit)
+- 2026-11-22 19:07 · VOIE 2 : AU055, 9799592b (main), relancé non

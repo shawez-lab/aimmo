@@ -647,7 +647,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU055 · Les 30 minutes minimales de trajet empêchent d’enchaîner simplement deux visites dans le même immeuble
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#784, `9799592b`). Constat confirmé (trajet de 30 min partout, même au même bien). `samePlaceMinutes` (10 par défaut, 0 au trajet, pas de 5) ; au même bien connu, la marge ; ailleurs le trajet ; R700. La base tranche : chaque tranche porte son bien (migration 4110, tranches d'avant remplies), le trajet tenu au même bien est partagé et passe, dans l'instruction qui libère, au rendez-vous du bien qui le demande encore, même en train d'être pris ; la marge se revérifie à la prise des tranches. Créneaux proposés (agent et en ligne, bien du réseau seulement), réservation en ligne et meilleur créneau suivent la marge. Codex 3 P0 corrigés (course à l'annulation, découverte en ligne, tranches d'avant) puis rien ; vérification verte. Restent : deux lots distincts d'un même immeuble gardent le trajet entier (la fiche n'a pas d'identifiant d'immeuble) ; la dictée vérifie ses créneaux sans le bien.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M05 Rendez-vous ; audit A055 (majeur), endroit : C/rendezvous/creneaux.ts, `DEFAULT_SLOT_SETTINGS`.
 - Constat de l'audit : Les 30 minutes minimales de trajet empêchent d’enchaîner simplement deux visites dans le même immeuble.
