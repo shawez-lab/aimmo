@@ -99,7 +99,7 @@ describe('E10 · écran de l’avis de valeur', () => {
     const t = await run({ 'GET /v1/biens/b1/avis': ok([]), 'POST /v1/biens/b1/avis': async () => Response.json({ ok: false, rule: 'R27', code: 'peu_de_ventes', comparablesFound: 2, manualPossible: true }, { status: 422 }) });
     await t.open();
     t.input('avis-adresse').value = '1 Rue de l’Essai 21000 Dijon';
-    t.input('avis-type').value = 'land';
+    t.input('avis-type').value = 'house';
     t.input('avis-etat-bien').value = 'bon';
     await t.click(t.byText('Préparer le brouillon'));
     expect(t.input('avis-motive-bas')).toBeDefined();
@@ -112,6 +112,8 @@ describe('E10 · écran de l’avis de valeur', () => {
       t.input(`avis-vente-preuve-${n}`).value = proof;
     }
     t.input('avis-vente-commune-1').value = 'Dijon';
+    // La sorte corrigée après le premier refus est celle qui part.
+    t.input('avis-type').value = 'land';
     (t.input('avis-motive-verifie') as unknown as { checked: boolean }).checked = true;
     t.table['POST /v1/biens/b1/avis'] = ok(DRAFT);
     t.table['GET /v1/biens/b1/avis'] = ok([DRAFT]);

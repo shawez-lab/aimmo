@@ -150,17 +150,22 @@ globalThis.AIMMO_AVIS = function (t) {
       o.value = k[0];
       condition.appendChild(o);
     });
+    // Ce que le formulaire dit au moment du geste : l'avis motivé relit la sorte, l'état et l'adresse à son envoi.
+    function current() {
+      var p = { kind: kind.value, condition: condition.value };
+      if (address.value.trim() !== '') p.address = address.value;
+      return p;
+    }
     box.appendChild(button('Préparer le brouillon', function () {
       state('Calcul en cours…');
       var mine = ++seq;
-      var payload = { kind: kind.value, condition: condition.value };
-      if (address.value.trim() !== '') payload.address = address.value;
+      var payload = current();
       return send(base(), 'POST', payload).then(function (res) {
         if (res.gone || mine !== seq) return false;
         if (!res.ok) {
           state(why(res, 'Le brouillon n’a pas pu être préparé.'));
           // Sans fourchette du calcul : l'avis motivé par les ventes vérifiées de l'agent [R690].
-          if (res.body && res.body.manualPossible === true) manual(box, payload);
+          if (res.body && res.body.manualPossible === true) manual(box, current);
           return false;
         }
         address.value = '';
@@ -170,7 +175,7 @@ globalThis.AIMMO_AVIS = function (t) {
     body().appendChild(box);
   }
   var PROOFS = [['agence', 'Vente conclue par l’agence'], ['acte', 'Acte de vente consulté'], ['notaire', 'Référence notariale'], ['confrere', 'Vente d’un confrère, preuve vue']];
-  function manual(box, payload) {
+  function manual(box, current) {
     if (box.motive) return;
     box.motive = true;
     var m = el('section', null, 'bloc');
@@ -212,6 +217,7 @@ globalThis.AIMMO_AVIS = function (t) {
         if (r.town.value.trim() !== '') x.town = r.town.value.trim();
         return x;
       });
+      var payload = current();
       var body2 = { kind: payload.kind, condition: payload.condition, manual: { low: num(low), high: num(high), verified: check.checked === true, references: refs } };
       if (payload.address) body2.address = payload.address;
       state('Préparation en cours…');

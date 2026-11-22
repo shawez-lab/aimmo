@@ -118,15 +118,20 @@ export class PreparationAvis {
     return d ? `${d.street} ${d.postal_code} ${d.city}` : null;
   }
 
-  /** Garde l'adresse vérifiée, si elle change ; deux gardes en même temps n'en font qu'une par version [R695, R18]. */
+  /**
+   * Garde l'adresse vérifiée, si elle change, en une seule écriture : la version suivante est prise dans la même
+   * instruction, deux gardes en même temps donnent deux versions, jamais une adresse perdue [R695, R18].
+   */
   private async keepAddress(viewer: Viewer, networkId: string, propertyId: string, address: string, postalCode: string): Promise<void> {
-    const last = await this.db.first<{ address: string; version: number }>('SELECT address, version FROM valuation_addresses WHERE network_id = ? AND property_id = ? ORDER BY version DESC LIMIT 1', [networkId, propertyId]);
-    if (last?.address === address) return;
     const done = await this.db.run(
-      'INSERT INTO valuation_addresses (id, network_id, property_id, version, address, postal_code, set_by, set_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (property_id, version) DO NOTHING',
-      [crypto.randomUUID(), networkId, propertyId, (last?.version ?? 0) + 1, address, postalCode, viewer.userId, this.now().toISOString()],
+      `INSERT INTO valuation_addresses (id, network_id, property_id, version, address, postal_code, set_by, set_at)
+       SELECT ?, ?, ?, COALESCE(MAX(version), 0) + 1, ?, ?, ?, ? FROM valuation_addresses WHERE property_id = ?
+       HAVING COALESCE((SELECT address FROM valuation_addresses WHERE property_id = ? ORDER BY version DESC LIMIT 1), '') <> ?`,
+      [crypto.randomUUID(), networkId, propertyId, address, postalCode, viewer.userId, this.now().toISOString(), propertyId, propertyId, address],
     );
-    if (done.changes === 1) await appendEvent(this.journal, { type: 'avis.adresse_gardee', actor: `agent:${viewer.userId}`, subject: `property:${propertyId}`, data: { replaced: last !== null } }, this.now);
+    if (done.changes !== 1) return;
+    const versions = await this.db.first<{ n: number }>('SELECT count(*) AS n FROM valuation_addresses WHERE property_id = ?', [propertyId]);
+    await appendEvent(this.journal, { type: 'avis.adresse_gardee', actor: `agent:${viewer.userId}`, subject: `property:${propertyId}`, data: { replaced: (versions?.n ?? 1) > 1 } }, this.now);
   }
 
   /** La dernière version de la fiche, ou rien. */

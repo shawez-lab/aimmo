@@ -304,3 +304,19 @@ describeWithSqlite('AU052 · l’adresse vérifiée se reprend au prochain avis'
     expect(await w.prep.prepare(w.as('direction', 'd1'), w.property.id, { kind: 'apartment' })).toMatchObject({ ok: false, rule: 'R30' });
   });
 });
+
+describeWithSqlite('AU052 · deux adresses données en même temps', () => {
+  it('[R695] [R18] deux préparations simultanées avec deux adresses donnent deux versions, aucune perdue', async () => {
+    const w = await world();
+    const paul = w.as('agent', w.paul.id);
+    const [a, b] = await Promise.all([
+      w.prep.prepare(paul, w.property.id, { address: ADDRESS, kind: 'apartment' }),
+      w.prep.prepare(paul, w.property.id, { address: '9 Avenue de l’Essai 21000 Dijon', kind: 'apartment' }),
+    ]);
+    expect(a.ok && b.ok).toBe(true);
+    const rows = await w.db.all<{ version: number; address: string }>('SELECT version, address FROM valuation_addresses WHERE property_id = ? ORDER BY version', [w.property.id]);
+    expect(rows.map((r) => r.version)).toEqual([1, 2]);
+    expect(rows.map((r) => r.address).sort()).toEqual([ADDRESS, '9 Avenue de l’Essai 21000 Dijon'].sort());
+    expect((await w.journal.all()).filter((e) => e.type === 'avis.adresse_gardee').map((e) => e.data)).toEqual([{ replaced: false }, { replaced: true }]);
+  });
+});
