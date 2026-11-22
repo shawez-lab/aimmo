@@ -94,7 +94,9 @@ Toutes sous `/v1`. Sauf la santé, chaque appel porte `Authorization: Bearer <cl
 | GET | `/v1/apres-vente/remerciements?ouverts=1` | les remerciements préparés | l'agent de ses dossiers (R16) |
 | POST | `/v1/apres-vente/dossiers/<dossier>/clients/<id>/remerciement`, `…/appele` | `{ decision: send \| decline }` : rien ne part sans la validation de l'agent, puis par le contrôle central en mode essai ; « appelé » | l'agent du dossier (R16) |
 | GET | `/v1/plan-du-jour/controle` | les écarts du contrôle quotidien de la base légale des plans du jour sur 30 jours, non encore vus : des nombres par raison et par jour, jamais une fiche | direction, conformité (R16, R36) |
-| GET | `/v1/attribution/regles` | les règles d'attribution des contacts, les délais de rappel et les communes : les mêmes pour tous [R25] | toute clé |
+| GET | `/v1/attribution/regles` | les règles d'attribution des contacts, les délais de rappel et les communes du réseau (AU039) : les mêmes pour tous [R25, R679] | toute clé |
+| GET | `/v1/geographie/communes` | le paramétrage géographique du réseau (AU039) : `source` (`reseau`, ou `defaut` tant que rien n'est inscrit : la liste du pilote dijonnais) et les communes avec leur code INSEE, par ordre alphabétique [R679] | toute clé |
+| POST | `/v1/geographie/communes` | `{inseeCode, name, listed: true, reason}` inscrit une commune, `{inseeCode, listed: false, reason}` la retire, par une nouvelle version qui ne change plus ; la qualification et la recherche la reconnaissent aussitôt ; décision répétée, code mal formé ou nom déjà pris : 409 [R679] | direction |
 | GET | `/v1/journal/verification` | la chaîne d'empreintes du journal est-elle intacte | direction, conformité |
 | GET, POST | `/v1/meta/notifications` | vérification de l'abonnement, puis notifications signées d'Instagram, Facebook et WhatsApp ; réponse prête en mode essai, jamais envoyée | Meta, par signature (`META_APP_SECRET`) |
 | POST | `/v1/captation/formulaire` | dépose un formulaire « Être rappelé » ; rend seulement des statuts, la réponse est prête en mode essai, jamais envoyée | clé de dépôt `site_form` (`INTAKE_KEYS`) |
