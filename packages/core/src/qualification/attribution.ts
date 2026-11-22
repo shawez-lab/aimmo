@@ -4,6 +4,7 @@
  *
  * Une personne exclue ou qui a demandé l'arrêt n'est jamais attribuée [R25]. Rien n'est envoyé à personne ici.
  */
+import type { Viewer } from '../acces/droits.ts';
 import { runBatch, type SqlDatabase, type SqlStatement } from '../db/sql.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -42,9 +43,10 @@ export const DEFAULT_ATTRIBUTION_SETTINGS: AttributionSettings = Object.freeze({
 export const ATTRIBUTION_RULES: readonly string[] = Object.freeze([
   'Une personne exclue ou qui a demandé l’arrêt n’est jamais attribuée.',
   'Un message indésirable n’est attribué à personne ; un partenaire va à la direction.',
-  'Un client déjà suivi par un agent en activité reste à cet agent.',
+  'Un client déjà suivi par un agent en activité reste à cet agent, même si sa capacité est atteinte.',
   'Sinon, le contact va à un agent en activité dont la zone couvre sa commune, celle qu’il a donnée, à défaut celle du bien cité, à défaut celle d’un message d’avant, et qui ne l’a pas encore eu.',
   'Si plusieurs agents couvrent la commune, le choix se fait par un tirage fixe sur l’identifiant de la fiche : le même contact va toujours au même agent.',
+  'Un agent dont la capacité déclarée est atteinte (0 : aucun nouveau contact) ne reçoit pas de nouveau contact : le tirage passe au suivant, dans l’ordre alphabétique des identifiants à partir de l’agent tiré ; si tous sont pleins, le contact va à la direction. La capacité compte les contacts attribués à l’agent qui attendent encore son rappel.',
   'Si aucun agent ne couvre la commune, le contact va à la direction, jamais au hasard.',
   'Un contact qui n’a pas été rappelé dans le délai de la charte est réattribué une fois par délai, par la même règle, à un agent qui ne l’a pas encore eu ; s’il n’y en a plus, à la direction.',
   'Un nouveau message ne repousse jamais le délai en cours : tant que personne n’a rappelé, le délai le plus court fait foi.',
@@ -63,11 +65,41 @@ function stableIndex(key: string, n: number): number {
   return h % n;
 }
 
-/** Choisit un agent parmi ceux qui couvrent la commune, par tirage fixe sur la fiche ; null : la direction. */
-export function chooseAgent(personId: string, candidates: readonly string[], tried: ReadonlySet<string> = new Set()): string | null {
+/**
+ * Choisit un agent parmi ceux qui couvrent la commune, par tirage fixe sur la fiche ; null : la direction. Un agent
+ * plein (`full`) est passé : la file de secours suit l'ordre des identifiants à partir de l'agent tiré [R681].
+ */
+export function chooseAgent(
+  personId: string,
+  candidates: readonly string[],
+  tried: ReadonlySet<string> = new Set(),
+  full: ReadonlySet<string> = new Set(),
+): string | null {
   const open = [...new Set(candidates)].filter((id) => !tried.has(id)).sort();
-  return open.length === 0 ? null : open[stableIndex(personId, open.length)]!;
+  if (open.length === 0) return null;
+  const start = stableIndex(personId, open.length);
+  for (let i = 0; i < open.length; i += 1) {
+    const id = open[(start + i) % open.length]!;
+    if (!full.has(id)) return id;
+  }
+  return null;
 }
+
+export const AGENT_CAPACITY_FIELDS = ['agentId', 'capacity', 'reason'] as const;
+/** Le plus haut plafond qu'on peut déclarer. */
+export const MAX_AGENT_CAPACITY = 200;
+
+export interface AgentCapacity {
+  agentId: string;
+  /** null : sans plafond déclaré. */
+  capacity: number | null;
+  /** Les contacts attribués à l'agent qui attendent encore son rappel. */
+  waiting: number;
+  full: boolean;
+  version: number;
+}
+
+export type CapacityRefusal = { ok: false; rule: 'R16'; code: 'role' } | { ok: false; rule: 'R681' | null; code: string };
 
 export interface AttributionOptions {
   settings?: AttributionSettings;
@@ -141,6 +173,7 @@ export class Attribution {
     }
 
     let agentId: string | null = null;
+    let fullAgents = 0;
     let reason: AttributionReason;
     // L'agent qui suit déjà le client, sur toutes les fiches réunies : la fiche gardée d'abord.
     const followed = await this.followedBy(q.network_id, [root.agent_id, ...view.members.map((m) => m.agent_id)]);
@@ -155,24 +188,30 @@ export class Attribution {
       const history = await this.history(ids);
       const tried = new Set(history.map((c) => c.agent_id).filter((id): id is string => id !== null));
       const commune = q.city ?? (await this.propertyCommune(q.property_id)) ?? (await this.lastCommune(history));
-      agentId = commune ? chooseAgent(root.id, await this.agentsOf(q.network_id, commune), tried) : null;
+      if (commune) {
+        const pick = await this.pick(q.network_id, root.id, commune, tried);
+        agentId = pick.agentId;
+        fullAgents = pick.fullAgents;
+      }
       reason = agentId ? 'zone' : 'no_zone';
     }
 
     const hot = await this.db.first<{ temperature: string }>('SELECT temperature FROM contact_scores WHERE qualification_id = ?', [qualificationId]);
     const hours = hot?.temperature === 'hot' ? this.settings.hotCallbackHours : this.settings.otherCallbackHours;
     // L'attribution et le passage de la fiche, tout ou rien : une coupure ne laisse jamais un agent sans accès.
+    const attributionId = this.newId();
     const [inserted] = await runBatch(this.db, [
       {
         sql: `INSERT INTO attributions (id, network_id, person_id, qualification_id, agent_id, reason, callback_hours, replaces_id, created_at)
               VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?) ON CONFLICT (qualification_id) DO NOTHING`,
-        params: [this.newId(), q.network_id, root.id, qualificationId, agentId, reason, hours, this.now().toISOString()],
+        params: [attributionId, q.network_id, root.id, qualificationId, agentId, reason, hours, this.now().toISOString()],
       },
+      ...this.capacityTrace(attributionId, q.network_id, fullAgents),
       ...this.takeOver(root.id, ids, agentId, Boolean(followed)),
     ]);
     const row = await this.db.first<AttributionRow>('SELECT * FROM attributions WHERE qualification_id = ?', [qualificationId]);
     if (inserted?.changes === 1 && row) {
-      await this.log('attribution', root.id, { rule: 'R25', reason, toDirection: agentId === null, callbackHours: hours });
+      await this.log('attribution', root.id, { rule: 'R25', reason, toDirection: agentId === null, callbackHours: hours, ...(fullAgents > 0 ? { fullAgents } : {}) });
     }
     return row;
   }
@@ -208,7 +247,8 @@ export class Attribution {
 
       const tried = new Set(history.map((c) => c.agent_id).filter((id): id is string => id !== null));
       const commune = await this.lastCommune(history);
-      const next = commune ? chooseAgent(root.id, await this.agentsOf(networkId, commune), tried) : null;
+      const pick = commune ? await this.pick(networkId, root.id, commune, tried) : { agentId: null, fullAgents: 0 };
+      const next = pick.agentId;
       const id = this.newId();
       const [inserted] = await runBatch(this.db, [
         {
@@ -216,6 +256,7 @@ export class Attribution {
                 VALUES (?, ?, ?, NULL, ?, 'reassigned', ?, ?, ?) ON CONFLICT (replaces_id) DO NOTHING`,
           params: [id, networkId, root.id, next, delay.hours, a.id, at.toISOString()],
         },
+        ...this.capacityTrace(id, networkId, pick.fullAgents),
         // Toutes les fiches réunies que suivait l'agent, ou un agent parti, changent de mains : jamais deux agents.
         {
           sql: `UPDATE persons SET agent_id = ?, updated_at = ? WHERE id IN (${placeholders(ids.length)})
@@ -224,11 +265,145 @@ export class Attribution {
         },
       ]);
       if (inserted?.changes !== 1) continue;
-      await this.log('attribution.reattribuee', root.id, { rule: 'R25', toDirection: next === null, tries: tried.size });
+      await this.log('attribution.reattribuee', root.id, { rule: 'R25', toDirection: next === null, tries: tried.size, ...(pick.fullAgents > 0 ? { fullAgents: pick.fullAgents } : {}) });
       const made1 = await this.db.first<AttributionRow>('SELECT * FROM attributions WHERE id = ?', [id]);
       if (made1) made.push(made1);
     }
     return made;
+  }
+
+  /** La capacité en cours de l'agent : la version la plus haute ; null : sans plafond déclaré. */
+  private async capacityOf(networkId: string, agentId: string): Promise<{ capacity: number | null; version: number }> {
+    const row = await this.db.first<{ capacity: number | null; version: number }>(
+      'SELECT capacity, version FROM agent_capacities WHERE network_id = ? AND agent_id = ? ORDER BY version DESC LIMIT 1',
+      [networkId, agentId],
+    );
+    return row ? { capacity: row.capacity === null ? null : Number(row.capacity), version: Number(row.version) } : { capacity: null, version: 0 };
+  }
+
+  /**
+   * Les contacts attribués à l'agent qui attendent encore son rappel : chaque fiche dont l'attribution en cours est à
+   * lui, sans message d'un agent depuis, ni exclusion en cours. Les fiches réunies comptent une fois.
+   */
+  async waiting(networkId: string, agentId: string): Promise<number> {
+    const open = await this.db.all<AttributionRow>(
+      `SELECT a.* FROM attributions a
+       WHERE a.network_id = ? AND a.agent_id = ? AND NOT EXISTS (SELECT 1 FROM attributions b WHERE b.replaces_id = a.id)`,
+      [networkId, agentId],
+    );
+    const roots = new Set<string>();
+    for (const row of open) {
+      const view = await this.fiche.view(row.person_id);
+      if (roots.has(view.person.id)) continue;
+      const current = await this.current(view.person.id);
+      if (!current || current.agent_id !== agentId) continue;
+      const ids = view.members.map((m) => m.id);
+      if (await this.excluded(ids)) continue;
+      const called = await this.db.first<{ n: number }>(
+        `SELECT count(*) AS n FROM messages WHERE person_id IN (${placeholders(ids.length)}) AND direction = 'out' AND author_kind = 'agent' AND occurred_at >= ?`,
+        [...ids, current.created_at],
+      );
+      if (Number(called?.n ?? 0) > 0) continue;
+      roots.add(view.person.id);
+    }
+    return roots.size;
+  }
+
+  /** L'agent tiré pour la commune, agents pleins passés [R681] ; le nombre d'agents pleins qui ont changé le choix. */
+  private async pick(networkId: string, personId: string, commune: string, tried: ReadonlySet<string>): Promise<{ agentId: string | null; fullAgents: number }> {
+    const candidates = (await this.agentsOf(networkId, commune)).filter((id) => !tried.has(id));
+    const full = new Set<string>();
+    for (const id of candidates) {
+      const { capacity } = await this.capacityOf(networkId, id);
+      if (capacity !== null && (capacity === 0 || (await this.waiting(networkId, id)) >= capacity)) full.add(id);
+    }
+    const agentId = chooseAgent(personId, candidates, tried, full);
+    const free = chooseAgent(personId, candidates, tried);
+    return { agentId, fullAgents: agentId === free ? 0 : full.size };
+  }
+
+  /** La trace d'un choix changé par la capacité, rangée seulement si l'attribution l'a été dans le même lot. */
+  private capacityTrace(attributionId: string, networkId: string, fullAgents: number): SqlStatement[] {
+    if (fullAgents === 0) return [];
+    return [
+      {
+        sql: `INSERT INTO attribution_capacity (attribution_id, network_id, full_agents, created_at)
+              SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM attributions WHERE id = ?)`,
+        params: [attributionId, networkId, fullAgents, this.now().toISOString(), attributionId],
+      },
+    ];
+  }
+
+  private actor(viewer: Viewer): string {
+    return `${String(viewer.role)}:${viewer.userId}`;
+  }
+
+  private async refuse(viewer: Viewer, refusal: CapacityRefusal): Promise<CapacityRefusal> {
+    const type = refusal.rule === 'R16' ? 'acces.refuse' : 'attribution.capacite.refusee';
+    const data = refusal.rule === 'R16' ? { rule: 'R16', role: String(viewer.role), kind: 'agent_capacity', code: 'role' } : { rule: refusal.rule ?? 'none', code: refusal.code };
+    await appendEvent(this.journal, { type, actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data }, this.now);
+    return refusal;
+  }
+
+  /** Les capacités visibles : la direction voit chaque agent en activité, un agent la sienne seulement [R16]. */
+  async capacities(viewer: Viewer): Promise<{ ok: true; value: AgentCapacity[] } | { ok: false; rule: 'R16'; code: 'role' }> {
+    let agentIds: string[];
+    if (viewer.role === 'direction') {
+      const rows = await this.db.all<{ id: string }>("SELECT id FROM agents WHERE network_id = ? AND status = 'active' ORDER BY id", [viewer.networkId]);
+      agentIds = rows.map((r) => r.id);
+    } else if (viewer.role === 'agent') {
+      agentIds = [viewer.userId];
+    } else {
+      await this.refuse(viewer, { ok: false, rule: 'R16', code: 'role' });
+      return { ok: false, rule: 'R16', code: 'role' };
+    }
+    const value: AgentCapacity[] = [];
+    for (const agentId of agentIds) {
+      const { capacity, version } = await this.capacityOf(viewer.networkId, agentId);
+      const waiting = await this.waiting(viewer.networkId, agentId);
+      value.push({ agentId, capacity, waiting, full: capacity !== null && waiting >= capacity, version });
+    }
+    return { ok: true, value };
+  }
+
+  /**
+   * Déclare la capacité d'un agent : l'agent pour lui-même, ou la direction pour un agent en activité du réseau, avec
+   * une raison [R681, R16]. Une version s'ajoute, rien ne change [R17]. `capacity` null : sans plafond.
+   */
+  async declareCapacity(viewer: Viewer, input: unknown): Promise<{ ok: true; value: { agentId: string; capacity: number | null; version: number } } | CapacityRefusal> {
+    if (viewer.role !== 'direction' && viewer.role !== 'agent') return this.refuse(viewer, { ok: false, rule: 'R16', code: 'role' });
+    if (input === null || typeof input !== 'object' || Array.isArray(input)) return this.refuse(viewer, { ok: false, rule: null, code: 'bad_shape' });
+    const raw = input as Record<string, unknown>;
+    if (Object.keys(raw).some((k) => !(AGENT_CAPACITY_FIELDS as readonly string[]).includes(k))) return this.refuse(viewer, { ok: false, rule: null, code: 'unknown_field' });
+    const agentId = raw.agentId === undefined && viewer.role === 'agent' ? viewer.userId : raw.agentId;
+    if (typeof agentId !== 'string' || agentId.length === 0) return this.refuse(viewer, { ok: false, rule: null, code: 'bad_agent' });
+    if (viewer.role === 'agent' && agentId !== viewer.userId) return this.refuse(viewer, { ok: false, rule: 'R16', code: 'role' });
+    const capacity = raw.capacity;
+    if (capacity !== null && !(typeof capacity === 'number' && Number.isInteger(capacity) && capacity >= 0 && capacity <= MAX_AGENT_CAPACITY)) {
+      return this.refuse(viewer, { ok: false, rule: 'R681', code: 'bad_capacity' });
+    }
+    const reason = typeof raw.reason === 'string' ? raw.reason.trim().replace(/\s+/g, ' ') : '';
+    if (reason.length < 3 || reason.length > 200) return this.refuse(viewer, { ok: false, rule: null, code: 'bad_reason' });
+    const agent = await this.db.first<{ id: string }>("SELECT id FROM agents WHERE id = ? AND network_id = ? AND status = 'active'", [agentId, viewer.networkId]);
+    if (!agent) return this.refuse(viewer, { ok: false, rule: 'R681', code: 'agent_inconnu' });
+    const last = await this.capacityOf(viewer.networkId, agentId);
+    if (last.version > 0 && last.capacity === capacity) return this.refuse(viewer, { ok: false, rule: 'R681', code: 'inchangee' });
+    const version = last.version + 1;
+    try {
+      await this.db.run(
+        'INSERT INTO agent_capacities (network_id, agent_id, version, capacity, reason, decided_by, decided_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        [viewer.networkId, agentId, version, capacity, reason, this.actor(viewer), this.now().toISOString()],
+      );
+    } catch {
+      // Une autre déclaration est passée entre la lecture et l'écriture : la base refuse, rien n'est rangé.
+      return this.refuse(viewer, { ok: false, rule: 'R681', code: 'conflit' });
+    }
+    await appendEvent(
+      this.journal,
+      { type: 'attribution.capacite', actor: this.actor(viewer), subject: `agent:${agentId}`, data: { version, capacity: capacity ?? 'sans_plafond' } },
+      this.now,
+    );
+    return { ok: true, value: { agentId, capacity, version } };
   }
 
   /**

@@ -433,3 +433,125 @@ describeWithSqlite('Q03 · attribution à l’agent de la commune', () => {
     expect(await acces.readFiche({ role: 'agent', userId: next!.agent_id!, networkId: t.network.id }, fresh)).toMatchObject({ ok: true, view: 'full' });
   });
 });
+
+describe('AU041 · file de secours fixe', () => {
+  it('[R681] un agent plein est passé, le suivant dans l’ordre fixe à partir du tiré ; tous pleins : la direction', () => {
+    const agents = ['a', 'b', 'c', 'd'];
+    for (const person of ['p1', 'p2', 'p3', 'p4', 'p5']) {
+      const chosen = chooseAgent(person, agents)!;
+      const next = agents[(agents.indexOf(chosen) + 1) % agents.length];
+      expect(chooseAgent(person, agents, new Set(), new Set([chosen]))).toBe(next);
+      expect(chooseAgent(person, [...agents].reverse(), new Set(), new Set([chosen]))).toBe(next);
+      expect(chooseAgent(person, agents, new Set(), new Set(agents))).toBeNull();
+    }
+  });
+
+  it('[R681] la règle de capacité est publiée avec les autres', () => {
+    expect(ATTRIBUTION_RULES.join(' ')).toMatch(/capacité déclarée/);
+  });
+});
+
+describeWithSqlite('AU041 · capacité déclarée des agents', () => {
+  const direction = (networkId: string) => ({ role: 'direction' as const, networkId, userId: 'dir-1' });
+  const agentViewer = (networkId: string, id: string) => ({ role: 'agent' as const, networkId, userId: id });
+
+  it('[R681] constat : un agent à capacité nulle ne reçoit plus de nouveau contact ; seul de sa commune, la direction', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    const r = await t.attribution.declareCapacity(agentViewer(t.network.id, t.alex.id), { capacity: 0, reason: 'Congés de fin d’année' });
+    expect(r).toMatchObject({ ok: true, value: { agentId: t.alex.id, capacity: 0, version: 1 } });
+    const a = await t.attribution.attribute(await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.'));
+    expect(a).toMatchObject({ agent_id: null, reason: 'no_zone' });
+    expect(await t.db.all('SELECT full_agents FROM attribution_capacity WHERE attribution_id = ?', [a!.id])).toEqual([{ full_agents: 1 }]);
+    const entry = (await t.journal.all()).find((e) => e.type === 'attribution');
+    expect(entry?.data).toMatchObject({ toDirection: true, fullAgents: 1 });
+  });
+
+  it('[R681] le contact qui serait allé à l’agent plein va au suivant de la file, toujours le même', async () => {
+    const t = await setup();
+    for (const agent of [t.alex, t.sam, t.lou]) await t.attribution.addZone(t.network.id, agent.id, 'Talant');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    const person = await t.personOf(q);
+    const ids = [t.alex.id, t.sam.id, t.lou.id];
+    const drawn = chooseAgent(person, ids)!;
+    await t.attribution.declareCapacity(direction(t.network.id), { agentId: drawn, capacity: 0, reason: 'Arrêt de travail' });
+    const a = await t.attribution.attribute(q);
+    expect(a!.agent_id).toBe(chooseAgent(person, ids, new Set(), new Set([drawn])));
+    expect(a!.agent_id).not.toBe(drawn);
+    expect(a!.reason).toBe('zone');
+    expect(await t.db.all('SELECT full_agents FROM attribution_capacity')).toEqual([{ full_agents: 1 }]);
+  });
+
+  it('[R681] la capacité compte les contacts en attente de rappel ; un rappel libère une place', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.declareCapacity(direction(t.network.id), { agentId: t.alex.id, capacity: 1, reason: 'Agent à mi-temps' });
+    const q1 = await t.contact('a', 'Je souhaite vendre ma maison à Talant.');
+    expect(await t.attribution.attribute(q1)).toMatchObject({ agent_id: t.alex.id });
+    expect(await t.attribution.waiting(t.network.id, t.alex.id)).toBe(1);
+    expect(await t.attribution.attribute(await t.contact('b', 'Je souhaite vendre ma maison à Talant.'))).toMatchObject({ agent_id: null });
+    await t.store.recordMessage({
+      networkId: t.network.id,
+      agentId: t.alex.id,
+      personId: await t.personOf(q1),
+      channel: 'phone',
+      direction: 'out',
+      authorKind: 'agent',
+      body: 'Appel passé.',
+      occurredAt: new Date(TUESDAY_10H + HOUR),
+    });
+    t.setClock(TUESDAY_10H + 2 * HOUR);
+    expect(await t.attribution.waiting(t.network.id, t.alex.id)).toBe(0);
+    expect(await t.attribution.attribute(await t.contact('c', 'Je souhaite vendre ma maison à Talant.'))).toMatchObject({ agent_id: t.alex.id });
+  });
+
+  it('[R681] un client déjà suivi reste à son agent même plein ; la réattribution passe aussi l’agent plein', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
+    const q1 = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    const first = (await t.attribution.attribute(q1))!;
+    const other = first.agent_id === t.alex.id ? t.sam.id : t.alex.id;
+    await t.attribution.declareCapacity(direction(t.network.id), { agentId: first.agent_id, capacity: 0, reason: 'Plus de place' });
+    await t.attribution.declareCapacity(direction(t.network.id), { agentId: other, capacity: 0, reason: 'Plus de place' });
+    // La personne réécrit : elle reste à son agent.
+    expect(await t.attribution.attribute(await t.contact('zoe', 'Je relance ma demande.'))).toMatchObject({ agent_id: first.agent_id, reason: 'already_followed' });
+    // Non rappelée : l'autre agent est plein, elle va à la direction.
+    t.setClock(TUESDAY_10H + 30 * HOUR);
+    const made = await t.attribution.reassignOverdue(t.network.id);
+    expect(made).toHaveLength(1);
+    expect(made[0]).toMatchObject({ agent_id: null, reason: 'reassigned' });
+    expect(await t.db.all('SELECT full_agents FROM attribution_capacity WHERE attribution_id = ?', [made[0]!.id])).toEqual([{ full_agents: 1 }]);
+  });
+
+  it('[R681] [R16] [R17] déclarer : l’agent pour lui, la direction pour tous ; versions en ajout seul ; lecture cloisonnée', async () => {
+    const t = await setup();
+    const dir = direction(t.network.id);
+    expect(await t.attribution.declareCapacity(agentViewer(t.network.id, t.alex.id), { agentId: t.sam.id, capacity: 3, reason: 'Pour Sam' })).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.attribution.declareCapacity({ role: 'assistant', networkId: t.network.id, userId: 'x' }, { capacity: 3, reason: 'Essai' })).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.attribution.declareCapacity(dir, { agentId: t.alex.id, capacity: -1, reason: 'Essai' })).toMatchObject({ ok: false, code: 'bad_capacity' });
+    expect(await t.attribution.declareCapacity(dir, { agentId: t.alex.id, capacity: 2.5, reason: 'Essai' })).toMatchObject({ ok: false, code: 'bad_capacity' });
+    expect(await t.attribution.declareCapacity(dir, { agentId: t.alex.id, capacity: 201, reason: 'Essai' })).toMatchObject({ ok: false, code: 'bad_capacity' });
+    expect(await t.attribution.declareCapacity(dir, { agentId: t.alex.id, capacity: 3 })).toMatchObject({ ok: false, code: 'bad_reason' });
+    expect(await t.attribution.declareCapacity(dir, { agentId: t.alex.id, capacity: 3, reason: 'Essai', autre: 1 })).toMatchObject({ ok: false, code: 'unknown_field' });
+    expect(await t.attribution.declareCapacity(dir, { agentId: 'inconnu', capacity: 3, reason: 'Essai' })).toMatchObject({ ok: false, code: 'agent_inconnu' });
+    expect(await t.attribution.declareCapacity(dir, { agentId: t.alex.id, capacity: 3, reason: 'Rythme normal' })).toMatchObject({ ok: true, value: { version: 1 } });
+    expect(await t.attribution.declareCapacity(dir, { agentId: t.alex.id, capacity: 3, reason: 'Rythme normal' })).toMatchObject({ ok: false, code: 'inchangee' });
+    expect(await t.attribution.declareCapacity(dir, { agentId: t.alex.id, capacity: null, reason: 'Sans plafond' })).toMatchObject({ ok: true, value: { version: 2, capacity: null } });
+    await expect(t.db.run('UPDATE agent_capacities SET capacity = 9')).rejects.toThrow();
+    await expect(t.db.run('DELETE FROM agent_capacities')).rejects.toThrow();
+    await expect(
+      t.db.run("INSERT INTO agent_capacities (network_id, agent_id, version, capacity, reason, decided_by, decided_at) VALUES (?, ?, 3, 1, 'Pour un autre', ?, '2026-12-08')", [
+        t.network.id,
+        t.alex.id,
+        `agent:${t.sam.id}`,
+      ]),
+    ).rejects.toThrow();
+    const mine = await t.attribution.capacities(agentViewer(t.network.id, t.sam.id));
+    expect(mine).toMatchObject({ ok: true, value: [{ agentId: t.sam.id, capacity: null, waiting: 0, full: false, version: 0 }] });
+    const all = await t.attribution.capacities(dir);
+    expect(all.ok && all.value.map((c) => c.agentId).sort()).toEqual([t.alex.id, t.sam.id, t.lou.id].sort());
+    expect(await t.attribution.capacities({ role: 'partner', networkId: t.network.id, userId: 'p' })).toMatchObject({ ok: false, rule: 'R16' });
+    expect(JSON.stringify((await t.journal.all()).filter((e) => e.type.startsWith('attribution.capacite')))).not.toMatch(/Rythme|plafond de|Essai/);
+  });
+});
