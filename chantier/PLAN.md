@@ -597,7 +597,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU050 · Les décotes et surcotes sont des pourcentages fixes sans calibration locale attachée au calcul
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#780, `cdaf49e9`). Constat confirmé (barème fixe, ni méthode ni périmètre dits). Décidé : pas de calibration locale annoncée (DVF ne dit ni l'état ni l'étage) ; la méthode et le périmètre du barème sont dits dans le pied de l'avis ; `previous` + `adjust` (caractéristique du barème, -15 à +15 %, motif d'une liste fermée, 5 au plus) : nouvelle version recalculée, dite dans l'avis et la page imprimée ; R693. Codex rien ; vérification verte. Écran : AU049b.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A050 (majeur), endroit : C/estimation/fourchette.ts, `adjustmentsFor`.
 - Constat de l'audit : Les décotes et surcotes sont des pourcentages fixes sans calibration locale attachée au calcul.
@@ -615,7 +616,7 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU052 · Je ressaisis l’adresse à chaque préparation, puisque le parcours la collecte puis l’oublie
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A052 (majeur), endroit : UI/avis.ts ; C/estimation/preparation-avis.ts.
 - Constat de l'audit : Je ressaisis l’adresse à chaque préparation, puisque le parcours la collecte puis l’oublie.
