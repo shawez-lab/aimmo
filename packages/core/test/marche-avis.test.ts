@@ -454,7 +454,10 @@ describeWithSqlite('HX32 · avis de valeur enrichi : concurrence, loyer possible
     await t.marche.attach(t.as('agent', t.alex.id), r.id);
     const rows = await t.db.all<{ type: string; data: string }>("SELECT type, data FROM journal WHERE type = 'avis.marche'");
     expect(rows).toHaveLength(1);
-    expect(rows[0]!.data).not.toMatch(/Site A|280|Talant|21617|ANIL/);
+    // L'identifiant de l'avis est tiré au hasard : il peut porter « 280 » sans rien dire du relevé.
+    const data = JSON.parse(rows[0]!.data) as Record<string, unknown>;
+    expect(typeof data.report).toBe('string');
+    expect(JSON.stringify({ ...data, report: null })).not.toMatch(/Site A|280|Talant|21617|ANIL/);
   });
 
   it('un avis sans relevé s’imprime comme avant', async () => {
