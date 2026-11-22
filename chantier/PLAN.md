@@ -618,7 +618,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU052 · Je ressaisis l’adresse à chaque préparation, puisque le parcours la collecte puis l’oublie
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#781). Constat confirmé (adresse exigée à chaque fois, gardée nulle part). `valuation_addresses` (migration 4105, figée, déclarée au registre, à la carte d'accès et à la reprise) : l'adresse vérifiée est gardée et reprise, sinon celle de la désignation du mandat, sinon `address_needed` ; une autre adresse = nouvelle version, prise en une écriture (Codex 1 P0 corrigé) ; R695. Écran : adresse facultative, terrain et immeuble, formulaire de l'avis motivé (AU046) relu au geste (Codex 1 P2 corrigé). Deux tests instables hors tâche : HX32 `marche-avis.test.ts` (« 280 » dans un identifiant, resserré) et `bouclier-detours.test.ts` (durée de 500 ms dépassée sur GitHub, socle : à voir par la voie 1).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A052 (majeur), endroit : UI/avis.ts ; C/estimation/preparation-avis.ts.
 - Constat de l'audit : Je ressaisis l’adresse à chaque préparation, puisque le parcours la collecte puis l’oublie.
