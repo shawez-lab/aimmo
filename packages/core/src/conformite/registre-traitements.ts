@@ -654,6 +654,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       phase_openings: ['opened_by'],
       // HX72 : l'ouverture ou la fermeture d'une région, avec sa raison et qui l'a décidée.
       region_decisions: ['reason', 'decided_by'],
+      // AU039 : les communes du réseau, inscrites ou retirées par la direction, avec sa raison.
+      network_communes: ['commune', 'commune_key', 'reason', 'decided_by'],
       // HX73 : le tarif et les licences du logiciel aux agences hors réseau, avec qui les a décidés ; le nom d'une
       // agence et sa carte peuvent être ceux d'un entrepreneur individuel.
       licence_tariffs: ['reason', 'decided_by'],
@@ -1481,6 +1483,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   phase1_app_inventories: ['network_id', 'version', 'gohighlevel', 'manychat', 'site', 'github_actions', 'autre', 'declared_at'],
   phase_openings: ['network_id', 'phase', 'opened_at', 'evidence', 'evidence_hash'],
   region_decisions: ['network_id', 'version', 'region', 'is_open', 'decided_at', 'phase5_hash', 'prev_hash', 'hash'],
+  network_communes: ['network_id', 'insee_code', 'version', 'is_listed', 'decided_at'],
   licence_tariffs: ['network_id', 'version', 'monthly_cents', 'decided_at'],
   software_licences: ['id', 'network_id', 'licensee_network_id', 'department', 'tariff_version', 'monthly_cents', 'phase5_hash', 'granted_at'],
   licence_states: ['licence_id', 'version', 'state', 'decided_at'],

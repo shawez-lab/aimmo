@@ -477,16 +477,17 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#768, 9083dc81), migration `4090` (mode au lancement, accusés, échecs, demandes arrivées). Vrais Google Ads (v26) et Meta (catégorie « logement ») dans `publicite-reelle.ts`, mis en réel plateforme par plateforme par le Worker seulement quand tout est rangé, avec un plafond du budget total relu à la validation et au lancement (H63). Accusé rangé avant la réponse ; échec en code et geste ; une campagne partie en réel n'a jamais sa pause confirmée par l'essai. Passage du quart d'heure : demandes `?o=<code>` rapprochées des fiches, dépense des trois derniers jours lue, seuil contrôlé ; R587 et R588 mises à jour. Codex : 2 P0 et 2 P1 corrigés, puis rien. Restent : les lieux des communes se règlent à la main dans `ADS_LIEUX` ; chez Google, le rayon n'est pas envoyé (communes seules) ; textes des annonces réglés au Worker, pas encore à l'écran.
 
 ### AU039 · La qualification et la recherche restent bornées par défaut aux communes du pilote dijonnais
-- Statut : en cours
+- Statut : fait (2026-11-22)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A039 (majeur), endroit : C/qualification/regles.ts, `DEFAULT_COMMUNES` ; A/app.ts.
 - Constat de l'audit : La qualification et la recherche restent bornées par défaut aux communes du pilote dijonnais : « Lyon » ressort inconnu.
 - Objectif : La liste des communes et leurs codes INSEE provient du paramétrage géographique du réseau, sans modification du code.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Décidé (2026-11-21, voie 1) : constat confirmé (`DEFAULT_COMMUNES` écrit dans le code, seule liste de la qualification et de la recherche). Table `network_communes` (migration `4095`), en ajout seul, par versions : la direction inscrit une commune avec son code INSEE ou la retire, avec une raison (`GeographieReseau`, `packages/core/src/geographie/communes.ts`), R679. La qualification, la recherche en langage courant (lecture, voisines, rangement) et `GET /v1/attribution/regles` lisent la liste du réseau ; routes `GET`/`POST /v1/geographie/communes`. Un réseau qui n'a encore rien inscrit garde la liste du pilote, dite `defaut` : aucun code INSEE n'est écrit dans le code (les codes des 38 communes du pilote ne sont pas inventés, la direction les inscrit). Restent : les autres lecteurs de `DEFAULT_COMMUNES` (dictée, appels, fiche acquéreur seule, attribution, communes à pourvoir) et l'écran de la direction.
 
 ### AU040 · Un agent déclaré absent reste candidat à l’attribution dès lors que son statut est « active »
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A040 (majeur), endroit : C/qualification/attribution.ts, `agentsOf`.
 - Constat de l'audit : Un agent déclaré absent reste candidat à l’attribution dès lors que son statut est « active ».
@@ -1011,7 +1012,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU091b · La régularisation d'honoraires d'une vente avec une agence partenaire
-- Statut : en cours (voie 2)
+- Statut : bloquée (voie 2) : « Vérifier » coupé à 35 min quatre fois (limite de `verifications.yml`, socle voie 1) ; tests locaux verts, #769 ouverte, à fusionner dès qu une vérification passe
 - Où : #769 ouverte (becf2e8), Codex sans remarque, tests locaux verts (7419) ; « Vérifier » coupé deux fois à 35 min : la relancer, puis fusionner.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : AU091
 - Cahier : M13 Pilotage et finances ; M18 Partenaires (HX59) ; audit A091.

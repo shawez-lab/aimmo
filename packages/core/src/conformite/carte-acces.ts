@@ -866,6 +866,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   phase1_app_inventories: out('sans_client', 'Tâches encore planifiées dans les applications, dites par la direction avec leur preuve (HX70).'),
   phase_openings: out('agent', 'Ouverture d\'une phase de la Feuille de route par la direction (HX71).'),
   region_decisions: out('sans_client', 'Régions ouvertes ou fermées par la direction (HX72) : un code de région, aucune personne.'),
+  network_communes: out('sans_client', 'Communes du réseau inscrites ou retirées par la direction (AU039) : un nom et un code INSEE, aucune personne.'),
   licence_tariffs: out('sans_client', 'Tarif de la licence du logiciel, un seul pour toutes les agences (HX73) : un prix, aucune personne.'),
   software_licences: out('sans_client', 'Licence du logiciel donnée à une agence hors réseau (HX73) : une entreprise, jamais un client.'),
   licence_states: out('sans_client', 'État d\'une licence du logiciel (HX73) : une entreprise, jamais un client.'),
