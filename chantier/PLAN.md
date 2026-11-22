@@ -519,13 +519,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#775, 6ff9c1f2), `packages/core/src/qualification/delai-rappel.ts`, R682. Décidé, lecture prudente (le cahier dit seulement « délai de la charte de service ») : service de rappel du lundi au samedi, 8 h à 20 h, Paris, hors jours fériés (réglage `callbackWindow`) ; le délai part de la première ouverture, ne court pas un jour fermé, une limite hors des heures passe à l'ouverture suivante ; la nuit d'un jour ouvert compte, pour qu'un contact ne reste pas plus de deux jours sans rappel ; jamais plus tôt que l'heure écoulée. La réattribution, la tâche « rappeler », la liste des contacts chauds et la fiche de l'agent lisent la même limite, recalculée à la lecture (rien n'est réécrit). Codex : 4 P0 corrigés en trois tours (tâches déjà rangées, changement d'heure, réglage transmis à la fiche, heures élargies), puis rien. Restent : le réglage des heures par réseau à l'écran ; les absences d'agent (AU040).
 
 ### AU043 · Le Worker ne branche pas de fournisseur de boîte Gmail ou Outlook pour le tri annoncé
-- Statut : en cours
+- Statut : fait (2026-11-22)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A043 (majeur), endroit : A/worker.ts ; H55 ; module boîte mail.
 - Constat de l'audit : Le Worker ne branche pas de fournisseur de boîte Gmail ou Outlook pour le tri annoncé.
 - Objectif : Après connexion autorisée, un mail reçu dans la boîte personnelle de l’agent apparaît dans sa file et reste rattaché à son message d’origine.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien (mise en service réelle : H55).
+- Reste : fusionnée (#782, `8b8e44f9`), `packages/core/src/automatismes/boite-mail-reelle.ts`, `packages/api/src/boite.ts`, R683. Constat confirmé (interface et faux seulement, aucune route). Vrais Gmail (API v1) et Outlook (Graph `me/messages`, toute la boîte hors brouillons, supprimés, indésirables ; clés immuables), lecture seule, jeton de rafraîchissement par agent dans le secret `BOITE_JETONS` (`BOITE_MODE=reel`, clients OAuth) ; 50 mails au plus par lecture, les plus anciens d'abord, mails déjà triés autour du curseur hors du lot (`skip`, ajouté à `MailboxProvider`) ; texte au bon jeu de caractères et entités du HTML rendues (arrêt lu) ; copies cachées ; pièces lourdes jamais téléchargées. `GET /v1/boite` (la file) et `POST /v1/boite/lecture`, agent en activité seul ; passage des quarts d'heure. Codex : 13 P0 et 1 P1 en cinq tours, corrigés, puis rien. Restent : l'écran de la boîte ; les routes des pièces en attente et des réponses préparées ; l'accord pris à l'écran (OAuth dans l'application) au lieu du secret ; le jeton renouvelé par Microsoft n'est pas gardé ; le nombre d'appels du passage grandit avec les agents reliés.
 
 ### AU044 · Les vocaux n’ont pas de transcripteur réel branché et retombent sur la reprise manuelle
 - Statut : à faire
