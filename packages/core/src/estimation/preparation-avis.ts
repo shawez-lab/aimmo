@@ -174,7 +174,7 @@ export class PreparationAvis {
       const manualPossible = MANUAL_REASONS.includes(range.reason);
       // Sans fourchette du calcul, l'avis motivé de l'agent, s'il l'a apporté et si la raison le permet [R690].
       if (manual && manualPossible) {
-        const report = await this.avis.draftManual({ networkId: property.network_id, propertyId, kind, surface: property.surface_m2, manual, reason: range.reason, comparablesFound: range.comparablesFound, data: range.data, facts });
+        const report = await this.avis.draftManual({ networkId: property.network_id, propertyId, kind, surface: property.surface_m2, manual, reason: range.reason, comparablesFound: range.comparablesFound, data: range.data, facts, limits: { maxSpread: settings.maxSpread, maxGapFromReferences: settings.maxGapFromReferences } });
         return { ok: true, value: report };
       }
       await appendEvent(this.journal, { type: 'avis.sans_fourchette', actor: `agent:${viewer.userId}`, subject: `property:${propertyId}`, data: { rule: 'R27', reason: range.reason, comparablesFound: range.comparablesFound } }, this.now);

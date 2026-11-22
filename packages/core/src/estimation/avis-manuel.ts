@@ -119,11 +119,17 @@ export function referencesMedian(references: readonly AgentReference[]): number 
 }
 
 /**
- * La fourchette de l'agent dit à peu près ce que disent ses références : la valeur des références (leur médiane au m²
- * fois la surface du bien) ne tombe pas à plus de 25 % hors de la fourchette. Plus loin, ce n'est plus un avis motivé
- * par ces ventes [R27, R690].
+ * La fourchette de l'agent dit à peu près ce que disent ses références : au plus `maxSpread` entre ses bornes, et la
+ * valeur des références (leur médiane au m² fois la surface du bien) ne tombe pas à plus de `maxGapFromReferences` hors
+ * de la fourchette. Plus loin, ce n'est plus un avis motivé par ces ventes [R27, R690]. Vérifié à l'ouverture, à
+ * chaque ajustement et à la validation.
  */
+export function manualRangeAllowed(low: number, high: number, medianPerM2: number, surface: number, limits: Pick<ManualSettings, 'maxSpread' | 'maxGapFromReferences'>): boolean {
+  if (!Number.isInteger(low) || !Number.isInteger(high) || low <= 0 || high <= low || high > low * limits.maxSpread) return false;
+  const value = medianPerM2 * surface;
+  return value >= low * (1 - limits.maxGapFromReferences) && value <= high * (1 + limits.maxGapFromReferences);
+}
+
 export function rangeFollowsReferences(input: ManualInput, surface: number, settings: ManualSettings = DEFAULT_MANUAL_SETTINGS): boolean {
-  const value = referencesMedian(input.references) * surface;
-  return value >= input.low * (1 - settings.maxGapFromReferences) && value <= input.high * (1 + settings.maxGapFromReferences);
+  return manualRangeAllowed(input.low, input.high, referencesMedian(input.references), surface, settings);
 }

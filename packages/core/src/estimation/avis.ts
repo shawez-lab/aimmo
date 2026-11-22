@@ -13,7 +13,7 @@ import { checkText } from '../envoi/texte.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { PublicFacts } from './collecte.ts';
-import { MANUAL_REASON_TEXT, REFERENCE_PROOFS, referencesMedian, type ManualInput } from './avis-manuel.ts';
+import { DEFAULT_MANUAL_SETTINGS, MANUAL_REASON_TEXT, REFERENCE_PROOFS, manualRangeAllowed, referencesMedian, type ManualInput, type ManualSettings } from './avis-manuel.ts';
 import type { DataInfo, NoRangeReason, RangeResult } from './fourchette.ts';
 
 type Range = Extract<RangeResult, { ok: true }>;
@@ -113,6 +113,23 @@ export interface ManualDraftInput {
   comparablesFound: number;
   data: DataInfo;
   facts?: PublicFacts | null;
+  /** Les limites de la fourchette de l'agent, gardées dans l'avis pour chaque ajustement et la validation. */
+  limits?: Pick<ManualSettings, 'maxSpread' | 'maxGapFromReferences'>;
+}
+
+/** Ce que l'avis motivé garde de ses ventes pour revérifier la fourchette de l'agent [R690]. */
+interface ManualComputed {
+  method?: string;
+  surface?: number;
+  referencesMedianPerM2?: number;
+  limits?: Pick<ManualSettings, 'maxSpread' | 'maxGapFromReferences'>;
+}
+
+/** Une fourchette permise : pour un avis motivé, celle qui suit ses ventes vérifiées ; sinon, toute fourchette valide. */
+function rangeAllowedFor(computed: ManualComputed, low: number, high: number): boolean {
+  if (computed.method !== 'manual') return true;
+  if (typeof computed.surface !== 'number' || typeof computed.referencesMedianPerM2 !== 'number') return false;
+  return manualRangeAllowed(low, high, computed.referencesMedianPerM2, computed.surface, computed.limits ?? DEFAULT_MANUAL_SETTINGS);
 }
 
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
@@ -304,14 +321,15 @@ export class AvisDeValeur {
     const risks = input.facts?.risks.ok ? input.facts.risks.value.map((x) => x.label) : [];
     const town = input.facts?.address.ok ? input.facts.address.value.town : null;
     const what = input.kind === 'house' ? 'maison' : 'appartement';
-    const lines = [
-      `Pour votre ${what} de ${String(input.surface).replace('.', ',')} m²${town ? ` à ${town}` : ''}, votre agent estime la valeur entre ${euros(low)} et ${euros(high)}.`,
-      `Il n’y a pas de fourchette automatique pour ce bien : ${MANUAL_REASON_TEXT[input.reason] ?? 'les ventes publiées ne suffisent pas'}. Cette fourchette est celle de votre agent. Elle s’appuie sur ${references.length} ventes réelles de biens comparables qu’il a vérifiées lui-même, dont la plus récente date de ${monthLabel(latest)}. Leur prix médian est de ${euros(median)} le m².`,
-    ];
+    const lines = [`Pour votre ${what} de ${String(input.surface).replace('.', ',')} m²${town ? ` à ${town}` : ''}, votre agent estime la valeur entre ${euros(low)} et ${euros(high)}.`];
     if (energy) lines.push(`Diagnostic énergétique connu : classe ${energy}.`);
     if (risks.length > 0) lines.push(`Risques signalés sur la commune : ${risks.join(', ').toLowerCase()}.`);
     lines.push('Pour la mise en vente, votre agent vous propose un plan de commercialisation adapté à votre bien et à votre calendrier.');
-    const footer = `Ventes vérifiées par votre agent jusqu’à ${monthLabel(latest)}.\n\n${MANUAL_ADVICE_NOTICE}`;
+    // Ce que l'avis motivé doit toujours dire est dans le pied, que le code garde à chaque correction du texte [R690].
+    const footer = [
+      `Il n’y a pas de fourchette automatique pour ce bien : ${MANUAL_REASON_TEXT[input.reason] ?? 'les ventes publiées ne suffisent pas'}. La fourchette est celle de votre agent. Elle s’appuie sur ${references.length} ventes réelles de biens comparables qu’il a vérifiées lui-même, dont la plus récente date de ${monthLabel(latest)}. Leur prix médian est de ${euros(median)} le m².`,
+      MANUAL_ADVICE_NOTICE,
+    ].join('\n\n');
     const text = `${lines.join('\n\n')}\n\n${footer}`;
     const years = [...new Set(references.map((r) => r.month.slice(0, 4)))];
     const figures: (string | number)[] = [low, high, median, references.length, input.surface, ...years, ...references.map((r) => r.pricePerM2)];
@@ -335,6 +353,7 @@ export class AvisDeValeur {
       adjustments: [] as { label: string; pct: number }[],
       references: references.map((r) => ({ ...r, proofLabel: REFERENCE_PROOFS[r.proof] })),
       referencesMedianPerM2: median,
+      limits: input.limits ?? { maxSpread: DEFAULT_MANUAL_SETTINGS.maxSpread, maxGapFromReferences: DEFAULT_MANUAL_SETTINGS.maxGapFromReferences },
       latestUsedSale: latest,
       data: input.data,
       energyClass: energy,
@@ -402,7 +421,9 @@ export class AvisDeValeur {
     const high = change.high ?? r.agent_high ?? r.computed_high;
     if (!Number.isInteger(low) || !Number.isInteger(high) || low <= 0 || high <= low) return { ok: false, rule: 'R30', code: 'invalid_range' };
     const rangeChanged = change.low !== undefined || change.high !== undefined;
-    const computed = JSON.parse(r.computed) as { figures: (string | number)[]; footer: string };
+    const computed = JSON.parse(r.computed) as { figures: (string | number)[]; footer: string } & ManualComputed;
+    // L'avis motivé garde une fourchette qui suit ses ventes vérifiées, ajustement compris [R690].
+    if (!rangeAllowedFor(computed, low, high)) return { ok: false, rule: 'R30', code: 'invalid_range' };
     const before = { low: r.agent_low ?? r.computed_low, high: r.agent_high ?? r.computed_high };
     let text: string;
     if (change.text !== undefined) {
@@ -449,6 +470,8 @@ export class AvisDeValeur {
     const r = found.value;
     // Avec la version lue : celle qu'un autre appareil a enregistrée depuis ne se valide pas à l'aveugle.
     if (readVersion !== undefined && readVersion !== r.updated_at) return { ok: false, rule: 'R30', code: 'changed_meanwhile' };
+    // Un avis motivé ne se valide qu'avec une fourchette qui suit ses ventes vérifiées [R690].
+    if (!rangeAllowedFor(JSON.parse(r.computed) as ManualComputed, r.agent_low ?? r.computed_low, r.agent_high ?? r.computed_high)) return { ok: false, rule: 'R30', code: 'invalid_range' };
     // L'avis validé ne porte qu'une fourchette : celle qui partira.
     if (!r.text.includes(euros(r.agent_low ?? r.computed_low)) || !r.text.includes(euros(r.agent_high ?? r.computed_high))) {
       return { ok: false, rule: 'R30', code: 'range_not_in_text' };

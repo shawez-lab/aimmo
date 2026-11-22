@@ -82,7 +82,7 @@ describeWithSqlite('AU046 · l’avis motivé par les ventes vérifiées de l’
     expect(r.value).toMatchObject({ status: 'draft', agent_low: 148_000, agent_high: 164_000, computed_low: 148_000, computed_high: 164_000, text_by: 'fallback', validated_by: null });
     expect(r.value.text).toContain('Il n’y a pas de fourchette automatique pour ce bien');
     expect(r.value.text).toContain('trop peu nombreuses');
-    expect(r.value.text).toContain('Cette fourchette est celle de votre agent');
+    expect(r.value.text).toContain('La fourchette est celle de votre agent');
     expect(r.value.text).toContain('3 ventes réelles');
     expect(r.value.text).toContain('148 000 €');
     expect(r.value.text).toContain('164 000 €');
@@ -146,8 +146,30 @@ describeWithSqlite('AU046 · l’avis motivé par les ventes vérifiées de l’
     const ok = await avis.adjust(w.paulV, r.value.id, { text: 'Votre bien se situe entre 148 000 € et 164 000 €, selon 3 ventes que j’ai vérifiées.' });
     expect(ok).toMatchObject({ ok: true, value: { text_by: 'agent' } });
     if (!ok.ok) return;
-    expect(ok.value.text).toContain('ventes réelles que votre agent a vérifiées');
+    // Ce que l'avis motivé doit dire reste, quel que soit le texte de l'agent [R690].
+    for (const said of ['Il n’y a pas de fourchette automatique pour ce bien', 'trop peu nombreuses', 'La fourchette est celle de votre agent', '3 ventes réelles', 'ventes réelles que votre agent a vérifiées']) {
+      expect(ok.value.text).toContain(said);
+    }
     expect(await avis.adjust(w.paulV, r.value.id, { text: 'Votre bien vaut 300 000 €.' })).toMatchObject({ ok: false, code: 'text_refused' });
+    const bare = await avis.adjust(w.paulV, r.value.id, { text: 'Votre bien vaut entre 148 000 € et 164 000 €.' });
+    if (!bare.ok) throw new Error(bare.code);
+    expect(bare.value.text).toContain('Il n’y a pas de fourchette automatique pour ce bien');
+    expect(await avis.validate(w.paulV, r.value.id)).toMatchObject({ ok: true });
+  });
+
+  it('[R690] un ajustement ne fait pas sortir la fourchette de ce que disent les ventes, ni à la validation', async () => {
+    const w = await world();
+    const r = await w.prep.prepare(w.paulV, w.property.id, { address: ADDRESS, kind: 'apartment', manual: MANUAL });
+    if (!r.ok) throw new Error(r.code);
+    const avis = new AvisDeValeur(w.db, w.journal, { now: NOW });
+    expect(await avis.adjust(w.paulV, r.value.id, { low: 300_000, high: 600_000 })).toEqual({ ok: false, rule: 'R30', code: 'invalid_range' });
+    expect(await avis.adjust(w.paulV, r.value.id, { low: 300_000, high: 330_000 })).toEqual({ ok: false, rule: 'R30', code: 'invalid_range' });
+    expect(await avis.adjust(w.paulV, r.value.id, { low: 120_000, high: 170_000 })).toEqual({ ok: false, rule: 'R30', code: 'invalid_range' });
+    const fine = await avis.adjust(w.paulV, r.value.id, { low: 150_000, high: 162_000 });
+    expect(fine).toMatchObject({ ok: true, value: { agent_low: 150_000, agent_high: 162_000 } });
+    // Une fourchette changée en base, hors de l'ajustement, ne se valide pas.
+    await w.db.run('UPDATE valuation_reports SET agent_low = 400000, agent_high = 450000 WHERE id = ?', [r.value.id]);
+    expect(await avis.validate(w.paulV, r.value.id)).toEqual({ ok: false, rule: 'R30', code: 'invalid_range' });
   });
 
   it('[R690] [R29] des ventes mal formées, non déclarées vérifiées ou situées par un numéro sont refusées, et rien n’est rangé', async () => {
