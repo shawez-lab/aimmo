@@ -1,3 +1,6 @@
+import { ADJUSTMENT_LABELS, AGENT_ADJUSTMENT_MOTIVES } from '../../core/src/estimation/fourchette.ts';
+import { SALE_EXCLUSION_REASONS } from '../../core/src/estimation/avis.ts';
+
 /**
  * L'écran « Avis de valeur » de l'application de l'agent (E10), en morceaux posés dans `fichiers.ts` : sa section, son
  * chargeur et son script, servi à part (`/app/avis.js`) et chargé à la première ouverture pour tenir le budget [R201].
@@ -8,6 +11,9 @@
  * l'écran ne la remontre jamais : laissée vide, elle est reprise, donnée, elle la remplace (AU052, R695) [R46]. Sans
  * fourchette possible, l'agent ouvre un avis motivé par ses propres ventes vérifiées (AU046, R690). L'avis validé se
  * télécharge en page à imprimer ; rien ne part d'ici vers le vendeur [R26]. Tout texte reçu est posé avec `textContent`.
+ * Un brouillon calculé montre les ventes qu'il cite, sans numéro de voie [R29] : l'agent en écarte une avec un motif de
+ * la liste [R692], ou retient son propre coefficient avec un motif [R693] ; cela prépare une nouvelle version, et les
+ * versions précédentes restent listées, telles quelles (AU049b).
  */
 
 /** Les raisons d'un refus, dites à l'agent : jamais un code interne. */
@@ -37,6 +43,18 @@ const REFUSALS = {
   text_refused: 'Ce texte est refusé : il porte un chiffre qui ne vient pas du calcul, ou ne convient pas à un client.',
   range_not_in_text: 'Le texte doit dire la fourchette retenue, telle quelle.',
   other_range_in_text: 'Le texte dit encore la fourchette du calcul : corrigez-le.',
+  invalid_exclusion: 'Cette vente ne peut pas être écartée : choisissez une vente citée par cet avis et un motif.',
+  unknown_previous: 'Cette version de l’avis n’existe plus : rouvrez l’écran.',
+  too_many_exclusions: 'Dix ventes écartées au plus : l’avis ne serait plus fiable.',
+  invalid_adjustment: 'Ajustement refusé : une caractéristique du barème, un pourcentage entier de -15 à +15 et un motif.',
+  too_many_adjustments: 'Cinq ajustements de votre part au plus.',
+};
+
+/** Les listes fermées des motifs, reprises du calcul : l'écran n'en invente aucun [R692, R693]. */
+const CHOICES = {
+  reasons: Object.entries(SALE_EXCLUSION_REASONS),
+  motives: Object.entries(AGENT_ADJUSTMENT_MOTIVES),
+  labels: [...ADJUSTMENT_LABELS],
 };
 
 export const AVIS_HTML = `<section id="avis" hidden>
@@ -97,6 +115,7 @@ globalThis.AIMMO_AVIS = function (t) {
   };
   var $ = t.$, el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, show = t.show, ID = t.ID;
   var NO = ${JSON.stringify(REFUSALS)};
+  var CH = ${JSON.stringify(CHOICES)};
   var cur = null, seq = 0;
   function state(x) { $('avis-etat').textContent = x; }
   function body() { return $('avis-corps'); }
@@ -348,10 +367,101 @@ globalThis.AIMMO_AVIS = function (t) {
         return load('Avis validé.');
       });
     }));
+    if (r.method === 'computed') selection(box, r, function () { return waiting || Object.keys(change()).length > 0; });
+    versions(box, r, list);
     // Un brouillon faux se remplace ; il reste rangé, jamais validé.
     add(button('Refaire le calcul', function () { seq += 1; clear(body()); state(''); form(); }));
     if (older) box.appendChild(button('Télécharger le dernier avis validé', function () { return download(older.id); }));
     body().appendChild(box);
+  }
+  function pick(box, id, label, pairs) {
+    var f = field(box, id, label, 'select');
+    pairs.forEach(function (k) { var o = el('option', k[1]); o.value = k[0]; f.appendChild(o); });
+    return f;
+  }
+  function sale(c) {
+    var where = [c.street, c.town].filter(function (x) { return typeof x === 'string' && x !== ''; }).join(', ');
+    return [c.month, c.surface + ' m²', money(c.pricePerM2) + ' le m²', 'à ' + c.distance + ' m'].concat(where ? [where] : []).join(' · ');
+  }
+  // AU049b · une nouvelle version recalculée depuis celle-ci ; elle reste rangée, telle quelle [R692, R693].
+  function again(r, extra, done) {
+    var p = { kind: r.kind, previous: r.id };
+    if (r.condition) p.condition = r.condition;
+    Object.keys(extra).forEach(function (k) { p[k] = extra[k]; });
+    state('Nouveau calcul…');
+    var mine = ++seq;
+    return send(base(), 'POST', p).then(function (res) {
+      if (res.gone || mine !== seq) return false;
+      if (!res.ok) { state(why(res, 'La nouvelle version n’a pas pu être préparée.')); return false; }
+      return load(done);
+    });
+  }
+  function selection(box, r, busy) {
+    var cited = (Array.isArray(r.cited) ? r.cited : []).filter(function (c) { return c && typeof c.id === 'string'; });
+    var excluded = Array.isArray(r.excluded) ? r.excluded : [];
+    var adjustments = Array.isArray(r.adjustments) ? r.adjustments : [];
+    var m = el('section', null, 'bloc');
+    m.setAttribute('id', 'avis-ventes');
+    m.appendChild(el('h3', 'Ventes citées'));
+    m.appendChild(el('p', 'Écartez une vente qui ne ressemble pas au bien : le calcul est refait sans elle, dans une nouvelle version. Celle-ci reste rangée.', 'doux'));
+    function guard() {
+      if (busy()) { state('Enregistrez ou abandonnez d’abord votre correction : la nouvelle version repart du calcul.'); return true; }
+      return false;
+    }
+    var ul = el('ul');
+    cited.forEach(function (c, i) {
+      var li = el('li');
+      li.appendChild(el('p', sale(c)));
+      var why2 = pick(li, 'avis-motif-' + (i + 1), 'Motif pour écarter cette vente', [['', 'À choisir']].concat(CH.reasons));
+      li.appendChild(button('Écarter cette vente', function () {
+        if (guard()) return Promise.resolve(false);
+        if (!why2.value) { state('Choisissez le motif avant d’écarter la vente.'); return Promise.resolve(false); }
+        return again(r, { exclude: [{ id: c.id, reason: why2.value }] }, 'Vente écartée : voici la nouvelle version, à relire puis valider.');
+      }));
+      ul.appendChild(li);
+    });
+    m.appendChild(ul);
+    if (excluded.length > 0) {
+      m.appendChild(el('h3', 'Ventes écartées'));
+      var ex = el('ul');
+      var names = {};
+      CH.reasons.forEach(function (k) { names[k[0]] = k[1]; });
+      excluded.forEach(function (e) { ex.appendChild(el('li', [e.month, e.surface + ' m²', money(e.pricePerM2) + ' le m²', names[e.reason] || 'motif inconnu'].join(' · '))); });
+      m.appendChild(ex);
+    }
+    var mot = {};
+    CH.motives.forEach(function (k) { mot[k[0]] = k[1]; });
+    if (adjustments.length > 0) {
+      m.appendChild(el('h3', 'Ajustements'));
+      var aj = el('ul');
+      adjustments.forEach(function (a) { aj.appendChild(el('li', a.label + ' : ' + (a.pct > 0 ? '+' : '') + a.pct + ' % · ' + (a.source === 'agent' ? 'le vôtre, ' + (mot[a.motive] || 'motif inconnu') : 'barème du réseau'))); });
+      m.appendChild(aj);
+    }
+    var label = pick(m, 'avis-ajust-car', 'Caractéristique à ajuster', [['', 'À choisir']].concat(CH.labels.map(function (l) { return [l, l]; })));
+    var pct = field(m, 'avis-ajust-pct', 'Votre coefficient, en % (de -15 à +15)');
+    pct.setAttribute('inputmode', 'numeric');
+    var motive = pick(m, 'avis-ajust-motif', 'Motif', [['', 'À choisir']].concat(CH.motives));
+    m.appendChild(button('Retenir cet ajustement', function () {
+      if (guard()) return Promise.resolve(false);
+      var n = Number(String(pct.value).replace(/[\\s%]/g, '').replace('+', '').replace('−', '-'));
+      if (!label.value || !motive.value || String(pct.value).trim() === '' || !Number.isInteger(n) || Math.abs(n) > 15) { state('Choisissez la caractéristique, un pourcentage entier de -15 à +15 et le motif.'); return Promise.resolve(false); }
+      return again(r, { adjust: [{ label: label.value, pct: n, motive: motive.value }] }, 'Ajustement retenu : voici la nouvelle version, à relire puis valider.');
+    }));
+    box.appendChild(m);
+  }
+  function versions(box, r, list) {
+    var older = list.filter(function (x) { return x && x.id !== r.id && ID.test(String(x.id)); });
+    if (older.length === 0) return;
+    var v = el('section', null, 'bloc');
+    v.setAttribute('id', 'avis-versions');
+    v.appendChild(el('h3', 'Versions précédentes'));
+    var ul = el('ul');
+    older.forEach(function (x) {
+      var n = Array.isArray(x.excluded) ? x.excluded.length : 0;
+      ul.appendChild(el('li', String(x.createdAt).slice(0, 10) + ' · ' + money(x.low) + ' à ' + money(x.high) + ' · ' + (x.status === 'validated' ? 'validée' : 'brouillon') + (n > 0 ? ' · ' + n + (n === 1 ? ' vente écartée' : ' ventes écartées') : '') + (x.id === r.previous ? ' · celle que cette version recalcule' : '')));
+    });
+    v.appendChild(ul);
+    box.appendChild(v);
   }
   function download(id) {
     var mine = t.session();

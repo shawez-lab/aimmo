@@ -333,3 +333,75 @@ describe('AU105 · une correction de l’avis non enregistrée se retrouve, ou s
   });
 });
 
+
+describe('AU049b · l’écran de l’avis montre les ventes citées et permet de les écarter', () => {
+  const CITED = [
+    { id: 't:1', month: '2025-03', surface: 62, pricePerM2: 2600, distance: 120, street: 'Rue de la Vente', town: 'Dijon' },
+    { id: 't:2', month: '2025-05', surface: 70, pricePerM2: 4100, distance: 300, street: null, town: 'Dijon' },
+  ];
+  const V1 = { ...DRAFT, method: 'computed', kind: 'apartment', condition: 'travaux', cited: CITED, excluded: [], adjustments: [{ label: 'État général', pct: -10, source: 'bareme', motive: null }], previous: null };
+  const V2 = { ...V1, id: 'r2', low: 175000, high: 195000, createdAt: '2026-11-03T08:00:00.000Z', cited: [CITED[0]], excluded: [{ id: 't:2', reason: 'prix_aberrant', month: '2025-05', surface: 70, pricePerM2: 4100, in: 'r1' }], previous: 'r1' };
+
+  it('[R29] les ventes citées sont dites sans numéro de voie, et le motif vient de la liste fermée', async () => {
+    const t = await run({ 'GET /v1/biens/b1/avis': ok([V1]) });
+    await t.open();
+    const lines = t.body().all().filter((e) => e.tagName === 'p').map((e) => e.textContent);
+    expect(lines).toContain('2025-03 · 62 m² · 2 600 € le m² · à 120 m · Rue de la Vente, Dijon');
+    expect(lines).toContain('2025-05 · 70 m² · 4 100 € le m² · à 300 m · Dijon');
+    const options = t.input('avis-motif-1').children.map((o) => (o as unknown as { value: string }).value);
+    expect(options).toEqual(['', 'prix_aberrant', 'bien_different', 'vente_hors_marche', 'doublon']);
+  });
+
+  it('[R692] écarter depuis l’écran donne une nouvelle version, la précédente reste listée', async () => {
+    const t = await run({ 'GET /v1/biens/b1/avis': ok([V1]), 'POST /v1/biens/b1/avis': ok(V2) });
+    await t.open();
+    const buttons = t.body().all().filter((e) => e.tagName === 'button' && e.textContent === 'Écarter cette vente');
+    expect(buttons).toHaveLength(2);
+    await t.click(buttons[1]);
+    expect(t.state()).toBe('Choisissez le motif avant d’écarter la vente.');
+    expect(t.calls.some((c) => c.method === 'POST')).toBe(false);
+    t.input('avis-motif-2').value = 'prix_aberrant';
+    t.table['GET /v1/biens/b1/avis'] = ok([V2, V1]);
+    await t.click(buttons[1]);
+    expect(t.calls.filter((c) => c.method === 'POST').at(-1)).toEqual({ method: 'POST', url: '/v1/biens/b1/avis', body: { kind: 'apartment', previous: 'r1', condition: 'travaux', exclude: [{ id: 't:2', reason: 'prix_aberrant' }] } });
+    expect(t.state()).toContain('Vente écartée');
+    const items = t.body().all().filter((e) => e.tagName === 'li').map((e) => e.textContent);
+    expect(items).toContain('2025-05 · 70 m² · 4 100 € le m² · prix aberrant');
+    expect(items).toContain('2026-11-02 · 180 000 € à 200 000 € · brouillon · celle que cette version recalcule');
+    expect(t.body().all().filter((e) => e.tagName === 'button' && e.textContent === 'Écarter cette vente')).toHaveLength(1);
+  });
+
+  it('[R693] retenir un ajustement motivé prépare une nouvelle version ; un pourcentage hors bornes est refusé avant envoi', async () => {
+    const t = await run({ 'GET /v1/biens/b1/avis': ok([V1]), 'POST /v1/biens/b1/avis': ok(V2) });
+    await t.open();
+    t.input('avis-ajust-car').value = 'Cave';
+    t.input('avis-ajust-pct').value = '20';
+    t.input('avis-ajust-motif').value = 'visite';
+    await t.click(t.byText('Retenir cet ajustement'));
+    expect(t.state()).toContain('de -15 à +15');
+    expect(t.calls.some((c) => c.method === 'POST')).toBe(false);
+    t.input('avis-ajust-pct').value = '+3 %';
+    await t.click(t.byText('Retenir cet ajustement'));
+    expect(t.calls.filter((c) => c.method === 'POST').at(-1)?.body).toEqual({ kind: 'apartment', previous: 'r1', condition: 'travaux', adjust: [{ label: 'Cave', pct: 3, motive: 'visite' }] });
+  });
+
+  it('un refus de la nouvelle version est dit en français, sans code ; une correction en cours bloque le recalcul', async () => {
+    const t = await run({ 'GET /v1/biens/b1/avis': ok([V1]), 'POST /v1/biens/b1/avis': no(422, 'too_many_exclusions') });
+    await t.open();
+    t.input('avis-motif-1').value = 'doublon';
+    await t.click(t.byText('Écarter cette vente'));
+    expect(t.state()).toBe('Dix ventes écartées au plus : l’avis ne serait plus fiable.');
+    t.input('avis-texte').value = 'Un autre texte';
+    const before = t.calls.filter((c) => c.method === 'POST').length;
+    await t.click(t.byText('Écarter cette vente'));
+    expect(t.state()).toContain('Enregistrez ou abandonnez d’abord');
+    expect(t.calls.filter((c) => c.method === 'POST').length).toBe(before);
+  });
+
+  it('un avis motivé ne montre ni ventes à écarter ni ajustement', async () => {
+    const t = await run({ 'GET /v1/biens/b1/avis': ok([{ ...V1, method: 'manual', cited: [] }]) });
+    await t.open();
+    expect(t.byText('Écarter cette vente')).toBeUndefined();
+    expect(t.byText('Retenir cet ajustement')).toBeUndefined();
+  });
+});
