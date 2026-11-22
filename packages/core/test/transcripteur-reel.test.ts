@@ -139,6 +139,16 @@ describe('AU044 · le vrai transcripteur des notes vocales', () => {
     }
   });
 
+  it('[R696] un fichier ou une réponse qui s’arrête en route après ses en-têtes : le délai coupe, rien n’est rendu', async () => {
+    const stalled = () => new Response(new ReadableStream<Uint8Array>({ start(c) { c.enqueue(AUDIO); } }), { status: 200, headers: { 'content-type': 'audio/ogg' } });
+    const http = fakeHttp({ [IG_URL]: stalled });
+    const source = new MetaAudioSource({ whatsappToken: null, http, timeoutMs: 50 });
+    await expect(source.read({ channel: 'instagram', mediaRef: IG_URL, mime: null })).rejects.toMatchObject({ code: 'panne' });
+    const slowSpeech = fakeHttp({ [IG_URL]: () => audioFile('audio/mp4'), [SPEECH]: () => new Response(new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new TextEncoder().encode('{"text":')); } }), { status: 200 }) });
+    const transcriber = new SpeechTranscriber(new MetaAudioSource({ whatsappToken: null, http: slowSpeech }), { url: SPEECH, apiKey: KEY, model: 'whisper-1', http: slowSpeech, timeoutMs: 50 });
+    await expect(transcriber.transcribe({ channel: 'instagram', mediaRef: IG_URL, mime: null })).rejects.toMatchObject({ code: 'panne' });
+  });
+
   it('[R241] la confiance vient des segments ; sans segment, elle est nulle, jamais devinée', () => {
     expect(readSpeechResponse({ text: 'oui', language: 'english', segments: [] })).toEqual({ text: 'oui', language: 'en', confidence: 0 });
     expect(readSpeechResponse({ text: 'oui', language: 'fr' }).confidence).toBe(0);

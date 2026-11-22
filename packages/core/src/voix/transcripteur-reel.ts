@@ -110,7 +110,7 @@ function statusError(status: number): AudioError {
 }
 
 /** Lit un corps sans jamais dépasser la limite. */
-async function readCapped(response: Response): Promise<Uint8Array> {
+async function readCapped(response: Response, signal: AbortSignal): Promise<Uint8Array> {
   const declared = Number(response.headers.get('content-length') ?? '');
   if (Number.isFinite(declared) && declared > AUDIO_MAX_BYTES) {
     await response.body?.cancel().catch(() => undefined);
@@ -118,10 +118,20 @@ async function readCapped(response: Response): Promise<Uint8Array> {
   }
   if (response.body === null) return new Uint8Array(0);
   const reader = response.body.getReader();
+  // Le délai coupe aussi un corps qui s'arrête en route : la lecture en attente se termine, et rien n'est rendu.
+  const stop = (): void => void reader.cancel().catch(() => undefined);
+  signal.addEventListener('abort', stop, { once: true });
   const chunks: Uint8Array[] = [];
   let size = 0;
   for (;;) {
-    const { done, value } = await reader.read();
+    let chunk: Awaited<ReturnType<typeof reader.read>>;
+    try {
+      chunk = await reader.read();
+    } catch {
+      throw new AudioError('panne');
+    }
+    if (signal.aborted) throw new AudioError('panne');
+    const { done, value } = chunk;
     if (done) break;
     size += value.length;
     if (size > AUDIO_MAX_BYTES) {
@@ -130,6 +140,7 @@ async function readCapped(response: Response): Promise<Uint8Array> {
     }
     chunks.push(value);
   }
+  signal.removeEventListener('abort', stop);
   const out = new Uint8Array(size);
   let at = 0;
   for (const c of chunks) {
@@ -145,37 +156,46 @@ export class MetaAudioSource implements AudioSource {
     this.timeoutMs = config.timeoutMs ?? 10_000;
   }
 
+  /** Toute la lecture, corps compris, tient dans le délai : un serveur qui s'arrête en route donne `panne`. */
   async read(audio: VoiceAudio): Promise<AudioFile> {
-    if (audio.channel === 'whatsapp') return this.whatsApp(audio);
-    if (!isMetaFileUrl(audio.mediaRef)) throw new AudioError('reference');
-    return this.file(audio.mediaRef, null, audio.mime);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      if (audio.channel === 'whatsapp') return await this.whatsApp(audio, controller.signal);
+      if (!isMetaFileUrl(audio.mediaRef)) throw new AudioError('reference');
+      return await this.file(audio.mediaRef, null, audio.mime, controller.signal);
+    } catch (error) {
+      throw error instanceof AudioError ? error : new AudioError('panne');
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
-  private async whatsApp(audio: VoiceAudio): Promise<AudioFile> {
+  private async whatsApp(audio: VoiceAudio, signal: AbortSignal): Promise<AudioFile> {
     if (!WA_MEDIA_ID.test(audio.mediaRef)) throw new AudioError('reference');
     const token = this.config.whatsappToken?.trim() ?? '';
     if (token === '') throw new AudioError('acces');
     const auth = { authorization: `Bearer ${token}` };
-    const meta = await this.call(`${GRAPH}/${audio.mediaRef}`, auth);
+    const meta = await this.call(`${GRAPH}/${audio.mediaRef}`, auth, signal);
     if (!meta.ok) throw statusError(meta.status);
     let body: unknown;
     try {
-      body = await meta.json();
+      body = JSON.parse(new TextDecoder().decode(await readCapped(meta, signal)));
     } catch {
       throw new AudioError('panne');
     }
     const url = body !== null && typeof body === 'object' ? (body as Record<string, unknown>).url : undefined;
     const mime = body !== null && typeof body === 'object' ? (body as Record<string, unknown>).mime_type : undefined;
     if (typeof url !== 'string' || !isMetaFileUrl(url)) throw new AudioError('panne');
-    return this.file(url, auth, typeof mime === 'string' ? mime : audio.mime);
+    return this.file(url, auth, typeof mime === 'string' ? mime : audio.mime, signal);
   }
 
   /** Le fichier, en suivant au plus trois renvois, chacun vérifié ; le jeton ne suit jamais un renvoi. */
-  private async file(start: string, auth: Record<string, string> | null, declared: string | null): Promise<AudioFile> {
+  private async file(start: string, auth: Record<string, string> | null, declared: string | null, signal: AbortSignal): Promise<AudioFile> {
     let url = start;
     let headers = auth ?? {};
     for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
-      const response = await this.call(url, headers);
+      const response = await this.call(url, headers, signal);
       if (response.status >= 300 && response.status < 400) {
         const next = response.headers.get('location');
         await response.body?.cancel().catch(() => undefined);
@@ -200,22 +220,19 @@ export class MetaAudioSource implements AudioSource {
         await response.body?.cancel().catch(() => undefined);
         throw new AudioError('format');
       }
-      const bytes = await readCapped(response);
+      const bytes = await readCapped(response, signal);
       if (bytes.length === 0) throw new AudioError('format');
       return { bytes, type };
     }
     throw new AudioError('panne');
   }
 
-  private async call(url: string, headers: Record<string, string>): Promise<Response> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+  private async call(url: string, headers: Record<string, string>, signal: AbortSignal): Promise<Response> {
+    if (signal.aborted) throw new AudioError('panne');
     try {
-      return await this.config.http(url, { method: 'GET', headers, redirect: 'manual', signal: controller.signal });
+      return await this.config.http(url, { method: 'GET', headers, redirect: 'manual', signal });
     } catch {
       throw new AudioError('panne');
-    } finally {
-      clearTimeout(timer);
     }
   }
 }
@@ -308,24 +325,27 @@ export class SpeechTranscriber implements Transcriber {
     form.append('response_format', 'verbose_json');
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-    let response: Response;
     try {
-      response = await this.service.http(this.service.url, { method: 'POST', headers: { authorization: `Bearer ${this.service.apiKey}` }, body: form, redirect: 'manual', signal: controller.signal });
-    } catch {
-      throw new AudioError('panne');
+      let response: Response;
+      try {
+        response = await this.service.http(this.service.url, { method: 'POST', headers: { authorization: `Bearer ${this.service.apiKey}` }, body: form, redirect: 'manual', signal: controller.signal });
+      } catch {
+        throw new AudioError('panne');
+      }
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+        throw statusError(response.status);
+      }
+      let body: unknown;
+      try {
+        // Le délai court jusqu'au bout de la réponse, corps compris.
+        body = JSON.parse(new TextDecoder().decode(await readCapped(response, controller.signal)));
+      } catch {
+        throw new AudioError('panne');
+      }
+      return readSpeechResponse(body);
     } finally {
       clearTimeout(timer);
     }
-    if (!response.ok) {
-      await response.body?.cancel().catch(() => undefined);
-      throw statusError(response.status);
-    }
-    let body: unknown;
-    try {
-      body = await response.json();
-    } catch {
-      throw new AudioError('panne');
-    }
-    return readSpeechResponse(body);
   }
 }
