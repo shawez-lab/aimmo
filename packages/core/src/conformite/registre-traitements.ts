@@ -40,6 +40,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       qualification_corrections: ['actor'],
       contact_scores: ['person_id', 'score', 'temperature', 'reason'],
       attributions: ['person_id', 'agent_id', 'reason'],
+      // AU041 : le nombre d'agents pleins quand la capacité a changé le choix, rien de personnel.
+      attribution_capacity: [],
       callback_tasks: ['person_id', 'reason'],
       // Le rappel d'un engagement manqué, par le responsable (IN12).
       missed_promise_tasks: ['person_id', 'agent_id', 'done_by', 'outcome'],
@@ -609,6 +611,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       assistant_keys: ['sha256', 'user_id', 'label', 'device_id'],
       agent_zones: ['agent_id', 'commune'],
       agent_availabilities: ['agent_id'],
+      // AU041 : la capacité que l'agent ou la direction déclare, avec sa raison.
+      agent_capacities: ['agent_id', 'reason', 'decided_by'],
       agent_public_cards: ['agent_id', 'phone', 'email', 'set_by'],
       // HX22 : le numéro de l'agent, vers lequel il renvoie ses appels sans réponse.
       voice_assistant_lines: ['agent_id', 'phone'],
@@ -1484,6 +1488,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   phase_openings: ['network_id', 'phase', 'opened_at', 'evidence', 'evidence_hash'],
   region_decisions: ['network_id', 'version', 'region', 'is_open', 'decided_at', 'phase5_hash', 'prev_hash', 'hash'],
   network_communes: ['network_id', 'insee_code', 'version', 'is_listed', 'decided_at'],
+  agent_capacities: ['network_id', 'version', 'capacity', 'decided_at'],
+  attribution_capacity: ['attribution_id', 'network_id', 'full_agents', 'created_at'],
   licence_tariffs: ['network_id', 'version', 'monthly_cents', 'decided_at'],
   software_licences: ['id', 'network_id', 'licensee_network_id', 'department', 'tariff_version', 'monthly_cents', 'phase5_hash', 'granted_at'],
   licence_states: ['licence_id', 'version', 'state', 'decided_at'],
