@@ -1643,3 +1643,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-22 06:32 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 02:45 et 03:29 n'ont produit ni commit fusionné ni tâche terminée)
 - 2026-11-22 06:32 · VOIE 2 : AU091b, 3ff024c0 (main), relancé non
 - 2026-11-22 07:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 06:56 par une autre séance voie 2, active : AU020b en cours, push à 07:44)
+- 2026-11-22 09:12 · AU020b · nouvelle approche : fiche du bien gardée (valeurs contrôlées), texte du brouillon vidé par la voie de la migration 4099, brouillon vidé jamais publié ; effacement de la vendeuse du jeu complet et rejeu réussi ; relecture forte 2 P1 corrigés, Codex rien ; une ligne de statut de PLAN.md avait mis main en rouge (fondations), corrigée (f6748c85) ; fusionnée (#773, 3d0b5164), #715 fermée · prochaine : aucune tâche voie 2 prête (W23 attend H43)
+- 2026-11-22 09:12 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 04:53 et 05:53 n'ont rien produit)
+- 2026-11-22 09:12 · VOIE 2 : AU020b, 3d0b5164 (main), relancé non
