@@ -638,8 +638,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien (mise en service réelle : H21, H53).
 
 ### AU054 · Le meilleur créneau repose sur une distance à vol d’oiseau majorée
-- Statut : en cours (voie 2)
-- Reste : constat confirmé (vol d'oiseau majoré seul, rien ne disait que le temps n'était pas garanti). Service d'itinéraires branchable dans `MeilleursCreneaux` (`RoadTimeSource`, positions seules), créneau `guaranteed` et `sources`, sinon « non garanti, à confirmer » (R701). Reste : brancher un vrai service d'itinéraires au Worker (H21 de l'agenda ou nouvelle clé, voie 1, socle) ; la tournée de prospection garde l'estimation.
+- Statut : fait (2026-11-22)
+- Reste : constat confirmé (vol d'oiseau majoré seul, rien ne disait que le temps n'était pas garanti). Service d'itinéraires branchable dans `MeilleursCreneaux` (`RoadTimeSource`, positions seules), créneau `guaranteed` et `sources`, sinon « non garanti, à confirmer » (R701). Codex 1 P0 corrigé (seule une position identique évite le service) puis rien ; vérification verte ; fusionnée (#786). Reste : brancher un vrai service d'itinéraires au Worker (H21 de l'agenda ou nouvelle clé, voie 1, socle) ; la tournée de prospection garde l'estimation.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M05 Rendez-vous ; audit A054 (majeur), endroit : C/rendezvous/trajets.ts.
 - Constat de l'audit : Le meilleur créneau repose sur une distance à vol d’oiseau majorée, sans itinéraire routier réel.
