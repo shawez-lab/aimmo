@@ -16,7 +16,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { DEFAULT_MANUAL_SETTINGS, MANUAL_REASONS, rangeFollowsReferences, readManual, type ManualInput, type ManualSettings } from './avis-manuel.ts';
-import { AvisDeValeur, type ValuationReport, type ValuationWriter } from './avis.ts';
+import { AvisDeValeur, SALE_EXCLUSION_REASONS, type AgentExclusion, type CitedSale, type SaleExclusionReason, type ValuationReport, type ValuationWriter } from './avis.ts';
 import { CollecteBien, type CollecteServices, type PublicFacts } from './collecte.ts';
 import type { SaleDetail } from './dvf-site.ts';
 import type { DetailedSales } from './en-ligne.ts';
@@ -30,11 +30,14 @@ export interface PreparationServices {
 export type PreparationRefusal =
   | { ok: false; rule: 'R16' | 'R30'; code: string }
   | { ok: false; rule: 'R27'; code: NoRangeReason; comparablesFound: number; manualPossible: boolean }
+  | { ok: false; rule: 'R692'; code: 'invalid_exclusion' | 'unknown_previous' | 'too_many_exclusions' }
   | { ok: false; rule: 'R690'; code: 'invalid_references' | 'invalid_range' | 'not_verified' | 'range_far_from_references' | 'range_available' }
   | { ok: false; rule: null; code: 'unknown' | 'invalid' | 'not_configured' | 'not_a_home' | 'no_surface' | 'address_not_found' | 'other_town' | 'sales_unavailable' };
 
 const CONDITIONS: readonly string[] = ['travaux', 'rafraichir', 'bon', 'neuf'];
 const CITED_SALES = 12;
+/** Au plus tant de ventes écartées par l'agent, toutes versions comprises : écarter n'est pas choisir son prix [R692]. */
+const MAX_EXCLUSIONS = 10;
 
 /** Un résultat dans le délai, sinon une erreur : le minuteur ne reste jamais armé. */
 function within<T>(promise: Promise<T>, ms: number): Promise<T> {
@@ -112,10 +115,37 @@ export class PreparationAvis {
   }
 
   /**
+   * Les ventes écartées pour la nouvelle version : celles de la version précédente, plus les nouvelles, chacune citée
+   * dans la version précédente et avec un motif de la liste [R692]. La version précédente ne change pas.
+   */
+  private async exclusions(propertyId: string, networkId: string, previous: unknown, exclude: unknown): Promise<{ ok: true; value: AgentExclusion[]; previous: string } | PreparationRefusal> {
+    if (typeof previous !== 'string' || previous.length > 100) return { ok: false, rule: 'R692', code: 'unknown_previous' };
+    const row = await this.db.first<{ computed: string }>('SELECT computed FROM valuation_reports WHERE id = ? AND property_id = ? AND network_id = ?', [previous, propertyId, networkId]);
+    if (!row) return { ok: false, rule: 'R692', code: 'unknown_previous' };
+    const before = JSON.parse(row.computed) as { method?: string; cited?: CitedSale[]; excluded?: AgentExclusion[] };
+    // Un avis motivé n'a pas de ventes du calcul à écarter.
+    if (before.method === 'manual') return { ok: false, rule: 'R692', code: 'unknown_previous' };
+    if (!Array.isArray(exclude) || exclude.length === 0) return { ok: false, rule: 'R692', code: 'invalid_exclusion' };
+    const cited = new Map((before.cited ?? []).flatMap((c) => (c.id ? [[c.id, c] as const] : [])));
+    const kept: AgentExclusion[] = [...(before.excluded ?? [])];
+    for (const raw of exclude as unknown[]) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { ok: false, rule: 'R692', code: 'invalid_exclusion' };
+      const { id, reason } = raw as { id?: unknown; reason?: unknown };
+      const sale = typeof id === 'string' ? cited.get(id) : undefined;
+      if (!sale || typeof reason !== 'string' || !Object.hasOwn(SALE_EXCLUSION_REASONS, reason) || kept.some((k) => k.id === id)) return { ok: false, rule: 'R692', code: 'invalid_exclusion' };
+      kept.push({ id: id as string, reason: reason as SaleExclusionReason, month: sale.month, surface: sale.surface, pricePerM2: sale.pricePerM2, in: previous });
+    }
+    if (kept.length > MAX_EXCLUSIONS) return { ok: false, rule: 'R692', code: 'too_many_exclusions' };
+    return { ok: true, value: kept, previous };
+  }
+
+  /**
+   * `exclude` et `previous` : une nouvelle version recalculée sans les ventes que l'agent écarte de la version
+   * `previous`, chacune avec son motif [R692].
    * `manual` : l'avis motivé par les ventes vérifiées de l'agent, `{ low, high, verified: true, references: [...] }`,
    * reçu seulement quand le calcul ne peut pas donner de fourchette pour ce logement [R27, R690].
    */
-  async prepare(viewer: Viewer, propertyId: string, input: { address?: unknown; kind?: unknown; condition?: unknown; manual?: unknown }): Promise<{ ok: true; value: ValuationReport } | PreparationRefusal> {
+  async prepare(viewer: Viewer, propertyId: string, input: { address?: unknown; kind?: unknown; condition?: unknown; manual?: unknown; exclude?: unknown; previous?: unknown }): Promise<{ ok: true; value: ValuationReport } | PreparationRefusal> {
     const allowed = await this.follower(viewer, propertyId);
     if (!allowed.ok) return allowed;
     if (!this.services) return { ok: false, rule: null, code: 'not_configured' };
@@ -137,6 +167,16 @@ export class PreparationAvis {
       if (!read.ok) return { ok: false, rule: 'R690', code: read.code };
       if (!rangeFollowsReferences(read.value, property.surface_m2, settings)) return { ok: false, rule: 'R690', code: 'range_far_from_references' };
       manual = read.value;
+    }
+    let excluded: AgentExclusion[] = [];
+    let previous: string | null = null;
+    if (input.exclude !== undefined || input.previous !== undefined) {
+      // Écarter des ventes du calcul et apporter ses propres ventes ne vont pas ensemble.
+      if (manual || property.kind !== 'home') return { ok: false, rule: 'R692', code: 'invalid_exclusion' };
+      const read = await this.exclusions(propertyId, property.network_id, input.previous, input.exclude);
+      if (!read.ok) return read;
+      excluded = read.value;
+      previous = read.previous;
     }
 
     const collected = await new CollecteBien(this.services.collecte, { now: this.now }).collect(address);
@@ -177,7 +217,7 @@ export class PreparationAvis {
           condition: (condition as Condition | null | undefined) ?? null,
           ...featuresOf(sheet),
           energyClass,
-        }),
+        }, new Set(excluded.map((e) => e.id))),
         this.options.salesTimeoutMs ?? 15_000,
       );
     } catch {
@@ -197,7 +237,7 @@ export class PreparationAvis {
     // Le calcul a donné une fourchette : l'avis part de lui, jamais d'une fourchette saisie à côté [R27, R690].
     if (manual) return { ok: false, rule: 'R690', code: 'range_available' };
     const details = await this.details(range.comparables.slice(0, CITED_SALES).map((c) => c.id));
-    const report = await this.avis.draft({ networkId: property.network_id, propertyId, kind: sort, surface: property.surface_m2, range, facts, details });
+    const report = await this.avis.draft({ networkId: property.network_id, propertyId, kind: sort, surface: property.surface_m2, range, facts, details, excluded, previous });
     return { ok: true, value: report };
   }
 

@@ -248,7 +248,8 @@ export class Fourchette {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  async estimate(p: EstimatedProperty): Promise<RangeResult> {
+  /** `exclude` : les ventes que l'agent a écartées, avec un motif, d'une version précédente de l'avis [R692]. */
+  async estimate(p: EstimatedProperty, exclude: ReadonlySet<string> = new Set()): Promise<RangeResult> {
     const coverage = await this.source.coverage();
     const department = p.postalCode ? departmentOf(p.postalCode) : null;
     const dvfNotCovered = department !== null && this.settings.dvfNotCovered.includes(department);
@@ -284,7 +285,7 @@ export class Fourchette {
       found = [];
       excludedOld = 0;
       for (const s of sales) {
-        if (s.kind !== kind) continue;
+        if (s.kind !== kind || exclude.has(s.id)) continue;
         const ratio = s.surface / p.surface;
         if (ratio < minRatio || ratio > maxRatio) continue;
         const d = distance(p.lat, p.lon, s.lat, s.lon);
