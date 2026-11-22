@@ -1647,3 +1647,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-22 08:25 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 04:53 et 05:53 n'ont rien produit)
 - 2026-11-22 08:25 · VOIE 2 : AU020b, 3d0b5164 (main), relancé non
 - 2026-11-22 09:19 · AU041 · capacité déclarée des agents, file de secours fixe, revérifiée par la base (R681, migration 4097) ; Codex 4 P0 traités puis rien ; vérification verte ; fusionnée (#772, 7c0de947) · prochaine : AU042
+- 2026-11-22 09:21 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU042
