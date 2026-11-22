@@ -22,6 +22,7 @@ import { AdemeDiagnosisFeed } from '../../core/src/veille-dpe/index.ts';
 import { HttpPigeSource, missingPigeSettings, type PigeFetcher, type PigeProviderSettings, type PigeSource } from '../../core/src/pige/index.ts';
 import { runLiveWithdrawals, socialFromEnv } from './reseaux-reels.ts';
 import { gbpFromEnv } from './fiche-google-reelle.ts';
+import { dossierFilesOf, mailboxesFromEnv, runMailboxPass, type BoiteEnv } from './boite.ts';
 import { adsFromEnv, runAdsPass, type AdsEnv } from './publicite-reelle.ts';
 
 /**
@@ -140,6 +141,23 @@ export interface Env {
   PIGE_SOURCE_TOKEN?: string;
   /** AU034 : le réseau dont le fournisseur couvre le secteur ; seul lui relève. */
   PIGE_NETWORK_ID?: string;
+  /**
+   * AU043 : `reel` relie les vraies boîtes des agents (H55), avec le client OAuth de Google (`BOITE_GOOGLE_CLIENT_ID`,
+   * `BOITE_GOOGLE_CLIENT_SECRET`) ou de Microsoft (`BOITE_MICROSOFT_CLIENT_ID`, `BOITE_MICROSOFT_CLIENT_SECRET`,
+   * `BOITE_MICROSOFT_TENANT`) et le secret `BOITE_JETONS` (`boite.ts`).
+   */
+  BOITE_MODE?: BoiteEnv['BOITE_MODE'];
+  BOITE_GOOGLE_CLIENT_ID?: string;
+  BOITE_GOOGLE_CLIENT_SECRET?: string;
+  BOITE_MICROSOFT_CLIENT_ID?: string;
+  BOITE_MICROSOFT_CLIENT_SECRET?: string;
+  BOITE_MICROSOFT_TENANT?: string;
+  BOITE_JETONS?: string;
+}
+
+/** AU043 : les vraies boîtes des agents, et le rangement de leurs pièces dans `PIECES` ; sinon rien n'est lu [R683]. */
+export function boiteOf(env: Env): { mailboxes: ReturnType<typeof mailboxesFromEnv>; files: ReturnType<typeof dossierFilesOf> } {
+  return { mailboxes: mailboxesFromEnv(env, fetch.bind(globalThis)), files: dossierFilesOf(env.PIECES ? new R2PieceStore(env.PIECES) : null) };
 }
 
 /** Les réglages du fournisseur de pige (AU034), tels quels : leur forme est contrôlée par la couche métier. */
@@ -272,6 +290,8 @@ export default {
       // AU034 : le vrai fournisseur de la pige, et ses réglages pour l'état de la relève [R671].
       pigeSource: pigeSourceOf(pigeProvider(env))?.source ?? null,
       pigeProvider: pigeProvider(env),
+      // AU043 : les vraies boîtes mail reliées par les agents (H55) ; rien n'est lu sans elles, rien ne part [R683].
+      boite: boiteOf(env),
       // BR85 : le registre des gels lu en GET sur le fichier public, au seul appui du responsable ; jamais un envoi.
       registreGels: { get: fetch.bind(globalThis), url: registreGelsUrl(env.REGISTRE_GELS_URL), userAgent: REGISTRE_GELS_USER_AGENT },
       // BR87 : la zone du résumé de copropriété lue en GET à la Base adresse nationale puis au Géoportail, au seul appui
@@ -335,6 +355,11 @@ export default {
     {
       const db = fromD1(env.DB);
       await runAdsPass(db, new SqlJournalStore(db), () => new Date(), adsFromEnv(env, fetch.bind(globalThis)));
+    }
+    // AU043 : la boîte de chaque agent qui l'a reliée est lue et triée ; une panne est écrite au journal [R683].
+    {
+      const db = fromD1(env.DB);
+      await runMailboxPass({ db, journal: new SqlJournalStore(db), now: () => new Date(), ...boiteOf(env) });
     }
   },
   async email(message: InboundEmail, env: Env): Promise<void> {

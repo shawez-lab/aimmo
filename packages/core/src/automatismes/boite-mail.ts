@@ -116,7 +116,11 @@ export interface MailIn {
  */
 export interface MailboxProvider {
   provider: MailProvider;
-  receivedSince(agentId: string, since: Date | null): Promise<MailIn[]>;
+  /**
+   * `skip` (AU043) : les clés des mails déjà triés autour de `since`, que la boîte relirait sinon à chaque lecture ; un
+   * fournisseur réel ne les compte pas dans son lot, pour qu'un lot plein de mails de la même heure avance toujours [R18].
+   */
+  receivedSince(agentId: string, since: Date | null, skip?: ReadonlySet<string>): Promise<MailIn[]>;
 }
 
 /** Le stockage des pièces des dossiers (R2, ou Drive une fois relié). */
@@ -265,7 +269,15 @@ export class BoiteMail {
     const scope = [viewer.networkId, viewer.userId, provider.provider];
     const unfinished = await this.db.first<{ at: string | null }>("SELECT MIN(received_at) AS at FROM mailbox_mails WHERE network_id = ? AND agent_id = ? AND provider = ? AND status IN ('en_cours', 'a_reprendre')", scope);
     const last = unfinished?.at ? unfinished : await this.db.first<{ at: string | null }>('SELECT MAX(received_at) AS at FROM mailbox_mails WHERE network_id = ? AND agent_id = ? AND provider = ?', scope);
-    const mails = await provider.receivedSince(viewer.userId, last?.at ? new Date(last.at) : null);
+    const since = last?.at ? new Date(last.at) : null;
+    // Les mails déjà finis des deux secondes avant le curseur et après : la boîte les rendrait encore (AU043, R683).
+    const done = since
+      ? await this.db.all<{ external_id: string }>(
+          "SELECT external_id FROM mailbox_mails WHERE network_id = ? AND agent_id = ? AND provider = ? AND received_at >= ? AND status NOT IN ('en_cours', 'a_reprendre') ORDER BY received_at LIMIT 5000",
+          [...scope, new Date(since.getTime() - 2000).toISOString()],
+        )
+      : [];
+    const mails = await provider.receivedSince(viewer.userId, since, new Set(done.map((d) => d.external_id)));
     const out: SortedMail[] = [];
     for (const mail of [...mails].sort((x, y) => x.receivedAt.getTime() - y.receivedAt.getTime())) {
       if (mail.provider !== provider.provider) continue;

@@ -111,6 +111,8 @@ import { veilleDpeRoutes, type VeilleDpeRoute } from './veille-dpe.ts';
 import { questionnaireRoutes, type QuestionnaireRoute } from './mandat-questionnaire.ts';
 import { scoreAdresseRoutes, type ScoreAdresseRoute } from './score-adresse.ts';
 import { tourneeRoutes, type TourneeRoute } from './tournee.ts';
+import { boiteRoutes, type BoiteRoute, type MailboxDirectory } from './boite.ts';
+import type { DossierFileStore } from '../../core/src/automatismes/boite-mail.ts';
 import { rechercheRoutes, type RechercheRoute } from './recherche.ts';
 import { statistiquesSiteRoutes, type StatistiquesSiteRoute } from './statistiques-site.ts';
 import { pigeRoutes, type PigeRoute } from './pige.ts';
@@ -215,6 +217,8 @@ export interface ApiConfig {
   scoreSources?: ScoreServices | null;
   /** La source des annonces de particuliers de la pige (BR29) ; absente, aucune relève, rien n'est rangé. */
   pigeSource?: PigeSource | null;
+  /** AU043 : les vraies boîtes Gmail et Outlook reliées par les agents (H55) et le rangement des pièces ; absentes, rien n'est lu [R683]. */
+  boite?: { mailboxes: MailboxDirectory | null; files: DossierFileStore | null };
   /** AU034 : les réglages du vrai fournisseur de la pige, pour l'état de la relève ; avec eux, seul son réseau relève. */
   pigeProvider?: PigeProviderSettings | null;
   /** La base de l'ADEME et le cadastre de l'adresse de pige (BR30) ; absents, ceux de `fetchPublicData`, sinon seuls les diagnostics de la veille. */
@@ -1570,6 +1574,16 @@ function tourneeRoutesDef(geocoder: Geocoder | null): RouteDef[] {
   }));
 }
 
+/** Les routes de la boîte mail de l'agent (AU043) : l'agent en activité seul [R16], rien ne part [R409, R683]. */
+function boiteRoutesDef(boite: ApiConfig['boite']): RouteDef[] {
+  return boiteRoutes().map((r: BoiteRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, mailboxes: boite?.mailboxes ?? null, files: boite?.files ?? null }, viewer, params, request),
+  }));
+}
+
 /** Les routes de la pige (BR29) : rôles contrôlés avant le corps [R16], rien n'est envoyé [R275]. */
 function pigeRoutesDef(source: PigeSource | null, provider: PigeProviderSettings | null): RouteDef[] {
   return pigeRoutes().map((r: PigeRoute) => ({
@@ -2600,6 +2614,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...rechercheRoutesDef(),
     ...statistiquesSiteRoutesDef(),
     ...pigeRoutesDef(config.pigeSource ?? null, config.pigeProvider ?? null),
+    ...boiteRoutesDef(config.boite),
     ...adressePigeRoutesDef(adressePigeSourcesOf(config)),
     ...sequencesRoutesDef(),
     ...phasesRoutesDef(),
