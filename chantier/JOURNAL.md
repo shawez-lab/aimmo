@@ -1656,3 +1656,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-22 11:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 08:55 par une autre séance voie 2, active : AU049 en cours, push à 11:38)
 - 2026-11-22 12:23 · AU049 · écarter une vente avec un motif, nouvelle version recalculée (R692) ; Codex rien ; fusionnée (#778, 88d90ef5) · AU050 ouverte (#780, R693), AU051 ouverte (#779, R694, Codex 1 P0 et 1 P2 corrigés) · prochaine : AU050, AU051 (voie 2)
 - 2026-11-22 12:46 · AU042 · délai de rappel compté pendant le service (lun.–sam. 8 h–20 h, hors fériés), même limite pour réattribution, tâche, liste et fiche (R682) ; Codex 4 P0 corrigés puis rien ; deux reprises de main (REGLES.md) ; vérification verte ; fusionnée (#775, 6ff9c1f2) · prochaine : AU043
+- 2026-11-22 12:48 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU043
