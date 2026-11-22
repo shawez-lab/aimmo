@@ -8,8 +8,8 @@
 CREATE TABLE IF NOT EXISTS voice_note_recoveries (
   id TEXT PRIMARY KEY,
   network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
-  voice_note_id TEXT NOT NULL UNIQUE REFERENCES voice_notes (id) ON DELETE CASCADE,
-  inbound_id TEXT NOT NULL REFERENCES inbound_messages (id) ON DELETE CASCADE,
+  voice_note_id TEXT NOT NULL UNIQUE REFERENCES voice_notes (id) ON DELETE RESTRICT,
+  inbound_id TEXT NOT NULL REFERENCES inbound_messages (id) ON DELETE RESTRICT,
   channel TEXT NOT NULL CHECK (channel IN ('whatsapp', 'instagram', 'facebook')),
   failure TEXT NOT NULL CHECK (failure IN ('indisponible', 'echec', 'vide', 'incertaine')),
   media_ref TEXT NOT NULL CHECK (length(media_ref) BETWEEN 1 AND 2048),
