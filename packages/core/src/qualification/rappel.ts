@@ -11,6 +11,7 @@ import { localTime } from '../envoi/horaires.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { callbackDeadline, DEFAULT_CALLBACK_WINDOW, type CallbackWindow } from './delai-rappel.ts';
 import type { Temperature } from './note.ts';
 
 export interface CallbackTaskRow {
@@ -45,6 +46,8 @@ export interface RappelOptions {
   timeZone?: string;
   now?: () => Date;
   newId?: () => string;
+  /** Les heures du service de rappel, les mêmes que celles de l'attribution [R682]. */
+  callbackWindow?: CallbackWindow;
 }
 
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
@@ -53,6 +56,7 @@ export class Rappels {
   private readonly now: () => Date;
   private readonly newId: () => string;
   private readonly timeZone: string;
+  private readonly callbackWindow: CallbackWindow;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -63,6 +67,7 @@ export class Rappels {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.timeZone = options.timeZone ?? 'Europe/Paris';
+    this.callbackWindow = options.callbackWindow ?? DEFAULT_CALLBACK_WINDOW;
   }
 
   /**
@@ -100,7 +105,7 @@ export class Rappels {
     }
     const key = q.project_id === null ? `callback:${root}:none` : `callback:project:${q.project_id}`;
     const at = this.now();
-    const due = new Date(Date.parse(attribution.created_at) + attribution.callback_hours * 3_600_000);
+    const due = new Date(callbackDeadline(Date.parse(attribution.created_at), attribution.callback_hours, this.callbackWindow));
     const { changes } = await this.db.run(
       `INSERT INTO callback_tasks (id, network_id, person_id, project_id, qualification_id, dedup_key, reason, due_at, created_at, done_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL) ON CONFLICT (dedup_key) DO NOTHING`,

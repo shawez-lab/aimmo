@@ -54,12 +54,14 @@ async function setup() {
 describeWithSqlite('Q04 · tâche « rappeler » et liste des contacts chauds', () => {
   it('chaque contact chaud a sa tâche chez son agent en moins d’une minute, de jour comme de nuit ; un contact tiède ou froid n’en a pas', async () => {
     const t = await setup();
+    // La nuit du dimanche, le délai part de l'ouverture du lundi à 8 h : 9 h d'attente, puis 8 h [R682].
+    const due = [8 * 60 * MINUTE, 17 * 60 * MINUTE];
     for (const [i, at] of [TUESDAY_10H, SUNDAY_23H].entries()) {
       t.setClock(at);
       const hot = await t.contact(`Hugo${i}`, 'Je souhaite vendre ma maison à Talant rapidement.');
       expect(hot.task).toMatchObject({ reason: 'Vendeur, délai immédiat, commune donnée : 70, chaud.', done_at: null });
       expect(Date.parse(hot.task!.created_at) - at).toBeLessThan(MINUTE);
-      expect(Date.parse(hot.task!.due_at) - at).toBe(8 * 60 * MINUTE);
+      expect(Date.parse(hot.task!.due_at) - at).toBe(due[i]);
     }
     expect((await t.contact('Inès', 'Je cherche une maison.')).task).toBeNull();
     expect((await t.contact('Jules', 'Vous êtes ouverts le samedi ?')).task).toBeNull();
