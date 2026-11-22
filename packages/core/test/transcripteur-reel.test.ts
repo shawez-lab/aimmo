@@ -97,9 +97,9 @@ describe('AU044 · le vrai transcripteur des notes vocales', () => {
   it('[R696] une adresse hors des serveurs de Meta, un port ou un identifiant mal formé : rien n’est appelé', async () => {
     const { http, source } = realStack({});
     for (const mediaRef of ['https://exemple.test/a.mp4', 'http://scontent.xx.fbcdn.net/a.mp4', 'https://scontent.xx.fbcdn.net:8443/a.mp4', 'https://user:pw@scontent.xx.fbcdn.net/a', 'https://fbcdn.net.exemple.test/a']) {
-      await expect(source.fetch({ channel: 'facebook', mediaRef, mime: null })).rejects.toMatchObject({ code: 'reference' });
+      await expect(source.read({ channel: 'facebook', mediaRef, mime: null })).rejects.toMatchObject({ code: 'reference' });
     }
-    await expect(source.fetch({ channel: 'whatsapp', mediaRef: '../me', mime: null })).rejects.toMatchObject({ code: 'reference' });
+    await expect(source.read({ channel: 'whatsapp', mediaRef: '../me', mime: null })).rejects.toMatchObject({ code: 'reference' });
     expect(http.calls).toEqual([]);
     expect(isMetaFileUrl(IG_URL)).toBe(true);
     expect(isMetaFileUrl('https://lookaside.fbsbx.com/ig_messaging_cdn/?asset_id=1')).toBe(true);
@@ -112,11 +112,11 @@ describe('AU044 · le vrai transcripteur des notes vocales', () => {
       [WA_FILE]: () => new Response(null, { status: 302, headers: { location: other } }),
       [other]: () => audioFile('audio/ogg'),
     });
-    const file = await source.fetch({ channel: 'whatsapp', mediaRef: '42', mime: null });
+    const file = await source.read({ channel: 'whatsapp', mediaRef: '42', mime: null });
     expect(file.type).toBe('audio/ogg');
     expect(http.calls[2]!.headers).toEqual({});
     const evil = realStack({ [IG_URL]: () => new Response(null, { status: 302, headers: { location: 'https://exemple.test/vol' } }) });
-    await expect(evil.source.fetch({ channel: 'instagram', mediaRef: IG_URL, mime: null })).rejects.toMatchObject({ code: 'reference' });
+    await expect(evil.source.read({ channel: 'instagram', mediaRef: IG_URL, mime: null })).rejects.toMatchObject({ code: 'reference' });
     expect(evil.http.calls).toHaveLength(1);
   });
 

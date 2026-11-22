@@ -110,7 +110,7 @@ export function reprisesVocalesRoutes(): ReprisesRoute[] {
         if (!r.ok) return fail(r.status, r.code, r.code === 'role' ? 'R16' : 'R696');
         if (!s.audio) return fail(503, 'ecoute_fermee');
         try {
-          const file = await s.audio.fetch(r.value);
+          const file = await s.audio.read(r.value);
           return new Response(file.bytes, { status: 200, headers: { 'content-type': file.type, 'content-disposition': 'inline', ...HEADERS } });
         } catch (error) {
           const code = error instanceof AudioError ? error.code : 'panne';

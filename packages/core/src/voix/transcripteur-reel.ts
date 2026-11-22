@@ -90,7 +90,7 @@ export interface AudioFile {
 
 /** Ce qui va chercher l'audio d'origine d'une note. */
 export interface AudioSource {
-  fetch(audio: VoiceAudio): Promise<AudioFile>;
+  read(audio: VoiceAudio): Promise<AudioFile>;
 }
 
 export interface MetaAudioConfig {
@@ -145,7 +145,7 @@ export class MetaAudioSource implements AudioSource {
     this.timeoutMs = config.timeoutMs ?? 10_000;
   }
 
-  async fetch(audio: VoiceAudio): Promise<AudioFile> {
+  async read(audio: VoiceAudio): Promise<AudioFile> {
     if (audio.channel === 'whatsapp') return this.whatsApp(audio);
     if (!isMetaFileUrl(audio.mediaRef)) throw new AudioError('reference');
     return this.file(audio.mediaRef, null, audio.mime);
@@ -301,7 +301,7 @@ export class SpeechTranscriber implements Transcriber {
   }
 
   async transcribe(audio: VoiceAudio): Promise<Transcript> {
-    const file = await this.source.fetch(audio);
+    const file = await this.source.read(audio);
     const form = new FormData();
     form.append('file', new Blob([file.bytes], { type: file.type }), AUDIO_TYPES[file.type] ?? 'note.ogg');
     form.append('model', this.service.model);

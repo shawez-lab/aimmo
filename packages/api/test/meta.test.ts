@@ -407,6 +407,8 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
               'ads: adsFromEnv(env, fetch.bind(globalThis)),',
       // Les données publiques d'un bien pour l'avis de valeur (E09), en lecture seule, jamais un envoi.
       '...(estimation ? { estimation, fetchPublicData: fetch.bind(globalThis) } : {}),',
+              // AU044 : l'audio d'une note vocale en reprise, lu en GET chez Meta au seul appui de l'agent [R696] ; jamais un envoi.
+              'voiceAudio: audioSourceFromEnv(env, fetch.bind(globalThis)),',
               // Le fichier public du registre des gels de la DG Trésor (BR85), lu en GET au seul appui du responsable de
               // la conformité, jamais un envoi.
               'registreGels: { get: fetch.bind(globalThis), url: registreGelsUrl(env.REGISTRE_GELS_URL), userAgent: REGISTRE_GELS_USER_AGENT },',
@@ -420,6 +422,9 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
               // La Base adresse nationale puis le Géoportail de l'urbanisme pour la zone du résumé de copropriété (BR87),
               // lus en GET au seul appui de l'agent du bien, jamais un envoi.
               'copropriete: { geocoder: new BanGeocoder(fetch.bind(globalThis)), urbanism: new GpuUrbanism(fetch.bind(globalThis)) },',
+              // AU044 : le vrai transcripteur des notes vocales (H52), seulement quand tout est rangé : l'audio seul part au
+              // service, rien n'est écrit à une personne [R696].
+              'transcriber: transcriberFromEnv(env, fetch.bind(globalThis)),',
               // AU068 : la page publique d'une annonce acceptée, lue en GET sans redirection ni cookie, seulement avec
               // RELECTURE_PORTAILS=oui (H10) ; jamais un envoi.
               "listingReader: env.RELECTURE_PORTAILS === 'oui' ? new annonces.HttpListingReader(fetch.bind(globalThis) as unknown as annonces.FetchLike) : null,",
