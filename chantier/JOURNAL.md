@@ -1635,3 +1635,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-22 03:29 · AU091b · branche mise à jour avec main (7b7a052), « Vérifier » coupé à 35 min une quatrième fois (run 44973562036) ; tâche passée à « bloquée », #769 laissée ouverte. Pour la voie 1 : relever la limite de 35 min de `verifications.yml` (socle), la suite complète la dépasse · prochaine : AU091b dès que la limite est revue
 - 2026-11-22 03:29 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 01:28 et 02:45 n'ont produit qu'un commit sans fusion puis rien) et question 3 (même tâche AU091b que les deux séances précédentes)
 - 2026-11-22 03:29 · VOIE 2 : AU091b, rien (7b7a052 sur chantier/AU091b, non fusionné), relancé non
+- 2026-11-22 04:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 03:52 par une autre séance voie 2, active : push sur chantier/AU091b à 04:24)
