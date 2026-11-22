@@ -414,6 +414,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   qualification_corrections: { locate: [via('qualification_id', 'qualifications')] },
   contact_scores: { locate: by('person_id') },
   attributions: { locate: by('person_id') },
+  attribution_absences: { locate: [via('attribution_id', 'attributions')] },
   callback_tasks: { locate: by('person_id') },
   missed_promise_tasks: { locate: by('person_id') },
   call_notes: { locate: by('person_id') },

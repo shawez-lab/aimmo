@@ -40,6 +40,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       qualification_corrections: ['actor'],
       contact_scores: ['person_id', 'score', 'temperature', 'reason'],
       attributions: ['person_id', 'agent_id', 'reason'],
+      // AU040 : l'agent écarté pour absence et le binôme qui a reçu le contact.
+      attribution_absences: ['absent_agent_id', 'cover_agent_id'],
       callback_tasks: ['person_id', 'reason'],
       // Le rappel d'un engagement manqué, par le responsable (IN12).
       missed_promise_tasks: ['person_id', 'agent_id', 'done_by', 'outcome'],
@@ -1180,6 +1182,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   contact_scores: ['qualification_id', 'network_id', 'created_at'],
   agent_zones: ['id', 'network_id', 'created_at', 'ended_at'],
   attributions: ['id', 'network_id', 'qualification_id', 'callback_hours', 'replaces_id', 'created_at'],
+  attribution_absences: ['attribution_id', 'network_id', 'absence_id', 'created_at'],
   callback_tasks: ['id', 'network_id', 'project_id', 'qualification_id', 'dedup_key', 'due_at', 'created_at', 'done_at'],
   missed_promise_tasks: ['id', 'network_id', 'promise_code', 'case_key', 'day', 'created_at', 'done_at'],
   scheduled_runs: ['job', 'slot', 'started_at', 'outcome', 'finished_at'],
