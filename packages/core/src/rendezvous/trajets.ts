@@ -138,14 +138,15 @@ export class MeilleursCreneaux {
     private readonly roads: RoadTimeSource | null = null,
   ) {}
 
-  /** Le temps routier sourcé s'il est sûr, sinon l'estimation, non garantie. Le même lieu : 0, sans service. */
+  /** Le temps routier sourcé s'il est sûr, sinon l'estimation, non garantie. La même position : 0, sans service. */
   private async legOf(a: Place, b: Place, estimate: TravelEstimator, cache: Map<string, Promise<Leg>>): Promise<Leg> {
     const key = `${a.lat},${a.lon}>${b.lat},${b.lon}`;
     let leg = cache.get(key);
     if (!leg) {
       leg = (async (): Promise<Leg> => {
         const guess = estimate(a, b);
-        if (distanceKm(a, b) < 0.05) return { minutes: guess, source: 'même lieu' };
+        // Seule une position identique est le même lieu : à quelques mètres, une rivière ou une voie ferrée peut séparer.
+        if (a.lat === b.lat && a.lon === b.lon) return { minutes: 0, source: 'même lieu' };
         if (!this.roads) return { minutes: guess, source: null };
         try {
           const r = await this.roads.roadMinutes({ lat: a.lat, lon: a.lon }, { lat: b.lat, lon: b.lon });

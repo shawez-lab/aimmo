@@ -29,8 +29,10 @@ const DIJON: Place = { lat: 47.325, lon: 5.04 };
 // De l'autre côté d'un obstacle (voie ferrée, rivière) : tout près à vol d'oiseau, loin par la route.
 const EN_FACE: Place = { lat: 47.31, lon: 5.03 };
 const MIN = 60_000;
+// À 22 mètres, mais séparé : le même lieu n'est jamais supposé sur une simple proximité.
+const VOISIN: Place = { lat: 47.3252, lon: 5.04 };
 
-async function world(roads: RoadTimeSource | null) {
+async function world(roads: RoadTimeSource | null, target: Place = EN_FACE) {
   const db = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   const store = new FicheClient(db);
@@ -46,7 +48,7 @@ async function world(roads: RoadTimeSource | null) {
   if (!r.ok) throw new Error(`refusé : ${r.code}`);
   const best = new MeilleursCreneaux(db, { placeOf: async (id) => (id === p.id ? DIJON : null) }, roads);
   const free = await rdv.freeSlotsFor(paul.id, 'estimation', at('2026-11-10', '00:00'), at('2026-11-10', '23:59'));
-  const rank = () => best.rank({ agentId: paul.id, kind: 'estimation', target: EN_FACE, free, base: AGENCE, limit: 100 });
+  const rank = () => best.rank({ agentId: paul.id, kind: 'estimation', target, free, base: AGENCE, limit: 100 });
   return { rank, free };
 }
 
@@ -137,5 +139,25 @@ describeWithSqlite('AU054 · un trajet avec obstacle utilise un temps routier so
       expect(s.reason).not.toMatch(/21000|12|<|>/);
       expect(s.guaranteed).toBe(true);
     }
+  });
+
+  it('[R701] deux lieux distincts à quelques mètres consultent le service : jamais garantis sur la seule proximité', async () => {
+    const { roads, calls } = fakeRoads();
+    const ranked = await (await world(roads, VOISIN)).rank();
+    expect(calls.some(([from, to]) => JSON.stringify(from) === JSON.stringify(DIJON) && JSON.stringify(to) === JSON.stringify(VOISIN))).toBe(true);
+    expect(ranked.map((s) => s.start.getTime())).not.toContain(at('2026-11-10', '15:30').getTime());
+    for (const s of ranked.filter((x) => x.start >= AFTER)) expect(s.start.getTime() - AFTER.getTime()).toBeGreaterThanOrEqual(50 * MIN);
+    const blind = await (await world(null, VOISIN)).rank();
+    expect(blind.length).toBeGreaterThan(0);
+    expect(blind.every((s) => !s.guaranteed && s.reason.includes('non garantie'))).toBe(true);
+  });
+
+  it('[R701] la même position est le même lieu : aucun service consulté, rien à confirmer pour ce côté', async () => {
+    const { roads, calls } = fakeRoads();
+    const ranked = await (await world(roads, DIJON)).rank();
+    expect(calls.every(([from, to]) => JSON.stringify(from) !== JSON.stringify(to))).toBe(true);
+    const next = ranked.find((s) => s.start.getTime() === at('2026-11-10', '15:30').getTime());
+    expect(next?.travelBefore).toBe(0);
+    expect(next?.guaranteed).toBe(true);
   });
 });
