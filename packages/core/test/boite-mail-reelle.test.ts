@@ -159,7 +159,59 @@ describeWithSqlite('Gmail réel trié par HX26 : le mail entre dans la fiche, da
     expect(row).toEqual({ person_id: p.id, conversation_id: 'email:gmail:fil-1', body: 'Bonjour, je confirme la visite.', external_id: 'g-1' });
     // Relu : rien de plus [R18].
     const again = await boite.sync(viewer, box);
-    expect(again.ok && again.value.map((m) => m.outcome)).toEqual([null]);
+    // Le mail déjà trié n'est plus rendu par la boîte (`skip`), et rien ne double.
+    expect(again.ok && again.value).toEqual([]);
     expect((await db.first<{ n: number }>('SELECT COUNT(*) AS n FROM messages'))!.n).toBe(1);
   });
+});
+
+describe('Outlook : un seul lot de 50 pour les deux dossiers, pièces lourdes jamais demandées (AU043, Codex)', () => {
+  it('40 reçus et 40 envoyés : 50 au plus en tout, les plus anciens d’abord, puis le reste sans rien sauter [R683, R18]', async () => {
+    const inbox: FakeMail[] = Array.from({ length: 40 }, (_, i) => ({ id: `in-${i}`, threadId: 'c', at: ago((80 - 2 * i) * MIN), from: 'c@exemple.test', text: 'x' }));
+    const sent: FakeMail[] = Array.from({ length: 40 }, (_, i) => ({ id: `out-${i}`, threadId: 'c', at: ago((79 - 2 * i) * MIN), from: 'agent@exemple.test', to: ['c@exemple.test'], sent: true, text: 'y' }));
+    const box = outlookOf(fakeOutlook([...inbox, ...sent]));
+    const first = await box.receivedSince('agent-1', ago(DAY));
+    expect(first).toHaveLength(MAILBOX_BATCH);
+    const all = [...inbox, ...sent].sort((a, b) => a.at.getTime() - b.at.getTime()).map((m) => m.id);
+    expect(first.map((m) => m.externalId)).toEqual(all.slice(0, 50));
+    const next = await box.receivedSince('agent-1', first[first.length - 1]!.receivedAt, new Set(first.map((m) => m.externalId)));
+    expect(next.map((m) => m.externalId)).toEqual(all.slice(50));
+  });
+
+  it('une pièce de plus de 20 Mo : sa taille seule est lue, jamais son contenu [R410]', async () => {
+    const h = fakeOutlook([
+      { id: 'o-1', threadId: 'c', at: ago(DAY), from: 'c@exemple.test', text: 'x', attachments: [{ name: 'gros.pdf', type: 'application/pdf', bytes: new Uint8Array(21 * 1024 * 1024) }, { name: 'plan.pdf', type: 'application/pdf', bytes: pdf }] },
+    ]);
+    const [m] = await outlookOf(h).receivedSince('agent-1', ago(2 * DAY));
+    expect(m!.attachments.map((a) => a.bytes.length)).toEqual([0, pdf.length]);
+    expect(h.calls.filter((c) => c.url.includes('/attachments')).map((c) => new URL(c.url).pathname.split('/').pop())).toEqual(['attachments', 'piece-1']);
+    expect(h.calls.some((c) => c.url.includes('/attachments?') && !c.url.includes('%24select=') && !c.url.includes('$select='))).toBe(false);
+  });
+});
+
+describeWithSqlite('plus de 50 mails de la même heure : la lecture avance toujours (AU043, Codex) [R18]', () => {
+  for (const kind of ['gmail', 'outlook'] as const) {
+    it(`${kind} : 51 mails de la même seconde, puis un plus récent, tous triés en trois lectures`, async () => {
+      const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
+      await applyMigrations(db, loadMigrations());
+      const store = new FicheClient(db, { now });
+      const net = await store.createNetwork('Réseau test');
+      const alex = await store.createAgent({ networkId: net.id, firstName: 'Alex', lastName: 'Agent' });
+      const same = ago(DAY);
+      const mails: FakeMail[] = [
+        ...Array.from({ length: 51 }, (_, i) => ({ id: `m-${String(i).padStart(2, '0')}`, threadId: `f-${i}`, at: same, from: 'inconnu@exemple.test', text: 'x' })),
+        { id: 'm-tard', threadId: 'f-tard', at: ago(DAY / 2), from: 'inconnu@exemple.test', text: 'y' },
+      ];
+      const refresh = new Map([[alex.id, REFRESH]]);
+      const box =
+        kind === 'gmail'
+          ? new GmailMailbox({ client: { clientId: 'x.apps.googleusercontent.com', clientSecret: SECRET }, refreshTokens: refresh, http: fakeGmail(mails).http, now })
+          : new OutlookMailbox({ client: { clientId: '00000000-0000-4000-8000-000000000001', clientSecret: SECRET }, refreshTokens: refresh, http: fakeOutlook(mails).http, now });
+      const boite = new BoiteMail(db, new SqlJournalStore(db), { put: async () => {} }, { now });
+      const viewer = { role: 'agent' as const, userId: alex.id, networkId: net.id };
+      for (let i = 0; i < 3; i += 1) await boite.sync(viewer, box);
+      const ids = (await db.all<{ external_id: string }>('SELECT external_id FROM mailbox_mails ORDER BY external_id')).map((r) => r.external_id);
+      expect(ids).toEqual(mails.map((m) => m.id).sort());
+    });
+  }
 });

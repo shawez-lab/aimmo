@@ -127,7 +127,8 @@ export function fakeOutlook(mails: FakeMail[], faults: Faults = {}) {
       const ge = Date.parse(/receivedDateTime ge (\S+)/.exec(u.searchParams.get('$filter') ?? '')?.[1] ?? '1970-01-01T00:00:00Z');
       const top = Number(u.searchParams.get('$top') ?? '10');
       const all = mails.filter((m) => !!m.sent === sent && m.at.getTime() >= ge).sort((a, b) => a.at.getTime() - b.at.getTime());
-      const page = all.slice(0, top);
+      const skipN = Number(u.searchParams.get('$skip') ?? '0');
+      const page = all.slice(skipN, skipN + top);
       return json(200, {
         value: page.map((m) => ({
           id: m.id,
@@ -140,14 +141,21 @@ export function fakeOutlook(mails: FakeMail[], faults: Faults = {}) {
           ccRecipients: [],
           body: m.html !== undefined ? { contentType: 'html', content: m.html } : { contentType: 'text', content: m.text ?? '' },
         })),
-        ...(all.length > top ? { '@odata.nextLink': `${url}&$skip=${top}` } : {}),
+        ...(skipN + top < all.length ? { '@odata.nextLink': `${url.replace(/&\$skip=\d+/, '')}&$skip=${skipN + top}` } : {}),
       });
+    }
+    const one = /^\/v1\.0\/me\/messages\/([^/]+)\/attachments\/piece-(\d+)$/.exec(u.pathname);
+    if (one) {
+      const a = mails.find((x) => x.id === decodeURIComponent(one[1]!))?.attachments?.[Number(one[2])];
+      return a ? json(200, { '@odata.type': '#microsoft.graph.fileAttachment', id: `piece-${one[2]}`, name: a.name, contentType: a.type, size: a.bytes.length, contentBytes: b64(a.bytes) }) : json(404, { error: { code: 'ErrorItemNotFound' } });
     }
     const att = /^\/v1\.0\/me\/messages\/([^/]+)\/attachments$/.exec(u.pathname);
     if (att) {
       const m = mails.find((x) => x.id === decodeURIComponent(att[1]!));
+      // La liste ne rend le contenu que si on ne choisit pas les champs, comme Graph.
+      const withBytes = !u.searchParams.has('$select');
       return json(200, {
-        value: (m?.attachments ?? []).map((a) => ({ '@odata.type': '#microsoft.graph.fileAttachment', name: a.name, contentType: a.type, size: a.bytes.length, contentBytes: b64(a.bytes) })),
+        value: (m?.attachments ?? []).map((a, i) => ({ '@odata.type': '#microsoft.graph.fileAttachment', id: `piece-${i}`, name: a.name, contentType: a.type, size: a.bytes.length, ...(withBytes ? { contentBytes: b64(a.bytes) } : {}) })),
       });
     }
     return json(404, { error: { code: 'ErrorItemNotFound' } });

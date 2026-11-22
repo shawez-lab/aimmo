@@ -9,9 +9,12 @@
  *   lecture est demandée (`gmail.readonly`, `Mail.Read`) : aucune adresse ici n'envoie, ne déplace ni n'efface un mail ;
  * - Gmail : la liste des mails de la boîte (reçus et envoyés, ni brouillons, ni indésirables, ni corbeille), du plus
  *   récent au plus ancien, puis les plus anciens d'abord, 50 au plus par lecture ; un mail porte son fil (`threadId`) ;
- * - Outlook : la boîte de réception et les éléments envoyés, chacun du plus ancien au plus récent, 50 au plus ; quand
- *   l'un des deux est coupé, rien de plus récent que son dernier mail n'est rendu, pour que le curseur du tri ne passe
- *   jamais au-delà d'un mail pas encore lu [R18] ; le fil est la conversation (`conversationId`) ;
+ * - Outlook : la boîte de réception et les éléments envoyés, chacun du plus ancien au plus récent, mêlés par date, 50 au
+ *   plus en tout ; quand l'un des deux est coupé, rien de plus récent que son dernier mail lu n'est rendu, pour que le
+ *   curseur du tri ne passe jamais au-delà d'un mail pas encore lu [R18] ; le fil est la conversation (`conversationId`) ;
+ *   la taille des pièces est lue d'abord, et seul le contenu des pièces assez petites est demandé ;
+ * - les mails déjà triés autour du curseur (`skip`) ne prennent pas de place dans le lot : un lot plein de mails de la
+ *   même heure avance toujours [R18] ;
  * - la première lecture d'une boîte remonte à 30 jours ;
  * - une pièce jointe trop grosse n'est pas téléchargée : elle arrive vide, et le tri la refuse [R410].
  *
@@ -59,6 +62,8 @@ export const MAILBOX_FIRST_DAYS = 30;
 /** Gmail : au plus 20 pages de 500 clés lues pour trouver les plus anciens ; au-delà, `trop`. */
 const GMAIL_MAX_PAGES = 20;
 const MAX_ATTACHMENTS_READ = 21;
+/** Outlook : au plus 10 pages par dossier pour remplir le lot ; au-delà, `trop`. */
+const OUTLOOK_MAX_PAGES = 10;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token';
@@ -217,7 +222,7 @@ export class GmailMailbox implements MailboxProvider {
     return call(this.cfg, url, { headers: { authorization: `Bearer ${await this.tokens.of(agentId)}`, accept: 'application/json' } });
   }
 
-  async receivedSince(agentId: string, since: Date | null): Promise<MailIn[]> {
+  async receivedSince(agentId: string, since: Date | null, skip: ReadonlySet<string> = new Set()): Promise<MailIn[]> {
     const now = (this.cfg.now ?? (() => new Date()))();
     // Une seconde plus tôt : `after:` compte en secondes ; un mail relu n'est trié qu'une fois [R18].
     const after = Math.max(0, Math.floor(firstSince(since, now).getTime() / 1000) - 1);
@@ -238,7 +243,8 @@ export class GmailMailbox implements MailboxProvider {
       if (!pageToken) break;
     }
     // Gmail rend les plus récents d'abord : les plus anciens sont à la fin.
-    const oldest = [...new Set(ids)].slice(-MAILBOX_BATCH);
+    // Les mails déjà triés autour du curseur ne prennent pas de place dans le lot : il avance toujours [R18].
+    const oldest = [...new Set(ids)].filter((id) => !skip.has(id)).slice(-MAILBOX_BATCH);
     const out: MailIn[] = [];
     for (const id of oldest) {
       const mail = await this.read(agentId, id);
@@ -335,10 +341,10 @@ export class OutlookMailbox implements MailboxProvider {
     return call(this.cfg, url, { headers: { authorization: `Bearer ${await this.tokens.of(agentId)}`, accept: 'application/json', prefer: 'outlook.body-content-type="text"' } });
   }
 
-  async receivedSince(agentId: string, since: Date | null): Promise<MailIn[]> {
+  async receivedSince(agentId: string, since: Date | null, skip: ReadonlySet<string> = new Set()): Promise<MailIn[]> {
     const now = (this.cfg.now ?? (() => new Date()))();
     const from = firstSince(since, now).toISOString();
-    const found: { mail: Json; direction: 'in' | 'out' }[] = [];
+    const found: { mail: Json; at: number; direction: 'in' | 'out' }[] = [];
     let cut: number | null = null;
     for (const { folder, direction } of OUTLOOK_FOLDERS) {
       const params = new URLSearchParams({
@@ -347,23 +353,39 @@ export class OutlookMailbox implements MailboxProvider {
         $orderby: 'receivedDateTime asc',
         $top: String(MAILBOX_BATCH),
       });
-      const body = await this.get(agentId, `${GRAPH}/mailFolders/${folder}/messages?${params.toString()}`);
-      const list = isObj(body) && Array.isArray(body.value) ? body.value.filter(isObj) : [];
-      for (const m of list) found.push({ mail: m, direction });
-      // Coupé : rien de plus récent que son dernier mail n'est rendu dans cette lecture [R18].
-      if (isObj(body) && str(body['@odata.nextLink']) && list.length > 0) {
-        const last = Date.parse(String(list[list.length - 1]!.receivedDateTime));
-        if (Number.isFinite(last)) cut = cut === null ? last : Math.min(cut, last);
+      let url: string | null = `${GRAPH}/mailFolders/${folder}/messages?${params.toString()}`;
+      let kept = 0;
+      let last: number | null = null;
+      // Les pages suivent tant que le lot n'est pas plein des mails pas encore triés ; 10 pages au plus.
+      for (let page = 0; url && kept < MAILBOX_BATCH; page += 1) {
+        if (page >= OUTLOOK_MAX_PAGES) throw new MailboxError('trop');
+        const body = await this.get(agentId, url);
+        const list = isObj(body) && Array.isArray(body.value) ? body.value.filter(isObj) : [];
+        for (const m of list) {
+          const at = Date.parse(String(m.receivedDateTime));
+          const id = str(m.id);
+          if (!id || !str(m.conversationId) || !Number.isFinite(at)) throw new MailboxError('panne');
+          last = at;
+          if (skip.has(id) || m.isDraft === true) continue;
+          found.push({ mail: m, at, direction });
+          kept += 1;
+        }
+        const next = isObj(body) ? str(body['@odata.nextLink']) : null;
+        // Seule une page suivante chez Graph lui-même est suivie.
+        url = next && next.startsWith(`${GRAPH}/`) ? next : null;
       }
+      // Coupé : rien de plus récent que son dernier mail lu n'est rendu dans cette lecture [R18].
+      if (url && last !== null) cut = cut === null ? last : Math.min(cut, last);
     }
+    // Les deux dossiers mêlés par date, 50 au plus en tout, avant de lire une seule pièce jointe.
+    const chosen = found
+      .filter((f) => cut === null || f.at <= cut)
+      .sort((x, y) => x.at - y.at)
+      .slice(0, MAILBOX_BATCH);
     const out: MailIn[] = [];
-    for (const { mail, direction } of found) {
-      const externalId = str(mail.id);
-      const threadId = str(mail.conversationId);
-      const at = Date.parse(String(mail.receivedDateTime));
-      if (!externalId || !threadId || !Number.isFinite(at)) throw new MailboxError('panne');
-      if (mail.isDraft === true) continue;
-      if (cut !== null && at > cut) continue;
+    for (const { mail, at, direction } of chosen) {
+      const externalId = str(mail.id)!;
+      const threadId = str(mail.conversationId)!;
       const attachments = mail.hasAttachments === true ? await this.attachments(agentId, externalId) : [];
       const to = [...(Array.isArray(mail.toRecipients) ? mail.toRecipients : []), ...(Array.isArray(mail.ccRecipients) ? mail.ccRecipients : [])].map(graphAddress).filter((a): a is string => a !== null);
       const bodyObj = isObj(mail.body) ? mail.body : {};
@@ -380,17 +402,24 @@ export class OutlookMailbox implements MailboxProvider {
         attachments,
       });
     }
-    return out.sort((a, b) => a.receivedAt.getTime() - b.receivedAt.getTime());
+    return out;
   }
 
+  /** Les pièces d'un mail : d'abord leur taille seule, puis le contenu des seules pièces assez petites. */
   private async attachments(agentId: string, id: string): Promise<MailAttachmentIn[]> {
-    const body = await this.get(agentId, `${GRAPH}/messages/${encodeURIComponent(id)}/attachments?$top=${MAX_ATTACHMENTS_READ}`);
+    const base = `${GRAPH}/messages/${encodeURIComponent(id)}/attachments`;
+    const body = await this.get(agentId, `${base}?$select=id,name,contentType,size&$top=${MAX_ATTACHMENTS_READ}`);
     const list = isObj(body) && Array.isArray(body.value) ? body.value.filter(isObj) : [];
     const out: MailAttachmentIn[] = [];
     for (const a of list.slice(0, MAX_ATTACHMENTS_READ)) {
       if (a['@odata.type'] !== '#microsoft.graph.fileAttachment') continue;
-      const size = typeof a.size === 'number' ? a.size : 0;
-      const bytes = size <= MAIL_ATTACHMENT_MAX_BYTES && typeof a.contentBytes === 'string' ? (base64Bytes(a.contentBytes) ?? new Uint8Array(0)) : new Uint8Array(0);
+      const size = typeof a.size === 'number' ? a.size : Number.POSITIVE_INFINITY;
+      const attId = str(a.id);
+      let bytes: Uint8Array = new Uint8Array(0);
+      if (attId && size <= MAIL_ATTACHMENT_MAX_BYTES) {
+        const full = await this.get(agentId, `${base}/${encodeURIComponent(attId)}`);
+        bytes = (isObj(full) && typeof full.contentBytes === 'string' ? base64Bytes(full.contentBytes) : null) ?? new Uint8Array(0);
+      }
       out.push({ fileName: typeof a.name === 'string' ? a.name : '', contentType: typeof a.contentType === 'string' ? a.contentType : 'application/octet-stream', bytes });
     }
     return out;

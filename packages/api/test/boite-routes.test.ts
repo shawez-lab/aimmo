@@ -112,7 +112,7 @@ describeWithSqlite('AU043 · la vraie boîte de l’agent dans sa file [R683, R4
     for (const s of ['exemple.test', 'compromis', REFRESH, SECRET]) expect(log).not.toContain(s);
     expect((await t.events()).filter((e) => e.type === 'boite.lecture').map((e) => e.data)).toEqual([
       { rule: 'R683', provider: 'gmail', ok: true, lus: 2, rattaches: 1, code: null },
-      { rule: 'R683', provider: 'gmail', ok: true, lus: 1, rattaches: 0, code: null },
+      { rule: 'R683', provider: 'gmail', ok: true, lus: 0, rattaches: 0, code: null },
     ]);
   });
 
