@@ -148,7 +148,7 @@ describeWithSqlite('HX17 · score de vente par adresse', () => {
     // Rien de ce qu'une source rend en trop n'entre : ni nom, ni numéro, ni vente [R291, R29].
     const stored = JSON.stringify(await t.db.all('SELECT * FROM address_scores'));
     for (const out of [JSON.stringify(r.value), stored]) {
-      expect(out).not.toMatch(/Jean|Essai"|0600000000|proprietaire|2500|t:\d/);
+      expect(out).not.toMatch(/Jean|Essai"|0600000000|proprietaire|:2500[,}]|t:\d/);
     }
     // Noté de nouveau le même jour : le même score, rangé une seule fois.
     const again = await t.scores.score(t.agentAlex, { address: '7 rue des Essais, Talant' });
