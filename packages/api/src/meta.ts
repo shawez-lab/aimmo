@@ -9,7 +9,8 @@
  * - POST : la notification n'est lue que si sa signature `X-Hub-Signature-256` (HMAC-SHA256 du corps brut avec le
  *   secret de l'application, `META_APP_SECRET`) est juste. Sinon : 401, rien n'est lu ni rangé, une ligne au journal.
  *
- * Ce module n'envoie rien : il n'appelle aucune adresse extérieure.
+ * Ce module n'envoie rien. Seul le transcripteur des notes vocales (AU044), quand il est réglé, lit l'audio chez Meta
+ * et le fait transcrire [R696].
  */
 import {
   SqlJournalStore,
@@ -23,6 +24,7 @@ import {
   type JournalData,
   type SqlDatabase,
 } from '@aimmo/core';
+import { ChaineVocale, NotesVocales, type Transcriber } from '../../core/src/voix/notes-vocales.ts';
 import { MIN_KEY_LENGTH, sha256Hex } from './auth.ts';
 
 export const META_PATH = '/meta/notifications';
@@ -49,6 +51,11 @@ export interface MetaConfig {
   ownIds: string | undefined;
   /** Variable `META_APP_IDS` : nos propres applications Meta ; un écho d'une autre application est réputé humain [R21]. */
   appIds: string | undefined;
+  /**
+   * AU044 : le vrai transcripteur des notes vocales (H52) ; absent, chaque note vocale est rangée illisible et sa reprise
+   * ouverte pour l'agent, sans réponse [R241, R696].
+   */
+  transcriber?: Transcriber | null;
   now: () => Date;
 }
 
@@ -155,7 +162,11 @@ export interface MetaOutcome {
  */
 export async function processMetaNotification(config: MetaConfig, networkId: string, source: InboundSource, body: unknown): Promise<MetaOutcome> {
   const journal = new SqlJournalStore(config.db);
-  const { chaine, relais } = createCaptation(config.db, journal, { now: config.now });
+  const { chaine: textes, relais, reception } = createCaptation(config.db, journal, { now: config.now });
+  // Chaque note vocale passe d'abord par le transcripteur : transcrite, elle suit la chaîne comme un texte [R240] ;
+  // sinon, elle est rangée illisible et sa reprise ouverte, sans réponse [R241, R696].
+  const notes = new NotesVocales(config.db, journal, config.transcriber ?? null, { now: config.now, timeoutMs: 15_000 });
+  const chaine = new ChaineVocale(notes, textes, reception, config.now);
   const echoes: HumanReply[] =
     source === 'whatsapp' ? humanRepliesFromWhatsApp(body) : humanRepliesFromMeta(source as 'instagram' | 'facebook', body, csv(config.appIds));
   let humanReplies = 0;

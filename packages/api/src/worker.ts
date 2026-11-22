@@ -23,6 +23,7 @@ import { HttpPigeSource, missingPigeSettings, type PigeFetcher, type PigeProvide
 import { runLiveWithdrawals, socialFromEnv } from './reseaux-reels.ts';
 import { gbpFromEnv } from './fiche-google-reelle.ts';
 import { dossierFilesOf, mailboxesFromEnv, runMailboxPass, type BoiteEnv } from './boite.ts';
+import { audioSourceFromEnv, transcriberFromEnv, type TranscriptionEnv } from './reprises-vocales.ts';
 import { adsFromEnv, runAdsPass, type AdsEnv } from './publicite-reelle.ts';
 
 /**
@@ -153,6 +154,15 @@ export interface Env {
   BOITE_MICROSOFT_CLIENT_SECRET?: string;
   BOITE_MICROSOFT_TENANT?: string;
   BOITE_JETONS?: string;
+  /**
+   * AU044 : `reel` branche le vrai transcripteur des notes vocales (H52), avec `TRANSCRIPTION_URL`, `TRANSCRIPTION_MODEL`
+   * et le secret `TRANSCRIPTION_KEY` ; le secret `WHATSAPP_MEDIA_TOKEN` lit les notes WhatsApp (`reprises-vocales.ts`).
+   */
+  TRANSCRIPTION_MODE?: TranscriptionEnv['TRANSCRIPTION_MODE'];
+  TRANSCRIPTION_URL?: string;
+  TRANSCRIPTION_MODEL?: string;
+  TRANSCRIPTION_KEY?: string;
+  WHATSAPP_MEDIA_TOKEN?: string;
 }
 
 /** AU043 : les vraies boîtes des agents, et le rangement de leurs pièces dans `PIECES` ; sinon rien n'est lu [R683]. */
@@ -292,6 +302,8 @@ export default {
       pigeProvider: pigeProvider(env),
       // AU043 : les vraies boîtes mail reliées par les agents (H55) ; rien n'est lu sans elles, rien ne part [R683].
       boite: boiteOf(env),
+      // AU044 : l'audio d'une note vocale en reprise, lu chez Meta à l'instant, au seul appui de l'agent [R696].
+      voiceAudio: audioSourceFromEnv(env, fetch.bind(globalThis)),
       // BR85 : le registre des gels lu en GET sur le fichier public, au seul appui du responsable ; jamais un envoi.
       registreGels: { get: fetch.bind(globalThis), url: registreGelsUrl(env.REGISTRE_GELS_URL), userAgent: REGISTRE_GELS_USER_AGENT },
       // BR87 : la zone du résumé de copropriété lue en GET à la Base adresse nationale puis au Géoportail, au seul appui
@@ -309,6 +321,8 @@ export default {
         networkId: env.META_NETWORK_ID,
         ownIds: env.META_OWN_IDS,
         appIds: env.META_APP_IDS,
+        // AU044 : le vrai transcripteur quand tout est rangé (H52) ; sinon chaque note passe à l'agent [R241, R696].
+        transcriber: transcriberFromEnv(env, fetch.bind(globalThis)),
       },
     });
   },
