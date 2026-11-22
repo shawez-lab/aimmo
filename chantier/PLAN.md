@@ -607,7 +607,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU051 · La piscine, le garage, la cave et le plain-pied prévus dans le calcul ne lui sont pas transmis depuis la…
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#779, `0c62c0c3`). Constat confirmé (`featuresOf` ne lisait aucun équipement ; garage et plain-pied impossibles à dire). Fiche : équipements `garage` et `plain_pied` ; piscine, cave, garage, plain-pied passent au calcul ; l'annonce lie « garage » (place ou équipement) et « plain-pied » à leur source (Codex 1 P0 et 1 P2 corrigés) ; R694. Vérification verte.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A051 (majeur), endroit : C/estimation/preparation-avis.ts, `featuresOf`.
 - Constat de l'audit : La piscine, le garage, la cave et le plain-pied prévus dans le calcul ne lui sont pas transmis depuis la fiche utilisée par le parcours réel.
