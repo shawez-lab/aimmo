@@ -6,7 +6,9 @@ import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 
 // Tout est inventé. Clés de test, jamais utilisées ailleurs.
-const NOW = () => new Date('2026-10-27T09:00:00.000Z');
+// Chaque lecture de l'heure avance d'une seconde : deux versions n'ont jamais la même date de création.
+let tick = 0;
+const NOW = () => new Date(Date.parse('2026-10-27T09:00:00.000Z') + 1000 * tick++);
 const SALES: Sale[] = Array.from({ length: 14 }, (_, i) => ({ id: `t:${i}`, kind: 'apartment' as const, lat: 47.3225 + i * 0.0002, lon: 5.0412, surface: 60 + i, pricePerM2: 2500 + i * 20, month: `2025-0${(i % 9) + 1}` }));
 const sales: DetailedSales = {
   coverage: async () => ({ department: '21', lastSale: '2025-12-30', years: [2025], source: 'DVF test' }),

@@ -398,6 +398,18 @@ describe('AU049b · l’écran de l’avis montre les ventes citées et permet d
     expect(t.calls.filter((c) => c.method === 'POST').length).toBe(before);
   });
 
+  it('[R692] validé, l’avis garde ses ventes citées, ses écarts et ses versions à l’écran, sans geste', async () => {
+    const t = await run({ 'GET /v1/biens/b1/avis': ok([{ ...V2, status: 'validated', validatedAt: '2026-11-03T09:00:00.000Z' }, V1]) });
+    await t.open();
+    const texts = t.body().all().map((e) => e.textContent);
+    expect(texts).toContain('2025-03 · 62 m² · 2 600 € le m² · à 120 m · Rue de la Vente, Dijon');
+    expect(texts).toContain('2025-05 · 70 m² · 4 100 € le m² · prix aberrant');
+    expect(texts).toContain('État général : -10 % · barème du réseau');
+    expect(texts).toContain('2026-11-02 · 180 000 € à 200 000 € · brouillon · celle que cette version recalcule');
+    expect(t.byText('Écarter cette vente')).toBeUndefined();
+    expect(t.byText('Retenir cet ajustement')).toBeUndefined();
+  });
+
   it('un avis motivé ne montre ni ventes à écarter ni ajustement', async () => {
     const t = await run({ 'GET /v1/biens/b1/avis': ok([{ ...V1, method: 'manual', cited: [] }]) });
     await t.open();

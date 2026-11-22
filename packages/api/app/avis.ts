@@ -279,6 +279,9 @@ globalThis.AIMMO_AVIS = function (t) {
       // AU105 · une correction gardée sur cet appareil, l'avis validé depuis ailleurs : elle reste lisible, pour la
       // reporter dans un nouvel avis, jusqu'à ce que l'agent dise l'abandonner.
       lateNotes(box, list, null);
+      // Validé, il ne change plus : ses ventes, ses écarts et ses versions restent lisibles, sans geste (AU049b).
+      if (r.method === 'computed') selection(box, r, null);
+      versions(box, r, list);
       body().appendChild(box);
       return;
     }
@@ -403,7 +406,8 @@ globalThis.AIMMO_AVIS = function (t) {
     var m = el('section', null, 'bloc');
     m.setAttribute('id', 'avis-ventes');
     m.appendChild(el('h3', 'Ventes citées'));
-    m.appendChild(el('p', 'Écartez une vente qui ne ressemble pas au bien : le calcul est refait sans elle, dans une nouvelle version. Celle-ci reste rangée.', 'doux'));
+    var fixed = typeof busy !== 'function';
+    if (!fixed) m.appendChild(el('p', 'Écartez une vente qui ne ressemble pas au bien : le calcul est refait sans elle, dans une nouvelle version. Celle-ci reste rangée.', 'doux'));
     function guard() {
       if (busy()) { state('Enregistrez ou abandonnez d’abord votre correction : la nouvelle version repart du calcul.'); return true; }
       return false;
@@ -412,6 +416,7 @@ globalThis.AIMMO_AVIS = function (t) {
     cited.forEach(function (c, i) {
       var li = el('li');
       li.appendChild(el('p', sale(c)));
+      if (fixed) { ul.appendChild(li); return; }
       var why2 = pick(li, 'avis-motif-' + (i + 1), 'Motif pour écarter cette vente', [['', 'À choisir']].concat(CH.reasons));
       li.appendChild(button('Écarter cette vente', function () {
         if (guard()) return Promise.resolve(false);
@@ -437,6 +442,7 @@ globalThis.AIMMO_AVIS = function (t) {
       adjustments.forEach(function (a) { aj.appendChild(el('li', a.label + ' : ' + (a.pct > 0 ? '+' : '') + a.pct + ' % · ' + (a.source === 'agent' ? 'le vôtre, ' + (mot[a.motive] || 'motif inconnu') : 'barème du réseau'))); });
       m.appendChild(aj);
     }
+    if (fixed) { box.appendChild(m); return; }
     var label = pick(m, 'avis-ajust-car', 'Caractéristique à ajuster', [['', 'À choisir']].concat(CH.labels.map(function (l) { return [l, l]; })));
     var pct = field(m, 'avis-ajust-pct', 'Votre coefficient, en % (de -15 à +15)');
     pct.setAttribute('inputmode', 'numeric');
