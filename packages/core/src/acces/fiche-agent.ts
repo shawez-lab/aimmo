@@ -36,7 +36,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { isWorkingDay, localTime } from '../envoi/horaires.ts';
 import type { Consent, ExclusionReason } from '../db/types.ts';
 import type { FicheComplete } from '../fiche/fusion.ts';
-import { callbackTaskDue } from '../qualification/delai-rappel.ts';
+import { callbackTaskDue, DEFAULT_CALLBACK_WINDOW, type CallbackWindow } from '../qualification/delai-rappel.ts';
 import type { Category, Route } from '../qualification/regles.ts';
 import type { Acces } from './acces.ts';
 import type { Viewer } from './droits.ts';
@@ -166,13 +166,16 @@ const active = (notedAt: string, liftedAt: string | null, at: number): boolean =
 
 export class FicheAgent {
   private readonly now: () => Date;
+  private readonly callbackWindow: CallbackWindow;
 
   constructor(
     private readonly db: SqlDatabase,
     private readonly acces: Acces,
-    options: { now?: () => Date } = {},
+    /** `callbackWindow` : les heures du service de rappel, les mêmes que celles de l'attribution et des tâches [R682]. */
+    options: { now?: () => Date; callbackWindow?: CallbackWindow } = {},
   ) {
     this.now = options.now ?? (() => new Date());
+    this.callbackWindow = options.callbackWindow ?? DEFAULT_CALLBACK_WINDOW;
   }
 
   async read(viewer: Viewer, personId: string): Promise<AgentFicheRead> {
@@ -220,7 +223,7 @@ export class FicheAgent {
     );
     // La limite se lit par le service de rappel, comme la réattribution, même pour une tâche rangée avant [R682].
     const tasks = rawTasks
-      .map((t) => ({ id: t.id, reason: t.reason, done_at: t.done_at, due_at: callbackTaskDue(t.due_at, { created_at: t.a_created_at, callback_hours: t.a_callback_hours }) }))
+      .map((t) => ({ id: t.id, reason: t.reason, done_at: t.done_at, due_at: callbackTaskDue(t.due_at, { created_at: t.a_created_at, callback_hours: t.a_callback_hours }, this.callbackWindow) }))
       .sort((x, y) => (x.done_at === null ? 0 : 1) - (y.done_at === null ? 0 : 1) || x.due_at.localeCompare(y.due_at) || x.id.localeCompare(y.id));
 
     // Le dernier classement de la fiche, fiches réunies comprises ; l'origine reste telle quelle, à côté de sa correction [R17].

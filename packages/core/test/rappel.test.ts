@@ -2,6 +2,8 @@ import { expect, it } from 'vitest';
 import {
   Acces,
   Attribution,
+  DEFAULT_ATTRIBUTION_SETTINGS,
+  FicheAgent,
   Qualification,
   Rappels,
   ReconnaissanceBien,
@@ -9,6 +11,7 @@ import {
   applyMigrations,
   createCaptation,
   fromSyncSqlite,
+  type CallbackWindow,
   type SqlDatabase,
 } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
@@ -19,7 +22,7 @@ const SUNDAY_23H = Date.parse('2026-12-06T22:00:00.000Z');
 const TUESDAY_10H = Date.parse('2026-12-08T09:00:00.000Z');
 const MINUTE = 60_000;
 
-async function setup() {
+async function setup(callbackWindow?: CallbackWindow) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   let clock = TUESDAY_10H;
@@ -27,8 +30,10 @@ async function setup() {
   const journal = new SqlJournalStore(db);
   const { chaine, store, fiche, reception } = createCaptation(db, journal, { now, withQualification: false });
   const qualification = new Qualification(db, store, fiche, reception, new ReconnaissanceBien(db), journal, { now });
-  const attribution = new Attribution(db, fiche, journal, { now });
-  const rappels = new Rappels(db, fiche, journal, { now });
+  const settings = callbackWindow ? { ...DEFAULT_ATTRIBUTION_SETTINGS, callbackWindow } : undefined;
+  const attribution = new Attribution(db, fiche, journal, { now, ...(settings ? { settings } : {}) });
+  const rappels = new Rappels(db, fiche, journal, { now, ...(callbackWindow ? { callbackWindow } : {}) });
+  const ficheAgent = new FicheAgent(db, new Acces(db, store, fiche, journal, { now }), { now, ...(callbackWindow ? { callbackWindow } : {}) });
   const acces = new Acces(db, store, fiche, journal, { now });
   const network = await store.createNetwork('Réseau test');
   const alex = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
@@ -48,7 +53,7 @@ async function setup() {
     return { q, task, elapsed: clock - started };
   };
   const as = (role: 'agent' | 'direction' | 'partner', userId: string) => ({ role, userId, networkId: network.id });
-  return { db, store, journal, rappels, acces, network, alex, sam, contact, as, setClock: (t: number) => (clock = t) };
+  return { db, store, journal, rappels, ficheAgent, attribution, acces, network, alex, sam, contact, as, setClock: (t: number) => (clock = t) };
 }
 
 describeWithSqlite('Q04 · tâche « rappeler » et liste des contacts chauds', () => {
@@ -185,5 +190,22 @@ describeWithSqlite('AU042 · la tâche « rappeler » suit la limite du service 
     t.setClock(Date.parse('2026-12-14T15:00:00.000Z'));
     const later = await t.rappels.hotList(t.acces, t.as('direction', 'dir-1'));
     expect(later.ok && later.value.contacts[0]).toMatchObject({ overdue: true });
+  });
+});
+
+describeWithSqlite('AU042 · un service de rappel réglé autrement vaut partout', () => {
+  it('[R682] ouvert le dimanche : la tâche, la liste, la fiche de l’agent et la réattribution disent la même limite', async () => {
+    const open7 = { timeZone: 'Europe/Paris', from: 8 * 60, until: 20 * 60, days: [1, 2, 3, 4, 5, 6, 7], closedOnHolidays: true };
+    const t = await setup(open7);
+    t.setClock(Date.parse('2026-12-12T20:00:00.000Z'));
+    const hot = await t.contact('Hugo', 'Je souhaite vendre ma maison à Talant rapidement.');
+    const due = '2026-12-13T15:00:00.000Z';
+    expect(hot.task!.due_at).toBe(due);
+    const list = await t.rappels.hotList(t.acces, t.as('direction', 'dir-1'));
+    expect(list.ok && list.value.contacts[0]).toMatchObject({ dueAt: due });
+    const fiche = await t.ficheAgent.read(t.as('agent', t.alex.id), hot.q.person_id);
+    expect(fiche.ok && fiche.value.callbacks).toEqual([expect.objectContaining({ dueAt: due })]);
+    t.setClock(Date.parse(due) - 60_000);
+    expect(await t.attribution.reassignOverdue(t.network.id)).toEqual([]);
   });
 });
