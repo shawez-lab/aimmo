@@ -47,6 +47,21 @@ describe('AU042 · le délai de rappel ne court que pendant le service', () => {
     }
   });
 
+  it('[R682] l’ouverture se trouve en heure locale, même la nuit du changement d’heure', () => {
+    const open7 = { timeZone: 'Europe/Paris', from: 8 * 60, until: 20 * 60, days: [1, 2, 3, 4, 5, 6, 7], closedOnHolidays: true };
+    // Samedi 28 mars 2026, 21 h à Paris ; le dimanche 29 passe à l'heure d'été, l'ouverture de 8 h est 6 h UTC.
+    expect(nextCallbackOpening(at('2026-03-28T20:00:00Z'), open7)).toBe(at('2026-03-29T06:00:00Z'));
+    expect(callbackDeadline(at('2026-03-28T20:00:00Z'), 8, open7)).toBe(at('2026-03-29T14:00:00Z'));
+    // Dimanche 25 octobre 2026, passage à l'heure d'hiver : 8 h est 7 h UTC.
+    expect(nextCallbackOpening(at('2026-10-24T20:00:00Z'), open7)).toBe(at('2026-10-25T07:00:00Z'));
+    for (let t = at('2026-03-27T00:00:00Z'); t < at('2026-03-31T00:00:00Z'); t += 17 * 60_000) {
+      const o = nextCallbackOpening(t, open7);
+      expect(o).toBeGreaterThanOrEqual(t);
+      // Jamais une minute ouverte sautée : la minute d'avant l'ouverture trouvée est fermée, ou c'est l'instant donné.
+      if (o > t) expect(nextCallbackOpening(o - 60_000, open7)).toBe(o);
+    }
+  });
+
   it('[R682] les heures du service sont un réglage', () => {
     const allWeek = { timeZone: 'Europe/Paris', from: 0, until: 1440, days: [1, 2, 3, 4, 5, 6, 7], closedOnHolidays: false };
     const saturday = at('2026-12-12T20:00:00Z');

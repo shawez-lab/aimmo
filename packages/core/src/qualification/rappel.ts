@@ -11,7 +11,7 @@ import { localTime } from '../envoi/horaires.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { callbackDeadline, DEFAULT_CALLBACK_WINDOW, type CallbackWindow } from './delai-rappel.ts';
+import { callbackDeadline, callbackTaskDue, DEFAULT_CALLBACK_WINDOW, type CallbackWindow } from './delai-rappel.ts';
 import type { Temperature } from './note.ts';
 
 export interface CallbackTaskRow {
@@ -149,8 +149,20 @@ export class Rappels {
       for (const id of await this.fiche.membersOf(person.id)) allowed.add(id);
     }
     if (allowed.size === 0) return { ok: true, value: { slot, contacts: [] } };
-    const open = await this.db.all<CallbackTaskRow>('SELECT * FROM callback_tasks WHERE network_id = ? AND done_at IS NULL ORDER BY due_at, created_at', [viewer.networkId]);
-    const tasks = open.filter((task) => allowed.has(task.person_id));
+    const open = await this.db.all<CallbackTaskRow & { a_created_at: string | null; a_callback_hours: number | null }>(
+      `SELECT t.*, a.created_at AS a_created_at, a.callback_hours AS a_callback_hours FROM callback_tasks t
+       LEFT JOIN attributions a ON a.qualification_id = t.qualification_id
+       WHERE t.network_id = ? AND t.done_at IS NULL ORDER BY t.due_at, t.created_at`,
+      [viewer.networkId],
+    );
+    // La limite se lit par le service de rappel, comme la réattribution, même pour une tâche rangée avant [R682].
+    const tasks = open
+      .filter((task) => allowed.has(task.person_id))
+      .map(({ a_created_at, a_callback_hours, ...task }) => ({
+        ...task,
+        due_at: callbackTaskDue(task.due_at, { created_at: a_created_at, callback_hours: a_callback_hours }, this.callbackWindow),
+      }))
+      .sort((x, y) => x.due_at.localeCompare(y.due_at) || x.created_at.localeCompare(y.created_at));
     const contacts: HotContact[] = [];
     // Une ligne par personne et par projet, même si deux fiches réunies portaient chacune leur tâche.
     const seen = new Set<string>();

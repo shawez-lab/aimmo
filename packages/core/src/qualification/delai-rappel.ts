@@ -54,8 +54,13 @@ export function nextCallbackOpening(at: number, window: CallbackWindow = DEFAULT
     const local = localTime(new Date(cursor), window.timeZone);
     const sinceMinute = ((cursor % MINUTE) + MINUTE) % MINUTE;
     if (openDay(local, window) && local.minutes >= window.from && local.minutes < window.until) return cursor;
-    if (openDay(local, window) && local.minutes < window.from) cursor += (window.from - local.minutes) * MINUTE - sinceMinute;
-    else cursor = nextMidnight(cursor, window.timeZone);
+    if (openDay(local, window) && local.minutes < window.from) {
+      // Vers l'ouverture en heure locale : un changement d'heure en chemin ferait dépasser l'heure d'ouverture, on
+      // revient alors juste dessus ; s'il fait tomber trop tôt, le tour suivant avance de nouveau.
+      cursor += (window.from - local.minutes) * MINUTE - sinceMinute;
+      const after = localTime(new Date(cursor), window.timeZone);
+      if (after.date === local.date && after.minutes > window.from) cursor -= (after.minutes - window.from) * MINUTE;
+    } else cursor = nextMidnight(cursor, window.timeZone);
   }
   throw new Error('Service de rappel sans ouverture.');
 }
@@ -87,4 +92,20 @@ export function callbackDeadline(createdAt: number, hours: number, window: Callb
     }
   }
   return nextCallbackOpening(cursor, window);
+}
+
+/**
+ * L'heure limite d'une tâche « rappeler » telle qu'elle se lit : celle de son attribution par le service de rappel
+ * [R682], jamais plus tôt que celle rangée. Une tâche rangée avant R682, en heures écoulées, suit donc la même limite
+ * que la réattribution, sans rien réécrire.
+ */
+export function callbackTaskDue(
+  storedDueAt: string,
+  attribution: { created_at: string | null; callback_hours: number | null } | null,
+  window: CallbackWindow = DEFAULT_CALLBACK_WINDOW,
+): string {
+  const stored = Date.parse(storedDueAt);
+  if (!attribution || attribution.created_at === null || attribution.callback_hours === null) return storedDueAt;
+  const computed = callbackDeadline(Date.parse(attribution.created_at), attribution.callback_hours, window);
+  return computed > stored ? new Date(computed).toISOString() : storedDueAt;
 }

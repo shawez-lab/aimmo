@@ -168,3 +168,22 @@ describeWithSqlite('Q04 · tâche « rappeler » et liste des contacts chauds', 
     expect(sends.every((s) => s.kind === 'reply')).toBe(true);
   });
 });
+
+describeWithSqlite('AU042 · la tâche « rappeler » suit la limite du service de rappel', () => {
+  it('[R682] une tâche rangée en heures écoulées se lit avec la limite du service, comme la réattribution', async () => {
+    const t = await setup();
+    // Samedi 12 décembre 2026, 21 h à Paris : contact chaud.
+    const saturday = Date.parse('2026-12-12T20:00:00.000Z');
+    t.setClock(saturday);
+    const hot = await t.contact('Hugo', 'Je souhaite vendre ma maison à Talant rapidement.');
+    expect(hot.task!.due_at).toBe('2026-12-14T15:00:00.000Z');
+    // Une tâche d'avant R682 : sa limite rangée tombe le dimanche à 5 h.
+    await t.db.run('UPDATE callback_tasks SET due_at = ? WHERE id = ?', [new Date(saturday + 8 * 60 * MINUTE).toISOString(), hot.task!.id]);
+    t.setClock(Date.parse('2026-12-13T10:00:00.000Z'));
+    const list = await t.rappels.hotList(t.acces, t.as('direction', 'dir-1'));
+    expect(list.ok && list.value.contacts).toEqual([expect.objectContaining({ taskId: hot.task!.id, dueAt: '2026-12-14T15:00:00.000Z', overdue: false })]);
+    t.setClock(Date.parse('2026-12-14T15:00:00.000Z'));
+    const later = await t.rappels.hotList(t.acces, t.as('direction', 'dir-1'));
+    expect(later.ok && later.value.contacts[0]).toMatchObject({ overdue: true });
+  });
+});

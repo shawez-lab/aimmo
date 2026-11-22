@@ -36,6 +36,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { isWorkingDay, localTime } from '../envoi/horaires.ts';
 import type { Consent, ExclusionReason } from '../db/types.ts';
 import type { FicheComplete } from '../fiche/fusion.ts';
+import { callbackTaskDue } from '../qualification/delai-rappel.ts';
 import type { Category, Route } from '../qualification/regles.ts';
 import type { Acces } from './acces.ts';
 import type { Viewer } from './droits.ts';
@@ -211,11 +212,16 @@ export class FicheAgent {
     const call = callRefusal === null ? `tel:${digits}` : null;
     const callClosesAt = callRefusal === null && !asked ? prospectingSlotEnd(new Date(at)).toISOString() : null;
 
-    const tasks = await this.db.all<{ id: string; reason: string; due_at: string; done_at: string | null }>(
-      `SELECT id, reason, due_at, done_at FROM callback_tasks WHERE network_id = ? AND person_id IN (${placeholders(ids.length)})
-       ORDER BY CASE WHEN done_at IS NULL THEN 0 ELSE 1 END, due_at, id`,
+    const rawTasks = await this.db.all<{ id: string; reason: string; due_at: string; done_at: string | null; a_created_at: string | null; a_callback_hours: number | null }>(
+      `SELECT t.id, t.reason, t.due_at, t.done_at, a.created_at AS a_created_at, a.callback_hours AS a_callback_hours FROM callback_tasks t
+       LEFT JOIN attributions a ON a.qualification_id = t.qualification_id
+       WHERE t.network_id = ? AND t.person_id IN (${placeholders(ids.length)})`,
       [viewer.networkId, ...ids],
     );
+    // La limite se lit par le service de rappel, comme la réattribution, même pour une tâche rangée avant [R682].
+    const tasks = rawTasks
+      .map((t) => ({ id: t.id, reason: t.reason, done_at: t.done_at, due_at: callbackTaskDue(t.due_at, { created_at: t.a_created_at, callback_hours: t.a_callback_hours }) }))
+      .sort((x, y) => (x.done_at === null ? 0 : 1) - (y.done_at === null ? 0 : 1) || x.due_at.localeCompare(y.due_at) || x.id.localeCompare(y.id));
 
     // Le dernier classement de la fiche, fiches réunies comprises ; l'origine reste telle quelle, à côté de sa correction [R17].
     const latest = await this.db.first<{ id: string; category: Category; route: Route | null; created_at: string }>(
