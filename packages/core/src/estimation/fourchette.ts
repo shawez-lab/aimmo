@@ -84,7 +84,56 @@ export interface Adjustment {
   label: string;
   /** En pour cent, arrondi. */
   pct: number;
+  /** Un coefficient retenu par l'agent, avec son motif ; sans `source`, celui du barème du réseau [R693]. */
+  source?: 'agent';
+  motive?: AgentAdjustmentMotive;
 }
+
+/** Les caractéristiques qu'un ajustement peut viser : celles du barème, et rien d'autre [R693]. */
+export const ADJUSTMENT_LABELS = [
+  'État général',
+  'Époque de construction',
+  'Rez-de-chaussée',
+  'Étage élevé sans ascenseur',
+  'Étage élevé avec ascenseur',
+  'Dernier étage',
+  'Terrasse',
+  'Balcon',
+  'Garage ou box',
+  'Place de parking',
+  'Cave',
+  'Gardien',
+  'Piscine',
+  'Garage',
+  'Plain-pied',
+  'Grand terrain',
+  'Petit terrain',
+  'Diagnostic énergétique',
+] as const;
+
+/** Pourquoi l'agent retient un autre coefficient que le barème : une liste fermée [R693]. */
+export const AGENT_ADJUSTMENT_MOTIVES = {
+  visite: 'constaté à la visite',
+  devis: 'travaux chiffrés par devis',
+  marche_local: 'ventes du secteur connues de l’agent',
+  diagnostic: 'diagnostic reçu',
+} as const;
+export type AgentAdjustmentMotive = keyof typeof AGENT_ADJUSTMENT_MOTIVES;
+
+/** Un ajustement retenu par l'agent : il remplace celui du barème pour la même caractéristique, ou s'y ajoute. */
+export interface AgentAdjustment {
+  label: (typeof ADJUSTMENT_LABELS)[number];
+  /** En pour cent entier, de -15 à +15. */
+  pct: number;
+  motive: AgentAdjustmentMotive;
+}
+
+/**
+ * La méthode des coefficients du barème et son périmètre, dits avec chaque ajustement [R693]. Les ventes publiées ne
+ * disent ni l'état, ni l'étage, ni les annexes des biens vendus : aucun coefficient ne peut être calibré sur elles.
+ */
+export const ADJUSTMENT_METHOD =
+  'Les ajustements suivent le barème écrit du réseau, le même pour tous les logements : les ventes publiées ne disent ni l’état, ni l’étage, ni les annexes des biens vendus, ce qui empêche de le calibrer sur votre secteur.';
 
 export interface DataInfo {
   /** Dernière vente publiée dans les données, toutes ventes confondues ; celle des comparables est `latestUsedSale`. */
@@ -249,7 +298,8 @@ export class Fourchette {
   ) {}
 
   /** `exclude` : les ventes que l'agent a écartées, avec un motif, d'une version précédente de l'avis [R692]. */
-  async estimate(p: EstimatedProperty, exclude: ReadonlySet<string> = new Set()): Promise<RangeResult> {
+  /** `agent` : les ajustements que l'agent retient à la place du barème, chacun avec son motif [R693]. */
+  async estimate(p: EstimatedProperty, exclude: ReadonlySet<string> = new Set(), agent: readonly AgentAdjustment[] = []): Promise<RangeResult> {
     const coverage = await this.source.coverage();
     const department = p.postalCode ? departmentOf(p.postalCode) : null;
     const dvfNotCovered = department !== null && this.settings.dvfNotCovered.includes(department);
@@ -308,7 +358,13 @@ export class Fourchette {
     let margin = Math.max(0.05, Math.min(0.1, iqr / 2 / median));
     const far = searched >= (radii[4] ?? Infinity);
     if (comparables.length < 10 || far) margin = Math.min(0.12, margin + 0.02);
-    const adj = adjustmentsFor(p, this.settings);
+    const bareme = adjustmentsFor(p, this.settings);
+    // L'ajustement de l'agent remplace celui du barème pour la même caractéristique ; le total reste borné.
+    const lines: { label: string; v: number; source: 'bareme' | 'agent'; motive?: AgentAdjustmentMotive }[] = [
+      ...bareme.lines.filter(([label]) => !agent.some((a) => a.label === label)).map(([label, v]) => ({ label, v, source: 'bareme' as const })),
+      ...agent.map((a) => ({ label: a.label, v: a.pct / 100, source: 'agent' as const, motive: a.motive })),
+    ];
+    const adj = { total: Math.max(-0.25, Math.min(0.18, lines.reduce((sum, l) => sum + l.v, 0))), lines };
     const m2 = median * (1 + adj.total);
     const centre = m2 * p.surface;
     return {
@@ -321,7 +377,7 @@ export class Fourchette {
       latestUsedSale: comparables.reduce((latest, c) => (c.month > latest ? c.month : latest), comparables[0]!.month),
       comparables,
       radius,
-      adjustments: adj.lines.map(([label, v]) => ({ label, pct: Math.round(v * 100) })),
+      adjustments: adj.lines.filter((l) => l.v !== 0 || l.source === 'agent').map((l) => ({ label: l.label, pct: Math.round(l.v * 100), ...(l.source === 'agent' ? { source: 'agent' as const, ...(l.motive ? { motive: l.motive } : {}) } : {}) })),
       data,
       window: { months: this.settings.maxSaleAgeMonths, from, excludedOld, justification: WINDOW_JUSTIFICATION },
     };

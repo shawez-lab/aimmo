@@ -148,3 +148,84 @@ describeWithSqlite('AU049 · l’agent écarte une vente et l’avis est recalcu
     expect(await avis.validate(w.paulV, r.value.id)).toMatchObject({ ok: true });
   });
 });
+
+describeWithSqlite('AU050 · la méthode du barème dite, et l’ajustement motivé de l’agent', () => {
+  const SHEET = { characteristics: { bedrooms: 2, floor: 0, floorsTotal: 4, buildYear: 1985, heating: null, outdoor: ['terrasse'], landM2: null, parkingSpaces: null, elevator: null }, energy: null, coownership: null, risks: null, media: [] };
+  async function withSheet() {
+    const w = await world();
+    await w.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, 1, ?, ?, ?)', ['s1', w.property.id, w.net.id, JSON.stringify(SHEET), 'x', NOW().toISOString()]);
+    const first = await w.prep.prepare(w.paulV, w.property.id, { address: ADDRESS, kind: 'apartment' });
+    if (!first.ok) throw new Error(first.code);
+    return { ...w, first: first.value };
+  }
+  type Adj = { label: string; pct: number; source?: string; motive?: string };
+  const adjustments = (c: string) => (JSON.parse(c) as { adjustments: Adj[] }).adjustments;
+
+  it('constat puis [R693] : chaque coefficient du barème est dit avec sa méthode et son périmètre', async () => {
+    const w = await withSheet();
+    expect(adjustments(w.first.computed)).toEqual([{ label: 'Rez-de-chaussée', pct: -5 }, { label: 'Terrasse', pct: 5 }]);
+    expect(w.first.text).toContain('Les ajustements suivent le barème écrit du réseau, le même pour tous les logements');
+    expect(w.first.text).toContain('ce qui empêche de le calibrer sur votre secteur');
+    // Sans ajustement, rien à dire sur le barème.
+    const plain = await world();
+    expect(plain.first.text).not.toContain('barème');
+  });
+
+  it('[R693] l’agent retient un coefficient motivé : nouvelle version recalculée, l’ajustement est dit, la précédente ne change pas', async () => {
+    const w = await withSheet();
+    const before = await w.db.first<Record<string, unknown>>('SELECT * FROM valuation_reports WHERE id = ?', [w.first.id]);
+    const r = await w.prep.prepare(w.paulV, w.property.id, { address: ADDRESS, kind: 'apartment', previous: w.first.id, adjust: [{ label: 'Rez-de-chaussée', pct: 0, motive: 'visite' }, { label: 'Cave', pct: 2, motive: 'visite' }] });
+    if (!r.ok) throw new Error(r.code);
+    expect(adjustments(r.value.computed)).toEqual([
+      { label: 'Terrasse', pct: 5 },
+      { label: 'Rez-de-chaussée', pct: 0, source: 'agent', motive: 'visite' },
+      { label: 'Cave', pct: 2, source: 'agent', motive: 'visite' },
+    ]);
+    expect(r.value.computed_low).toBeGreaterThan(w.first.computed_low);
+    expect(r.value.text).toContain('Votre agent a retenu ses propres ajustements : rez-de-chaussée 0 %, constaté à la visite ; cave +2 %, constaté à la visite.');
+    expect(JSON.parse(r.value.computed)).toMatchObject({ previous: w.first.id });
+    expect(await w.db.first('SELECT * FROM valuation_reports WHERE id = ?', [w.first.id])).toEqual(before);
+
+    // La version suivante garde les ajustements de l'agent, et en refait un.
+    const next = await w.prep.prepare(w.paulV, w.property.id, { address: ADDRESS, kind: 'apartment', previous: r.value.id, adjust: [{ label: 'Cave', pct: 1, motive: 'marche_local' }] });
+    if (!next.ok) throw new Error(next.code);
+    expect(adjustments(next.value.computed).filter((a) => a.source === 'agent')).toEqual([
+      { label: 'Rez-de-chaussée', pct: 0, source: 'agent', motive: 'visite' },
+      { label: 'Cave', pct: 1, source: 'agent', motive: 'marche_local' },
+    ]);
+  });
+
+  it('[R693] l’ajustement de l’agent passe à la page imprimée, avec son motif', async () => {
+    const w = await withSheet();
+    const r = await w.prep.prepare(w.paulV, w.property.id, { address: ADDRESS, kind: 'apartment', previous: w.first.id, adjust: [{ label: 'Terrasse', pct: 3, motive: 'devis' }] });
+    if (!r.ok) throw new Error(r.code);
+    expect(await new AvisDeValeur(w.db, w.journal, { now: NOW }).validate(w.paulV, r.value.id)).toMatchObject({ ok: true });
+    const { AvisImprime } = await import('../src/index.ts');
+    const page = await new AvisImprime(w.db, w.acces, w.journal, { now: NOW }).print(w.paulV, r.value.id);
+    if (!page.ok) throw new Error(page.code);
+    expect(page.html).toContain('Terrasse : +3 % — retenu par votre agent, travaux chiffrés par devis');
+    expect(page.html).toContain('Rez-de-chaussée : -5 %</li>');
+  });
+
+  it('[R693] un coefficient hors liste, trop fort, sans motif de la liste, en double ou trop nombreux est refusé', async () => {
+    const w = await withSheet();
+    const base = { address: ADDRESS, kind: 'apartment', previous: w.first.id };
+    const cases: [unknown, string][] = [
+      [[{ label: 'Vue sur le lac', pct: 5, motive: 'visite' }], 'invalid_adjustment'],
+      [[{ label: 'Cave', pct: 16, motive: 'visite' }], 'invalid_adjustment'],
+      [[{ label: 'Cave', pct: 1.5, motive: 'visite' }], 'invalid_adjustment'],
+      [[{ label: 'Cave', pct: 2, motive: 'intuition' }], 'invalid_adjustment'],
+      [[{ label: 'Cave', pct: 2, motive: 'toString' }], 'invalid_adjustment'],
+      [[{ label: 'Cave', pct: 2, motive: 'visite' }, { label: 'Cave', pct: 1, motive: 'visite' }], 'invalid_adjustment'],
+      [[], 'invalid_adjustment'],
+      [['Cave'], 'invalid_adjustment'],
+      [['Cave', 'Gardien', 'Balcon', 'Piscine', 'Garage', 'Dernier étage'].map((label) => ({ label, pct: 1, motive: 'visite' })), 'too_many_adjustments'],
+    ];
+    for (const [adjust, code] of cases) {
+      expect(await w.prep.prepare(w.paulV, w.property.id, { ...base, adjust }), JSON.stringify(adjust)).toEqual({ ok: false, rule: 'R693', code });
+    }
+    // Sans version précédente, pas d'ajustement : il est toujours versionné.
+    expect(await w.prep.prepare(w.paulV, w.property.id, { address: ADDRESS, kind: 'apartment', adjust: [{ label: 'Cave', pct: 2, motive: 'visite' }] })).toEqual({ ok: false, rule: 'R692', code: 'unknown_previous' });
+    expect((await w.db.all('SELECT id FROM valuation_reports WHERE property_id = ?', [w.property.id])).length).toBe(2);
+  });
+});
