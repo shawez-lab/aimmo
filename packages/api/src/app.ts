@@ -1960,20 +1960,53 @@ function m01Routes(config: Pick<ApiConfig, 'estimation' | 'attirer'>): RouteDef[
   }));
 }
 
-/** Ce que l'agent lit d'un avis : ni le détail brut du calcul, ni les chiffres permis. */
-const avisView = (r: ValuationReport) => ({
-  id: r.id,
-  propertyId: r.property_id,
-  status: r.status,
-  computedLow: r.computed_low,
-  computedHigh: r.computed_high,
-  low: r.agent_low ?? r.computed_low,
-  high: r.agent_high ?? r.computed_high,
-  text: r.text,
-  createdAt: r.created_at,
-  updatedAt: r.updated_at,
-  validatedAt: r.validated_at,
-});
+/** Une voie sans numéro : un numéro resté en tête ne sort jamais vers l'écran [R29]. */
+const streetOnly = (v: unknown): string | null => {
+  if (typeof v !== 'string') return null;
+  const s = v.replace(/^\s*\d+\s*(?:bis|ter|quater|[a-d])?\b[\s,]*/i, '').trim();
+  return s === '' || /\d/.test(s.slice(0, 1)) ? null : s.slice(0, 120);
+};
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const str = (v: unknown, max = 100): string | null => (typeof v === 'string' && v.length <= max ? v : null);
+const listOf = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x)) : []);
+
+/**
+ * Ce que l'agent lit d'un avis : ni le détail brut du calcul, ni les chiffres permis. Les ventes citées (pour les
+ * écarter), les ventes déjà écartées, les ajustements et la version précédente (AU049b) sont relus champ par champ :
+ * rien d'autre ne sort du calcul, ni nom, ni numéro de voie [R29, R692, R693].
+ */
+const avisView = (r: ValuationReport) => {
+  let c: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(r.computed);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) c = parsed as Record<string, unknown>;
+  } catch {
+    c = {};
+  }
+  const manual = c.method === 'manual';
+  return {
+    id: r.id,
+    propertyId: r.property_id,
+    status: r.status,
+    method: manual ? ('manual' as const) : ('computed' as const),
+    kind: c.kind === 'apartment' || c.kind === 'house' || c.kind === 'land' || c.kind === 'building' ? c.kind : null,
+    condition: str(c.condition, 20),
+    computedLow: r.computed_low,
+    computedHigh: r.computed_high,
+    low: r.agent_low ?? r.computed_low,
+    high: r.agent_high ?? r.computed_high,
+    text: r.text,
+    cited: manual
+      ? []
+      : listOf(c.cited).map((s) => ({ id: str(s.id), month: str(s.month, 10), surface: num(s.surface), pricePerM2: num(s.pricePerM2), distance: num(s.distance), street: streetOnly(s.street), town: str(s.town) })),
+    excluded: listOf(c.excluded).map((e) => ({ id: str(e.id), reason: str(e.reason, 40), month: str(e.month, 10), surface: num(e.surface), pricePerM2: num(e.pricePerM2), in: str(e.in) })),
+    adjustments: listOf(c.adjustments).map((a) => ({ label: str(a.label), pct: num(a.pct), source: a.source === 'agent' ? ('agent' as const) : ('bareme' as const), motive: a.source === 'agent' ? str(a.motive, 40) : null })),
+    previous: str(c.previous),
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    validatedAt: r.validated_at,
+  };
+};
 
 /** Un refus de l'avis : droit ou validation en 403, inconnu en 404, le reste en 409 ou 422 selon sa cause. */
 function avisRefusal(r: { rule: string | null; code: string; comparablesFound?: number }): Response {

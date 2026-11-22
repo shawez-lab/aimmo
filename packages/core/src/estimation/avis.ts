@@ -112,6 +112,8 @@ export interface DraftInput {
   /** Les ventes écartées par l'agent, et l'avis précédent que cette version recalcule [R692]. */
   excluded?: readonly AgentExclusion[];
   previous?: string | null;
+  /** L'état général donné au calcul, gardé pour que la version suivante le reprenne (AU049b). */
+  condition?: string | null;
 }
 
 export interface AvisOptions {
@@ -307,6 +309,7 @@ export class AvisDeValeur {
       // Le bien estimé, pour que tout ce qui s'ajoute à l'avis porte sur lui seul (HX32) : sorte, surface, commune.
       kind: input.kind,
       surface: input.surface,
+      condition: input.condition ?? null,
       inseeCode: input.facts?.address.ok ? input.facts.address.value.inseeCode : null,
       low: input.range.low,
       high: input.range.high,
