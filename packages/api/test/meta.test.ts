@@ -391,6 +391,9 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
               // tout est rangé (R134) ; chaque publication est validée par l'agent, et retirée quand le bien ne peut
               // plus être diffusé (R42). Ce ne sont pas des messages à une personne.
               'const socialOf = (env: Env) => socialFromEnv(env, fetch.bind(globalThis));',
+              // AU043 : la vraie boîte mail de l'agent qui a donné son accord (H55), en lecture seule (`gmail.readonly`,
+              // `Mail.Read`) ; aucune adresse n'envoie, ne déplace ni n'efface un mail [R683]. Rien ne part.
+              'return { mailboxes: mailboxesFromEnv(env, fetch.bind(globalThis)), files: dossierFilesOf(env.PIECES ? new R2PieceStore(env.PIECES) : null) };',
               // Le fournisseur de pige du réseau (AU034), en GET : seule la date de début part, la clé dans l'en-tête.
               'export function pigeSourceOf(settings: PigeProviderSettings, fetcher: PigeFetcher = fetch.bind(globalThis)): { networkId: string; source: PigeSource } | null {',
               'const reader = env.DVF_BASE_URL ? httpDvfReader(fetch.bind(globalThis), env.DVF_BASE_URL) : null;',
