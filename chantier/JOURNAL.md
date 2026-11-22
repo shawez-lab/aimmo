@@ -1669,3 +1669,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-22 15:10 · VOIE 2 : AU046 à AU052, 1fd422bb 095b62fb 2399cfd0 88d90ef5 cdaf49e9 0c62c0c3 e21b9893 (main), relancé non
 - 2026-11-22 16:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 15:54 par une autre séance voie 2, active : AU055 en cours, push à 16:02)
 - 2026-11-22 17:25 · AU044 · vrai transcripteur des notes vocales branché au Worker, panne rangée illisible avec sa reprise à écouter (R696, migration 4108) ; Codex 1 P2 corrigé puis rien ; vérification verte ; fusionnée (#783, cd7d61e1) · prochaine : AU045
+- 2026-11-22 17:26 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU045
