@@ -53,7 +53,7 @@ export const ATTRIBUTION_RULES: readonly string[] = Object.freeze([
   'Un nouveau message ne repousse jamais le délai en cours : tant que personne n’a rappelé, le délai le plus court fait foi.',
   'Un agent absent ce jour-là, par une absence déclarée, n’est jamais candidat : un client qu’il suit va au binôme de son absence, s’il est en activité et présent, sinon à la direction ; la fiche reste à l’absent, qui la retrouve à son retour.',
   'Un nouveau contact dont tous les agents de la commune sont absents va, par le même tirage fixe, au binôme présent de l’un d’eux, sinon à la direction.',
-  'Un contact en attente chez un agent qui devient absent est réattribué dès le premier passage, sans attendre la fin du délai, par la même règle.',
+  'Un contact en attente chez un agent qui devient absent passe dès le premier passage, sans attendre la fin du délai, au binôme de son absence, sinon à la direction.',
   'Chaque agent écarté pour absence est noté avec l’absence qui l’a écarté.',
   'Aucune IA ne participe à l’attribution.',
 ]);
@@ -251,16 +251,16 @@ export class Attribution {
       let next: string | null = null;
       let skipped: Skipped[] = [];
       if (absence) {
-        // L'absent passe la main à son binôme d'abord, s'il ne l'a pas déjà eu.
+        // Le contact d'un absent est devenu son client : il passe à son binôme, s'il ne l'a pas déjà eu, sinon à la
+        // direction, jamais à un autre agent qui ne pourrait pas ouvrir la fiche restée à l'absent [R680].
         const cover = await this.coverOf(networkId, absence, away);
         if (cover !== null && !tried.has(cover)) next = cover;
         skipped = [{ agentId: a.agent_id, absenceId: absence.absenceId, coverId: next }];
-      }
-      if (next === null) {
+      } else {
         const commune = await this.lastCommune(history);
         const picked = commune ? await this.pick(networkId, root.id, await this.agentsOf(networkId, commune), tried, away) : { agentId: null, skipped: [] };
         next = picked.agentId;
-        skipped = [...skipped, ...picked.skipped.filter((s) => s.agentId !== a.agent_id)];
+        skipped = picked.skipped;
       }
       const id = this.newId();
       const [inserted] = await runBatch(this.db, [

@@ -582,6 +582,22 @@ describeWithSqlite('AU040 · un agent absent n’est jamais candidat à l’attr
     expect(await t.attribution.reassignOverdue(t.network.id)).toEqual([]);
   });
 
+  it('[R680] un contact en attente chez un absent dont le binôme est absent va à la direction, jamais à un autre agent de la commune', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    const first = (await t.attribution.attribute(q))!;
+    expect(first.agent_id).toBe(t.alex.id);
+    await t.attribution.addZone(t.network.id, t.lou.id, 'Talant');
+    await absent(t, t.alex.id, t.sam.id, '2026-12-08', '2026-12-09');
+    await absent(t, t.sam.id, t.alex.id, '2026-12-08', '2026-12-09');
+    t.setClock(TUESDAY_10H + HOUR);
+    const [next] = await t.attribution.reassignOverdue(t.network.id);
+    expect(next).toMatchObject({ agent_id: null, reason: 'reassigned', replaces_id: first.id });
+    expect(await skippedOf(t, next!.id)).toEqual([expect.objectContaining({ absent_agent_id: t.alex.id, cover_agent_id: null })]);
+    expect((await t.store.getPerson(await t.personOf(q)))!.agent_id).toBe(t.alex.id);
+  });
+
   it('les règles publiées disent le sort d’un agent absent', () => {
     expect(ATTRIBUTION_RULES.join(' ')).toMatch(/absent/);
   });
