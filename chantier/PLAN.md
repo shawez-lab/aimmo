@@ -280,7 +280,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H29).
 
 ### AU020b · Les tables en ajout seul du bien d'un vendeur effacé
-- Statut : bloquée : garder d'office les textes du bien ne prouve pas qu'ils sont sans nom (3 P0 de Codex sur #715)
+- Statut : en cours (voie 2), nouvelle approche depuis le 2026-11-22 : texte du brouillon vidé par une voie de la migration, fiche du bien gardée (valeurs contrôlées)
 - Décidé (2026-11-20, voie 2) : branche `chantier/AU020b` gardée, #715 ouverte sans fusion. Essai fait : une liste blanche `PROPERTY_DESCRIPTION` classait « garder » les tables en ajout seul qui décrivent le bien, et le lien de la personne au bien partait. Relecture forte, 1 P1 : texte libre de `property_details` et `diffusion_portal_feedback`. Codex, 3 P0 : liens et références importées, puis traductions corrigées, puis brouillons et textes des portails. Tous laissent passer un nom de vendeur. Prochaine approche : une migration prévoit une voie qui vide le texte libre de ces tables (table d'effacement des textes, lue par les lecteurs des annonces : lecteurs du socle, donc à voir avec la voie 1) ; seules les tables à valeurs fermées sont gardées d'office (`property_sheets`, sujets des photos, choix des portails, validations). Les tables qui portent l'adresse exacte (`sign_placements`, `pige_properties`) suivent la même voie.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AU020
 - Cahier : Conformité ; audit A020, endroit : packages/core/src/conformite/effacement-reel.ts ; `listing_drafts`, `property_sheets`.
