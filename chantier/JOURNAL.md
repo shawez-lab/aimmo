@@ -1638,3 +1638,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-22 04:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 03:52 par une autre séance voie 2, active : push sur chantier/AU091b à 04:24)
 - 2026-11-22 05:45 · AU039 · fusionnée (#770, e6d259ef), vérification verte, Codex sans remarque · AU040 · absent jamais candidat (R680, migration 4096), #771 ouverte, trois tours de P0 de Codex sur les réattributions suivantes : bloquée, laissée ouverte avec l'autre approche (fiche ouverte au binôme dans Acces) · prochaine : AU041
 - 2026-11-22 05:46 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU041
+- 2026-11-22 05:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 03:52 par une autre séance voie 2, active : push sur chantier/AU091b à 05:11)
