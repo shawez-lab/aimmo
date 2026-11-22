@@ -32,6 +32,8 @@ export interface FakeMail {
   /** Outlook : le dossier où le mail est rangé (`inbox` par défaut) ; Gmail : la partie de texte rangée à part. */
   folder?: string;
   textApart?: boolean;
+  /** Gmail : le texte en ISO-8859-1, déclaré dans l'en-tête de sa partie. */
+  latin1?: boolean;
   text?: string;
   html?: string;
   attachments?: { name: string; type: string; bytes: Uint8Array }[];
@@ -92,7 +94,8 @@ export function fakeGmail(mails: FakeMail[], faults: Faults = {}) {
         { name: 'Subject', value: 'Objet inventé' },
       ];
       const parts = [
-        ...(m.text !== undefined ? [{ mimeType: 'text/plain', filename: '', body: m.textApart ? { size: m.text.length, attachmentId: 'texte' } : { size: m.text.length, data: b64url(enc(m.text)) } }] : []),
+        ...(m.text !== undefined && m.latin1 ? [{ mimeType: 'text/plain', filename: '', headers: [{ name: 'Content-Type', value: 'text/plain; charset="ISO-8859-1"' }], body: { size: m.text.length, data: b64url(Uint8Array.from([...m.text].map((c) => c.charCodeAt(0)))) } }] : []),
+        ...(m.text !== undefined && !m.latin1 ? [{ mimeType: 'text/plain', filename: '', body: m.textApart ? { size: m.text.length, attachmentId: 'texte' } : { size: m.text.length, data: b64url(enc(m.text)) } }] : []),
         ...(m.html !== undefined ? [{ mimeType: 'text/html', filename: '', body: { size: m.html.length, data: b64url(enc(m.html)) } }] : []),
         ...(m.attachments ?? []).map((a, i) => ({ mimeType: a.type, filename: a.name, body: { size: a.bytes.length, attachmentId: `piece-${i}` } })),
       ];
@@ -123,6 +126,7 @@ export function fakeOutlook(mails: FakeMail[], faults: Faults = {}) {
     }
     if (init.headers?.authorization !== `Bearer ${ACCESS}`) return json(401, { error: { code: 'InvalidAuthenticationToken' } });
     const u = new URL(url);
+    if (u.pathname === '/v1.0/me') return json(200, { mail: 'Agent@Exemple.test', userPrincipalName: 'agent@exemple.test', proxyAddresses: ['SMTP:agent@exemple.test', 'smtp:alias@exemple.test'] });
     const wellKnown = /^\/v1\.0\/me\/mailFolders\/([a-z]+)$/.exec(u.pathname);
     if (wellKnown) return json(200, { id: `dossier-${wellKnown[1]}` });
     if (u.pathname === '/v1.0/me/messages') {
@@ -130,7 +134,12 @@ export function fakeOutlook(mails: FakeMail[], faults: Faults = {}) {
       if (faults.list) return json(faults.list.status, faults.list.body);
       const ge = Date.parse(/receivedDateTime ge (\S+)/.exec(u.searchParams.get('$filter') ?? '')?.[1] ?? '1970-01-01T00:00:00Z');
       const top = Number(u.searchParams.get('$top') ?? '10');
-      const all = mails.filter((m) => m.at.getTime() >= ge).sort((a, b) => a.at.getTime() - b.at.getTime());
+      const filter = u.searchParams.get('$filter') ?? '';
+      const notIn = [...filter.matchAll(/parentFolderId ne '([^']+)'/g)].map((x) => x[1]!);
+      const folderOf = (m: FakeMail) => (m.draft ? 'dossier-drafts' : m.folder ? `dossier-${m.folder}` : m.sent ? 'dossier-sentitems' : 'dossier-inbox');
+      const all = mails
+        .filter((m) => m.at.getTime() >= ge && !notIn.includes(folderOf(m)) && !(filter.includes('isDraft eq false') && m.draft))
+        .sort((a, b) => a.at.getTime() - b.at.getTime());
       const skipN = Number(u.searchParams.get('$skip') ?? '0');
       const page = all.slice(skipN, skipN + top);
       return json(200, {
@@ -138,7 +147,7 @@ export function fakeOutlook(mails: FakeMail[], faults: Faults = {}) {
           id: m.id,
           conversationId: m.threadId,
           receivedDateTime: m.at.toISOString().replace('.000Z', 'Z'),
-          parentFolderId: m.draft ? 'dossier-drafts' : m.sent ? 'dossier-sentitems' : `dossier-${m.folder ?? 'inbox'}`,
+          parentFolderId: folderOf(m),
           isDraft: !!m.draft,
           hasAttachments: (m.attachments ?? []).length > 0,
           from: { emailAddress: { name: 'Client Inventé', address: m.from } },

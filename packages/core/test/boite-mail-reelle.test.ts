@@ -240,3 +240,24 @@ describe('toute la boîte, et le texte rangé à part (AU043, Codex)', () => {
     expect(m!.attachments).toEqual([]);
   });
 });
+
+describe('jeu de caractères, pages écartées, mail de l’agent déplacé (AU043, Codex)', () => {
+  it('Gmail : un texte en ISO-8859-1 est lu dans son jeu de caractères', async () => {
+    const h = fakeGmail([{ id: 'g-1', threadId: 'f', at: ago(DAY), from: 'c@exemple.test', text: 'Désinscription, merci.', latin1: true }]);
+    const [m] = await gmailOf(h).receivedSince('agent-1', ago(2 * DAY));
+    expect(m!.body).toBe('Désinscription, merci.');
+  });
+
+  it('Outlook : 600 indésirables plus anciens ne bloquent pas le mail suivant [R18]', async () => {
+    const junk: FakeMail[] = Array.from({ length: 600 }, (_, i) => ({ id: `pub-${i}`, threadId: 'p', at: ago(2 * DAY - i * 1000), from: 'p@exemple.test', folder: 'junkemail', text: 'pub' }));
+    const got = await outlookOf(fakeOutlook([...junk, { id: 'o-1', threadId: 'c', at: ago(DAY), from: 'c@exemple.test', text: 'vrai' }])).receivedSince('agent-1', ago(3 * DAY));
+    expect(got.map((m) => m.externalId)).toEqual(['o-1']);
+  });
+
+  it('Outlook : un mail de l’agent archivé ailleurs que dans les envoyés reste un mail de l’agent, avec ses destinataires', async () => {
+    const got = await outlookOf(
+      fakeOutlook([{ id: 'o-1', threadId: 'c', at: ago(DAY), from: 'alias@exemple.test', to: ['client@exemple.test'], folder: 'archive', text: 'Ma réponse.' }]),
+    ).receivedSince('agent-1', ago(2 * DAY));
+    expect(got[0]).toMatchObject({ direction: 'out', to: ['client@exemple.test'] });
+  });
+});

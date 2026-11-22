@@ -182,7 +182,18 @@ export function base64Bytes(data: string): Uint8Array | null {
   }
 }
 
-const utf8 = (bytes: Uint8Array): string => new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+/** Le texte d'une partie, lu dans le jeu de caractères qu'elle déclare ; inconnu ou absent : UTF-8. */
+export function decodeText(bytes: Uint8Array, contentType: string | null | undefined): string {
+  const charset = /charset\s*=\s*"?([A-Za-z0-9._:-]{1,40})"?/i.exec(contentType ?? '')?.[1];
+  if (charset) {
+    try {
+      return new TextDecoder(charset.toLowerCase(), { fatal: false }).decode(bytes);
+    } catch {
+      // Un jeu de caractères que l'environnement ne connaît pas : UTF-8.
+    }
+  }
+  return new TextDecoder('utf-8', { fatal: false }).decode(bytes);
+}
 
 function firstSince(since: Date | null, now: Date): Date {
   return since ?? new Date(now.getTime() - MAILBOX_FIRST_DAYS * DAY_MS);
@@ -291,8 +302,9 @@ export class GmailMailbox implements MailboxProvider {
         if (!data) throw new MailboxError('panne');
       }
       if (!data) continue;
-      if (type === 'text/plain') textPlain = utf8(data);
-      else textHtml = htmlText(utf8(data));
+      const declared = (part.headers ?? []).find((x) => typeof x?.name === 'string' && x.name.toLowerCase() === 'content-type')?.value ?? null;
+      if (type === 'text/plain') textPlain = decodeText(data, declared);
+      else textHtml = htmlText(decodeText(data, declared));
     }
     const attachments: MailAttachmentIn[] = [];
     for (const { part, name, type } of pending.slice(0, MAX_ATTACHMENTS_READ)) {
@@ -352,9 +364,9 @@ export class OutlookMailbox implements MailboxProvider {
   }
 
   /** Les identifiants des dossiers connus de la boîte (envoyés, et ceux jamais lus), gardés en mémoire. */
-  private readonly folders = new Map<string, { sent: string; excluded: Set<string> }>();
+  private readonly folders = new Map<string, { sent: string; excluded: Set<string>; own: Set<string> }>();
 
-  private async folderIds(agentId: string): Promise<{ sent: string; excluded: Set<string> }> {
+  private async folderIds(agentId: string): Promise<{ sent: string; excluded: Set<string>; own: Set<string> }> {
     const hit = this.folders.get(agentId);
     if (hit) return hit;
     const idOf = async (name: string): Promise<string> => {
@@ -366,7 +378,15 @@ export class OutlookMailbox implements MailboxProvider {
     const sent = await idOf('sentitems');
     const excluded = new Set<string>();
     for (const name of OUTLOOK_EXCLUDED) excluded.add(await idOf(name));
-    const ids = { sent, excluded };
+    // Les adresses de la boîte elle-même : un mail qu'elles ont envoyé reste un mail de l'agent, même rangé ailleurs.
+    const me = await this.get(agentId, `${GRAPH}?$select=mail,userPrincipalName,proxyAddresses`);
+    const own = new Set<string>();
+    if (isObj(me)) {
+      for (const v of [me.mail, me.userPrincipalName]) if (typeof v === 'string' && v.includes('@')) own.add(v.toLowerCase());
+      for (const v of Array.isArray(me.proxyAddresses) ? me.proxyAddresses : []) if (typeof v === 'string' && /^smtp:/i.test(v)) own.add(v.slice(5).toLowerCase());
+    }
+    if (own.size === 0) throw new MailboxError('panne');
+    const ids = { sent, excluded, own };
     this.folders.set(agentId, ids);
     return ids;
   }
@@ -374,11 +394,12 @@ export class OutlookMailbox implements MailboxProvider {
   async receivedSince(agentId: string, since: Date | null, skip: ReadonlySet<string> = new Set()): Promise<MailIn[]> {
     const now = (this.cfg.now ?? (() => new Date()))();
     const from = firstSince(since, now).toISOString();
-    const { sent, excluded } = await this.folderIds(agentId);
+    const { sent, excluded, own } = await this.folderIds(agentId);
     // Toute la boîte, quel que soit le dossier où le mail a été rangé ou archivé, du plus ancien au plus récent.
     const params = new URLSearchParams({
       $select: 'id,conversationId,receivedDateTime,parentFolderId,from,toRecipients,ccRecipients,body,hasAttachments,isDraft',
-      $filter: `receivedDateTime ge ${from}`,
+      // Les dossiers jamais lus et les brouillons sont écartés par Graph lui-même : ils ne prennent aucune page.
+      $filter: [`receivedDateTime ge ${from}`, 'isDraft eq false', ...[...excluded].map((id) => `parentFolderId ne '${id.replace(/'/g, "''")}'`)].join(' and '),
       $orderby: 'receivedDateTime asc',
       $top: String(MAILBOX_BATCH),
     });
@@ -396,7 +417,7 @@ export class OutlookMailbox implements MailboxProvider {
         if (!id || !str(m.conversationId) || !Number.isFinite(at)) throw new MailboxError('panne');
         const folder = str(m.parentFolderId);
         if (skip.has(id) || m.isDraft === true || (folder !== null && excluded.has(folder))) continue;
-        chosen.push({ mail: m, at, out: folder === sent });
+        chosen.push({ mail: m, at, out: folder === sent || own.has(graphAddress(m.from) ?? '') });
       }
       const next = isObj(body) ? str(body['@odata.nextLink']) : null;
       // Seule une page suivante chez Graph lui-même est suivie.
