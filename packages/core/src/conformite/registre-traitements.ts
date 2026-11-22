@@ -762,6 +762,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       person_request_answers: ['answer_sha256', 'answered_by'],
       person_request_alerts: [],
       erasure_object_targets: ['object_key', 'storage', 'removed_at'],
+      erasure_text_wipes: ['row_id'],
     },
   },
   {
@@ -1560,6 +1561,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   person_request_answers: ['request_id', 'answered_on', 'late', 'answered_at'],
   person_request_alerts: ['request_id', 'kind', 'created_at'],
   erasure_object_targets: ['request_id', 'network_id', 'noted_at'],
+  erasure_text_wipes: ['wiped_table', 'request_id', 'network_id', 'wiped_at'],
   prospect_retention_cycles: ['id', 'network_id', 'reached_on', 'listed_on', 'answer_due_on', 'request_mode', 'created_at'],
   prospect_retention_outcomes: ['cycle_id', 'outcome', 'mode', 'decided_on', 'created_at'],
   data_breaches: ['id', 'network_id', 'aware_at', 'deadline_at', 'recorded_at'],

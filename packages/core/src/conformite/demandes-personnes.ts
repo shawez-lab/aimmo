@@ -432,7 +432,15 @@ export const ERASURE_WHY = {
   stop: 'L\'opposition et les exclusions restent, pour ne plus jamais écrire à la personne [R04].',
   identifiers: 'Identifiants gardés sous leur seule empreinte, pour reconnaître la personne et respecter son arrêt [R04].',
   shared: 'Ligne partagée avec une autre personne : pseudonymisée ou gardée, sur décision du responsable.',
+  controlled: 'Fiche du bien en valeurs contrôlées, sans nom, sans adresse et sans texte libre [R46] : gardée avec le bien.',
 } as const;
+
+/**
+ * Les tables gardées d'office par l'effacement parce qu'elles ne portent que des valeurs contrôlées par le code, jamais
+ * de texte libre (AU020b) : seule la fiche du bien, dont `parseSheet` refuse toute clé inconnue [R46]. Une table à texte
+ * libre n'entre jamais ici : son texte est vidé par une voie de la migration, ou elle reste « restante ».
+ */
+export const KEPT_CONTROLLED: ReadonlySet<string> = new Set(['property_sheets']);
 
 /**
  * Le plan d'effacement : chaque table de la réponse d'accès. Une obligation légale garde la table (registre des mandats
@@ -447,6 +455,7 @@ export function erasurePlan(detail: AccessDetail, registre: readonly Traitement[
     if (basisOf.get(s.traitement) === 'obligation_legale') lines.push({ ...base, rows: s.rows.length, action: 'garder', why: ERASURE_WHY.obligation });
     else if (s.table === 'exclusions') lines.push({ ...base, rows: s.rows.length, action: 'garder', why: ERASURE_WHY.stop });
     else if (s.table === 'person_identifiers' || s.table === 'contact_keys') lines.push({ ...base, rows: s.rows.length, action: 'empreinte', why: ERASURE_WHY.identifiers });
+    else if (KEPT_CONTROLLED.has(s.table)) lines.push({ ...base, rows: s.rows.length, action: 'garder', why: ERASURE_WHY.controlled });
     else {
       const own = Math.min(detail.exclusiveRows[s.table] ?? 0, s.rows.length);
       if (own > 0) lines.push({ ...base, rows: own, action: 'effacer', why: null });
