@@ -1625,3 +1625,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-21 22:47 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions (troisième fois) ; reprise au prochain passage planifié avec AU039
 - 2026-11-21 23:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 22:54 par une autre séance voie 2, active : push sur chantier/AU091b à 22:56)
 - 2026-11-22 00:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 22:54 par une autre séance voie 2, active : push sur chantier/AU091b à 00:15)
+- 2026-11-22 01:28 · AU091b · part et relevé de l'agence partenaire suivent la régularisation (R678 complétée, migration 4091), #769 ouverte, Codex sans remarque, tests locaux verts ; « Vérifier » : un vrai échec corrigé (statut d'AU091 illisible par les fondations, corrigé aussi sur main), puis coupé deux fois à 35 min ; non fusionnée · prochaine : AU091b (relancer la vérification et fusionner)
+- 2026-11-22 01:28 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 23:53 et 00:54 n'ont rien produit)
+- 2026-11-22 01:28 · VOIE 2 : AU091b, commits sur chantier/AU091b (#769, non fusionnée), relancé non
