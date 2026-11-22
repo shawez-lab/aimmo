@@ -1650,3 +1650,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-22 09:21 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU042
 - 2026-11-22 09:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 08:55 par une autre séance voie 2, active : AU046 en cours, push à 09:47)
 - 2026-11-22 10:18 · AU046 · avis motivé par les ventes vérifiées de l'agent quand le calcul n'a pas de fourchette (R690) ; Codex 2 P0 corrigés puis rien ; conflit de REGLES.md avec AU041 réglé ; fusionnée (#774, 1fd422bb) · prochaine : AU047 (voie 2)
+- 2026-11-22 10:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 08:55 par une autre séance voie 2, active : AU047 en cours, push à 10:31)
