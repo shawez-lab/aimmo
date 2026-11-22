@@ -31,7 +31,8 @@ export const OUTDOOR_KINDS = ['balcon', 'terrasse', 'jardin', 'cour'] as const;
 export type OutdoorKind = (typeof OUTDOOR_KINDS)[number];
 
 /** AU061 · équipements courants, dits sur la fiche : seuls ceux-là peuvent être nommés dans l'annonce. */
-export const AMENITIES = ['piscine', 'cave', 'cheminee', 'grenier', 'veranda', 'climatisation'] as const;
+// `garage` et `plain_pied` (AU051) : le calcul de l'avis de valeur les prend en compte, il faut donc pouvoir les dire.
+export const AMENITIES = ['piscine', 'cave', 'cheminee', 'grenier', 'veranda', 'climatisation', 'garage', 'plain_pied'] as const;
 export type Amenity = (typeof AMENITIES)[number];
 /** AU061 · l'état du bien, dit sur la fiche : « travaux à prévoir » ou « refait à neuf » se disent depuis lui seul. */
 export const CONDITIONS = ['neuf', 'refait_a_neuf', 'bon_etat', 'travaux_a_prevoir', 'a_renover'] as const;

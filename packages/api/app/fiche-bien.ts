@@ -39,7 +39,7 @@ const HEATING: Record<(typeof HEATING_KINDS)[number], string> = {
 };
 const OUTDOOR: Record<(typeof OUTDOOR_KINDS)[number], string> = { balcon: 'Balcon', terrasse: 'Terrasse', jardin: 'Jardin', cour: 'Cour' };
 /** AU061 · équipements et état, que l'annonce ne nomme que s'ils sont dits ici. */
-const AMENITY: Record<(typeof AMENITIES)[number], string> = { piscine: 'Piscine', cave: 'Cave', cheminee: 'Cheminée', grenier: 'Grenier ou combles', veranda: 'Véranda', climatisation: 'Climatisation' };
+const AMENITY: Record<(typeof AMENITIES)[number], string> = { piscine: 'Piscine', cave: 'Cave', cheminee: 'Cheminée', grenier: 'Grenier ou combles', veranda: 'Véranda', climatisation: 'Climatisation', garage: 'Garage ou box fermé', plain_pied: 'Plain-pied (maison)' };
 /** AU063 · d'où vient chaque surface. */
 const SURFACE_SOURCE: Record<string, string> = { mesurage: 'Mesurage d’un professionnel', acte: 'Acte de propriété', vendeur: 'Dite par le vendeur' };
 const CONDITION: Record<string, string> = { '': 'Je ne sais pas', neuf: 'Neuf', refait_a_neuf: 'Refait à neuf', bon_etat: 'Bon état', travaux_a_prevoir: 'Travaux à prévoir', a_renover: 'À rénover' };
