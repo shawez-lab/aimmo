@@ -207,6 +207,17 @@ describeWithSqlite('E09 · l’agent prépare un avis', () => {
     expect((JSON.parse(r.value.computed) as { cited: { street?: string }[] }).cited.every((c) => c.street === undefined)).toBe(true);
   });
 
+  it('[R691] l’avis dit sa fenêtre de temps et sa raison, et les ventes plus anciennes écartées (AU048)', async () => {
+    const old = { ...SALES[0]!, id: 'vieille', month: '2021-06' };
+    const w = await world(services({ sales: [...SALES, old] }));
+    const r = await w.prep.prepare(w.as('agent', w.paul.id), w.property.id, { address: ADDRESS, kind: 'apartment' });
+    if (!r.ok) throw new Error(r.code);
+    expect(r.value.text).toContain('Seules les ventes depuis octobre 2023 sont retenues, soit 36 mois. Au-delà de cette fenêtre, les prix ont trop changé');
+    expect(r.value.text).toContain('Une vente plus ancienne a été écartée.');
+    expect(JSON.parse(r.value.computed)).toMatchObject({ window: { months: 36, from: '2023-10', excludedOld: 1 } });
+    expect((JSON.parse(r.value.computed) as { cited: { month: string }[] }).cited.map((c) => c.month)).not.toContain('2021-06');
+  });
+
   it('[R26] préparer n’envoie rien', async () => {
     const w = await world();
     expect((await w.prep.prepare(w.as('agent', w.paul.id), w.property.id, { address: ADDRESS, kind: 'apartment' })).ok).toBe(true);

@@ -46,6 +46,8 @@ export interface ValuationBrief {
   dataMonth: string | null;
   latestUsedSale: string;
   recentMissing: boolean;
+  /** La fenêtre de temps des ventes retenues [R691]. */
+  window: { months: number; from: string; excludedOld: number; justification: string };
 }
 
 export interface ValuationWriter {
@@ -181,6 +183,7 @@ export class AvisDeValeur {
       dataMonth: r.data.lastSale ? r.data.lastSale.slice(0, 7) : null,
       latestUsedSale: r.latestUsedSale,
       recentMissing: r.data.recentMissing,
+      window: r.window,
     };
     const dates = [r.latestUsedSale, ...(r.data.lastSale ? [r.data.lastSale.slice(0, 7)] : []), ...r.comparables.map((c) => c.month)].flatMap((m) => [m.slice(0, 4)]);
     const figures: (string | number)[] = [
@@ -194,6 +197,9 @@ export class AvisDeValeur {
       ...r.adjustments.map((a) => Math.abs(a.pct)),
       ...r.data.years,
       ...dates,
+      r.window.months,
+      r.window.from.slice(0, 4),
+      r.window.excludedOld,
     ];
     return { brief, figures };
   }
@@ -221,6 +227,8 @@ export class AvisDeValeur {
   private footer(b: ValuationBrief): string {
     const data = [
       `Ventes utilisées jusqu’à ${monthLabel(b.latestUsedSale)}${b.dataMonth ? `, données publiées jusqu’à ${monthLabel(b.dataMonth)}` : ''}.`,
+      // La fenêtre de temps et sa raison, toujours dites [R691].
+      `Seules les ventes depuis ${monthLabel(b.window.from)} sont retenues, soit ${b.window.months} mois. ${b.window.justification}${b.window.excludedOld > 0 ? ` ${b.window.excludedOld === 1 ? 'Une vente plus ancienne a été écartée.' : `${b.window.excludedOld} ventes plus anciennes ont été écartées.`}` : ''}`,
       ...(b.recentMissing ? ['Les ventes des derniers mois ne sont pas encore publiées : votre agent complète avec le marché qu’il connaît.'] : []),
     ].join(' ');
     return `${data}\n\n${ADVICE_NOTICE}`;
@@ -273,6 +281,7 @@ export class AvisDeValeur {
       adjustments: input.range.adjustments,
       latestUsedSale: input.range.latestUsedSale,
       data: input.range.data,
+      window: input.range.window,
       energyClass: brief.energyClass,
       risks: brief.risks,
       missing: input.facts?.missing ?? null,
