@@ -90,7 +90,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX22 : le passage de main de l'assistant vocal, rattaché à l'appel ; les sujets sans réponse avec l'accord seulement.
       voice_assistant_calls: ['agent_id', 'call_id', 'call_row_id', 'unanswered'],
       // AU045 : l'état d'un appel en cours, avec le numéro de l'appelant, effacé à la fin de l'appel.
-      voice_assistant_sessions: ['agent_id', 'call_id', 'state'],
+      voice_assistant_sessions: ['agent_id', 'call_id', 'state', 'last_reply'],
       // HX24 : les scénarios automatiques de la direction, leurs essais, leurs passages et leurs tâches.
       automation_scenarios: ['created_by'],
       automation_simulations: ['created_by'],
@@ -1088,6 +1088,7 @@ export const TABLES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, string>> = 
   listing_pushes: 'Résultat technique de chaque envoi d\'annonce à un portail.',
   portal_operations: 'Chaque geste envoyé à un portail (publier, modifier, retirer), avec la version publiée et l\'accusé du portail : aucune personne.',
   portal_sync_leases: 'Verrou d\'un passage vers les portails, le temps d\'un envoi.',
+  voice_call_endings: 'Fin d\'un appel dite par le service téléphonique (AU045) : son identifiant chez le service et l\'heure, sans numéro.',
   listing_views: 'Nombre de vues d\'une annonce par portail et par jour.',
   property_on_sale: 'Date de mise en vente d\'un bien, datée une fois depuis son mandat.',
   base_copy_alerts: 'Les nuits sans copie réussie : une date et un instant.',
@@ -1146,7 +1147,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   voice_note_recoveries: ['id', 'network_id', 'inbound_id', 'channel', 'failure', 'mime', 'created_at', 'done_at'],
   call_journal: ['call_id', 'claimed_at', 'done'],
   voice_assistant_calls: ['id', 'network_id', 'provider', 'property_id', 'appointment_kind', 'appointment_start', 'created_at'],
-  voice_assistant_sessions: ['id', 'network_id', 'provider', 'turns', 'created_at', 'updated_at', 'ended_at', 'lease_token', 'lease_at', 'hangup_at'],
+  voice_assistant_sessions: ['id', 'network_id', 'provider', 'turns', 'created_at', 'updated_at', 'ended_at', 'lease_token', 'lease_at'],
   automation_scenarios: ['id', 'version', 'network_id', 'definition', 'created_at'],
   automation_simulations: ['id', 'network_id', 'scenario_id', 'version', 'period_from', 'period_to', 'messages', 'reached', 'tasks', 'refused', 'same_day_twice', 'lit_revision', 'created_at'],
   automation_switches: ['id', 'network_id', 'scenario_id', 'version', 'lit', 'simulation_id', 'at', 'seq'],
@@ -1344,6 +1345,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   listing_sync_leases: ['property_id', 'token', 'expires_at'],
   portal_operations: ['id', 'network_id', 'property_id', 'portal', 'n', 'op_key', 'version_id', 'seq', 'action', 'outcome', 'receipt', 'portal_listing_id', 'error_code', 'at'],
   portal_sync_leases: ['property_id', 'token', 'expires_at'],
+  voice_call_endings: ['provider', 'call_id', 'ended_at', 'created_at'],
   agent_public_cards: ['id', 'network_id', 'set_at'],
   agent_legal_mentions: ['id', 'network_id', 'legal_status', 'set_at'],
   video_text_checks: ['id', 'property_id', 'network_id', 'media_ref', 'outcome', 'checked_at'],

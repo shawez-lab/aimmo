@@ -17,8 +17,9 @@ CREATE TABLE IF NOT EXISTS voice_assistant_sessions (
   -- Un seul tour ou une seule fin à la fois : le jeton de celui qui tient l'appel, et son heure (repris s'il est vieux).
   lease_token TEXT,
   lease_at TEXT,
-  -- L'heure où le service a dit l'appel fini ; le tour en cours le finit alors lui-même.
-  hangup_at TEXT,
+  -- La dernière réponse dite, et le tour qu'elle clôt : une livraison répétée du même tour la redit, sans la rejouer.
+  last_reply TEXT CHECK (last_reply IS NULL OR length(last_reply) <= 20000),
+  CHECK (ended_at IS NULL OR last_reply IS NULL),
   CHECK ((lease_token IS NULL) = (lease_at IS NULL)),
   CHECK ((ended_at IS NULL) = (state IS NOT NULL)),
   UNIQUE (provider, call_id)
@@ -35,3 +36,23 @@ WHEN OLD.ended_at IS NOT NULL
   OR NEW.provider IS NOT OLD.provider OR NEW.call_id IS NOT OLD.call_id OR NEW.created_at IS NOT OLD.created_at
   OR NEW.turns < OLD.turns
 BEGIN SELECT RAISE(ABORT, 'voice_assistant_sessions : un appel fini ne change plus'); END;
+
+-- La fin d'un appel dite par le service, gardée à part : elle peut arriver avant que l'appel soit décroché, ou pendant un
+-- tour ; celui qui finit l'appel y lit son heure de fin. Ni numéro ni parole : l'identifiant de l'appel et l'heure.
+CREATE TABLE IF NOT EXISTS voice_call_endings (
+  provider TEXT NOT NULL CHECK (provider IN ('twilio')),
+  call_id TEXT NOT NULL CHECK (length(call_id) BETWEEN 1 AND 128),
+  ended_at TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  PRIMARY KEY (provider, call_id)
+);
+CREATE TRIGGER IF NOT EXISTS voice_call_endings_sans_effacement
+BEFORE DELETE ON voice_call_endings
+BEGIN
+  SELECT RAISE(ABORT, 'voice_call_endings : rien ne s''efface');
+END;
+CREATE TRIGGER IF NOT EXISTS voice_call_endings_fige
+BEFORE UPDATE ON voice_call_endings
+BEGIN
+  SELECT RAISE(ABORT, 'voice_call_endings : une fin ne change plus');
+END;

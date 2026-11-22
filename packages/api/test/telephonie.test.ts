@@ -60,8 +60,10 @@ async function world(settings: { mode?: string; accountSid?: string; authToken?:
   }) as SqlDatabase;
   let n = 0;
   const newSid = (): string => `CA${String(++n).padStart(32, '0')}`;
-  const post = async (step: 'appel' | 'tour' | 'fin', fields: Record<string, string>, options: { signature?: string } = {}) => {
-    const url = `${BASE}/${step}`;
+  /** L'écoute rendue en dernier pour chaque appel : le service rappelle exactement cette adresse au tour suivant. */
+  const actions = new Map<string, string>();
+  const post = async (step: 'appel' | 'tour' | 'fin', fields: Record<string, string>, options: { signature?: string; url?: string } = {}) => {
+    const url = options.url ?? `${BASE}/${step}`;
     const all = { AccountSid: ACCOUNT, ...fields };
     const response = await handleRequest(
       new Request(url, {
@@ -71,16 +73,21 @@ async function world(settings: { mode?: string; accountSid?: string; authToken?:
       }),
       { db: hooked, apiKeys: undefined, mode: 'essai', now, telephonie: { mode: settings.mode, accountSid: settings.accountSid, authToken: settings.authToken } },
     );
-    return { status: response.status, text: await response.text() };
+    const text = await response.text();
+    const action = /action="([^"]+)"/.exec(text)?.[1];
+    if (action && fields.CallSid) actions.set(fields.CallSid, action.replace(/&amp;/g, '&'));
+    return { status: response.status, text };
   };
   /** Un appel renvoyé par l'agent, depuis un téléphone extérieur. */
   const ring = (sid: string, over: Record<string, string> = {}) =>
     post('appel', { CallSid: sid, From: CALLER, To: SERVICE_NUMBER, ForwardedFrom: AGENT_PHONE, CallStatus: 'ringing', Direction: 'inbound', ...over });
-  const speak = (sid: string, words: string) => post('tour', { CallSid: sid, SpeechResult: words, Confidence: '0.92', CallStatus: 'in-progress' });
+  /** Ce que dit l'appelant, à l'adresse de la dernière écoute ; `url` pour relivrer une adresse déjà servie. */
+  const speak = (sid: string, words: string, url?: string) =>
+    post('tour', { CallSid: sid, SpeechResult: words, Confidence: '0.92', CallStatus: 'in-progress' }, { url: url ?? actions.get(sid) ?? `${BASE}/tour?n=0` });
   const hangUp = (sid: string, status = 'completed') => post('fin', { CallSid: sid, CallStatus: status, CallDuration: '95' });
   const said = (twiml: string): string[] => [...twiml.matchAll(/<Say language="fr-FR">([^<]*)<\/Say>/g)].map((m) => m[1]!.replace(/&apos;/g, "'"));
   const journalText = async () => JSON.stringify(await db.all('SELECT type, actor, subject, data FROM journal'));
-  return { db, hooks, now, network, paul, person, post, ring, speak, hangUp, said, newSid, journalText };
+  return { db, hooks, now, actions, network, paul, person, post, ring, speak, hangUp, said, newSid, journalText };
 }
 
 describeWithSqlite('AU045 · le vrai raccordement téléphonique de l’assistant vocal', () => {
@@ -122,7 +129,7 @@ describeWithSqlite('AU045 · le vrai raccordement téléphonique de l’assistan
     expect(opening[0]).toMatch(/^Bonjour, vous êtes sur l’assistant automatique de Paul, agent immobilier AIMMO/);
     expect(opening[1]).toMatch(/enregistré.*Êtes-vous d’accord \?$/);
     expect(first.text).toContain('<Gather input="speech" language="fr-FR"');
-    expect(first.text).toContain(`action="${BASE}/tour"`);
+    expect(first.text).toContain(`action="${BASE}/tour?n=0"`);
     // Aucun numéro dit : ni celui de l'agent, ni celui du service, ni celui de l'appelant [R246].
     for (const phone of [AGENT_PHONE, SERVICE_NUMBER, CALLER, '06 00']) expect(first.text).not.toContain(phone);
 
@@ -183,8 +190,9 @@ describeWithSqlite('AU045 · le vrai raccordement téléphonique de l’assistan
     const turns = await w.db.first<{ turns: number }>('SELECT turns FROM voice_assistant_sessions');
     expect(turns!.turns).toBe(1);
     // La même sonnerie livrée deux fois : un seul appel pris.
+    // La même sonnerie livrée deux fois : un seul appel pris, la dernière réponse redite, rien de rejoué.
     const again = await w.ring(sid);
-    expect(w.said(again.text)).toEqual([]);
+    expect(w.said(again.text)[0]).toBe('Merci.');
     expect(await w.db.all('SELECT id FROM voice_assistant_sessions')).toHaveLength(1);
   });
 
@@ -296,7 +304,8 @@ describeWithSqlite('AU045 · le vrai raccordement téléphonique de l’assistan
     await w.ring(hung);
     await w.speak(hung, 'Oui.');
     // Un tour tombé après avoir rangé son état, la fin livrée pendant ce temps : rien ne la refait.
-    await w.db.run("UPDATE voice_assistant_sessions SET hangup_at = ?, lease_token = 'tombe', lease_at = ? WHERE call_id = ?", [w.now().toISOString(), w.now().toISOString(), hung]);
+    await w.db.run("UPDATE voice_assistant_sessions SET lease_token = 'tombe', lease_at = ? WHERE call_id = ?", [w.now().toISOString(), hung]);
+    await w.db.run("INSERT INTO voice_call_endings (provider, call_id, ended_at, created_at) VALUES ('twilio', ?, ?, ?)", [hung, w.now().toISOString(), w.now().toISOString()]);
     const silent = w.newSid();
     await w.ring(silent);
     const live = w.newSid();
@@ -310,6 +319,72 @@ describeWithSqlite('AU045 · le vrai raccordement téléphonique de l’assistan
     expect(rows).toEqual([{ call_id: hung, ended: 1 }, { call_id: silent, ended: 1 }, { call_id: live, ended: 0 }]);
     expect(await w.db.all('SELECT id FROM voice_assistant_calls')).toHaveLength(2);
     expect(await runTelephoniePass({ db: w.db, now: () => later, linkBase: null })).toBe(0);
+  });
+
+  it('[R710][R18][R248] un même tour livré deux fois : la réponse est redite, la conversation n’avance pas', async () => {
+    const w = await world();
+    const sid = w.newSid();
+    await w.ring(sid);
+    await w.speak(sid, 'Oui.');
+    await w.speak(sid, 'Je voudrais un rendez-vous.');
+    const same = w.actions.get(sid)!;
+    const first = await w.speak(sid, 'Le premier.', same);
+    const again = await w.speak(sid, 'Le premier.', same);
+    expect(w.said(again.text)).toEqual(w.said(first.text));
+    expect(w.said(again.text).join(' ')).toMatch(/C’est bien cela \?$/);
+    expect(await w.db.first('SELECT turns FROM voice_assistant_sessions')).toEqual({ turns: 3 });
+    const yes = await w.speak(sid, 'Oui.');
+    expect(yes.text).toContain('<Hangup/>');
+    expect(await w.db.all('SELECT id FROM appointments')).toHaveLength(1);
+    // Relivré après la fin : l'appel fini raccroche sans rien rejouer.
+    expect((await w.speak(sid, 'Oui.', same)).text).toContain('<Hangup/>');
+    expect(await w.db.all('SELECT id FROM appointments')).toHaveLength(1);
+  });
+
+  it('[R710][R18] la fin livrée avant que l’appel soit décroché : l’appel est rangé et son état effacé', async () => {
+    const w = await world();
+    const sid = w.newSid();
+    w.hooks.push({ match: /INSERT INTO voice_assistant_sessions/, run: async () => void (await w.hangUp(sid)) });
+    const r = await w.ring(sid);
+    expect(r.text).toContain('<Hangup/>');
+    expect(await w.db.first('SELECT state, ended_at IS NOT NULL AS ended FROM voice_assistant_sessions')).toEqual({ state: null, ended: 1 });
+    expect(await w.db.first('SELECT status, person_id FROM calls')).toEqual({ status: 'sans_enregistrement', person_id: w.person.id });
+    expect(await w.db.all('SELECT id FROM voice_assistant_calls')).toHaveLength(1);
+  });
+
+  it('[R710][R248] la réservation faite, l’état du tour non rangé : le rendez-vous est retrouvé au passage de main', async () => {
+    const w = await world();
+    const sid = w.newSid();
+    await w.ring(sid);
+    await w.speak(sid, 'Oui.');
+    await w.speak(sid, 'Je voudrais un rendez-vous.');
+    await w.speak(sid, 'Le premier.');
+    w.hooks.push({
+      match: /UPDATE voice_assistant_sessions SET state = \?, turns/,
+      run: async () => {
+        await w.hangUp(sid);
+        throw new Error('panne de la base');
+      },
+    });
+    expect((await w.speak(sid, 'Oui.')).status).toBe(500);
+    const appointments = await w.db.all<{ start_at: string }>('SELECT start_at FROM appointments');
+    expect(appointments).toHaveLength(1);
+    expect(await w.db.all('SELECT appointment_start FROM voice_assistant_calls')).toEqual([{ appointment_start: appointments[0]!.start_at }]);
+    expect(await w.db.first('SELECT ended_at IS NOT NULL AS ended FROM voice_assistant_sessions')).toEqual({ ended: 1 });
+  });
+
+  it('[R710][R18] reprise cinq heures plus tard : l’appel est rangé avec l’heure de fin dite par le service', async () => {
+    const w = await world();
+    const sid = w.newSid();
+    await w.ring(sid);
+    await w.speak(sid, 'Oui.');
+    const endedAt = new Date(w.now().getTime() + 60_000).toISOString();
+    await w.db.run("UPDATE voice_assistant_sessions SET lease_token = 'tombe', lease_at = ?", [w.now().toISOString()]);
+    await w.db.run("INSERT INTO voice_call_endings (provider, call_id, ended_at, created_at) VALUES ('twilio', ?, ?, ?)", [sid, endedAt, endedAt]);
+    const later = new Date(w.now().getTime() + 5 * 3600_000);
+    expect(await runTelephoniePass({ db: w.db, now: () => later, linkBase: null })).toBe(1);
+    const call = await w.db.first<{ status: string; ended_at: string }>('SELECT status, ended_at FROM calls');
+    expect(call).toEqual({ status: 'sans_enregistrement', ended_at: endedAt });
   });
 
   it('[R710] le Worker passe TELEPHONIE_MODE et TWILIO_* à l’adresse du service téléphonique', async () => {
