@@ -638,7 +638,7 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien (mise en service réelle : H21, H53).
 
 ### AU054 · Le meilleur créneau repose sur une distance à vol d’oiseau majorée
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M05 Rendez-vous ; audit A054 (majeur), endroit : C/rendezvous/trajets.ts.
 - Constat de l'audit : Le meilleur créneau repose sur une distance à vol d’oiseau majorée, sans itinéraire routier réel.
