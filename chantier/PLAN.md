@@ -543,9 +543,11 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
 
+Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22, la voie 1 étant sur l'attribution)
+
 ### AU046 · En secteur pauvre en DVF ou non couvert, je ne peux même pas ouvrir un avis motivé avec mes propres…
-- Statut : à faire
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Statut : en cours (voie 2)
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A046 (majeur), endroit : C/estimation/preparation-avis.ts, refus `peu_de_ventes`.
 - Constat de l'audit : En secteur pauvre en DVF ou non couvert, je ne peux même pas ouvrir un avis motivé avec mes propres références vérifiées.
 - Objectif : Un avis manuel sourcé reste possible, avec validation humaine et absence clairement indiquée de fourchette automatique.
@@ -554,7 +556,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU047 · L’avis de valeur ne traite pas les terrains ni les immeubles, pourtant présents dans mon portefeuille
 - Statut : à faire
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A047 (majeur), endroit : C/estimation/preparation-avis.ts, `not_a_home`.
 - Constat de l'audit : L’avis de valeur ne traite pas les terrains ni les immeubles, pourtant présents dans mon portefeuille.
 - Objectif : Chaque type dispose d’un avis adapté ou d’un parcours manuel documenté, imprimable et validable.
@@ -563,7 +565,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU048 · La sélection privilégie la distance sans limite d’ancienneté ni ajustement temporel explicite des ventes…
 - Statut : à faire
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A048 (majeur), endroit : C/estimation/fourchette.ts, sélection des comparables.
 - Constat de l'audit : La sélection privilégie la distance sans limite d’ancienneté ni ajustement temporel explicite des ventes retenues.
 - Objectif : Une fenêtre temporelle et sa justification sont visibles ; une vente trop ancienne est exclue ou corrigée selon une méthode traçable.
@@ -572,7 +574,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU049 · Je ne peux ni écarter une vente aberrante ni sélectionner mes comparables avant de recalculer l’avis
 - Statut : à faire
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A049 (majeur), endroit : C/estimation/preparation-avis.ts, `prepare`.
 - Constat de l'audit : Je ne peux ni écarter une vente aberrante ni sélectionner mes comparables avant de recalculer l’avis.
 - Objectif : Exclure un comparable avec motif produit une nouvelle version recalculée et conserve la sélection précédente.
@@ -581,7 +583,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU050 · Les décotes et surcotes sont des pourcentages fixes sans calibration locale attachée au calcul
 - Statut : à faire
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A050 (majeur), endroit : C/estimation/fourchette.ts, `adjustmentsFor`.
 - Constat de l'audit : Les décotes et surcotes sont des pourcentages fixes sans calibration locale attachée au calcul.
 - Objectif : Chaque coefficient publié cite sa méthode et son périmètre ; l’agent peut retenir un ajustement motivé, versionné et visible dans l’avis.
@@ -590,7 +592,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU051 · La piscine, le garage, la cave et le plain-pied prévus dans le calcul ne lui sont pas transmis depuis la…
 - Statut : à faire
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A051 (majeur), endroit : C/estimation/preparation-avis.ts, `featuresOf`.
 - Constat de l'audit : La piscine, le garage, la cave et le plain-pied prévus dans le calcul ne lui sont pas transmis depuis la fiche utilisée par le parcours réel.
 - Objectif : Deux biens ne différant que par chacun de ces équipements produisent l’ajustement attendu dans l’avis préparé par l’API.
@@ -599,7 +601,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 
 ### AU052 · Je ressaisis l’adresse à chaque préparation, puisque le parcours la collecte puis l’oublie
 - Statut : à faire
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A052 (majeur), endroit : UI/avis.ts ; C/estimation/preparation-avis.ts.
 - Constat de l'audit : Je ressaisis l’adresse à chaque préparation, puisque le parcours la collecte puis l’oublie.
 - Objectif : Une adresse privée vérifiée se réutilise sur un nouvel avis sans ressaisie, avec modification explicite si nécessaire.
