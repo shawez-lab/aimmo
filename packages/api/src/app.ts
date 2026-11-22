@@ -112,6 +112,8 @@ import { questionnaireRoutes, type QuestionnaireRoute } from './mandat-questionn
 import { scoreAdresseRoutes, type ScoreAdresseRoute } from './score-adresse.ts';
 import { tourneeRoutes, type TourneeRoute } from './tournee.ts';
 import { boiteRoutes, type BoiteRoute, type MailboxDirectory } from './boite.ts';
+import { reprisesVocalesRoutes, type ReprisesRoute } from './reprises-vocales.ts';
+import type { AudioSource } from '../../core/src/voix/transcripteur-reel.ts';
 import type { DossierFileStore } from '../../core/src/automatismes/boite-mail.ts';
 import { rechercheRoutes, type RechercheRoute } from './recherche.ts';
 import { statistiquesSiteRoutes, type StatistiquesSiteRoute } from './statistiques-site.ts';
@@ -219,6 +221,8 @@ export interface ApiConfig {
   pigeSource?: PigeSource | null;
   /** AU043 : les vraies boîtes Gmail et Outlook reliées par les agents (H55) et le rangement des pièces ; absentes, rien n'est lu [R683]. */
   boite?: { mailboxes: MailboxDirectory | null; files: DossierFileStore | null };
+  /** AU044 : la lecture de l'audio d'origine chez Meta, pour écouter une note vocale en reprise ; absente, l'écoute est fermée [R696]. */
+  voiceAudio?: AudioSource | null;
   /** AU034 : les réglages du vrai fournisseur de la pige, pour l'état de la relève ; avec eux, seul son réseau relève. */
   pigeProvider?: PigeProviderSettings | null;
   /** La base de l'ADEME et le cadastre de l'adresse de pige (BR30) ; absents, ceux de `fetchPublicData`, sinon seuls les diagnostics de la veille. */
@@ -1584,6 +1588,16 @@ function boiteRoutesDef(boite: ApiConfig['boite']): RouteDef[] {
   }));
 }
 
+/** Les reprises des notes vocales non transcrites (AU044) : agent en activité ou direction [R16], rien ne part [R696]. */
+function reprisesVocalesRoutesDef(audio: AudioSource | null): RouteDef[] {
+  return reprisesVocalesRoutes().map((r: ReprisesRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, audio }, viewer, params, request),
+  }));
+}
+
 /** Les routes de la pige (BR29) : rôles contrôlés avant le corps [R16], rien n'est envoyé [R275]. */
 function pigeRoutesDef(source: PigeSource | null, provider: PigeProviderSettings | null): RouteDef[] {
   return pigeRoutes().map((r: PigeRoute) => ({
@@ -2615,6 +2629,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...statistiquesSiteRoutesDef(),
     ...pigeRoutesDef(config.pigeSource ?? null, config.pigeProvider ?? null),
     ...boiteRoutesDef(config.boite),
+    ...reprisesVocalesRoutesDef(config.voiceAudio ?? null),
     ...adressePigeRoutesDef(adressePigeSourcesOf(config)),
     ...sequencesRoutesDef(),
     ...phasesRoutesDef(),

@@ -54,6 +54,7 @@ export const CARTE_FICHIERS: Readonly<Record<string, ClasseReference>> = {
   'visit_energy_audit_handovers.audit_ref': F,
   'visit_slips.scan_ref': F,
   'voice_notes.media_ref': F,
+  'voice_note_recoveries.media_ref': F,
   'academy_modules.script_ref': F,
   'agent_file_pieces.ref': F,
   // AU028 : la pièce qui prouve le cycle de formation d'avant l'arrivée.
