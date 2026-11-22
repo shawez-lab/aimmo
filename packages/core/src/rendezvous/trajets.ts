@@ -8,6 +8,7 @@
  *     fait sans lui ;
  *   - un créneau dont le trajet estimé ne tient pas dans l'écart avec le rendez-vous voisin n'est pas proposé : le
  *     trajet réel ne descend jamais sous le trajet minimal de R32, il peut seulement l'allonger ;
+ *   - au même bien que le rendez-vous voisin, la marge du même lieu remplace le trajet minimal (AU055) ;
  *   - un lieu inconnu (bien sans position) ne fait rien inventer : le créneau reste proposé, après les autres, avec la
  *     règle du trajet minimal seule, et le dit.
  * L'estimation est faite à vol d'oiseau, majorée pour la route, sans service extérieur ni adresse envoyée. Le motif
@@ -15,7 +16,7 @@
  */
 import type { SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
-import { AGENDA_TIME_ZONE, DEFAULT_SLOT_SETTINGS, isOnSite, type AppointmentKind, type Slot, type SlotSettings } from './creneaux.ts';
+import { AGENDA_TIME_ZONE, DEFAULT_SLOT_SETTINGS, gapMinutes, isOnSite, type AppointmentKind, type Slot, type SlotSettings } from './creneaux.ts';
 
 export interface Place {
   lat: number;
@@ -70,6 +71,8 @@ export interface BestSlotsInput {
   kind: AppointmentKind;
   /** Le lieu du nouveau rendez-vous ; `null` s'il est inconnu. */
   target: Place | null;
+  /** Le bien du nouveau rendez-vous, s'il est connu (AU055). */
+  propertyId?: string | null;
   /** Les créneaux libres, déjà vérifiés par V01. */
   free: readonly Slot[];
   /** Le point de départ et de retour de la journée (l'agence), s'il est connu. */
@@ -84,6 +87,8 @@ interface Neighbour {
   start: Date;
   end: Date;
   place: Place | null;
+  kind: AppointmentKind;
+  propertyId: string | null;
 }
 
 const MINUTE = 60_000;
@@ -105,7 +110,7 @@ export class MeilleursCreneaux {
     for (const r of rows) {
       if (!isOnSite(r.kind)) continue;
       const place = r.property_id ? await this.places.placeOf(r.property_id) : null;
-      out.push({ start: new Date(r.start_at), end: new Date(r.end_at), place: validPlace(place) ? place : null });
+      out.push({ start: new Date(r.start_at), end: new Date(r.end_at), place: validPlace(place) ? place : null, kind: r.kind, propertyId: r.property_id });
     }
     return out;
   }
@@ -125,6 +130,9 @@ export class MeilleursCreneaux {
     const to = new Date(Math.max(...input.free.map((s) => s.end.getTime())) + 86_400_000);
     const booked = await this.onSiteOf(input.agentId, from, to);
     const floor = settings.travelMinutes;
+    const self = { kind: input.kind, propertyId: input.propertyId ?? null };
+    // Le trajet minimal avec un voisin : la marge du même lieu au même bien (AU055), sinon celui de R32.
+    const floorWith = (n: Neighbour): number => gapMinutes(self, n, settings);
     const known: RankedSlot[] = [];
     const unknown: RankedSlot[] = [];
     for (const slot of input.free) {
@@ -143,8 +151,8 @@ export class MeilleursCreneaux {
       const before = leg(fromPlace, target, prev);
       const after = leg(target, toPlace, next);
       // Le trajet réel doit tenir dans l'écart avec le voisin ; jamais moins que le trajet minimal de R32.
-      if (prev && before !== null && slot.start.getTime() - prev.end.getTime() < Math.max(floor, before) * MINUTE) continue;
-      if (next && after !== null && next.start.getTime() - slot.end.getTime() < Math.max(floor, after) * MINUTE) continue;
+      if (prev && before !== null && slot.start.getTime() - prev.end.getTime() < Math.max(floorWith(prev), before) * MINUTE) continue;
+      if (next && after !== null && next.start.getTime() - slot.end.getTime() < Math.max(floorWith(next), after) * MINUTE) continue;
       if (before === null || after === null) {
         unknown.push({ ...slot, addedMinutes: null, travelBefore: before, travelAfter: after, reason: `Lieu inconnu : ${floor} min de trajet laissées de chaque côté.` });
         continue;

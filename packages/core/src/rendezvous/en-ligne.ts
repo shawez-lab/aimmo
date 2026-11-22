@@ -128,7 +128,8 @@ export class ReservationEnLigne {
 
     // En ligne, seul un créneau proposé se réserve : vérifié avant de créer une fiche, la base tranchera ensuite [R32].
     if (Number.isNaN(input.start.getTime())) return { ok: false, code: 'bad_time', rule: null };
-    const around = await this.rdv.freeSlotsFor(input.agentId, input.kind, new Date(input.start.getTime() - DAY_MS), new Date(input.start.getTime() + DAY_MS));
+    // Le créneau se revérifie avec le bien demandé : au même bien, la marge du même lieu (AU055).
+    const around = await this.rdv.freeSlotsFor(input.agentId, input.kind, new Date(input.start.getTime() - DAY_MS), new Date(input.start.getTime() + DAY_MS), undefined, input.propertyId ?? null);
     if (!around.some((s) => s.start.getTime() === input.start.getTime())) return { ok: false, code: 'not_free', rule: null };
 
     const at = this.now();

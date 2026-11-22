@@ -28,9 +28,11 @@ import {
   APPOINTMENT_KINDS,
   DEFAULT_SLOT_SETTINGS,
   checkAvailability,
+  checkSamePlace,
   conflictOf,
   freeSlots,
   isOnSite,
+  samePlaceMinutesOf,
   validDuration,
   withinAvailability,
   type AppointmentKind,
@@ -229,6 +231,7 @@ export class RendezVous {
     this.newId = options.newId ?? (() => crypto.randomUUID());
     this.newToken = options.newToken ?? newBookingToken;
     if (!Number.isInteger(this.settings.travelMinutes / 5) || this.settings.travelMinutes < 0) throw new Error('Temps de trajet non valable : un multiple de 5 minutes.');
+    checkSamePlace(this.settings);
     if (options.linkBase && !/^https:\/\/[^\s\d]+\/$/.test(options.linkBase)) throw new Error('Début de lien non valable : https, sans chiffre, terminé par /.');
     const store = new FicheClient(db, { now: this.now });
     const fiche = new FicheUnique(db, store, { now: this.now });
@@ -269,11 +272,11 @@ export class RendezVous {
   }
 
   private async bookedAround(agentId: string, from: Date, to: Date, exceptId: string | null = null): Promise<BookedInterval[]> {
-    const rows = await this.db.all<{ kind: AppointmentKind; start_at: string; end_at: string }>(
-      `SELECT kind, start_at, end_at FROM appointments WHERE agent_id = ? AND status = 'booked' AND start_at < ? AND end_at > ? AND id IS NOT ?`,
+    const rows = await this.db.all<{ kind: AppointmentKind; start_at: string; end_at: string; property_id: string | null }>(
+      `SELECT kind, start_at, end_at, property_id FROM appointments WHERE agent_id = ? AND status = 'booked' AND start_at < ? AND end_at > ? AND id IS NOT ?`,
       [agentId, to.toISOString(), from.toISOString(), exceptId],
     );
-    return rows.map((r) => ({ kind: r.kind, start: new Date(r.start_at), end: new Date(r.end_at) }));
+    return rows.map((r) => ({ kind: r.kind, start: new Date(r.start_at), end: new Date(r.end_at), propertyId: r.property_id }));
   }
 
   private async busyAround(agentId: string, from: Date, to: Date) {
@@ -281,14 +284,35 @@ export class RendezVous {
     return this.options.agenda ? this.options.agenda.busy(agentId, new Date(from.getTime() - travel), new Date(to.getTime() + travel)) : [];
   }
 
-  /** Les créneaux libres d'un agent pour un type, entre deux instants (V01, avec la base et l'agenda). */
-  async freeSlotsFor(agentId: string, kind: AppointmentKind, from: Date, to: Date, durationMinutes?: number): Promise<Slot[]> {
+  /**
+   * Les créneaux libres d'un agent pour un type, entre deux instants (V01, avec la base et l'agenda). Avec le bien du
+   * rendez-vous, un créneau juste après un autre rendez-vous au même bien est proposé avec la marge du même lieu (AU055).
+   */
+  async freeSlotsFor(agentId: string, kind: AppointmentKind, from: Date, to: Date, durationMinutes?: number, propertyId?: string | null): Promise<Slot[]> {
     const availability = await this.availabilityOf(agentId);
     if (!availability) return [];
     const travel = this.settings.travelMinutes * MINUTE;
     const booked = await this.bookedAround(agentId, new Date(from.getTime() - travel - 86_400_000), new Date(to.getTime() + travel + 86_400_000));
     const busy = await this.busyAround(agentId, from, to);
-    return freeSlots({ availability, kind, from, to, now: this.now(), booked, busy, settings: this.settings, ...(durationMinutes !== undefined ? { durationMinutes } : {}) });
+    return freeSlots({
+      availability,
+      kind,
+      from,
+      to,
+      now: this.now(),
+      booked,
+      busy,
+      settings: this.settings,
+      ...(durationMinutes !== undefined ? { durationMinutes } : {}),
+      ...(propertyId ? { propertyId } : {}),
+    });
+  }
+
+  /** Les tranches de trajet laissées avant et après un rendez-vous sur place, l'avant arrondi en bas [R32]. */
+  private travelUnits(): { before: number; after: number } {
+    const units = (this.settings.travelMinutes * MINUTE) / UNIT_MS;
+    const before = Math.floor(units / 2);
+    return { before, after: units - before };
   }
 
   /**
@@ -296,24 +320,35 @@ export class RendezVous {
    * la moitié du trajet de chaque côté. Les tranches sont produites par la base, en peu de paramètres (D1 en limite le
    * nombre). `false` si une tranche est déjà tenue [R32].
    */
-  private async hold(agentId: string, appointmentId: string, kind: AppointmentKind, start: Date, end: Date): Promise<boolean> {
+  private async hold(agentId: string, appointmentId: string, kind: AppointmentKind, start: Date, end: Date, propertyId: string | null = null): Promise<boolean> {
     const first = Math.floor(start.getTime() / UNIT_MS);
     const last = Math.ceil(end.getTime() / UNIT_MS);
     // Le trajet est partagé entre l'avant et l'après, l'avant arrondi en bas, l'après en haut : entre deux rendez-vous
     // sur place, l'après de l'un et l'avant de l'autre font exactement le trajet réglé, comme dans conflictOf [R32].
-    const travelUnits = (this.settings.travelMinutes * MINUTE) / UNIT_MS;
-    const before = Math.floor(travelUnits / 2);
-    const after = travelUnits - before;
+    const { before, after } = this.travelUnits();
+    const onSite = isOnSite(kind) ? 1 : 0;
+    // AU055 : au même bien, une tranche de trajet déjà tenue par un rendez-vous pris de ce bien est partagée, pas reprise ;
+    // la marge du même lieu se revérifie dans l'instruction même : aucun rendez-vous sur place, ni un autre en train
+    // d'être pris, ne tient une tranche de la marge. Rien n'est tenu si elle manque.
+    const margin = onSite ? (samePlaceMinutesOf(this.settings) * MINUTE) / UNIT_MS : 0;
+    const marginFree = `NOT EXISTS (SELECT 1 FROM appointment_holds m LEFT JOIN appointments x ON x.id = m.appointment_id
+       WHERE m.agent_id = ? AND m.layer = 'own' AND m.released_at IS NULL
+         AND ((m.unit >= ? AND m.unit < ?) OR (m.unit >= ? AND m.unit < ?))
+         AND (x.id IS NULL OR x.kind <> 'appel'))`;
+    const marginParams = [agentId, first - margin, first, last, last + margin];
     try {
-      await this.db.run(
+      const { changes } = await this.db.run(
         `INSERT INTO appointment_holds (agent_id, layer, unit, appointment_id)
          WITH RECURSIVE own(u) AS (SELECT ? UNION ALL SELECT u + 1 FROM own WHERE u + 1 < ?),
                         site(u) AS (SELECT ? UNION ALL SELECT u + 1 FROM site WHERE u + 1 < ?)
-         SELECT ?, 'own', u, ? FROM own
-         UNION ALL SELECT ?, 'site', u, ? FROM site WHERE ? = 1`,
-        [first, last, first - before, last + after, agentId, appointmentId, agentId, appointmentId, isOnSite(kind) ? 1 : 0],
+         SELECT ?, 'own', u, ? FROM own WHERE ${marginFree}
+         UNION ALL SELECT ?, 'site', u, ? FROM site WHERE ? = 1 AND ${marginFree}
+           AND NOT EXISTS (SELECT 1 FROM appointment_holds h JOIN appointments a ON a.id = h.appointment_id
+             WHERE h.agent_id = ? AND h.layer = 'site' AND h.unit = site.u AND h.released_at IS NULL
+               AND a.agent_id = ? AND a.status = 'booked' AND a.kind <> 'appel' AND a.property_id = ?)`,
+        [first, last, first - before, last + after, agentId, appointmentId, ...marginParams, agentId, appointmentId, onSite, ...marginParams, agentId, agentId, propertyId],
       );
-      return true;
+      return changes > 0;
     } catch (error) {
       if (isUniqueViolation(error)) return false;
       throw error;
@@ -344,7 +379,28 @@ export class RendezVous {
         if (moved.changes > 0) return;
       }
     }
+    await this.passSharedTravel(appointmentId);
     await this.db.run('UPDATE appointment_holds SET released_at = ? WHERE appointment_id = ? AND released_at IS NULL', [this.now().toISOString(), appointmentId]);
+  }
+
+  /**
+   * AU055 : les tranches de trajet partagées avec un rendez-vous encore pris au même bien lui passent, par une seule
+   * instruction qui revérifie qu'il l'est toujours : son trajet vers les autres lieux reste tenu par la base [R32].
+   */
+  private async passSharedTravel(appointmentId: string): Promise<void> {
+    const own = await this.db.first<{ property_id: string | null; kind: AppointmentKind }>('SELECT property_id, kind FROM appointments WHERE id = ?', [appointmentId]);
+    if (!own?.property_id || !isOnSite(own.kind)) return;
+    const { before, after } = this.travelUnits();
+    const heir = `SELECT b.id FROM appointments b
+      WHERE b.agent_id = appointment_holds.agent_id AND b.status = 'booked' AND b.id <> ? AND b.kind <> 'appel' AND b.property_id = ?
+        AND appointment_holds.unit >= CAST(strftime('%s', b.start_at) AS INTEGER) / 300 - ?
+        AND appointment_holds.unit < (CAST(strftime('%s', b.end_at) AS INTEGER) + 299) / 300 + ?`;
+    const params = [appointmentId, own.property_id, before, after];
+    await this.db.run(
+      `UPDATE appointment_holds SET appointment_id = (${heir} ORDER BY b.start_at, b.id LIMIT 1)
+       WHERE appointment_id = ? AND layer = 'site' AND released_at IS NULL AND EXISTS (${heir})`,
+      [...params, appointmentId, ...params],
+    );
   }
 
   /** Un rendez-vous encore pris du groupe tient ses tranches (AU077). */
@@ -425,7 +481,7 @@ export class RendezVous {
     const group = req.joinGroupOf ? await this.groupToJoin(req, replacesId) : null;
     if (group && !group.ok) return group;
     const end = group?.ok ? group.end : new Date(start.getTime() + (req.durationMinutes ?? this.settings.durations[req.kind]) * MINUTE);
-    const slot: Slot = { kind: req.kind, start, end };
+    const slot: Slot = { kind: req.kind, start, end, propertyId: req.propertyId ?? null };
     const availability = await this.availabilityOf(req.agentId);
     if (!availability) return { ok: false, rule: 'R33', code: 'no_availability' };
     if (!withinAvailability(slot, availability)) return { ok: false, rule: 'R33', code: 'outside_availability' };
@@ -442,7 +498,7 @@ export class RendezVous {
       const conflict = conflictOf(slot, booked, await this.busyAround(req.agentId, start, end), this.settings);
       if (conflict) return { ok: false, rule: conflict, code: conflict === 'R32' ? 'taken' : 'agenda_busy' };
       // La base tranche : si un autre rendez-vous a pris une tranche entre-temps, rien n'est tenu [R32].
-      if (!(await this.hold(req.agentId, id, req.kind, start, end))) return { ok: false, rule: 'R32', code: 'taken' };
+      if (!(await this.hold(req.agentId, id, req.kind, start, end, req.propertyId ?? null))) return { ok: false, rule: 'R32', code: 'taken' };
     }
     const groupId = group?.ok ? group.groupId : null;
     const at = now.toISOString();
@@ -646,7 +702,7 @@ export class RendezVous {
         if (back.changes !== 1) await this.log('rdv.perdu', 'system:rdv', (await this.get(old.id))!, {});
         return;
       }
-      if (await this.hold(old.agent_id, old.id, old.kind, new Date(old.start_at), new Date(old.end_at))) {
+      if (await this.hold(old.agent_id, old.id, old.kind, new Date(old.start_at), new Date(old.end_at), old.property_id)) {
         await this.db.run("UPDATE appointments SET status = 'booked', cancelled_at = NULL, updated_at = ? WHERE id = ? AND status = 'cancelled'", [this.now().toISOString(), old.id]);
       } else {
         await this.log('rdv.perdu', 'system:rdv', (await this.get(old.id))!, {});
