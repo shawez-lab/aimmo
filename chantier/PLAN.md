@@ -499,13 +499,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Décidé (2026-11-22, voie 1) : constat confirmé (`agentsOf` ne lit pas `agent_absences`). Branche `chantier/AU040`, proposition #771 laissée ouverte : R680 (absent jamais candidat ; client suivi au binôme, sinon direction ; nouveau contact à un présent de la commune, sinon au binôme présent d'un absent ; trace en ajout seul `attribution_absences`, migration `4096`), 36 tests. Codex : un P0 par tour sur les réattributions suivantes (binôme en retard, binôme absent, retour de l'absent, contact tenu par la direction). Autre approche à la reprise : ouvrir la fiche au binôme pendant l'absence dans `Acces` (`coversAt` de J09, fichiers du socle), laisser le contact attribué à l'absent sans réattribution, et ne retirer l'absent que des nouveaux contacts.
 
 ### AU041 · Le tirage fixe répartit les contacts sans plafond de charge ni disponibilité de rappel de l’agent
-- Statut : en cours
+- Statut : fait (2026-11-22)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A041 (majeur), endroit : C/qualification/attribution.ts, `chooseAgent`.
 - Constat de l'audit : Le tirage fixe répartit les contacts sans plafond de charge ni disponibilité de rappel de l’agent.
 - Objectif : Un agent à capacité déclarée nulle ne reçoit pas de nouveau lead ; la règle et la file de secours restent déterministes et visibles.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : fusionnée (#772, 7c0de947), migration `4097` (`agent_capacities`, `attribution_capacity`), R681. Capacité déclarée par l'agent pour lui ou par la direction (0 à 200, ou sans plafond, avec raison, versions en ajout seul) ; un agent plein est passé, file de secours fixe dans l'ordre des identifiants à partir du tiré, puis direction ; client déjà suivi gardé ; charge = fiches entières (réunies comprises) dont la dernière attribution est à l'agent sans message d'un agent depuis, revérifiée par la base dans le lot qui attribue ; égalité à la milliseconde lue prudemment (pas de `rowid`, R633). Routes `GET`/`POST /v1/attribution/capacites`. Codex : 3 P0 (course à l'écriture, fiches réunies, file arrêtée trop tôt) corrigés, 1 P0 (égalité d'heure) traité par la lecture prudente, puis rien. Restent : l'écran de déclaration ; la disponibilité de rappel par heures d'ouverture (AU042).
 
 ### AU042 · Le délai de rappel court en heures écoulées
 - Statut : à faire
