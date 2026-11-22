@@ -505,6 +505,19 @@ describeWithSqlite('AU041 · capacité déclarée des agents', () => {
     expect(await t.attribution.attribute(await t.contact('c', 'Je souhaite vendre ma maison à Talant.'))).toMatchObject({ agent_id: t.alex.id });
   });
 
+  it('[R681] deux contacts en même temps ne dépassent jamais la capacité : la base revérifie à l’écriture', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.declareCapacity(direction(t.network.id), { agentId: t.alex.id, capacity: 1, reason: 'Agent à mi-temps' });
+    const q1 = await t.contact('a', 'Je souhaite vendre ma maison à Talant.');
+    const q2 = await t.contact('b', 'Je souhaite vendre ma maison à Talant.');
+    const rows = await Promise.all([t.attribution.attribute(q1), t.attribution.attribute(q2)]);
+    expect(rows.map((r) => r!.agent_id).sort()).toEqual([null, t.alex.id].sort());
+    expect(await t.attribution.waiting(t.network.id, t.alex.id)).toBe(1);
+    const persons = await t.db.all<{ agent_id: string | null }>('SELECT agent_id FROM persons WHERE id IN (?, ?)', [await t.personOf(q1), await t.personOf(q2)]);
+    expect(persons.filter((p) => p.agent_id === t.alex.id)).toHaveLength(1);
+  });
+
   it('[R681] un client déjà suivi reste à son agent même plein ; la réattribution passe aussi l’agent plein', async () => {
     const t = await setup();
     await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
