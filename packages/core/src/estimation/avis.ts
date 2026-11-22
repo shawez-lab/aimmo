@@ -20,6 +20,8 @@ type Range = Extract<RangeResult, { ok: true }>;
 
 /** Une vente citée dans l'avis : sans nom ni numéro de voie [R29]. */
 export interface CitedSale {
+  /** L'identifiant de la vente dans la source, pour que l'agent puisse l'écarter [R692]. */
+  id?: string;
   month: string;
   surface: number;
   pricePerM2: number;
@@ -27,6 +29,26 @@ export interface CitedSale {
   distance: number;
   street?: string;
   town?: string;
+}
+
+/** Les motifs pour lesquels l'agent écarte une vente du calcul : une liste fermée [R692]. */
+export const SALE_EXCLUSION_REASONS = {
+  prix_aberrant: 'prix aberrant',
+  bien_different: 'bien trop différent',
+  vente_hors_marche: 'vente hors marché',
+  doublon: 'vente en double',
+} as const;
+export type SaleExclusionReason = keyof typeof SALE_EXCLUSION_REASONS;
+
+/** Une vente que l'agent a écartée, telle que l'avis la garde. */
+export interface AgentExclusion {
+  id: string;
+  reason: SaleExclusionReason;
+  month: string;
+  surface: number;
+  pricePerM2: number;
+  /** L'avis dans lequel la vente a été écartée. */
+  in: string;
 }
 
 /** Ce que l'IA reçoit pour rédiger : des chiffres du calcul, ni nom, ni adresse, ni coordonnée. */
@@ -48,6 +70,8 @@ export interface ValuationBrief {
   recentMissing: boolean;
   /** La fenêtre de temps des ventes retenues [R691]. */
   window: { months: number; from: string; excludedOld: number; justification: string };
+  /** Les motifs des ventes écartées par l'agent [R692]. */
+  excludedByAgent: readonly SaleExclusionReason[];
 }
 
 export interface ValuationWriter {
@@ -85,6 +109,9 @@ export interface DraftInput {
   facts?: PublicFacts | null;
   /** Détail des ventes citées, par identifiant de vente (E02) : voie sans numéro et commune. */
   details?: ReadonlyMap<string, { street: string; town: string }>;
+  /** Les ventes écartées par l'agent, et l'avis précédent que cette version recalcule [R692]. */
+  excluded?: readonly AgentExclusion[];
+  previous?: string | null;
 }
 
 export interface AvisOptions {
@@ -184,6 +211,7 @@ export class AvisDeValeur {
       latestUsedSale: r.latestUsedSale,
       recentMissing: r.data.recentMissing,
       window: r.window,
+      excludedByAgent: (input.excluded ?? []).map((e) => e.reason),
     };
     const dates = [r.latestUsedSale, ...(r.data.lastSale ? [r.data.lastSale.slice(0, 7)] : []), ...r.comparables.map((c) => c.month)].flatMap((m) => [m.slice(0, 4)]);
     const figures: (string | number)[] = [
@@ -200,6 +228,7 @@ export class AvisDeValeur {
       r.window.months,
       r.window.from.slice(0, 4),
       r.window.excludedOld,
+      (input.excluded ?? []).length,
     ];
     return { brief, figures };
   }
@@ -230,6 +259,10 @@ export class AvisDeValeur {
       // La fenêtre de temps et sa raison, toujours dites [R691].
       `Seules les ventes depuis ${monthLabel(b.window.from)} sont retenues, soit ${b.window.months} mois. ${b.window.justification}${b.window.excludedOld > 0 ? ` ${b.window.excludedOld === 1 ? 'Une vente plus ancienne a été écartée.' : `${b.window.excludedOld} ventes plus anciennes ont été écartées.`}` : ''}`,
       ...(b.recentMissing ? ['Les ventes des derniers mois ne sont pas encore publiées : votre agent complète avec le marché qu’il connaît.'] : []),
+      // Les ventes que l'agent a écartées, et pourquoi : toujours dit [R692].
+      ...(b.excludedByAgent.length > 0
+        ? [`${b.excludedByAgent.length === 1 ? 'Votre agent a écarté une vente' : `Votre agent a écarté ${b.excludedByAgent.length} ventes`} du calcul : ${[...new Set(b.excludedByAgent)].map((r) => SALE_EXCLUSION_REASONS[r]).join(', ')}.`]
+        : []),
     ].join(' ');
     return `${data}\n\n${ADVICE_NOTICE}`;
   }
@@ -263,7 +296,7 @@ export class AvisDeValeur {
     if (by === 'fallback' && check(text).length > 0) throw new Error('Le texte de secours ne passe pas le contrôle du texte.');
     const cited = input.range.comparables.slice(0, this.options.citedSales ?? 12).map((c): CitedSale => {
       const d = input.details?.get(c.id);
-      return { month: c.month, surface: c.surface, pricePerM2: c.pricePerM2, distance: Math.round(c.distance / 10) * 10, ...(d ? { street: d.street, town: d.town } : {}) };
+      return { id: c.id, month: c.month, surface: c.surface, pricePerM2: c.pricePerM2, distance: Math.round(c.distance / 10) * 10, ...(d ? { street: d.street, town: d.town } : {}) };
     });
     const computed = {
       // Le bien estimé, pour que tout ce qui s'ajoute à l'avis porte sur lui seul (HX32) : sorte, surface, commune.
@@ -282,6 +315,9 @@ export class AvisDeValeur {
       latestUsedSale: input.range.latestUsedSale,
       data: input.range.data,
       window: input.range.window,
+      // La sélection de l'agent : ce qu'il a écarté, et la version précédente, qui reste telle quelle [R692].
+      excluded: input.excluded ?? [],
+      previous: input.previous ?? null,
       energyClass: brief.energyClass,
       risks: brief.risks,
       missing: input.facts?.missing ?? null,
