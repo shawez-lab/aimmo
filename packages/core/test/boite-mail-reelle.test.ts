@@ -215,3 +215,28 @@ describeWithSqlite('plus de 50 mails de la même heure : la lecture avance toujo
     });
   }
 });
+
+describe('toute la boîte, et le texte rangé à part (AU043, Codex)', () => {
+  it('Outlook : un mail rangé par une règle ou archivé est lu ; indésirables, supprimés et brouillons jamais [R683]', async () => {
+    const h = fakeOutlook([
+      { id: 'o-regle', threadId: 'c1', at: ago(3 * DAY), from: 'c@exemple.test', folder: 'clients', text: 'rangé par une règle' },
+      { id: 'o-archive', threadId: 'c2', at: ago(2 * DAY), from: 'c@exemple.test', folder: 'archive', text: 'archivé' },
+      { id: 'o-pub', threadId: 'c3', at: ago(2 * DAY), from: 'p@exemple.test', folder: 'junkemail', text: 'pub' },
+      { id: 'o-jete', threadId: 'c4', at: ago(2 * DAY), from: 'p@exemple.test', folder: 'deleteditems', text: 'jeté' },
+      { id: 'o-envoye', threadId: 'c1', at: ago(DAY), from: 'agent@exemple.test', to: ['c@exemple.test'], sent: true, text: 'réponse' },
+    ]);
+    const got = await outlookOf(h).receivedSince('agent-1', ago(10 * DAY));
+    expect(got.map((m) => [m.externalId, m.direction ?? 'in'])).toEqual([
+      ['o-regle', 'in'],
+      ['o-archive', 'in'],
+      ['o-envoye', 'out'],
+    ]);
+  });
+
+  it('Gmail : une partie de texte rangée à part (`attachmentId`) est le texte du mail, jamais une pièce', async () => {
+    const h = fakeGmail([{ id: 'g-1', threadId: 'f', at: ago(DAY), from: 'c@exemple.test', text: 'Merci de ne plus me contacter.', textApart: true }]);
+    const [m] = await gmailOf(h).receivedSince('agent-1', ago(2 * DAY));
+    expect(m!.body).toBe('Merci de ne plus me contacter.');
+    expect(m!.attachments).toEqual([]);
+  });
+});

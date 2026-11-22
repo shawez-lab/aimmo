@@ -9,9 +9,9 @@
  *   lecture est demandée (`gmail.readonly`, `Mail.Read`) : aucune adresse ici n'envoie, ne déplace ni n'efface un mail ;
  * - Gmail : la liste des mails de la boîte (reçus et envoyés, ni brouillons, ni indésirables, ni corbeille), du plus
  *   récent au plus ancien, puis les plus anciens d'abord, 50 au plus par lecture ; un mail porte son fil (`threadId`) ;
- * - Outlook : la boîte de réception et les éléments envoyés, chacun du plus ancien au plus récent, mêlés par date, 50 au
- *   plus en tout ; quand l'un des deux est coupé, rien de plus récent que son dernier mail lu n'est rendu, pour que le
- *   curseur du tri ne passe jamais au-delà d'un mail pas encore lu [R18] ; le fil est la conversation (`conversationId`) ;
+ * - Outlook : toute la boîte, quel que soit le dossier où un mail a été rangé ou archivé, sauf brouillons, éléments
+ *   supprimés et courrier indésirable, du plus ancien au plus récent, 50 au plus ; un mail du dossier des éléments
+ *   envoyés est un mail de l'agent ; le fil est la conversation (`conversationId`) ;
  *   la taille des pièces est lue d'abord, et seul le contenu des pièces assez petites est demandé ;
  * - les mails déjà triés autour du curseur (`skip`) ne prennent pas de place dans le lot : un lot plein de mails de la
  *   même heure avance toujours [R18] ;
@@ -270,18 +270,30 @@ export class GmailMailbox implements MailboxProvider {
     let textPlain: string | null = null;
     let textHtml: string | null = null;
     const pending: { part: GmailPart; name: string; type: string }[] = [];
+    const texts: { part: GmailPart; type: 'text/plain' | 'text/html' }[] = [];
     walk(payload, (p) => {
       const type = (p.mimeType ?? '').toLowerCase();
       const name = typeof p.filename === 'string' ? p.filename : '';
-      if (name !== '' || p.body?.attachmentId) {
-        pending.push({ part: p, name, type });
+      // Une partie de texte sans nom est le texte du mail, même quand Gmail la range à part (`attachmentId`).
+      if (name === '' && (type === 'text/plain' || type === 'text/html')) {
+        if (p.body?.data || p.body?.attachmentId) texts.push({ part: p, type });
         return;
       }
-      const data = p.body?.data ? base64Bytes(p.body.data) : null;
-      if (!data) return;
-      if (type === 'text/plain' && textPlain === null) textPlain = utf8(data);
-      else if (type === 'text/html' && textHtml === null) textHtml = htmlText(utf8(data));
+      if (name !== '' || p.body?.attachmentId) pending.push({ part: p, name, type });
     });
+    for (const { part, type } of texts) {
+      if ((type === 'text/plain' && textPlain !== null) || (type === 'text/html' && textHtml !== null)) continue;
+      let data = part.body?.data ? base64Bytes(part.body.data) : null;
+      if (!data && part.body?.attachmentId) {
+        const a = await this.get(agentId, `${GMAIL}/messages/${encodeURIComponent(externalId)}/attachments/${encodeURIComponent(part.body.attachmentId)}`);
+        data = isObj(a) && typeof a.data === 'string' ? base64Bytes(a.data) : null;
+        // Un texte annoncé et illisible : le mail n'est pas rendu à moitié, la lecture reprendra [R18].
+        if (!data) throw new MailboxError('panne');
+      }
+      if (!data) continue;
+      if (type === 'text/plain') textPlain = utf8(data);
+      else textHtml = htmlText(utf8(data));
+    }
     const attachments: MailAttachmentIn[] = [];
     for (const { part, name, type } of pending.slice(0, MAX_ATTACHMENTS_READ)) {
       const size = typeof part.body?.size === 'number' ? part.body.size : 0;
@@ -315,10 +327,8 @@ export class GmailMailbox implements MailboxProvider {
 // ---------------------------------------------------------------------------------------------------------------------
 // Outlook (Microsoft Graph)
 
-const OUTLOOK_FOLDERS = [
-  { folder: 'inbox', direction: 'in' as const },
-  { folder: 'sentitems', direction: 'out' as const },
-];
+/** Les dossiers d'Outlook jamais lus : brouillons, éléments supprimés, courrier indésirable. */
+const OUTLOOK_EXCLUDED = ['drafts', 'deleteditems', 'junkemail'] as const;
 
 const graphAddress = (v: unknown): string | null => {
   const e = isObj(v) && isObj(v.emailAddress) ? str(v.emailAddress.address) : null;
@@ -341,49 +351,59 @@ export class OutlookMailbox implements MailboxProvider {
     return call(this.cfg, url, { headers: { authorization: `Bearer ${await this.tokens.of(agentId)}`, accept: 'application/json', prefer: 'outlook.body-content-type="text"' } });
   }
 
+  /** Les identifiants des dossiers connus de la boîte (envoyés, et ceux jamais lus), gardés en mémoire. */
+  private readonly folders = new Map<string, { sent: string; excluded: Set<string> }>();
+
+  private async folderIds(agentId: string): Promise<{ sent: string; excluded: Set<string> }> {
+    const hit = this.folders.get(agentId);
+    if (hit) return hit;
+    const idOf = async (name: string): Promise<string> => {
+      const body = await this.get(agentId, `${GRAPH}/mailFolders/${name}?$select=id`);
+      const id = isObj(body) ? str(body.id) : null;
+      if (!id) throw new MailboxError('panne');
+      return id;
+    };
+    const sent = await idOf('sentitems');
+    const excluded = new Set<string>();
+    for (const name of OUTLOOK_EXCLUDED) excluded.add(await idOf(name));
+    const ids = { sent, excluded };
+    this.folders.set(agentId, ids);
+    return ids;
+  }
+
   async receivedSince(agentId: string, since: Date | null, skip: ReadonlySet<string> = new Set()): Promise<MailIn[]> {
     const now = (this.cfg.now ?? (() => new Date()))();
     const from = firstSince(since, now).toISOString();
-    const found: { mail: Json; at: number; direction: 'in' | 'out' }[] = [];
-    let cut: number | null = null;
-    for (const { folder, direction } of OUTLOOK_FOLDERS) {
-      const params = new URLSearchParams({
-        $select: 'id,conversationId,receivedDateTime,from,toRecipients,ccRecipients,body,hasAttachments,isDraft',
-        $filter: `receivedDateTime ge ${from}`,
-        $orderby: 'receivedDateTime asc',
-        $top: String(MAILBOX_BATCH),
-      });
-      let url: string | null = `${GRAPH}/mailFolders/${folder}/messages?${params.toString()}`;
-      let kept = 0;
-      let last: number | null = null;
-      // Les pages suivent tant que le lot n'est pas plein des mails pas encore triés ; 10 pages au plus.
-      for (let page = 0; url && kept < MAILBOX_BATCH; page += 1) {
-        if (page >= OUTLOOK_MAX_PAGES) throw new MailboxError('trop');
-        const body = await this.get(agentId, url);
-        const list = isObj(body) && Array.isArray(body.value) ? body.value.filter(isObj) : [];
-        for (const m of list) {
-          const at = Date.parse(String(m.receivedDateTime));
-          const id = str(m.id);
-          if (!id || !str(m.conversationId) || !Number.isFinite(at)) throw new MailboxError('panne');
-          last = at;
-          if (skip.has(id) || m.isDraft === true) continue;
-          found.push({ mail: m, at, direction });
-          kept += 1;
-        }
-        const next = isObj(body) ? str(body['@odata.nextLink']) : null;
-        // Seule une page suivante chez Graph lui-même est suivie.
-        url = next && next.startsWith(`${GRAPH}/`) ? next : null;
+    const { sent, excluded } = await this.folderIds(agentId);
+    // Toute la boîte, quel que soit le dossier où le mail a été rangé ou archivé, du plus ancien au plus récent.
+    const params = new URLSearchParams({
+      $select: 'id,conversationId,receivedDateTime,parentFolderId,from,toRecipients,ccRecipients,body,hasAttachments,isDraft',
+      $filter: `receivedDateTime ge ${from}`,
+      $orderby: 'receivedDateTime asc',
+      $top: String(MAILBOX_BATCH),
+    });
+    let url: string | null = `${GRAPH}/messages?${params.toString()}`;
+    const chosen: { mail: Json; at: number; out: boolean }[] = [];
+    // Les pages suivent tant que le lot n'est pas plein des mails pas encore triés ; 10 pages au plus.
+    for (let page = 0; url && chosen.length < MAILBOX_BATCH; page += 1) {
+      if (page >= OUTLOOK_MAX_PAGES) throw new MailboxError('trop');
+      const body = await this.get(agentId, url);
+      const list = isObj(body) && Array.isArray(body.value) ? body.value.filter(isObj) : [];
+      for (const m of list) {
+        if (chosen.length >= MAILBOX_BATCH) break;
+        const at = Date.parse(String(m.receivedDateTime));
+        const id = str(m.id);
+        if (!id || !str(m.conversationId) || !Number.isFinite(at)) throw new MailboxError('panne');
+        const folder = str(m.parentFolderId);
+        if (skip.has(id) || m.isDraft === true || (folder !== null && excluded.has(folder))) continue;
+        chosen.push({ mail: m, at, out: folder === sent });
       }
-      // Coupé : rien de plus récent que son dernier mail lu n'est rendu dans cette lecture [R18].
-      if (url && last !== null) cut = cut === null ? last : Math.min(cut, last);
+      const next = isObj(body) ? str(body['@odata.nextLink']) : null;
+      // Seule une page suivante chez Graph lui-même est suivie.
+      url = next && next.startsWith(`${GRAPH}/`) ? next : null;
     }
-    // Les deux dossiers mêlés par date, 50 au plus en tout, avant de lire une seule pièce jointe.
-    const chosen = found
-      .filter((f) => cut === null || f.at <= cut)
-      .sort((x, y) => x.at - y.at)
-      .slice(0, MAILBOX_BATCH);
     const out: MailIn[] = [];
-    for (const { mail, at, direction } of chosen) {
+    for (const { mail, at, out: isOut } of chosen) {
       const externalId = str(mail.id)!;
       const threadId = str(mail.conversationId)!;
       const attachments = mail.hasAttachments === true ? await this.attachments(agentId, externalId) : [];
@@ -396,7 +416,7 @@ export class OutlookMailbox implements MailboxProvider {
         externalId,
         threadId,
         from: graphAddress(mail.from) ?? '',
-        ...(direction === 'out' ? { direction: 'out' as const, to: [...new Set(to)] } : {}),
+        ...(isOut ? { direction: 'out' as const, to: [...new Set(to)] } : {}),
         body: text.trim(),
         receivedAt: new Date(at),
         attachments,
