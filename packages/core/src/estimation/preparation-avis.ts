@@ -15,6 +15,7 @@ import type { PropertySheet } from '../annonces/fiche-bien.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { DEFAULT_MANUAL_SETTINGS, MANUAL_REASONS, rangeFollowsReferences, readManual, type ManualInput, type ManualSettings } from './avis-manuel.ts';
 import { AvisDeValeur, type ValuationReport, type ValuationWriter } from './avis.ts';
 import { CollecteBien, type CollecteServices, type PublicFacts } from './collecte.ts';
 import type { SaleDetail } from './dvf-site.ts';
@@ -28,7 +29,8 @@ export interface PreparationServices {
 
 export type PreparationRefusal =
   | { ok: false; rule: 'R16' | 'R30'; code: string }
-  | { ok: false; rule: 'R27'; code: NoRangeReason; comparablesFound: number }
+  | { ok: false; rule: 'R27'; code: NoRangeReason; comparablesFound: number; manualPossible: boolean }
+  | { ok: false; rule: 'R690'; code: 'invalid_references' | 'invalid_range' | 'not_verified' | 'range_far_from_references' | 'range_available' }
   | { ok: false; rule: null; code: 'unknown' | 'invalid' | 'not_configured' | 'not_a_home' | 'no_surface' | 'address_not_found' | 'other_town' | 'sales_unavailable' };
 
 const CONDITIONS: readonly string[] = ['travaux', 'rafraichir', 'bon', 'neuf'];
@@ -79,7 +81,7 @@ export class PreparationAvis {
     private readonly acces: Acces,
     private readonly journal: JournalStore,
     private readonly services: PreparationServices | null,
-    private readonly options: { now?: () => Date; writer?: ValuationWriter; newId?: () => string; salesTimeoutMs?: number; detailTimeoutMs?: number } = {},
+    private readonly options: { now?: () => Date; writer?: ValuationWriter; newId?: () => string; salesTimeoutMs?: number; detailTimeoutMs?: number; manual?: ManualSettings } = {},
   ) {
     this.now = options.now ?? (() => new Date());
     this.avis = new AvisDeValeur(db, journal, { now: this.now, ...(options.writer ? { writer: options.writer } : {}), ...(options.newId ? { newId: options.newId } : {}) });
@@ -109,7 +111,11 @@ export class PreparationAvis {
     return new Map(found.flatMap(([id, d]) => (d ? [[id, { street: d.street, town: d.town }] as const] : [])));
   }
 
-  async prepare(viewer: Viewer, propertyId: string, input: { address?: unknown; kind?: unknown; condition?: unknown }): Promise<{ ok: true; value: ValuationReport } | PreparationRefusal> {
+  /**
+   * `manual` : l'avis motivé par les ventes vérifiées de l'agent, `{ low, high, verified: true, references: [...] }`,
+   * reçu seulement quand le calcul ne peut pas donner de fourchette pour ce logement [R27, R690].
+   */
+  async prepare(viewer: Viewer, propertyId: string, input: { address?: unknown; kind?: unknown; condition?: unknown; manual?: unknown }): Promise<{ ok: true; value: ValuationReport } | PreparationRefusal> {
     const allowed = await this.follower(viewer, propertyId);
     if (!allowed.ok) return allowed;
     if (!this.services) return { ok: false, rule: null, code: 'not_configured' };
@@ -120,6 +126,14 @@ export class PreparationAvis {
     if (typeof address !== 'string' || address.trim().length < 5 || address.length > 200) return { ok: false, rule: null, code: 'invalid' };
     if (kind !== 'apartment' && kind !== 'house') return { ok: false, rule: null, code: 'invalid' };
     if (condition !== undefined && condition !== null && (typeof condition !== 'string' || !CONDITIONS.includes(condition))) return { ok: false, rule: null, code: 'invalid' };
+    const settings = this.options.manual ?? DEFAULT_MANUAL_SETTINGS;
+    let manual: ManualInput | null = null;
+    if (input.manual !== undefined && input.manual !== null) {
+      const read = readManual(input.manual, this.now(), settings);
+      if (!read.ok) return { ok: false, rule: 'R690', code: read.code };
+      if (!rangeFollowsReferences(read.value, property.surface_m2, settings)) return { ok: false, rule: 'R690', code: 'range_far_from_references' };
+      manual = read.value;
+    }
 
     const collected = await new CollecteBien(this.services.collecte, { now: this.now }).collect(address);
     if (!collected.address.ok) return { ok: false, rule: null, code: 'address_not_found' };
@@ -157,9 +171,17 @@ export class PreparationAvis {
       return { ok: false, rule: null, code: 'sales_unavailable' };
     }
     if (!range.ok) {
+      const manualPossible = MANUAL_REASONS.includes(range.reason);
+      // Sans fourchette du calcul, l'avis motivé de l'agent, s'il l'a apporté et si la raison le permet [R690].
+      if (manual && manualPossible) {
+        const report = await this.avis.draftManual({ networkId: property.network_id, propertyId, kind, surface: property.surface_m2, manual, reason: range.reason, comparablesFound: range.comparablesFound, data: range.data, facts });
+        return { ok: true, value: report };
+      }
       await appendEvent(this.journal, { type: 'avis.sans_fourchette', actor: `agent:${viewer.userId}`, subject: `property:${propertyId}`, data: { rule: 'R27', reason: range.reason, comparablesFound: range.comparablesFound } }, this.now);
-      return { ok: false, rule: 'R27', code: range.reason, comparablesFound: range.comparablesFound };
+      return { ok: false, rule: 'R27', code: range.reason, comparablesFound: range.comparablesFound, manualPossible };
     }
+    // Le calcul a donné une fourchette : l'avis part de lui, jamais d'une fourchette saisie à côté [R27, R690].
+    if (manual) return { ok: false, rule: 'R690', code: 'range_available' };
     const details = await this.details(range.comparables.slice(0, CITED_SALES).map((c) => c.id));
     const report = await this.avis.draft({ networkId: property.network_id, propertyId, kind, surface: property.surface_m2, range, facts, details });
     return { ok: true, value: report };

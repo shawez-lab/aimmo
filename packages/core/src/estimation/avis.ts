@@ -13,7 +13,8 @@ import { checkText } from '../envoi/texte.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { PublicFacts } from './collecte.ts';
-import type { RangeResult } from './fourchette.ts';
+import { MANUAL_REASON_TEXT, REFERENCE_PROOFS, referencesMedian, type ManualInput } from './avis-manuel.ts';
+import type { DataInfo, NoRangeReason, RangeResult } from './fourchette.ts';
 
 type Range = Extract<RangeResult, { ok: true }>;
 
@@ -96,6 +97,23 @@ export interface AvisOptions {
 /** Le paragraphe que le code ajoute toujours, quel que soit l'auteur du texte. */
 export const ADVICE_NOTICE =
   'Cet avis de valeur n’est pas une expertise. Il s’appuie sur des ventes réelles publiées, sans visite de leurs biens. La décision du prix appartient au vendeur, conseillé par son agent.';
+
+/** La mention d'un avis motivé par les références de l'agent : aucune vente publiée n'a donné la fourchette [R690]. */
+export const MANUAL_ADVICE_NOTICE =
+  'Cet avis de valeur n’est pas une expertise. Faute de ventes publiées suffisantes, il s’appuie sur des ventes réelles que votre agent a vérifiées, sans visite de leurs biens. La décision du prix appartient au vendeur, conseillé par son agent.';
+
+/** L'avis motivé : le calcul n'a pas donné de fourchette, l'agent apporte la sienne et ses ventes vérifiées. */
+export interface ManualDraftInput {
+  networkId: string;
+  propertyId: string;
+  kind: 'apartment' | 'house';
+  surface: number;
+  manual: ManualInput;
+  reason: NoRangeReason;
+  comparablesFound: number;
+  data: DataInfo;
+  facts?: PublicFacts | null;
+}
 
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 const monthLabel = (yyyyMm: string): string => `${MONTHS[Number(yyyyMm.slice(5, 7)) - 1] ?? ''} ${yyyyMm.slice(0, 4)}`.trim();
@@ -268,6 +286,89 @@ export class AvisDeValeur {
       [report.id, report.network_id, report.property_id, report.agent_id, report.status, report.computed, report.computed_low, report.computed_high, null, null, report.text, report.text_by, at, at, null, null],
     );
     await this.log('avis.brouillon', 'system:estimation', report, { textBy: by, aiRefused: aiNote });
+    return report;
+  }
+
+  /**
+   * Le brouillon d'un avis motivé par les ventes de l'agent [R690]. Le texte est écrit par le code : il dit qu'il n'y a
+   * pas de fourchette automatique et pourquoi, que la fourchette est celle de l'agent, et sur combien de ventes vérifiées
+   * elle s'appuie. Il ne passe pas par l'IA. Il reste un brouillon jusqu'à la validation de l'agent [R30].
+   */
+  async draftManual(input: ManualDraftInput): Promise<ValuationReport> {
+    const property = await this.db.first<{ agent_id: string | null }>('SELECT agent_id FROM properties WHERE id = ? AND network_id = ?', [input.propertyId, input.networkId]);
+    if (!property) throw new Error('Bien inconnu dans ce réseau.');
+    const { low, high, references } = input.manual;
+    const median = referencesMedian(references);
+    const latest = references.reduce((m, r) => (r.month > m ? r.month : m), references[0]!.month);
+    const energy = input.facts?.energy.ok ? input.facts.energy.value.energyClass : null;
+    const risks = input.facts?.risks.ok ? input.facts.risks.value.map((x) => x.label) : [];
+    const town = input.facts?.address.ok ? input.facts.address.value.town : null;
+    const what = input.kind === 'house' ? 'maison' : 'appartement';
+    const lines = [
+      `Pour votre ${what} de ${String(input.surface).replace('.', ',')} m²${town ? ` à ${town}` : ''}, votre agent estime la valeur entre ${euros(low)} et ${euros(high)}.`,
+      `Il n’y a pas de fourchette automatique pour ce bien : ${MANUAL_REASON_TEXT[input.reason] ?? 'les ventes publiées ne suffisent pas'}. Cette fourchette est celle de votre agent. Elle s’appuie sur ${references.length} ventes réelles de biens comparables qu’il a vérifiées lui-même, dont la plus récente date de ${monthLabel(latest)}. Leur prix médian est de ${euros(median)} le m².`,
+    ];
+    if (energy) lines.push(`Diagnostic énergétique connu : classe ${energy}.`);
+    if (risks.length > 0) lines.push(`Risques signalés sur la commune : ${risks.join(', ').toLowerCase()}.`);
+    lines.push('Pour la mise en vente, votre agent vous propose un plan de commercialisation adapté à votre bien et à votre calendrier.');
+    const footer = `Ventes vérifiées par votre agent jusqu’à ${monthLabel(latest)}.\n\n${MANUAL_ADVICE_NOTICE}`;
+    const text = `${lines.join('\n\n')}\n\n${footer}`;
+    const years = [...new Set(references.map((r) => r.month.slice(0, 4)))];
+    const figures: (string | number)[] = [low, high, median, references.length, input.surface, ...years, ...references.map((r) => r.pricePerM2)];
+    if (checkText(text, { audience: 'client', channel: 'email', figures }).length > 0) throw new Error('Le texte de l’avis motivé ne passe pas le contrôle du texte.');
+    const computed = {
+      // Pas de calcul : la fourchette est celle de l'agent, et l'avis le garde à part de tout avis calculé [R690].
+      method: 'manual' as const,
+      kind: input.kind,
+      surface: input.surface,
+      inseeCode: input.facts?.address.ok ? input.facts.address.value.inseeCode : null,
+      low,
+      high,
+      noRangeReason: input.reason,
+      comparablesFound: input.comparablesFound,
+      // Aucune vente publiée citée, ni médiane publiée : rien de ce qui suit l'avis ne prend les ventes de l'agent pour
+      // des ventes publiées.
+      medianPerM2: null,
+      comparables: 0,
+      radius: null,
+      cited: [] as CitedSale[],
+      adjustments: [] as { label: string; pct: number }[],
+      references: references.map((r) => ({ ...r, proofLabel: REFERENCE_PROOFS[r.proof] })),
+      referencesMedianPerM2: median,
+      latestUsedSale: latest,
+      data: input.data,
+      energyClass: energy,
+      risks,
+      missing: input.facts?.missing ?? null,
+      figures,
+      footer,
+    };
+    const at = this.now().toISOString();
+    const report: ValuationReport = {
+      id: this.newId(),
+      network_id: input.networkId,
+      property_id: input.propertyId,
+      agent_id: property.agent_id,
+      status: 'draft',
+      computed: JSON.stringify(computed),
+      // La fourchette de l'agent est aussi celle du brouillon : il n'y en a pas d'autre.
+      computed_low: low,
+      computed_high: high,
+      agent_low: low,
+      agent_high: high,
+      text,
+      text_by: 'fallback',
+      created_at: at,
+      updated_at: at,
+      validated_by: null,
+      validated_at: null,
+    };
+    await this.db.run(
+      `INSERT INTO valuation_reports (id, network_id, property_id, agent_id, status, computed, computed_low, computed_high, agent_low, agent_high, text, text_by, created_at, updated_at, validated_by, validated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [report.id, report.network_id, report.property_id, report.agent_id, report.status, report.computed, low, high, low, high, report.text, report.text_by, at, at, null, null],
+    );
+    await this.log('avis.brouillon', 'system:estimation', report, { textBy: 'fallback', manual: true, reason: input.reason });
     return report;
   }
 
