@@ -518,6 +518,48 @@ describeWithSqlite('AU041 · capacité déclarée des agents', () => {
     expect(persons.filter((p) => p.agent_id === t.alex.id)).toHaveLength(1);
   });
 
+  it('[R681] la file de secours va jusqu’au bout même quand plusieurs contacts se disputent les mêmes agents', async () => {
+    const t = await setup();
+    const extra = [];
+    for (const name of ['Noa', 'Eli']) extra.push(await t.store.createAgent({ networkId: t.network.id, firstName: name, lastName: 'Agent' }));
+    const agents = [t.alex, t.sam, t.lou, ...extra];
+    for (const agent of agents) {
+      await t.attribution.addZone(t.network.id, agent.id, 'Talant');
+      await t.attribution.declareCapacity(direction(t.network.id), { agentId: agent.id, capacity: 1, reason: 'Une place chacun' });
+    }
+    const qs = [];
+    for (const who of ['a', 'b', 'c', 'd', 'e']) qs.push(await t.contact(who, 'Je souhaite vendre ma maison à Talant.'));
+    const rows = await Promise.all(qs.map((q) => t.attribution.attribute(q)));
+    expect(rows.map((r) => r!.agent_id).sort()).toEqual(agents.map((a) => a.id).sort());
+    for (const agent of agents) expect(await t.attribution.waiting(t.network.id, agent.id)).toBe(1);
+  });
+
+  it('[R681] des fiches réunies comptent une fois, et un rappel sur l’une d’elles libère la place', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    const q1 = await t.contact('a', 'Je souhaite vendre ma maison à Talant.');
+    const q2 = await t.contact('b', 'Je souhaite vendre ma maison à Talant.');
+    await t.attribution.attribute(q1);
+    await t.attribution.attribute(q2);
+    expect(await t.attribution.waiting(t.network.id, t.alex.id)).toBe(2);
+    const p1 = await t.personOf(q1);
+    const p2 = await t.personOf(q2);
+    await t.fiche.merge({ survivorId: p1, mergedId: p2, reason: 'même personne' });
+    expect(await t.attribution.waiting(t.network.id, t.alex.id)).toBe(1);
+    await t.store.recordMessage({
+      networkId: t.network.id,
+      agentId: t.alex.id,
+      personId: p2,
+      channel: 'phone',
+      direction: 'out',
+      authorKind: 'agent',
+      body: 'Appel passé.',
+      occurredAt: new Date(TUESDAY_10H + HOUR),
+    });
+    t.setClock(TUESDAY_10H + 2 * HOUR);
+    expect(await t.attribution.waiting(t.network.id, t.alex.id)).toBe(0);
+  });
+
   it('[R681] un client déjà suivi reste à son agent même plein ; la réattribution passe aussi l’agent plein', async () => {
     const t = await setup();
     await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
