@@ -387,17 +387,22 @@ globalThis.AIMMO_AVIS = function (t) {
     return [c.month, c.surface + ' m²', money(c.pricePerM2) + ' le m²', 'à ' + c.distance + ' m'].concat(where ? [where] : []).join(' · ');
   }
   // AU049b · une nouvelle version recalculée depuis celle-ci ; elle reste rangée, telle quelle [R692, R693].
+  // Un seul recalcul à la fois : deux écarts envoyés ensemble feraient deux versions sœurs, chacune sans l'autre [R692].
+  var recalc = false;
   function again(r, extra, done) {
+    if (recalc) { state('Un nouveau calcul est déjà en cours : attendez sa réponse.'); return Promise.resolve(false); }
+    recalc = true;
     var p = { kind: r.kind, previous: r.id };
     if (r.condition) p.condition = r.condition;
     Object.keys(extra).forEach(function (k) { p[k] = extra[k]; });
     state('Nouveau calcul…');
     var mine = ++seq;
     return send(base(), 'POST', p).then(function (res) {
+      recalc = false;
       if (res.gone || mine !== seq) return false;
       if (!res.ok) { state(why(res, 'La nouvelle version n’a pas pu être préparée.')); return false; }
       return load(done);
-    });
+    }, function () { recalc = false; state('La réponse n’est pas arrivée : rien n’est sûr. Relisez avant de recommencer.'); return false; });
   }
   function selection(box, r, busy) {
     var cited = (Array.isArray(r.cited) ? r.cited : []).filter(function (c) { return c && typeof c.id === 'string'; });

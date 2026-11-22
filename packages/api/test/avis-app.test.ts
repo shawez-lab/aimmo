@@ -410,6 +410,23 @@ describe('AU049b · l’écran de l’avis montre les ventes citées et permet d
     expect(t.byText('Retenir cet ajustement')).toBeUndefined();
   });
 
+  it('[R692] deux écarts cliqués avant la réponse : un seul part, le second attend la nouvelle version', async () => {
+    let release: (r: Response) => void = () => {};
+    const t = await run({ 'GET /v1/biens/b1/avis': ok([V1]), 'POST /v1/biens/b1/avis': () => new Promise<Response>((r) => { release = r; }) });
+    await t.open();
+    t.input('avis-motif-1').value = 'doublon';
+    t.input('avis-motif-2').value = 'prix_aberrant';
+    const buttons = t.body().all().filter((e) => e.tagName === 'button' && e.textContent === 'Écarter cette vente');
+    await t.click(buttons[0]);
+    await t.click(buttons[1]);
+    expect(t.calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+    expect(t.state()).toBe('Un nouveau calcul est déjà en cours : attendez sa réponse.');
+    t.table['GET /v1/biens/b1/avis'] = ok([V2, V1]);
+    release(Response.json({ ok: true, mode: 'essai', data: V2 }));
+    for (let i = 0; i < 12; i++) await new Promise((r) => setTimeout(r, 0));
+    expect(t.state()).toContain('Vente écartée');
+  });
+
   it('un avis motivé ne montre ni ventes à écarter ni ajustement', async () => {
     const t = await run({ 'GET /v1/biens/b1/avis': ok([{ ...V1, method: 'manual', cited: [] }]) });
     await t.open();
