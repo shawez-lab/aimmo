@@ -2,10 +2,13 @@
  * L'attribution d'un contact qualifié à l'agent de sa commune (M03, Q03), par des règles fixes écrites ici, sans IA,
  * les mêmes pour tous [R14, R25]. Elles sont rendues lisibles par `ATTRIBUTION_RULES`, pour l'application.
  *
- * Une personne exclue ou qui a demandé l'arrêt n'est jamais attribuée [R25]. Rien n'est envoyé à personne ici.
+ * Une personne exclue ou qui a demandé l'arrêt n'est jamais attribuée [R25]. Un agent absent ce jour-là (absence
+ * déclarée en M14, J09) n'est jamais candidat : le contact suit la règle de remplacement, son binôme d'abord [R680].
+ * Rien n'est envoyé à personne ici.
  */
 import { runBatch, type SqlDatabase, type SqlStatement } from '../db/sql.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
+import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { DEFAULT_COMMUNES } from './regles.ts';
@@ -48,8 +51,27 @@ export const ATTRIBUTION_RULES: readonly string[] = Object.freeze([
   'Si aucun agent ne couvre la commune, le contact va à la direction, jamais au hasard.',
   'Un contact qui n’a pas été rappelé dans le délai de la charte est réattribué une fois par délai, par la même règle, à un agent qui ne l’a pas encore eu ; s’il n’y en a plus, à la direction.',
   'Un nouveau message ne repousse jamais le délai en cours : tant que personne n’a rappelé, le délai le plus court fait foi.',
+  'Un agent absent ce jour-là, par une absence déclarée, n’est jamais candidat : un client qu’il suit va au binôme de son absence, s’il est en activité et présent, sinon à la direction ; la fiche reste à l’absent, qui la retrouve à son retour.',
+  'Un nouveau contact dont tous les agents de la commune sont absents va, par le même tirage fixe, au binôme présent de l’un d’eux, sinon à la direction.',
+  'Un contact en attente chez un agent qui devient absent est réattribué dès le premier passage, sans attendre la fin du délai, par la même règle.',
+  'Chaque agent écarté pour absence est noté avec l’absence qui l’a écarté.',
   'Aucune IA ne participe à l’attribution.',
 ]);
+
+const TIME_ZONE = 'Europe/Paris';
+
+/** L'absence qui écarte un agent aujourd'hui, et le binôme qui reprend [R680]. */
+interface AwayAgent {
+  absenceId: string;
+  coverId: string;
+}
+
+/** Un agent écarté pour absence, et son binôme quand c'est lui qui a reçu le contact. */
+interface Skipped {
+  agentId: string;
+  absenceId: string;
+  coverId: string | null;
+}
 
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 
@@ -142,11 +164,21 @@ export class Attribution {
 
     let agentId: string | null = null;
     let reason: AttributionReason;
+    let skipped: Skipped[] = [];
+    // Un client suivi par un absent va à son binôme, mais sa fiche reste à l'absent [R680].
+    let covering = false;
+    const away = await this.awayAgents(q.network_id);
     // L'agent qui suit déjà le client, sur toutes les fiches réunies : la fiche gardée d'abord.
     const followed = await this.followedBy(q.network_id, [root.agent_id, ...view.members.map((m) => m.agent_id)]);
     if (followed) {
-      agentId = followed;
       reason = 'already_followed';
+      const absence = away.get(followed);
+      if (!absence) agentId = followed;
+      else {
+        agentId = await this.coverOf(q.network_id, absence, away);
+        skipped = [{ agentId: followed, absenceId: absence.absenceId, coverId: agentId }];
+        covering = true;
+      }
     } else if (q.category === 'partner') {
       reason = 'no_zone';
     } else {
@@ -155,24 +187,29 @@ export class Attribution {
       const history = await this.history(ids);
       const tried = new Set(history.map((c) => c.agent_id).filter((id): id is string => id !== null));
       const commune = q.city ?? (await this.propertyCommune(q.property_id)) ?? (await this.lastCommune(history));
-      agentId = commune ? chooseAgent(root.id, await this.agentsOf(q.network_id, commune), tried) : null;
+      const picked = commune ? await this.pick(q.network_id, root.id, await this.agentsOf(q.network_id, commune), tried, away) : { agentId: null, skipped: [] };
+      agentId = picked.agentId;
+      skipped = picked.skipped;
       reason = agentId ? 'zone' : 'no_zone';
     }
 
     const hot = await this.db.first<{ temperature: string }>('SELECT temperature FROM contact_scores WHERE qualification_id = ?', [qualificationId]);
     const hours = hot?.temperature === 'hot' ? this.settings.hotCallbackHours : this.settings.otherCallbackHours;
-    // L'attribution et le passage de la fiche, tout ou rien : une coupure ne laisse jamais un agent sans accès.
+    // L'attribution, ses absences et le passage de la fiche, tout ou rien : une coupure ne laisse jamais un agent
+    // sans accès.
+    const attributionId = this.newId();
     const [inserted] = await runBatch(this.db, [
       {
         sql: `INSERT INTO attributions (id, network_id, person_id, qualification_id, agent_id, reason, callback_hours, replaces_id, created_at)
               VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?) ON CONFLICT (qualification_id) DO NOTHING`,
-        params: [this.newId(), q.network_id, root.id, qualificationId, agentId, reason, hours, this.now().toISOString()],
+        params: [attributionId, q.network_id, root.id, qualificationId, agentId, reason, hours, this.now().toISOString()],
       },
-      ...this.takeOver(root.id, ids, agentId, Boolean(followed)),
+      ...this.skippedRows(attributionId, q.network_id, skipped),
+      ...this.takeOver(root.id, ids, covering ? null : agentId, Boolean(followed)),
     ]);
     const row = await this.db.first<AttributionRow>('SELECT * FROM attributions WHERE qualification_id = ?', [qualificationId]);
     if (inserted?.changes === 1 && row) {
-      await this.log('attribution', root.id, { rule: 'R25', reason, toDirection: agentId === null, callbackHours: hours });
+      await this.log('attribution', root.id, { rule: 'R25', reason, toDirection: agentId === null, callbackHours: hours, ...this.absenceData(skipped) });
     }
     return row;
   }
@@ -191,9 +228,11 @@ export class Attribution {
     );
     const made: AttributionRow[] = [];
     const seen = new Set<string>();
+    const away = await this.awayAgents(networkId);
     for (const row of open) {
-      // Seule une ligne déjà échue peut porter le délai le plus court : les autres n'ont rien à décider.
-      if (Date.parse(row.created_at) + row.callback_hours * 3_600_000 > at.getTime()) continue;
+      // Seule une ligne déjà échue peut porter le délai le plus court : les autres n'ont rien à décider, sauf chez un
+      // agent absent aujourd'hui, qui ne garde rien en attente [R680].
+      if (Date.parse(row.created_at) + row.callback_hours * 3_600_000 > at.getTime() && !away.has(row.agent_id!)) continue;
       const view = await this.fiche.view(row.person_id);
       const root = view.person;
       const ids = view.members.map((m) => m.id);
@@ -203,12 +242,26 @@ export class Attribution {
       seen.add(a.id);
       if (await this.excluded(ids)) continue;
       const history = await this.history(ids);
+      const absence = away.get(a.agent_id);
       const delay = await this.openDelay(a, history, ids);
-      if (delay === null || delay.deadline > at.getTime()) continue;
+      // Un agent qui a rappelé depuis n'a rien en attente, absent ou non.
+      if (delay === null || (delay.deadline > at.getTime() && !absence)) continue;
 
       const tried = new Set(history.map((c) => c.agent_id).filter((id): id is string => id !== null));
-      const commune = await this.lastCommune(history);
-      const next = commune ? chooseAgent(root.id, await this.agentsOf(networkId, commune), tried) : null;
+      let next: string | null = null;
+      let skipped: Skipped[] = [];
+      if (absence) {
+        // L'absent passe la main à son binôme d'abord, s'il ne l'a pas déjà eu.
+        const cover = await this.coverOf(networkId, absence, away);
+        if (cover !== null && !tried.has(cover)) next = cover;
+        skipped = [{ agentId: a.agent_id, absenceId: absence.absenceId, coverId: next }];
+      }
+      if (next === null) {
+        const commune = await this.lastCommune(history);
+        const picked = commune ? await this.pick(networkId, root.id, await this.agentsOf(networkId, commune), tried, away) : { agentId: null, skipped: [] };
+        next = picked.agentId;
+        skipped = [...skipped, ...picked.skipped.filter((s) => s.agentId !== a.agent_id)];
+      }
       const id = this.newId();
       const [inserted] = await runBatch(this.db, [
         {
@@ -216,15 +269,22 @@ export class Attribution {
                 VALUES (?, ?, ?, NULL, ?, 'reassigned', ?, ?, ?) ON CONFLICT (replaces_id) DO NOTHING`,
           params: [id, networkId, root.id, next, delay.hours, a.id, at.toISOString()],
         },
+        ...this.skippedRows(id, networkId, skipped),
         // Toutes les fiches réunies que suivait l'agent, ou un agent parti, changent de mains : jamais deux agents.
-        {
-          sql: `UPDATE persons SET agent_id = ?, updated_at = ? WHERE id IN (${placeholders(ids.length)})
+        // Les fiches d'un absent lui restent : il les retrouve à son retour, son binôme les lit pendant l'absence.
+        absence
+          ? {
+              sql: `UPDATE persons SET agent_id = ?, updated_at = ? WHERE id IN (${placeholders(ids.length)}) AND agent_id IN (SELECT id FROM agents WHERE status = 'left')`,
+              params: [next, at.toISOString(), ...ids],
+            }
+          : {
+              sql: `UPDATE persons SET agent_id = ?, updated_at = ? WHERE id IN (${placeholders(ids.length)})
                 AND (agent_id = ? OR agent_id IN (SELECT id FROM agents WHERE status = 'left'))`,
-          params: [next, at.toISOString(), ...ids, a.agent_id],
-        },
+              params: [next, at.toISOString(), ...ids, a.agent_id],
+            },
       ]);
       if (inserted?.changes !== 1) continue;
-      await this.log('attribution.reattribuee', root.id, { rule: 'R25', toDirection: next === null, tries: tried.size });
+      await this.log('attribution.reattribuee', root.id, { rule: 'R25', toDirection: next === null, tries: tried.size, ...this.absenceData(skipped) });
       const made1 = await this.db.first<AttributionRow>('SELECT * FROM attributions WHERE id = ?', [id]);
       if (made1) made.push(made1);
     }
@@ -313,6 +373,77 @@ export class Attribution {
       [networkId, commune],
     );
     return rows.map((r) => r.agent_id);
+  }
+
+  /**
+   * Les agents absents aujourd'hui (jour de Paris), par une absence déclarée en M14 : pour chacun, la dernière absence
+   * déclarée qui couvre ce jour, et son binôme [R680].
+   */
+  private async awayAgents(networkId: string): Promise<Map<string, AwayAgent>> {
+    const day = localTime(this.now(), TIME_ZONE).date;
+    const rows = await this.db.all<{ id: string; agent_id: string; cover_agent_id: string }>(
+      `SELECT id, agent_id, cover_agent_id FROM agent_absences WHERE network_id = ? AND from_day <= ? AND until_day >= ?
+       ORDER BY declared_at, rowid`,
+      [networkId, day, day],
+    );
+    const away = new Map<string, AwayAgent>();
+    for (const r of rows) away.set(r.agent_id, { absenceId: r.id, coverId: r.cover_agent_id });
+    return away;
+  }
+
+  /** Le binôme de l'absence, s'il est en activité et présent lui-même ; null sinon [R680]. */
+  private async coverOf(networkId: string, absence: AwayAgent, away: ReadonlyMap<string, AwayAgent>): Promise<string | null> {
+    if (away.has(absence.coverId)) return null;
+    return this.followedBy(networkId, [absence.coverId]);
+  }
+
+  /**
+   * Le tirage fixe parmi les agents présents de la commune ; si tous ceux qui restent sont absents, parmi leurs binômes
+   * présents, par le même tirage ; sinon la direction. Rend aussi les absents écartés [R25, R680].
+   */
+  private async pick(
+    networkId: string,
+    rootId: string,
+    candidates: readonly string[],
+    tried: ReadonlySet<string>,
+    away: ReadonlyMap<string, AwayAgent>,
+  ): Promise<{ agentId: string | null; skipped: Skipped[] }> {
+    const absent = [...new Set(candidates)].filter((id) => away.has(id) && !tried.has(id)).sort();
+    const chosen = chooseAgent(
+      rootId,
+      candidates.filter((id) => !away.has(id)),
+      tried,
+    );
+    if (chosen !== null) return { agentId: chosen, skipped: absent.map((id) => ({ agentId: id, absenceId: away.get(id)!.absenceId, coverId: null })) };
+    const covers: string[] = [];
+    for (const id of absent) {
+      const cover = await this.coverOf(networkId, away.get(id)!, away);
+      if (cover !== null) covers.push(cover);
+    }
+    const viaCover = chooseAgent(rootId, covers, tried);
+    return {
+      agentId: viaCover,
+      skipped: absent.map((id) => {
+        const absence = away.get(id)!;
+        return { agentId: id, absenceId: absence.absenceId, coverId: viaCover !== null && absence.coverId === viaCover ? viaCover : null };
+      }),
+    };
+  }
+
+  /** Les absents écartés, rangés avec l'attribution, seulement si elle a bien été écrite [R17, R680]. */
+  private skippedRows(attributionId: string, networkId: string, skipped: readonly Skipped[]): SqlStatement[] {
+    const at = this.now().toISOString();
+    return skipped.map((s) => ({
+      sql: `INSERT INTO attribution_absences (attribution_id, network_id, absent_agent_id, absence_id, cover_agent_id, created_at)
+            SELECT ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM attributions WHERE id = ?)`,
+      params: [attributionId, networkId, s.agentId, s.absenceId, s.coverId, at, attributionId],
+    }));
+  }
+
+  /** Au journal, des nombres : combien d'absents écartés, et si un binôme a repris [R13]. */
+  private absenceData(skipped: readonly Skipped[]): Record<string, number | boolean> {
+    if (skipped.length === 0) return {};
+    return { absentSkipped: skipped.length, byCover: skipped.some((s) => s.coverId !== null) };
   }
 
   private async propertyCommune(propertyId: string | null): Promise<string | null> {
