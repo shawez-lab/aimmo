@@ -9,6 +9,7 @@ import { runBatch, type SqlDatabase, type SqlStatement } from '../db/sql.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { callbackDeadline, DEFAULT_CALLBACK_WINDOW, type CallbackWindow } from './delai-rappel.ts';
 import { DEFAULT_COMMUNES } from './regles.ts';
 
 export type AttributionReason = 'zone' | 'already_followed' | 'no_zone' | 'reassigned';
@@ -31,12 +32,15 @@ export interface AttributionSettings {
   hotCallbackHours: number;
   otherCallbackHours: number;
   communes: readonly string[];
+  /** Les heures du service de rappel : le délai ne court que pendant elles [R682]. */
+  callbackWindow?: CallbackWindow;
 }
 
 export const DEFAULT_ATTRIBUTION_SETTINGS: AttributionSettings = Object.freeze({
   hotCallbackHours: 8,
   otherCallbackHours: 24,
   communes: DEFAULT_COMMUNES,
+  callbackWindow: DEFAULT_CALLBACK_WINDOW,
 });
 
 /** Les règles, telles que l'application les publie, les mêmes pour tous. */
@@ -49,6 +53,7 @@ export const ATTRIBUTION_RULES: readonly string[] = Object.freeze([
   'Un agent dont la capacité déclarée est atteinte (0 : aucun nouveau contact) ne reçoit pas de nouveau contact : le tirage passe au suivant, dans l’ordre alphabétique des identifiants à partir de l’agent tiré ; si tous sont pleins, le contact va à la direction. La capacité compte les contacts attribués à l’agent qui attendent encore son rappel.',
   'Si aucun agent ne couvre la commune, le contact va à la direction, jamais au hasard.',
   'Un contact qui n’a pas été rappelé dans le délai de la charte est réattribué une fois par délai, par la même règle, à un agent qui ne l’a pas encore eu ; s’il n’y en a plus, à la direction.',
+  'Le délai ne court que pendant le service de rappel, du lundi au samedi de 8 h à 20 h, heure de Paris : il part de la première heure d’ouverture, il ne court ni le dimanche ni un jour férié, et une limite qui tombe hors de ces heures passe à l’ouverture suivante. Personne ne perd un contact pendant que le rappel est fermé.',
   'Un nouveau message ne repousse jamais le délai en cours : tant que personne n’a rappelé, le délai le plus court fait foi.',
   'Aucune IA ne participe à l’attribution.',
 ]);
@@ -298,7 +303,8 @@ export class Attribution {
     const made: AttributionRow[] = [];
     const seen = new Set<string>();
     for (const row of open) {
-      // Seule une ligne déjà échue peut porter le délai le plus court : les autres n'ont rien à décider.
+      // Seule une ligne déjà échue en heures écoulées peut porter le délai le plus court : la limite du service de rappel
+      // n'est jamais plus tôt [R682]. Les autres n'ont rien à décider.
       if (Date.parse(row.created_at) + row.callback_hours * 3_600_000 > at.getTime()) continue;
       const view = await this.fiche.view(row.person_id);
       const root = view.person;
@@ -596,7 +602,7 @@ export class Attribution {
       if (row.agent_id !== current.agent_id) break;
       const created = Date.parse(row.created_at);
       if (calledAt !== null && calledAt >= created) break;
-      deadline = Math.min(deadline, created + row.callback_hours * 3_600_000);
+      deadline = Math.min(deadline, callbackDeadline(created, row.callback_hours, this.settings.callbackWindow ?? DEFAULT_CALLBACK_WINDOW));
       hours = Math.min(hours, row.callback_hours);
     }
     return Number.isFinite(deadline) ? { deadline, hours } : null;

@@ -14,7 +14,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { PublicFacts } from './collecte.ts';
 import { DEFAULT_MANUAL_SETTINGS, MANUAL_REASON_TEXT, REFERENCE_PROOFS, manualRangeAllowed, perM2Shown, perM2Text, referencesMedian, type ManualInput, type ManualSettings } from './avis-manuel.ts';
-import type { DataInfo, NoRangeReason, RangeResult } from './fourchette.ts';
+import { ADJUSTMENT_METHOD, AGENT_ADJUSTMENT_MOTIVES, type Adjustment, type DataInfo, type NoRangeReason, type RangeResult } from './fourchette.ts';
 
 type Range = Extract<RangeResult, { ok: true }>;
 
@@ -62,7 +62,7 @@ export interface ValuationBrief {
   medianPerM2: number;
   comparables: number;
   radius: number;
-  adjustments: readonly { label: string; pct: number }[];
+  adjustments: readonly Adjustment[];
   energyClass: string | null;
   risks: readonly string[];
   dataMonth: string | null;
@@ -241,7 +241,7 @@ export class AvisDeValeur {
       `Méthode : ${b.comparables} ventes réelles de biens comparables, situées à moins de ${b.radius} m, dont la plus récente date de ${monthLabel(b.latestUsedSale)}. Leur prix médian est de ${euros(b.medianPerM2)} le m², soit ${euros(b.pricePerM2)} le m² pour votre bien une fois ses caractéristiques prises en compte.`,
     ];
     if (b.adjustments.length > 0) {
-      lines.push(`Caractéristiques prises en compte : ${b.adjustments.map((a) => `${a.label.toLowerCase()} ${a.pct > 0 ? '+' : '-'}${Math.abs(a.pct)} %`).join(', ')}.`);
+      lines.push(`Caractéristiques prises en compte : ${b.adjustments.map((a) => `${a.label.toLowerCase()} ${a.pct > 0 ? '+' : a.pct < 0 ? '-' : ''}${Math.abs(a.pct)} %`).join(', ')}.`);
     }
     if (b.energyClass) lines.push(`Diagnostic énergétique connu : classe ${b.energyClass}.`);
     if (b.risks.length > 0) lines.push(`Risques signalés sur la commune : ${b.risks.join(', ').toLowerCase()}.`);
@@ -259,6 +259,11 @@ export class AvisDeValeur {
       // La fenêtre de temps et sa raison, toujours dites [R691].
       `Seules les ventes depuis ${monthLabel(b.window.from)} sont retenues, soit ${b.window.months} mois. ${b.window.justification}${b.window.excludedOld > 0 ? ` ${b.window.excludedOld === 1 ? 'Une vente plus ancienne a été écartée.' : `${b.window.excludedOld} ventes plus anciennes ont été écartées.`}` : ''}`,
       ...(b.recentMissing ? ['Les ventes des derniers mois ne sont pas encore publiées : votre agent complète avec le marché qu’il connaît.'] : []),
+      // La méthode du barème et son périmètre, puis les coefficients que l'agent a retenus, avec leur motif [R693].
+      ...(b.adjustments.some((a) => a.source !== 'agent') ? [ADJUSTMENT_METHOD] : []),
+      ...(b.adjustments.some((a) => a.source === 'agent')
+        ? [`Votre agent a retenu ses propres ajustements : ${b.adjustments.filter((a) => a.source === 'agent').map((a) => `${a.label.toLowerCase()} ${a.pct > 0 ? '+' : a.pct < 0 ? '-' : ''}${Math.abs(a.pct)} %, ${a.motive ? AGENT_ADJUSTMENT_MOTIVES[a.motive] : 'motif non dit'}`).join(' ; ')}.`]
+        : []),
       // Les ventes que l'agent a écartées, et pourquoi : toujours dit [R692].
       ...(b.excludedByAgent.length > 0
         ? [`${b.excludedByAgent.length === 1 ? 'Votre agent a écarté une vente' : `Votre agent a écarté ${b.excludedByAgent.length} ventes`} du calcul : ${[...new Set(b.excludedByAgent)].map((r) => SALE_EXCLUSION_REASONS[r]).join(', ')}.`]
