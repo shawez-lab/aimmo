@@ -135,7 +135,8 @@ const FEATURES: { terms: string[]; field: keyof ListingFacts | null; has: (f: Li
   { terms: ['cour', 'courette'], field: 'outdoor', has: (f) => f.outdoor.includes('cour') },
   { terms: ['ascenseur'], field: 'elevator', has: (f) => f.elevator === true },
   { terms: ['sans ascenseur'], field: 'elevator', has: (f) => f.elevator === false },
-  { terms: ['parking', 'parkings', 'stationnement', 'garage', 'garages', 'box'], field: 'parkingSpaces', has: (f) => (f.parkingSpaces ?? 0) > 0 },
+  // Un garage dit sur la fiche (AU051) est aussi une place : il prouve « garage » comme un nombre de places.
+  { terms: ['parking', 'parkings', 'stationnement', 'garage', 'garages', 'box'], field: 'parkingSpaces', has: (f) => (f.parkingSpaces ?? 0) > 0 || (f.amenities ?? []).includes('garage') },
   { terms: ['rez-de-chaussée', 'rez de chaussée'], field: 'floor', has: (f) => f.floor === 0 },
   { terms: ['dernier étage'], field: 'floorsTotal', has: (f) => f.floor !== null && f.floor === f.floorsTotal },
   { terms: ['chauffage collectif'], field: 'heating', has: (f) => f.heating === 'collectif' },
@@ -152,6 +153,8 @@ const FEATURES: { terms: string[]; field: keyof ListingFacts | null; has: (f: Li
   { terms: ['grenier', 'combles'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('grenier') },
   { terms: ['véranda'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('veranda') },
   { terms: ['climatisation', 'climatisé', 'climatisée'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('climatisation') },
+  // AU051 · le plain-pied, dit sur la fiche seulement.
+  { terms: ['plain-pied', 'plain pied', 'de plain-pied'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('plain_pied') },
   // Un état nié (« non rénové », « jamais refait », « pas en bon état ») ne se prouve pas par la fiche : jamais de source,
   // et il se lit avant le terme positif (AU061).
   {
@@ -171,7 +174,7 @@ const FEATURES: { terms: string[]; field: keyof ListingFacts | null; has: (f: Li
   // L'absence d'un équipement ne se prouve pas par la fiche (une case vide veut dire « je ne sais pas ») : « sans piscine »
   // n'a jamais de source, et se lit avant « piscine » (AU061).
   {
-    terms: ['piscine', 'cave', 'cheminée', 'grenier', 'combles', 'véranda', 'climatisation'].flatMap((t) => [`sans ${t}`, `pas de ${t}`, `aucune ${t}`, `ni ${t}`]),
+    terms: ['piscine', 'cave', 'cheminée', 'grenier', 'combles', 'véranda', 'climatisation', 'garage', 'plain-pied'].flatMap((t) => [`sans ${t}`, `pas de ${t}`, `aucune ${t}`, `ni ${t}`]),
     field: null,
     has: () => false,
   },
@@ -406,7 +409,7 @@ const HEATING_LABEL: Record<HeatingKind, string | null> = {
   autre: null,
 };
 const OUTDOOR_LABEL: Record<OutdoorKind, string> = { balcon: 'balcon', terrasse: 'terrasse', jardin: 'jardin', cour: 'cour' };
-const AMENITY_LABEL: Record<Amenity, string> = { piscine: 'piscine', cave: 'cave', cheminee: 'cheminée', grenier: 'grenier', veranda: 'véranda', climatisation: 'climatisation' };
+const AMENITY_LABEL: Record<Amenity, string> = { piscine: 'piscine', cave: 'cave', cheminee: 'cheminée', grenier: 'grenier', veranda: 'véranda', climatisation: 'climatisation', garage: 'garage', plain_pied: 'plain-pied' };
 const CONDITION_LABEL: Record<Condition, string> = { neuf: 'Logement neuf.', refait_a_neuf: 'Refait à neuf.', bon_etat: 'En bon état.', travaux_a_prevoir: 'Travaux à prévoir.', a_renover: 'À rénover.' };
 
 /** Le texte de secours, fait par le code depuis la fiche seule : sobre, vrai, et qui passe toujours le contrôle. */

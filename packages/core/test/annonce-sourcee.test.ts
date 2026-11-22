@@ -74,6 +74,26 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
     expect(codes('Sans ascenseur.', { ...FACTS, elevator: false })).toEqual([]);
   });
 
+  it('[R47] AU051 · garage et plain-pied dits sur la fiche : le texte de secours passe, la phrase garde sa source, et la perd avec l’équipement', () => {
+    const rich: ListingFacts = { ...FACTS, kind: 'home', parkingSpaces: null, amenities: ['garage', 'plain_pied'] };
+    const text = fallbackListing(rich);
+    expect(text.body).toContain('Garage et plain-pied.');
+    const r = traceListing(text.title, text.body, rich);
+    expect(r.ok).toBe(true);
+    const sources = r.sentences.flatMap((x) => x.sources).filter((x) => x.value === 'garage' || x.value === 'plain-pied');
+    expect(sources.map((x) => `${String(x.field)}:${x.value}`).sort()).toEqual(['amenities:plain-pied', 'parkingSpaces:garage']);
+    // L'équipement retiré de la fiche : la source rangée ne tient plus, la phrase ne se publie plus.
+    const bare: ListingFacts = { ...rich, amenities: [] };
+    for (const source of sources) expect(bindingHolds(source, bare), source.value).toBe(false);
+    expect(traceListing('Maison à Dijon', 'De plain-pied.', bare).ok).toBe(false);
+    expect(traceListing('Maison à Dijon', 'Avec garage.', bare).ok).toBe(false);
+    // Une place de parking prouve toujours « garage », comme avant.
+    expect(traceListing('Maison à Dijon', 'Avec garage.', FACTS).ok).toBe(true);
+    // L'absence ne se prouve pas.
+    expect(traceListing('Maison à Dijon', 'Sans garage.', rich).ok).toBe(false);
+    expect(traceListing('Maison à Dijon', 'Pas de plain-pied.', rich).ok).toBe(false);
+  });
+
   it('[R47] AU061 · piscine, cave, cheminée et état du bien se disent quand la fiche les porte, et alors seulement', () => {
     const rich: ListingFacts = { ...FACTS, amenities: ['piscine', 'cave', 'cheminee'], condition: 'travaux_a_prevoir' };
     const text = fallbackListing(rich);

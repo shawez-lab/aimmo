@@ -274,10 +274,11 @@ describeWithSqlite('Q03 · attribution à l’agent de la commune', () => {
     });
     t.setClock(TUESDAY_10H + 20 * HOUR);
     await t.attribution.attribute(await t.contact('zoe', 'Une question de plus sur ma maison.'));
-    // Le premier délai est clos par l'appel : 24 heures comptent depuis le nouveau message.
-    t.setClock(TUESDAY_10H + 30 * HOUR);
+    // Le premier délai est clos par l'appel : 24 heures comptent depuis le nouveau message, arrivé le mercredi à 6 h,
+    // donc à partir de l'ouverture de 8 h [R682].
+    t.setClock(TUESDAY_10H + 45 * HOUR);
     expect(await t.attribution.reassignOverdue(t.network.id)).toEqual([]);
-    t.setClock(TUESDAY_10H + 44 * HOUR);
+    t.setClock(TUESDAY_10H + 46 * HOUR);
     expect(await t.attribution.reassignOverdue(t.network.id)).toHaveLength(1);
   });
 

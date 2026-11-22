@@ -509,16 +509,17 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#772, 7c0de947), migration `4097` (`agent_capacities`, `attribution_capacity`), R681. Capacité déclarée par l'agent pour lui ou par la direction (0 à 200, ou sans plafond, avec raison, versions en ajout seul) ; un agent plein est passé, file de secours fixe dans l'ordre des identifiants à partir du tiré, puis direction ; client déjà suivi gardé ; charge = fiches entières (réunies comprises) dont la dernière attribution est à l'agent sans message d'un agent depuis, revérifiée par la base dans le lot qui attribue ; égalité à la milliseconde lue prudemment (pas de `rowid`, R633). Routes `GET`/`POST /v1/attribution/capacites`. Codex : 3 P0 (course à l'écriture, fiches réunies, file arrêtée trop tôt) corrigés, 1 P0 (égalité d'heure) traité par la lecture prudente, puis rien. Restent : l'écran de déclaration ; la disponibilité de rappel par heures d'ouverture (AU042).
 
 ### AU042 · Le délai de rappel court en heures écoulées
-- Statut : en cours
+- Statut : fait (2026-11-22)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A042 (majeur), endroit : C/qualification/attribution.ts, `callback_hours`, réattribution.
 - Constat de l'audit : Le délai de rappel court en heures écoulées : un contact du samedi soir peut changer d’agent pendant une période où le rappel est fermé.
 - Objectif : Le délai tient compte des heures d’ouverture et des disponibilités de service avant de déclencher une réattribution.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : fusionnée (#775, 6ff9c1f2), `packages/core/src/qualification/delai-rappel.ts`, R682. Décidé, lecture prudente (le cahier dit seulement « délai de la charte de service ») : service de rappel du lundi au samedi, 8 h à 20 h, Paris, hors jours fériés (réglage `callbackWindow`) ; le délai part de la première ouverture, ne court pas un jour fermé, une limite hors des heures passe à l'ouverture suivante ; la nuit d'un jour ouvert compte, pour qu'un contact ne reste pas plus de deux jours sans rappel ; jamais plus tôt que l'heure écoulée. La réattribution, la tâche « rappeler », la liste des contacts chauds et la fiche de l'agent lisent la même limite, recalculée à la lecture (rien n'est réécrit). Codex : 4 P0 corrigés en trois tours (tâches déjà rangées, changement d'heure, réglage transmis à la fiche, heures élargies), puis rien. Restent : le réglage des heures par réseau à l'écran ; les absences d'agent (AU040).
 
 ### AU043 · Le Worker ne branche pas de fournisseur de boîte Gmail ou Outlook pour le tri annoncé
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A043 (majeur), endroit : A/worker.ts ; H55 ; module boîte mail.
 - Constat de l'audit : Le Worker ne branche pas de fournisseur de boîte Gmail ou Outlook pour le tri annoncé.
@@ -596,7 +597,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU050 · Les décotes et surcotes sont des pourcentages fixes sans calibration locale attachée au calcul
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#780, `cdaf49e9`). Constat confirmé (barème fixe, ni méthode ni périmètre dits). Décidé : pas de calibration locale annoncée (DVF ne dit ni l'état ni l'étage) ; la méthode et le périmètre du barème sont dits dans le pied de l'avis ; `previous` + `adjust` (caractéristique du barème, -15 à +15 %, motif d'une liste fermée, 5 au plus) : nouvelle version recalculée, dite dans l'avis et la page imprimée ; R693. Codex rien ; vérification verte. Écran : AU049b.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A050 (majeur), endroit : C/estimation/fourchette.ts, `adjustmentsFor`.
 - Constat de l'audit : Les décotes et surcotes sont des pourcentages fixes sans calibration locale attachée au calcul.
@@ -614,7 +616,7 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU052 · Je ressaisis l’adresse à chaque préparation, puisque le parcours la collecte puis l’oublie
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A052 (majeur), endroit : UI/avis.ts ; C/estimation/preparation-avis.ts.
 - Constat de l'audit : Je ressaisis l’adresse à chaque préparation, puisque le parcours la collecte puis l’oublie.

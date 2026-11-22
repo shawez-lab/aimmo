@@ -18,6 +18,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { AvisDeValeur, euros, type CitedSale, type ValuationReport } from './avis.ts';
 import { perM2Text } from './avis-manuel.ts';
+import { AGENT_ADJUSTMENT_MOTIVES } from './fourchette.ts';
 import { renderMarketSection, type MarketSection } from './marche-avis.ts';
 
 /** Ce que l'avis garde du calcul et que la page montre. */
@@ -26,7 +27,7 @@ interface PrintedFacts {
   comparables: number;
   radius: number;
   cited: CitedSale[];
-  adjustments: { label: string; pct: number }[];
+  adjustments: { label: string; pct: number; source?: 'agent'; motive?: string }[];
   /** L'avis motivé par les ventes vérifiées de l'agent [R690]. */
   method?: 'manual';
   references?: { month: string; surface: number; pricePerM2: number; proofLabel: string; street?: string; town?: string }[];
@@ -87,7 +88,7 @@ export function renderValuationPrint(input: ValuationPrintInput): string {
     .join('');
   const adjustments =
     facts.adjustments.length > 0
-      ? `<h2>Caractéristiques prises en compte</h2><ul>${facts.adjustments.map((a) => `<li>${escapeHtml(a.label)} : ${a.pct > 0 ? '+' : '-'}${decimal(Math.abs(a.pct))} %</li>`).join('')}</ul>`
+      ? `<h2>Caractéristiques prises en compte</h2><ul>${facts.adjustments.map((a) => `<li>${escapeHtml(a.label)} : ${a.pct > 0 ? '+' : a.pct < 0 ? '-' : ''}${decimal(Math.abs(a.pct))} %${a.source === 'agent' ? ` — retenu par votre agent, ${escapeHtml(a.motive && Object.hasOwn(AGENT_ADJUSTMENT_MOTIVES, a.motive) ? AGENT_ADJUSTMENT_MOTIVES[a.motive as keyof typeof AGENT_ADJUSTMENT_MOTIVES] : 'motif non dit')}` : ''}</li>`).join('')}</ul>`
       : '';
   const rows = facts.cited
     .map((c) => {
