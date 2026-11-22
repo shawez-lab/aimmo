@@ -59,6 +59,7 @@ export function eraOf(buildYear: number | null): Era | null {
 export function featuresOf(sheet: PropertySheet | null): Partial<EstimatedProperty> {
   if (!sheet) return {};
   const c = sheet.characteristics;
+  const amenities: readonly string[] = c.amenities ?? [];
   return {
     era: eraOf(c.buildYear),
     floor: c.floor,
@@ -67,6 +68,11 @@ export function featuresOf(sheet: PropertySheet | null): Partial<EstimatedProper
     balcony: c.outdoor.includes('balcon'),
     terrace: c.outdoor.includes('terrasse'),
     parking: (c.parkingSpaces ?? 0) > 0,
+    // Les équipements de la fiche que le calcul sait ajuster (AU051) : dits, ils comptent ; non dits, rien [R10].
+    ...(amenities.includes('piscine') ? { pool: true } : {}),
+    ...(amenities.includes('cave') ? { cellar: true } : {}),
+    ...(amenities.includes('garage') ? { garage: true, garageBox: true } : {}),
+    ...(amenities.includes('plain_pied') ? { singleStorey: true } : {}),
     ...(c.elevator !== null ? { elevator: c.elevator } : {}),
     ...(sheet.energy ? { energyClass: sheet.energy.energyClass } : {}),
   };

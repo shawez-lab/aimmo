@@ -406,7 +406,7 @@ const HEATING_LABEL: Record<HeatingKind, string | null> = {
   autre: null,
 };
 const OUTDOOR_LABEL: Record<OutdoorKind, string> = { balcon: 'balcon', terrasse: 'terrasse', jardin: 'jardin', cour: 'cour' };
-const AMENITY_LABEL: Record<Amenity, string> = { piscine: 'piscine', cave: 'cave', cheminee: 'cheminée', grenier: 'grenier', veranda: 'véranda', climatisation: 'climatisation' };
+const AMENITY_LABEL: Record<Amenity, string> = { piscine: 'piscine', cave: 'cave', cheminee: 'cheminée', grenier: 'grenier', veranda: 'véranda', climatisation: 'climatisation', garage: 'garage', plain_pied: 'plain-pied' };
 const CONDITION_LABEL: Record<Condition, string> = { neuf: 'Logement neuf.', refait_a_neuf: 'Refait à neuf.', bon_etat: 'En bon état.', travaux_a_prevoir: 'Travaux à prévoir.', a_renover: 'À rénover.' };
 
 /** Le texte de secours, fait par le code depuis la fiche seule : sobre, vrai, et qui passe toujours le contrôle. */
