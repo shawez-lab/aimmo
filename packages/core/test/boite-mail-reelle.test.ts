@@ -105,7 +105,7 @@ describe('Outlook réel derrière MailboxProvider [R683]', () => {
     expect(got[1]).toMatchObject({ direction: 'out', to: ['client@exemple.test'], body: 'Merci.' });
     expect(h.calls.every((c) => c.method === 'GET' || c.url.startsWith('https://login.microsoftonline.com/common/'))).toBe(true);
     const tokenCall = h.calls.find((c) => c.url.startsWith('https://login.microsoftonline.com/'))!;
-    expect(new URLSearchParams(tokenCall.body!).get('scope')).toBe('offline_access https://graph.microsoft.com/Mail.Read');
+    expect(new URLSearchParams(tokenCall.body!).get('scope')).toBe('offline_access https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/User.Read');
   });
 
   it('un dossier coupé : rien de plus récent que son dernier mail n’est rendu, le curseur ne saute rien [R18]', async () => {
@@ -259,5 +259,18 @@ describe('jeu de caractères, pages écartées, mail de l’agent déplacé (AU0
       fakeOutlook([{ id: 'o-1', threadId: 'c', at: ago(DAY), from: 'alias@exemple.test', to: ['client@exemple.test'], folder: 'archive', text: 'Ma réponse.' }]),
     ).receivedSince('agent-1', ago(2 * DAY));
     expect(got[0]).toMatchObject({ direction: 'out', to: ['client@exemple.test'] });
+  });
+});
+
+describe('entités du HTML et copies cachées (AU043, Codex)', () => {
+  it('les entités nommées et chiffrées sont rendues, pour que l’arrêt soit lu [R04]', () => {
+    expect(htmlText('<p>D&eacute;sinscription &#233;&#xE9; &laquo;&nbsp;stop&nbsp;&raquo; &rsquo; &inconnue;</p>')).toBe('Désinscription éé « stop » ’ &inconnue;');
+  });
+
+  it('un mail de l’agent en copie cachée seule garde ses destinataires, chez Gmail comme chez Outlook', async () => {
+    const g = await gmailOf(fakeGmail([{ id: 'g-1', threadId: 'f', at: ago(DAY), from: 'agent@exemple.test', to: [], bcc: ['client@exemple.test'], sent: true, text: 'x' }])).receivedSince('agent-1', ago(2 * DAY));
+    expect(g[0]).toMatchObject({ direction: 'out', to: ['client@exemple.test'] });
+    const o = await outlookOf(fakeOutlook([{ id: 'o-1', threadId: 'c', at: ago(DAY), from: 'agent@exemple.test', to: [], bcc: ['client@exemple.test'], sent: true, text: 'x' }])).receivedSince('agent-1', ago(2 * DAY));
+    expect(o[0]).toMatchObject({ direction: 'out', to: ['client@exemple.test'] });
   });
 });

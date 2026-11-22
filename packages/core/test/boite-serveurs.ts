@@ -34,6 +34,8 @@ export interface FakeMail {
   textApart?: boolean;
   /** Gmail : le texte en ISO-8859-1, déclaré dans l'en-tête de sa partie. */
   latin1?: boolean;
+  /** Les destinataires en copie cachée. */
+  bcc?: string[];
   text?: string;
   html?: string;
   attachments?: { name: string; type: string; bytes: Uint8Array }[];
@@ -90,8 +92,9 @@ export function fakeGmail(mails: FakeMail[], faults: Faults = {}) {
       if (!m) return json(404, { error: { status: 'NOT_FOUND' } });
       const headers = [
         { name: 'From', value: `"Client, Inventé" <${m.from}>` },
-        { name: 'To', value: (m.to ?? ['agent@exemple.test']).map((t, i) => (i === 0 ? `Quelqu'un <${t}>` : t)).join(', ') },
+        ...((m.to ?? ['agent@exemple.test']).length > 0 ? [{ name: 'To', value: (m.to ?? ['agent@exemple.test']).map((t, i) => (i === 0 ? `Quelqu'un <${t}>` : t)).join(', ') }] : []),
         { name: 'Subject', value: 'Objet inventé' },
+        ...(m.bcc ? [{ name: 'Bcc', value: m.bcc.join(', ') }] : []),
       ];
       const parts = [
         ...(m.text !== undefined && m.latin1 ? [{ mimeType: 'text/plain', filename: '', headers: [{ name: 'Content-Type', value: 'text/plain; charset="ISO-8859-1"' }], body: { size: m.text.length, data: b64url(Uint8Array.from([...m.text].map((c) => c.charCodeAt(0)))) } }] : []),
@@ -153,6 +156,7 @@ export function fakeOutlook(mails: FakeMail[], faults: Faults = {}) {
           from: { emailAddress: { name: 'Client Inventé', address: m.from } },
           toRecipients: (m.to ?? ['agent@exemple.test']).map((a) => ({ emailAddress: { name: 'X', address: a } })),
           ccRecipients: [],
+          bccRecipients: (m.bcc ?? []).map((a) => ({ emailAddress: { name: 'Y', address: a } })),
           body: m.html !== undefined ? { contentType: 'html', content: m.html } : { contentType: 'text', content: m.text ?? '' },
         })),
         ...(skipN + top < all.length ? { '@odata.nextLink': `${url.replace(/&\$skip=\d+/, '')}&$skip=${skipN + top}` } : {}),

@@ -6,7 +6,7 @@
  * rafraîchissement de sa boîte. Sinon aucune boîte n'est lue [R683].
  *
  * - le jeton d'accès est tiré du jeton de rafraîchissement, gardé en mémoire jusqu'à une minute avant sa fin ; seule la
- *   lecture est demandée (`gmail.readonly`, `Mail.Read`) : aucune adresse ici n'envoie, ne déplace ni n'efface un mail ;
+ *   lecture est demandée (`gmail.readonly` ; `Mail.Read`, et `User.Read` pour les adresses de la boîte) : aucune adresse ici n'envoie, ne déplace ni n'efface un mail ;
  * - Gmail : la liste des mails de la boîte (reçus et envoyés, ni brouillons, ni indésirables, ni corbeille), du plus
  *   récent au plus ancien, puis les plus anciens d'abord, 50 au plus par lecture ; un mail porte son fil (`threadId`) ;
  * - Outlook : toute la boîte, quel que soit le dossier où un mail a été rangé ou archivé, sauf brouillons, éléments
@@ -149,6 +149,18 @@ export function headerAddresses(value: string | null | undefined): string[] {
   return [...new Set(out)];
 }
 
+/** Les entités nommées des mails en français, et les plus courantes ; les autres restent telles quelles. */
+const HTML_ENTITIES: Readonly<Record<string, string>> = {
+  nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
+  agrave: 'à', aacute: 'á', acirc: 'â', auml: 'ä', aelig: 'æ', ccedil: 'ç', egrave: 'è', eacute: 'é', ecirc: 'ê', euml: 'ë',
+  igrave: 'ì', iacute: 'í', icirc: 'î', iuml: 'ï', ntilde: 'ñ', ograve: 'ò', oacute: 'ó', ocirc: 'ô', ouml: 'ö', oelig: 'œ',
+  ugrave: 'ù', uacute: 'ú', ucirc: 'û', uuml: 'ü', yuml: 'ÿ',
+  Agrave: 'À', Aacute: 'Á', Acirc: 'Â', Auml: 'Ä', AElig: 'Æ', Ccedil: 'Ç', Egrave: 'È', Eacute: 'É', Ecirc: 'Ê', Euml: 'Ë',
+  Icirc: 'Î', Iuml: 'Ï', Ocirc: 'Ô', Ouml: 'Ö', OElig: 'Œ', Ugrave: 'Ù', Ucirc: 'Û', Uuml: 'Ü', Yuml: 'Ÿ',
+  laquo: '«', raquo: '»', lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”', sbquo: '‚', bdquo: '„', hellip: '…', ndash: '–', mdash: '—',
+  euro: '€', deg: '°', copy: '©', reg: '®', trade: '™', middot: '·', bull: '•', sup2: '²', times: '×', shy: '', zwnj: '', zwj: '', thinsp: ' ', ensp: ' ', emsp: ' ',
+};
+
 /** Le texte lisible d'un HTML : sans balises, sans styles ni scripts, entités courantes rendues. */
 export function htmlText(html: string): string {
   return html
@@ -156,12 +168,13 @@ export function htmlText(html: string): string {
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|li|tr|h[1-6])>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;|&apos;/gi, "'")
-    .replace(/&amp;/gi, '&')
+    .replace(/&(#x[0-9a-f]{1,6}|#[0-9]{1,7}|[a-z][a-z0-9]{1,31});/gi, (whole, ref: string) => {
+      if (ref[0] === '#') {
+        const code = ref[1] === 'x' || ref[1] === 'X' ? parseInt(ref.slice(2), 16) : parseInt(ref.slice(1), 10);
+        return Number.isFinite(code) && code > 0 && code <= 0x10ffff && !(code >= 0xd800 && code <= 0xdfff) ? String.fromCodePoint(code) : ' ';
+      }
+      return Object.prototype.hasOwnProperty.call(HTML_ENTITIES, ref) ? HTML_ENTITIES[ref]! : whole;
+    })
     .replace(/[ \t]+/g, ' ')
     .replace(/ *\n */g, '\n')
     .replace(/\n\s*\n+/g, '\n\n')
@@ -321,7 +334,7 @@ export class GmailMailbox implements MailboxProvider {
       attachments.push({ fileName: name, contentType: type || 'application/octet-stream', bytes });
     }
     const sent = labels.includes('SENT');
-    const to = [...headerAddresses(header('to')), ...headerAddresses(header('cc'))];
+    const to = [...headerAddresses(header('to')), ...headerAddresses(header('cc')), ...headerAddresses(header('bcc'))];
     const from = headerAddresses(header('from'))[0] ?? '';
     return {
       provider: 'gmail',
@@ -352,7 +365,7 @@ export class OutlookMailbox implements MailboxProvider {
   private readonly tokens: AccessTokens;
 
   constructor(private readonly cfg: RealMailboxConfig) {
-    this.tokens = new AccessTokens(cfg, msToken(cfg.client.tenant ?? 'common'), 'offline_access https://graph.microsoft.com/Mail.Read');
+    this.tokens = new AccessTokens(cfg, msToken(cfg.client.tenant ?? 'common'), 'offline_access https://graph.microsoft.com/Mail.Read https://graph.microsoft.com/User.Read');
   }
 
   connected(agentId: string): boolean {
@@ -397,7 +410,7 @@ export class OutlookMailbox implements MailboxProvider {
     const { sent, excluded, own } = await this.folderIds(agentId);
     // Toute la boîte, quel que soit le dossier où le mail a été rangé ou archivé, du plus ancien au plus récent.
     const params = new URLSearchParams({
-      $select: 'id,conversationId,receivedDateTime,parentFolderId,from,toRecipients,ccRecipients,body,hasAttachments,isDraft',
+      $select: 'id,conversationId,receivedDateTime,parentFolderId,from,toRecipients,ccRecipients,bccRecipients,body,hasAttachments,isDraft',
       // Les dossiers jamais lus et les brouillons sont écartés par Graph lui-même : ils ne prennent aucune page.
       $filter: [`receivedDateTime ge ${from}`, 'isDraft eq false', ...[...excluded].map((id) => `parentFolderId ne '${id.replace(/'/g, "''")}'`)].join(' and '),
       $orderby: 'receivedDateTime asc',
@@ -407,7 +420,8 @@ export class OutlookMailbox implements MailboxProvider {
     const chosen: { mail: Json; at: number; out: boolean }[] = [];
     // Les pages suivent tant que le lot n'est pas plein des mails pas encore triés ; 10 pages au plus.
     for (let page = 0; url && chosen.length < MAILBOX_BATCH; page += 1) {
-      if (page >= OUTLOOK_MAX_PAGES) throw new MailboxError('trop');
+      // Au-delà : ce qui est trouvé est rendu, et la lecture suivante repart de son dernier mail.
+      if (page >= OUTLOOK_MAX_PAGES) break;
       const body = await this.get(agentId, url);
       const list = isObj(body) && Array.isArray(body.value) ? body.value.filter(isObj) : [];
       for (const m of list) {
@@ -428,7 +442,10 @@ export class OutlookMailbox implements MailboxProvider {
       const externalId = str(mail.id)!;
       const threadId = str(mail.conversationId)!;
       const attachments = mail.hasAttachments === true ? await this.attachments(agentId, externalId) : [];
-      const to = [...(Array.isArray(mail.toRecipients) ? mail.toRecipients : []), ...(Array.isArray(mail.ccRecipients) ? mail.ccRecipients : [])].map(graphAddress).filter((a): a is string => a !== null);
+      const to = (['toRecipients', 'ccRecipients', 'bccRecipients'] as const)
+        .flatMap((k) => (Array.isArray(mail[k]) ? (mail[k] as unknown[]) : []))
+        .map(graphAddress)
+        .filter((a): a is string => a !== null);
       const bodyObj = isObj(mail.body) ? mail.body : {};
       const content = typeof bodyObj.content === 'string' ? bodyObj.content : '';
       const text = String(bodyObj.contentType).toLowerCase() === 'html' ? htmlText(content) : content;
