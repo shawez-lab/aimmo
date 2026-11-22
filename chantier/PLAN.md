@@ -566,7 +566,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU048 · La sélection privilégie la distance sans limite d’ancienneté ni ajustement temporel explicite des ventes…
-- Statut : à faire
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#777, `2399cfd0`). Constat confirmé (aucune borne d'ancienneté). Méthode : exclusion, sans correction (pas d'indice local publié et daté) ; fenêtre de 36 mois avant l'estimation (`maxSaleAgeMonths`), le rayon s'élargit plutôt que de garder une vente ancienne ; `window` rendue et dite dans le pied de l'avis ; R691. Codex rien à signaler ; vérification verte.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A048 (majeur), endroit : C/estimation/fourchette.ts, sélection des comparables.
 - Constat de l'audit : La sélection privilégie la distance sans limite d’ancienneté ni ajustement temporel explicite des ventes retenues.
