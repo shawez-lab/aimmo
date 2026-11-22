@@ -4,7 +4,7 @@ import { Acces, FicheClient, FicheUnique, RendezVous, SqlJournalStore, applyMigr
 import { handleRequest } from '../src/index.ts';
 import { fromD1 } from '../src/d1.ts';
 import worker, { type Env } from '../src/worker.ts';
-import { callerOf, twilioSignature } from '../src/telephonie.ts';
+import { callerOf, runTelephoniePass, twilioSignature } from '../src/telephonie.ts';
 import { AssistantVocal } from '../../core/src/voix/assistant.ts';
 import { Appels } from '../../core/src/voix/appels.ts';
 import { ReservationEnLigne } from '../../core/src/rendezvous/en-ligne.ts';
@@ -80,7 +80,7 @@ async function world(settings: { mode?: string; accountSid?: string; authToken?:
   const hangUp = (sid: string, status = 'completed') => post('fin', { CallSid: sid, CallStatus: status, CallDuration: '95' });
   const said = (twiml: string): string[] => [...twiml.matchAll(/<Say language="fr-FR">([^<]*)<\/Say>/g)].map((m) => m[1]!.replace(/&apos;/g, "'"));
   const journalText = async () => JSON.stringify(await db.all('SELECT type, actor, subject, data FROM journal'));
-  return { db, hooks, network, paul, person, post, ring, speak, hangUp, said, newSid, journalText };
+  return { db, hooks, now, network, paul, person, post, ring, speak, hangUp, said, newSid, journalText };
 }
 
 describeWithSqlite('AU045 · le vrai raccordement téléphonique de l’assistant vocal', () => {
@@ -269,6 +269,47 @@ describeWithSqlite('AU045 · le vrai raccordement téléphonique de l’assistan
     await w.hangUp(sid);
     expect(await w.db.first('SELECT ended_at IS NOT NULL AS ended FROM voice_assistant_sessions')).toEqual({ ended: 1 });
     expect(await w.db.all('SELECT id FROM voice_assistant_calls')).toHaveLength(1);
+  });
+
+  it('[R710][R18] la fin livrée pendant un tour qui tombe : l’appel est fini quand même, et la main passe à l’agent', async () => {
+    const w = await world();
+    const sid = w.newSid();
+    await w.ring(sid);
+    await w.speak(sid, 'Oui.');
+    await w.speak(sid, 'Je voudrais un rendez-vous.');
+    await w.speak(sid, 'Le premier.');
+    w.hooks.push({
+      match: /INSERT INTO appointments/,
+      run: async () => {
+        expect((await w.hangUp(sid)).status).toBe(200);
+        throw new Error('panne de la base');
+      },
+    });
+    expect((await w.speak(sid, 'Oui.')).status).toBe(500);
+    expect(await w.db.first('SELECT state, ended_at IS NOT NULL AS ended, lease_token FROM voice_assistant_sessions')).toEqual({ state: null, ended: 1, lease_token: null });
+    expect(await w.db.all('SELECT appointment_start FROM voice_assistant_calls')).toEqual([{ appointment_start: null }]);
+  });
+
+  it('[R710][R18] le passage de reprise finit un appel dit fini que personne n’a pu finir, ou resté sans nouvelle', async () => {
+    const w = await world();
+    const hung = w.newSid();
+    await w.ring(hung);
+    await w.speak(hung, 'Oui.');
+    // Un tour tombé après avoir rangé son état, la fin livrée pendant ce temps : rien ne la refait.
+    await w.db.run("UPDATE voice_assistant_sessions SET hangup_at = ?, lease_token = 'tombe', lease_at = ? WHERE call_id = ?", [w.now().toISOString(), w.now().toISOString(), hung]);
+    const silent = w.newSid();
+    await w.ring(silent);
+    const live = w.newSid();
+    await w.ring(live);
+    await w.db.run("UPDATE voice_assistant_sessions SET updated_at = '2026-11-09T06:00:00.000Z' WHERE call_id = ?", [silent]);
+    // Tant que le tour tombé tient l'appel, il n'est pas repris.
+    expect(await runTelephoniePass({ db: w.db, now: w.now, linkBase: null })).toBe(1);
+    const later = new Date(w.now().getTime() + 2 * 60_000);
+    expect(await runTelephoniePass({ db: w.db, now: () => later, linkBase: null })).toBe(1);
+    const rows = await w.db.all<{ call_id: string; ended: number }>('SELECT call_id, ended_at IS NOT NULL AS ended FROM voice_assistant_sessions ORDER BY call_id');
+    expect(rows).toEqual([{ call_id: hung, ended: 1 }, { call_id: silent, ended: 1 }, { call_id: live, ended: 0 }]);
+    expect(await w.db.all('SELECT id FROM voice_assistant_calls')).toHaveLength(2);
+    expect(await runTelephoniePass({ db: w.db, now: () => later, linkBase: null })).toBe(0);
   });
 
   it('[R710] le Worker passe TELEPHONIE_MODE et TWILIO_* à l’adresse du service téléphonique', async () => {

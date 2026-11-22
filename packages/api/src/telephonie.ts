@@ -263,7 +263,12 @@ export async function handleTelephonie(request: Request, path: string, config: T
     try {
       turn = await assistant.hear(JSON.parse(held.state) as AssistantState, (form.get('SpeechResult') ?? '').slice(0, 1000));
     } catch (error) {
+      // Le tour tombe : l'appel est rendu ; si la fin est déjà arrivée, il est fini avec l'état d'avant ce tour [R18].
       await release(config.db, row.id, token);
+      if (await hungUp(config.db, row.id)) {
+        const again = await claim(config, row.id, null);
+        if (again) await endSession(config, assistant, row.id, again);
+      }
       throw error;
     }
     const at = config.now().toISOString();
@@ -296,3 +301,39 @@ export async function handleTelephonie(request: Request, path: string, config: T
 
   return json(404, { ok: false, code: 'not_found', message: 'Adresse inconnue.' });
 }
+
+/** Un appel sans nouvelle depuis ce délai est réputé fini, même si le service ne l'a pas dit. */
+export const TELEPHONIE_SILENCE_MS = 30 * 60_000;
+
+/**
+ * Le passage de reprise (chaque quart d'heure) : un appel dit fini que personne n'a pu finir (tour tombé, fin livrée
+ * pendant un tour en panne), ou resté sans nouvelle, est fini ici, rangé une fois et passé à l'agent [R18, R710].
+ * Une panne sur un appel est écrite au journal et n'arrête pas les autres. Rend le nombre d'appels finis.
+ */
+export async function runTelephoniePass(config: Pick<TelephonieConfig, 'db' | 'now' | 'linkBase'>): Promise<number> {
+  const full: TelephonieConfig = { ...config, mode: undefined, accountSid: undefined, authToken: undefined };
+  const at = config.now();
+  const stale = new Date(at.getTime() - TELEPHONIE_LEASE_MS).toISOString();
+  const silent = new Date(at.getTime() - TELEPHONIE_SILENCE_MS).toISOString();
+  const rows = await config.db.all<{ id: string }>(
+    `SELECT id FROM voice_assistant_sessions
+     WHERE ended_at IS NULL AND (hangup_at IS NOT NULL OR updated_at < ?) AND (lease_token IS NULL OR lease_at < ?)
+     ORDER BY updated_at LIMIT 50`,
+    [silent, stale],
+  );
+  const { journal, assistant } = services(full);
+  let ended = 0;
+  for (const { id } of rows) {
+    const token = await claim(full, id, null);
+    if (!token) continue;
+    try {
+      await endSession(full, assistant, id, token);
+      ended += 1;
+    } catch (error) {
+      await release(config.db, id, token);
+      await appendEvent(journal, { type: 'voix.telephonie_reprise_echec', actor: 'system', subject: 'telephonie', data: { rule: 'R710', error: error instanceof Error ? error.name : 'unknown' } }, config.now);
+    }
+  }
+  return ended;
+}
+

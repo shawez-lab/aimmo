@@ -23,6 +23,7 @@ import { HttpPigeSource, missingPigeSettings, type PigeFetcher, type PigeProvide
 import { runLiveWithdrawals, socialFromEnv } from './reseaux-reels.ts';
 import { gbpFromEnv } from './fiche-google-reelle.ts';
 import { dossierFilesOf, mailboxesFromEnv, runMailboxPass, type BoiteEnv } from './boite.ts';
+import { runTelephoniePass } from './telephonie.ts';
 import { audioSourceFromEnv, transcriberFromEnv, type TranscriptionEnv } from './reprises-vocales.ts';
 import { adsFromEnv, runAdsPass, type AdsEnv } from './publicite-reelle.ts';
 
@@ -377,6 +378,11 @@ export default {
     {
       const db = fromD1(env.DB);
       await runAdsPass(db, new SqlJournalStore(db), () => new Date(), adsFromEnv(env, fetch.bind(globalThis)));
+    }
+    // AU045 : les appels de l'assistant vocal dits finis, ou restés sans nouvelle, que personne n'a pu finir [R710, R18].
+    {
+      const db = fromD1(env.DB);
+      await runTelephoniePass({ db, now: () => new Date(), linkBase: env.RDV_LINK_BASE ?? null });
     }
     // AU043 : la boîte de chaque agent qui l'a reliée est lue et triée ; une panne est écrite au journal [R683].
     {
