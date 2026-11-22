@@ -4,3 +4,8 @@
 -- est encore en train d'être pris. Vide pour un appel, un bien inconnu et les tranches d'avant : rien ne se partage alors.
 ALTER TABLE appointment_holds ADD COLUMN property_id TEXT;
 CREATE INDEX IF NOT EXISTS appointment_holds_meme_lieu ON appointment_holds (agent_id, property_id, layer, unit) WHERE released_at IS NULL;
+-- Les tranches encore tenues d'avant reçoivent le bien de leur rendez-vous sur place : un créneau proposé au même bien
+-- se réserve aussi après un rendez-vous pris avant cette migration.
+UPDATE appointment_holds
+SET property_id = (SELECT a.property_id FROM appointments a WHERE a.id = appointment_holds.appointment_id AND a.kind <> 'appel')
+WHERE released_at IS NULL AND property_id IS NULL;

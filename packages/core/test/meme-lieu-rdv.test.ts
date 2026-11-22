@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   APPOINTMENT_PURPOSE,
@@ -172,6 +174,20 @@ describeWithSqlite('AU055 · deux visites au même bien s’enchaînent, réserv
     expect(cancelled).toBe(true);
     expect(second.ok).toBe(true);
     expect(await w.book(at(DAY, '09:00'), w.q, { via: w.blind })).toMatchObject({ ok: false, rule: 'R32', code: 'taken' });
+  });
+
+  it('[R700] un rendez-vous pris avant la migration : ses tranches reçoivent leur bien, le créneau proposé au même bien se réserve', async () => {
+    const w = await world();
+    const first = await w.book(at(DAY, '09:00'), w.p);
+    if (!first.ok) throw new Error('réservation refusée');
+    // Les tranches telles qu'avant la migration 4110 : sans bien.
+    await w.db.run('UPDATE appointment_holds SET property_id = NULL WHERE appointment_id = ?', [first.appointment.id]);
+    const sql = readFileSync(fileURLToPath(new URL('../../../db/migrations/4110_trajet_meme_lieu.sql', import.meta.url)), 'utf8');
+    await w.db.exec(sql.slice(sql.indexOf('UPDATE appointment_holds')));
+    const tagged = await w.db.all<{ property_id: string | null }>('SELECT DISTINCT property_id FROM appointment_holds WHERE appointment_id = ?', [first.appointment.id]);
+    expect(tagged).toEqual([{ property_id: w.p }]);
+    expect((await w.free(w.p))[0]!.start.getTime()).toBe(at(DAY, '10:00').getTime());
+    expect((await w.book(at(DAY, '10:00'), w.p, { personId: w.tom.id })).ok).toBe(true);
   });
 
   it('[R700] décaler la seconde visite au même bien garde la marge, sans perdre l’une ni l’autre', async () => {
