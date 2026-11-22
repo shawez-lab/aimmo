@@ -41,8 +41,9 @@ const countAll = async (db: SqlDatabase) => {
   return out;
 };
 
-// Les tables en ajout seul du bien de la vendeuse, que la base refuse d'effacer (AU020b).
-const BLOCKED = [{ table: 'listing_drafts', rows: 1 }, { table: 'property_sheets', rows: 1 }];
+// Le brouillon d'annonce du bien de la vendeuse, en ajout seul : sans demande donnée, son texte n'est pas vidé, et la
+// base refuse de l'effacer (AU020b). La fiche du bien, en valeurs contrôlées, est gardée d'office avec le bien.
+const BLOCKED = [{ table: 'listing_drafts', rows: 1 }];
 
 const FILES: [ObjectStorage, string][] = [
   ['PIECES', 'boite/appels/seule-a.ogg'],
@@ -150,15 +151,19 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     for (const table of ['mandates', 'mandate_register', 'documents', 'signed_documents', 'exclusions', 'person_identifiers', 'person_requests', 'persons']) expect(after[table], table).toBe(before[table]);
     // Le fichier qu'elle seule citait est retiré ; le fichier partagé et le coffre restent.
     expect([...t.objects.held].sort()).toEqual(['COFFRE:coffre/essai/piece.pdf', 'PIECES:boite/appels/partage.ogg']);
-    // Le reçu : ce qui part, ce qui reste et pourquoi, sans nom, sans coordonnée, sans identifiant. Le brouillon d'annonce
-    // et la fiche du bien sont en ajout seul : la base refuse de les effacer, le reçu le dit et l'effacement n'est pas
-    // dit complet (AU020b).
-    expect(receipt).toMatchObject({ mode: 'reel', records: 1, complete: false, remaining: BLOCKED, objectsRemoved: { PIECES: 1 }, objectsRemaining: 0, at: LATER.toISOString() });
+    // Le reçu : ce qui part, ce qui reste et pourquoi, sans nom, sans coordonnée, sans identifiant. Le brouillon d'annonce,
+    // en ajout seul, est vidé de son texte par la voie de la migration ; la fiche du bien, en valeurs contrôlées, est
+    // gardée avec le bien et le plan dit pourquoi : rien ne reste, l'effacement est complet (AU020b).
+    expect(receipt).toMatchObject({ mode: 'reel', records: 1, complete: true, remaining: [], objectsRemoved: { PIECES: 1 }, objectsRemaining: 0, at: LATER.toISOString() });
+    expect(await t.db.all('SELECT title, body, trace, seq, origin FROM listing_drafts')).toEqual([{ title: '[effacé]', body: '[effacé]', trace: '[]', seq: 1, origin: 'secours' }]);
+    expect(await t.db.all('SELECT table_name, request_id, wiped_at FROM erasure_text_wipes')).toEqual([{ table_name: 'listing_drafts', request_id: t.request.id, wiped_at: LATER.toISOString() }]);
+    expect(after.property_sheets).toBe(before.property_sheets);
+    expect(receipt.kept).toEqual(expect.arrayContaining([{ table: 'property_sheets', rows: 1, action: 'garder', why: conformite.ERASURE_WHY.controlled }]));
     // Le bien reste, cité par le mandat que la loi garde ; le projet et son lien au bien restent tant que la fiche du
     // bien, que la base garde, reste : sans eux, le prochain passage ne la retrouverait plus [R17, R231].
     expect(receipt.cited).toEqual([{ table: 'project_properties', rows: 1 }, { table: 'projects', rows: 1 }, { table: 'properties', rows: 1 }]);
     expect(receipt.erased).toEqual([{ table: 'call_notes', rows: 1 }, { table: 'calls', rows: 3 }]);
-    expect(receipt.pseudonymized).toEqual([{ table: 'persons', rows: 1 }]);
+    expect(receipt.pseudonymized).toEqual([{ table: 'listing_drafts', rows: 1 }, { table: 'persons', rows: 1 }]);
     expect(receipt.kept).toEqual(expect.arrayContaining([expect.objectContaining({ table: 'mandates', action: 'garder' }), expect.objectContaining({ table: 'exclusions', action: 'garder' }), expect.objectContaining({ table: 'person_identifiers', action: 'empreinte', why: IDENTIFIERS_KEPT })]));
     expect(receipt.hashed).toEqual([{ table: 'person_identifiers', rows: 1 }]);
     expect(receipt.stopped).toEqual([]);
@@ -170,7 +175,7 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     // La preuve : l'empreinte du reçu gardée, au journal, puis reprise par la réponse notée.
     expect(await t.db.all("SELECT kind, mode, output_sha256 FROM person_request_outputs WHERE request_id = ? AND mode = 'reel'", [t.request.id])).toEqual([{ kind: 'plan_effacement', mode: 'reel', output_sha256: sha256 }]);
     const event = (await t.journal.bySubject(`person_request:${t.request.id}`)).at(-1)!;
-    expect(event).toMatchObject({ type: 'rgpd.effacement', data: { rule: 'R17', mode: 'reel', sha256, erased: 4, pseudonymized: 1, hashed: 1, remaining: 2, objects: 1, complete: false } });
+    expect(event).toMatchObject({ type: 'rgpd.effacement', data: { rule: 'R17', mode: 'reel', sha256, erased: 4, pseudonymized: 2, hashed: 1, remaining: 0, objects: 1, complete: true } });
     expect(JSON.stringify(event)).not.toContain('example.test');
     expect((await verifyChain(await t.journal.all())).ok).toBe(true);
     expect(await t.demandes.answer(t.responsable, t.request.id, { answeredOn: '2027-02-11' })).toMatchObject({ ok: true, value: { answerSha256: sha256 } });
@@ -191,15 +196,17 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     t.setClock(new Date(LATER.getTime() + 60_000));
     const again = await t.reel.erase(t.responsable, t.request.id);
     if (!again.ok) throw new Error(again.code);
-    expect(again.value.receipt).toMatchObject({ erased: [], pseudonymized: [], remaining: BLOCKED, objectsRemoved: {}, complete: false });
+    expect(again.value.receipt).toMatchObject({ erased: [], pseudonymized: [], remaining: [], objectsRemoved: {}, complete: true });
     const twice = await countAll(t.db);
     expect(Object.keys(twice).filter((k) => twice[k] !== once[k]).sort()).toEqual(['journal', 'person_request_outputs']);
     // Le registre, rejoué par l'effaceur réel, ne trouve plus rien à effacer.
     const eraser = new SqlPersonEraser({ objects: t.objects.eraser });
-    // Les lignes du bien que la base refuse d'effacer restent (AU020b) : le rejeu ne se dit pas fait [R231].
-    await expect(eraser.erase(t.db, { requestId: t.request.id, networkId: t.network.id, personId: t.personId, erasedAt: LATER.toISOString() })).rejects.toThrow();
+    // Le brouillon déjà vidé n'est plus à vider, la fiche du bien est gardée : le rejeu se dit fait (AU020b) [R231].
+    await expect(eraser.erase(t.db, { requestId: t.request.id, networkId: t.network.id, personId: t.personId, erasedAt: LATER.toISOString() })).resolves.toBeTypeOf('number');
+    expect(await countAll(t.db)).toEqual(twice);
     const replay = await replayErasures(t.db, t.ledger.store, t.key, eraser, { copyTakenAt: NOW.toISOString(), now: t.now });
-    expect(replay).toEqual({ ok: false, code: 'erase_failed', replayed: 0 });
+    // Le registre rejoué entier, ses deux entrées, se dit fini : plus rien n'est à effacer ni à vider [R231].
+    expect(replay).toEqual({ ok: true, replayed: 2, erasedRows: 0 });
     // Une personne dont tout peut partir : le rejeu refait ne change rien de plus, et se dit fait.
     const entry = { requestId: 'demande-autre', networkId: t.network.id, personId: t.other.id, erasedAt: LATER.toISOString() };
     expect(await eraser.erase(t.db, entry)).toBeGreaterThan(0);
@@ -288,6 +295,40 @@ describeWithSqlite('AU020 · l’effacement réel, sa preuve et sa note au regis
     // Un troisième passage ne retire rien de plus, et le fichier partagé, encore cité, reste.
     expect((await eraseForReal(t.db, [t.personId], { objects: flaky, target })).outcome.objectsRemoved).toEqual({});
     expect(removed).toEqual(['boite/appels/seule-a.ogg']);
+  });
+
+  it('[R17] AU020b : le brouillon ne change que par la voie de l’effacement, noté pour une demande, vers la seule marque « [effacé] »', async () => {
+    const t = await setup();
+    const draft = (await t.db.first<{ id: string }>('SELECT id FROM listing_drafts'))!.id;
+    // Sans note d'effacement, un brouillon rangé ne change plus, même vers la marque.
+    await expect(t.db.run("UPDATE listing_drafts SET title = '[effacé]', body = '[effacé]', trace = '[]' WHERE id = ?", [draft])).rejects.toThrow(/ne change plus/);
+    await t.db.run("INSERT INTO erasure_text_wipes (table_name, row_id, request_id, wiped_at) VALUES ('listing_drafts', ?, ?, ?)", [draft, t.request.id, NOW.toISOString()]);
+    // Noté, il ne prend que la marque, sans rien changer d'autre.
+    for (const set of ["title = 'Autre titre', body = '[effacé]', trace = '[]'", "title = '[effacé]', body = '[effacé]', trace = '[]', seq = 9", "title = '[effacé]', body = '[effacé]', trace = '[]', created_by = 'autre'", "title = '[effacé]', body = '[effacé]'"]) {
+      await expect(t.db.run(`UPDATE listing_drafts SET ${set} WHERE id = ?`, [draft]), set).rejects.toThrow(/ne change plus/);
+    }
+    // Une autre table, ou une note qui change ou s'efface : refusées.
+    await expect(t.db.run("INSERT INTO erasure_text_wipes (table_name, row_id, request_id, wiped_at) VALUES ('property_sheets', 'x', ?, ?)", [t.request.id, NOW.toISOString()])).rejects.toThrow();
+    await expect(t.db.run("UPDATE erasure_text_wipes SET request_id = 'autre'")).rejects.toThrow(/ne change plus/);
+    await expect(t.db.run('DELETE FROM erasure_text_wipes')).rejects.toThrow(/rien ne s'efface/);
+    // Et le brouillon ne s'efface toujours pas.
+    await expect(t.db.run('DELETE FROM listing_drafts WHERE id = ?', [draft])).rejects.toThrow(/rien ne s'efface/);
+  });
+
+  it('[R17] [R231] AU020b : restauré depuis une copie d’avant, le brouillon retrouve son texte ; le rejeu le vide de nouveau', async () => {
+    const t = await setup();
+    const before = await t.db.first<{ title: string; body: string; trace: string }>('SELECT title, body, trace FROM listing_drafts');
+    await t.demandes.prepareErasure(t.responsable, t.request.id);
+    t.setClock(LATER);
+    if (!(await t.reel.erase(t.responsable, t.request.id)).ok) throw new Error('effacement');
+    // La copie d'avant : ni la note ni le texte vidé n'y sont. On la rejoue sur une base neuve du même jeu.
+    const u = await setup();
+    expect(await u.db.first('SELECT title, body, trace FROM listing_drafts')).toEqual({ title: before!.title, body: before!.body, trace: before!.trace });
+    expect(before!.title).not.toBe('[effacé]');
+    const n = await new SqlPersonEraser({ objects: u.objects.eraser }).erase(u.db, { requestId: u.request.id, networkId: u.network.id, personId: u.personId, erasedAt: LATER.toISOString() });
+    expect(n).toBeGreaterThan(0);
+    expect(await u.db.first('SELECT title, body, trace FROM listing_drafts')).toEqual({ title: '[effacé]', body: '[effacé]', trace: '[]' });
+    expect(await u.db.all('SELECT table_name, request_id FROM erasure_text_wipes')).toEqual([{ table_name: 'listing_drafts', request_id: u.request.id }]);
   });
 
   it('[R17] [R231] une ligne gardée par la base reste retrouvable : le passage suivant la dit encore restante', async () => {

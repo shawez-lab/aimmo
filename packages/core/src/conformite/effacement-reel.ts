@@ -51,6 +51,19 @@ export const PSEUDONYMIZE: Readonly<Record<string, readonly string[]>> = Object.
   persons: ['first_name', 'last_name', 'last_contact_at'],
 });
 
+/**
+ * Les tables en ajout seul dont le texte libre est vidé, par la seule voie que leur migration ouvre (AU020b) : la ligne
+ * est notée dans `erasure_text_wipes` pour la demande, puis ces colonnes prennent ces valeurs ; rien d'autre ne change.
+ */
+export const WIPE_TEXT: Readonly<Record<string, Readonly<Record<string, string>>>> = Object.freeze({
+  listing_drafts: Object.freeze({ title: '[effacé]', body: '[effacé]', trace: '[]' }),
+});
+
+const wiped = (table: string, row: Row): boolean => {
+  const values = WIPE_TEXT[table];
+  return values !== undefined && Object.entries(values).every(([c, v]) => row[c] === v);
+};
+
 /** Le stockage d'objets, pour retirer un fichier ; sans effet si le fichier n'y est plus. */
 export interface ObjectEraser {
   remove(storage: ObjectStorage, key: string): Promise<void>;
@@ -179,7 +192,7 @@ export async function eraseForReal(
   for (const t of KEPT_LINKS) holders.add(t);
   let pending: { table: string; row: Row; cited?: boolean }[] = order.flatMap((table) =>
     (detail.exclusiveData?.[table] ?? [])
-      .filter((row) => !pseudonymized(table, row))
+      .filter((row) => !pseudonymized(table, row) && !wiped(table, row))
       .filter((row) => {
         const k = JSON.stringify([table, Object.keys(row).sort().map((c) => [c, typeof row[c] === 'object' && row[c] !== null ? String(row[c]) : row[c]])]);
         if (seen.has(k)) return false;
@@ -233,13 +246,24 @@ export async function eraseForReal(
   for (const p of [...pending, ...held]) {
     const columns = PSEUDONYMIZE[p.table] ?? [];
     // Citée ailleurs, sans colonne nominative à vider : gardée telle quelle, et dite.
-    if (p.cited && columns.length === 0) {
+    if (p.cited && columns.length === 0 && !WIPE_TEXT[p.table]) {
       bump(kept, p.table);
       continue;
     }
     const where = whereRow(p.row);
     let done = false;
-    if (columns.length > 0) {
+    const wipe = WIPE_TEXT[p.table];
+    // Le texte libre d'une ligne en ajout seul : noté pour la demande, puis vidé par la voie de la migration. Sans
+    // demande donnée, rien n'est vidé, et la ligne reste dite restante [R17].
+    if (wipe && target && typeof p.row.id === 'string') {
+      try {
+        await db.run('INSERT INTO erasure_text_wipes (table_name, row_id, request_id, wiped_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', [p.table, p.row.id, target.requestId, target.at]);
+        const set = Object.keys(wipe).sort();
+        done = (await db.run(`UPDATE "${p.table}" SET ${set.map((c) => `"${c}" = ?`).join(', ')} WHERE ${where.sql}`, [...set.map((c) => wipe[c]!), ...where.params])).changes > 0;
+      } catch {
+        done = false;
+      }
+    } else if (columns.length > 0) {
       try {
         done = (await db.run(`UPDATE "${p.table}" SET ${columns.map((c) => `"${c}" = NULL`).join(', ')} WHERE ${where.sql}`, where.params)).changes > 0;
       } catch {
