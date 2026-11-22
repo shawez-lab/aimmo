@@ -201,7 +201,7 @@ export function boiteRoutes(): BoiteRoute[] {
       // La file de l'agent : ses boîtes reliées et ses derniers mails lus, chacun avec sa fiche, son dossier et le
       // message de la fiche, dans la conversation de son fil chez le fournisseur.
       method: 'GET',
-      pattern: /^\/v1\/boite$/,
+      pattern: /^\/boite$/,
       name: 'boite.file',
       handle: async (s, viewer, _params, request) => {
         if (!(await activeAgent(s, viewer))) return refuse(s, viewer, 'role', 403, 'R16');
@@ -238,7 +238,7 @@ export function boiteRoutes(): BoiteRoute[] {
     {
       // Lire maintenant : chaque boîte reliée de l'agent, puis le tri de HX26. Rien ne part [R409].
       method: 'POST',
-      pattern: /^\/v1\/boite\/lecture$/,
+      pattern: /^\/boite\/lecture$/,
       name: 'boite.lecture',
       handle: async (s, viewer, _params, request) => {
         if (!(await activeAgent(s, viewer))) return refuse(s, viewer, 'role', 403, 'R16');
