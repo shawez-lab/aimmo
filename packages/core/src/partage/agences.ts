@@ -435,7 +435,17 @@ export class PartageAgences {
       [d.id],
     );
     if (!due) return null;
-    const feeCents = due.fee_eur * 100;
+    // AU091b · une vente suivie par les commissions attend qu'elle soit due : un avenant d'honoraires se régularise
+    // d'abord, et le relevé se calcule une fois, sur les honoraires régularisés [R678, R235].
+    const c = await this.db.first<{ fee_cents: number; due: number; revised: number }>(
+      `SELECT c.fee_cents,
+              EXISTS (SELECT 1 FROM commission_steps s WHERE s.file_id = c.file_id AND s.status = 'due') AS due,
+              EXISTS (SELECT 1 FROM commission_revisions r WHERE r.file_id = c.file_id) AS revised
+         FROM commissions c WHERE c.file_id = ?`,
+      [due.file_id],
+    );
+    if (c && !Number(c.due)) return null;
+    const feeCents = c && Number(c.revised) ? Number(c.fee_cents) : due.fee_eur * 100;
     const split = splitAgencyFee(feeCents, d.partner_share_bp);
     const { changes } = await this.db.run(
       `INSERT INTO agency_fee_statements (delegation_id, network_id, file_id, fee_cents, partner_share_bp, partner_cents, own_cents, computed_at)
