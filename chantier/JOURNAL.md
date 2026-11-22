@@ -1663,3 +1663,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-22 13:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 08:55 par une autre séance voie 2, active : AU052 en cours, journal à 13:47)
 - 2026-11-22 14:55 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 08:55 par une autre séance voie 2, active : vérification de AU052 (#781) relancée à 14:30, tests en cours)
 - 2026-11-22 15:06 · AU043 · vraies boîtes Gmail et Outlook lues et triées dans la file de l'agent (R683) ; Codex 13 P0 et 1 P1 corrigés en cinq tours, puis rien ; vérification verte ; fusionnée (#782, 8b8e44f9) · prochaine : AU044
+- 2026-11-22 15:06 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU044
