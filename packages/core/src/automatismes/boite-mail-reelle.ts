@@ -12,7 +12,8 @@
  * - Outlook : toute la boîte, quel que soit le dossier où un mail a été rangé ou archivé, sauf brouillons, éléments
  *   supprimés et courrier indésirable, du plus ancien au plus récent, 50 au plus ; un mail du dossier des éléments
  *   envoyés est un mail de l'agent ; le fil est la conversation (`conversationId`) ;
- *   la taille des pièces est lue d'abord, et seul le contenu des pièces assez petites est demandé ;
+ *   la taille des pièces est lue d'abord, images du texte comprises, et seul le contenu des pièces assez petites est
+ *   demandé ; les clés demandées sont celles qui ne changent pas quand le mail change de dossier (`ImmutableId`) ;
  * - les mails déjà triés autour du curseur (`skip`) ne prennent pas de place dans le lot : un lot plein de mails de la
  *   même heure avance toujours [R18] ;
  * - la première lecture d'une boîte remonte à 30 jours ;
@@ -373,7 +374,7 @@ export class OutlookMailbox implements MailboxProvider {
   }
 
   private async get(agentId: string, url: string): Promise<unknown> {
-    return call(this.cfg, url, { headers: { authorization: `Bearer ${await this.tokens.of(agentId)}`, accept: 'application/json', prefer: 'outlook.body-content-type="text"' } });
+    return call(this.cfg, url, { headers: { authorization: `Bearer ${await this.tokens.of(agentId)}`, accept: 'application/json', prefer: 'outlook.body-content-type="text", IdType="ImmutableId"' } });
   }
 
   /** Les identifiants des dossiers connus de la boîte (envoyés, et ceux jamais lus), gardés en mémoire. */
@@ -441,7 +442,8 @@ export class OutlookMailbox implements MailboxProvider {
     for (const { mail, at, out: isOut } of chosen) {
       const externalId = str(mail.id)!;
       const threadId = str(mail.conversationId)!;
-      const attachments = mail.hasAttachments === true ? await this.attachments(agentId, externalId) : [];
+      // Toujours lues : Graph dit `hasAttachments: false` pour un mail qui n'a que des images dans son texte.
+      const attachments = await this.attachments(agentId, externalId);
       const to = (['toRecipients', 'ccRecipients', 'bccRecipients'] as const)
         .flatMap((k) => (Array.isArray(mail[k]) ? (mail[k] as unknown[]) : []))
         .map(graphAddress)

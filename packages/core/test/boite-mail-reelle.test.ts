@@ -274,3 +274,14 @@ describe('entités du HTML et copies cachées (AU043, Codex)', () => {
     expect(o[0]).toMatchObject({ direction: 'out', to: ['client@exemple.test'] });
   });
 });
+
+describe('clés immuables et images du texte chez Outlook (AU043, Codex)', () => {
+  it('chaque lecture demande les clés immuables ; une image du texte seule est lue comme pièce [R18, R410]', async () => {
+    const img = new Uint8Array(30 * 1024);
+    img.set([0xff, 0xd8, 0xff, 0xe0]);
+    const h = fakeOutlook([{ id: 'o-1', threadId: 'c', at: ago(DAY), from: 'c@exemple.test', text: 'plan', inlineOnly: true, attachments: [{ name: 'plan.jpg', type: 'image/jpeg', bytes: img }] }]);
+    const [m] = await outlookOf(h).receivedSince('agent-1', ago(2 * DAY));
+    expect(m!.attachments.map((a) => a.bytes.length)).toEqual([img.length]);
+    expect(h.calls.filter((c) => c.url.startsWith('https://graph.microsoft.com/')).length).toBeGreaterThan(0);
+  });
+});

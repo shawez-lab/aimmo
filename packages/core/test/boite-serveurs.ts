@@ -36,6 +36,8 @@ export interface FakeMail {
   latin1?: boolean;
   /** Les destinataires en copie cachée. */
   bcc?: string[];
+  /** Outlook : des images dans le texte seulement (`hasAttachments` faux). */
+  inlineOnly?: boolean;
   text?: string;
   html?: string;
   attachments?: { name: string; type: string; bytes: Uint8Array }[];
@@ -128,6 +130,8 @@ export function fakeOutlook(mails: FakeMail[], faults: Faults = {}) {
       return json(200, { access_token: ACCESS, expires_in: 3600, refresh_token: 'nouveau-jeton-invente' });
     }
     if (init.headers?.authorization !== `Bearer ${ACCESS}`) return json(401, { error: { code: 'InvalidAuthenticationToken' } });
+    // Sans clés immuables, Graph change la clé d'un mail déplacé : le faux le refuse, pour qu'aucun appel ne l'oublie.
+    if (!/IdType="ImmutableId"/.test(init.headers?.prefer ?? '')) return json(400, { error: { code: 'ClesNonImmuables' } });
     const u = new URL(url);
     if (u.pathname === '/v1.0/me') return json(200, { mail: 'Agent@Exemple.test', userPrincipalName: 'agent@exemple.test', proxyAddresses: ['SMTP:agent@exemple.test', 'smtp:alias@exemple.test'] });
     const wellKnown = /^\/v1\.0\/me\/mailFolders\/([a-z]+)$/.exec(u.pathname);
@@ -152,7 +156,7 @@ export function fakeOutlook(mails: FakeMail[], faults: Faults = {}) {
           receivedDateTime: m.at.toISOString().replace('.000Z', 'Z'),
           parentFolderId: folderOf(m),
           isDraft: !!m.draft,
-          hasAttachments: (m.attachments ?? []).length > 0,
+          hasAttachments: (m.attachments ?? []).length > 0 && !m.inlineOnly,
           from: { emailAddress: { name: 'Client Inventé', address: m.from } },
           toRecipients: (m.to ?? ['agent@exemple.test']).map((a) => ({ emailAddress: { name: 'X', address: a } })),
           ccRecipients: [],
