@@ -529,13 +529,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#782, `8b8e44f9`), `packages/core/src/automatismes/boite-mail-reelle.ts`, `packages/api/src/boite.ts`, R683. Constat confirmé (interface et faux seulement, aucune route). Vrais Gmail (API v1) et Outlook (Graph `me/messages`, toute la boîte hors brouillons, supprimés, indésirables ; clés immuables), lecture seule, jeton de rafraîchissement par agent dans le secret `BOITE_JETONS` (`BOITE_MODE=reel`, clients OAuth) ; 50 mails au plus par lecture, les plus anciens d'abord, mails déjà triés autour du curseur hors du lot (`skip`, ajouté à `MailboxProvider`) ; texte au bon jeu de caractères et entités du HTML rendues (arrêt lu) ; copies cachées ; pièces lourdes jamais téléchargées. `GET /v1/boite` (la file) et `POST /v1/boite/lecture`, agent en activité seul ; passage des quarts d'heure. Codex : 13 P0 et 1 P1 en cinq tours, corrigés, puis rien. Restent : l'écran de la boîte ; les routes des pièces en attente et des réponses préparées ; l'accord pris à l'écran (OAuth dans l'application) au lieu du secret ; le jeton renouvelé par Microsoft n'est pas gardé ; le nombre d'appels du passage grandit avec les agents reliés.
 
 ### AU044 · Les vocaux n’ont pas de transcripteur réel branché et retombent sur la reprise manuelle
-- Statut : en cours
+- Statut : fait (2026-11-22)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A044 (majeur), endroit : A/worker.ts ; H52 ; C/voix/notes-vocales.ts.
 - Constat de l'audit : Les vocaux n’ont pas de transcripteur réel branché et retombent sur la reprise manuelle.
 - Objectif : Un vocal réel devient un texte traçable et une panne conserve l’audio accessible avec une tâche de reprise.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien (mise en service réelle : H52).
+- Reste : fusionnée (#783, `cd7d61e1`), migration `4108` (ajout seul), R696. Constat confirmé (aucun transcripteur, et `/v1/meta/notifications` n'appelait pas la chaîne des notes vocales). `transcripteur-reel.ts` : audio lu chez Meta (WhatsApp par l'API Graph et `WHATSAPP_MEDIA_TOKEN`, Instagram et Messenger à l'adresse donnée ; serveurs de fichiers de Meta seuls, 25 Mo, délai sur tout le corps), service compatible OpenAI `verbose_json`, confiance des segments (nulle sans eux). Panne : reprise unique liée au message illisible, `GET /v1/notes-vocales/reprises`, `…/<id>/audio`, `POST …/<id>/faite`, agent en activité ou direction. Codex : 1 P2 corrigé (délai), puis rien ; « Vérifier » rouge une fois (cascade interdite par R17), corrigé. Restent : l'écran de la file des reprises ; H52.
 
 ### AU045 · Aucun raccordement téléphonique réel du Worker ne prouve la réception des appels et le renvoi vers…
 - Statut : à faire
