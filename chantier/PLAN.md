@@ -547,7 +547,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22, la voie 1 étant sur l'attribution)
 
 ### AU046 · En secteur pauvre en DVF ou non couvert, je ne peux même pas ouvrir un avis motivé avec mes propres…
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#774, `1fd422bb`). Constat confirmé (seul le refus R27). Avis motivé `manual` dans le corps de la route existante : 3 à 20 ventes vérifiées de l'agent, preuve d'une liste fermée, fourchette de l'agent revérifiée à l'ajustement et à la validation ; l'absence de fourchette automatique et sa raison sont dans le pied gardé par le code ; R690. Codex : 2 P0 corrigés, puis rien. Écran de saisie des ventes : avec AU052.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A046 (majeur), endroit : C/estimation/preparation-avis.ts, refus `peu_de_ventes`.
 - Constat de l'audit : En secteur pauvre en DVF ou non couvert, je ne peux même pas ouvrir un avis motivé avec mes propres références vérifiées.
@@ -556,7 +557,7 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU047 · L’avis de valeur ne traite pas les terrains ni les immeubles, pourtant présents dans mon portefeuille
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A047 (majeur), endroit : C/estimation/preparation-avis.ts, `not_a_home`.
 - Constat de l'audit : L’avis de valeur ne traite pas les terrains ni les immeubles, pourtant présents dans mon portefeuille.
@@ -565,7 +566,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU048 · La sélection privilégie la distance sans limite d’ancienneté ni ajustement temporel explicite des ventes…
-- Statut : à faire
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#777, `2399cfd0`). Constat confirmé (aucune borne d'ancienneté). Méthode : exclusion, sans correction (pas d'indice local publié et daté) ; fenêtre de 36 mois avant l'estimation (`maxSaleAgeMonths`), le rayon s'élargit plutôt que de garder une vente ancienne ; `window` rendue et dite dans le pied de l'avis ; R691. Codex rien à signaler ; vérification verte.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A048 (majeur), endroit : C/estimation/fourchette.ts, sélection des comparables.
 - Constat de l'audit : La sélection privilégie la distance sans limite d’ancienneté ni ajustement temporel explicite des ventes retenues.
