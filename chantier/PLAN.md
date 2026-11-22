@@ -497,7 +497,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Décidé (2026-11-22, voie 1) : constat confirmé (`agentsOf` ne lit pas `agent_absences`). Branche `chantier/AU040`, proposition #771 laissée ouverte : R680 (absent jamais candidat ; client suivi au binôme, sinon direction ; nouveau contact à un présent de la commune, sinon au binôme présent d'un absent ; trace en ajout seul `attribution_absences`, migration `4096`), 36 tests. Codex : un P0 par tour sur les réattributions suivantes (binôme en retard, binôme absent, retour de l'absent, contact tenu par la direction). Autre approche à la reprise : ouvrir la fiche au binôme pendant l'absence dans `Acces` (`coversAt` de J09, fichiers du socle), laisser le contact attribué à l'absent sans réattribution, et ne retirer l'absent que des nouveaux contacts.
 
 ### AU041 · Le tirage fixe répartit les contacts sans plafond de charge ni disponibilité de rappel de l’agent
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A041 (majeur), endroit : C/qualification/attribution.ts, `chooseAgent`.
 - Constat de l'audit : Le tirage fixe répartit les contacts sans plafond de charge ni disponibilité de rappel de l’agent.
