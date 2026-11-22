@@ -145,13 +145,58 @@ function services(config: TelephonieConfig) {
 const findSession = (db: SqlDatabase, callSid: string): Promise<SessionRow | null> =>
   db.first<SessionRow>('SELECT id, network_id, state, turns FROM voice_assistant_sessions WHERE provider = ? AND call_id = ?', [TELEPHONIE_PROVIDER, callSid]);
 
-/** L'appel est fini : rangé par HX21, la main passe à l'agent, puis l'état (et le numéro qu'il porte) est effacé [R18]. */
-async function endSession(config: TelephonieConfig, assistant: AssistantVocal, row: SessionRow): Promise<void> {
-  if (row.state === null) return;
-  const state = JSON.parse(row.state) as AssistantState;
-  await assistant.finish(state, { endedAt: config.now(), recordingRef: null });
+/** Au-delà, celui qui tenait l'appel est réputé tombé : un autre peut le reprendre. */
+export const TELEPHONIE_LEASE_MS = 60_000;
+
+/**
+ * Prend l'appel pour un tour ou pour sa fin : un seul à la fois, du début du tour (réservation comprise) jusqu'à l'état
+ * rangé. Rend le jeton, ou null si l'appel est déjà tenu, fini, ou a changé de tour depuis sa lecture [R18, R710].
+ */
+async function claim(config: TelephonieConfig, id: string, turns: number | null): Promise<string | null> {
+  const at = config.now();
+  const token = crypto.randomUUID();
+  const stale = new Date(at.getTime() - TELEPHONIE_LEASE_MS).toISOString();
+  const { changes } = await config.db.run(
+    `UPDATE voice_assistant_sessions SET lease_token = ?, lease_at = ?
+     WHERE id = ? AND ended_at IS NULL AND (lease_token IS NULL OR lease_at < ?)${turns === null ? '' : ' AND turns = ?'}`,
+    [token, at.toISOString(), id, stale, ...(turns === null ? [] : [turns])],
+  );
+  return changes === 1 ? token : null;
+}
+
+const release = (db: SqlDatabase, id: string, token: string): Promise<unknown> =>
+  db.run('UPDATE voice_assistant_sessions SET lease_token = NULL, lease_at = NULL WHERE id = ? AND lease_token = ?', [id, token]);
+
+/**
+ * L'appel est fini, tenu par `token` : rangé par HX21, la main passe à l'agent, puis l'état (et le numéro qu'il porte)
+ * est effacé [R18]. L'état lu est celui rangé par le dernier tour, sous le même jeton.
+ */
+async function endSession(config: TelephonieConfig, assistant: AssistantVocal, id: string, token: string): Promise<void> {
+  const row = await config.db.first<{ state: string | null }>('SELECT state FROM voice_assistant_sessions WHERE id = ? AND lease_token = ?', [id, token]);
+  if (!row || row.state === null) return;
+  await assistant.finish(JSON.parse(row.state) as AssistantState, { endedAt: config.now(), recordingRef: null });
   const at = config.now().toISOString();
-  await config.db.run('UPDATE voice_assistant_sessions SET state = NULL, ended_at = ?, updated_at = ? WHERE id = ? AND ended_at IS NULL', [at, at, row.id]);
+  await config.db.run(
+    'UPDATE voice_assistant_sessions SET state = NULL, ended_at = ?, updated_at = ?, lease_token = NULL, lease_at = NULL WHERE id = ? AND lease_token = ? AND ended_at IS NULL',
+    [at, at, id, token],
+  );
+}
+
+const hungUp = async (db: SqlDatabase, id: string): Promise<boolean> =>
+  (await db.first<{ h: string | null }>('SELECT hangup_at AS h FROM voice_assistant_sessions WHERE id = ?', [id]))?.h != null;
+
+/** Après un tour : si le service a dit l'appel fini pendant ce tour, celui-ci le finit, ou le prochain qui le prend [R18]. */
+async function finishIfHungUp(config: TelephonieConfig, assistant: AssistantVocal, id: string, token: string): Promise<void> {
+  if (await hungUp(config.db, id)) {
+    await endSession(config, assistant, id, token);
+    return;
+  }
+  await release(config.db, id, token);
+  // La fin a pu arriver entre la lecture et la libération, sans pouvoir prendre l'appel : on la refait ici.
+  if (await hungUp(config.db, id)) {
+    const again = await claim(config, id, null);
+    if (again) await endSession(config, assistant, id, again);
+  }
 }
 
 export async function handleTelephonie(request: Request, path: string, config: TelephonieConfig): Promise<Response> {
@@ -209,26 +254,43 @@ export async function handleTelephonie(request: Request, path: string, config: T
   if (path === TELEPHONIE_PATHS.tour) {
     const row = await findSession(config.db, callSid);
     if (!row || row.state === null) return hangUp([]);
-    const previous = JSON.parse(row.state) as AssistantState;
-    const turn = await assistant.hear(previous, (form.get('SpeechResult') ?? '').slice(0, 1000));
+    // Le tour tient l'appel de bout en bout : une fin livrée pendant la réservation ne range pas un état périmé [R18].
+    const token = await claim(config, row.id, row.turns);
+    if (token === null) return listen([], tourUrl);
+    const held = await config.db.first<{ state: string | null }>('SELECT state FROM voice_assistant_sessions WHERE id = ? AND lease_token = ?', [row.id, token]);
+    if (!held || held.state === null) return hangUp([]);
+    let turn;
+    try {
+      turn = await assistant.hear(JSON.parse(held.state) as AssistantState, (form.get('SpeechResult') ?? '').slice(0, 1000));
+    } catch (error) {
+      await release(config.db, row.id, token);
+      throw error;
+    }
     const at = config.now().toISOString();
-    const { changes } = await config.db.run(
-      'UPDATE voice_assistant_sessions SET state = ?, turns = ?, updated_at = ? WHERE id = ? AND turns = ? AND ended_at IS NULL',
-      [JSON.stringify(turn.state), turn.state.turns, at, row.id, row.turns],
-    );
-    // Un tour livré deux fois : le premier compte, le second n'ajoute rien [R18].
-    if (changes === 0) return listen([], tourUrl);
+    await config.db.run('UPDATE voice_assistant_sessions SET state = ?, turns = ?, updated_at = ? WHERE id = ? AND lease_token = ?', [
+      JSON.stringify(turn.state),
+      turn.state.turns,
+      at,
+      row.id,
+      token,
+    ]);
     if (turn.done) {
-      await endSession(config, assistant, { ...row, state: JSON.stringify(turn.state), turns: turn.state.turns });
+      await endSession(config, assistant, row.id, token);
       return hangUp(turn.say);
     }
+    await finishIfHungUp(config, assistant, row.id, token);
     return listen(turn.say, tourUrl);
   }
 
   if (path === TELEPHONIE_PATHS.fin) {
     if (!ENDED.has(form.get('CallStatus') ?? '')) return twiml('');
     const row = await findSession(config.db, callSid);
-    if (row) await endSession(config, assistant, row);
+    if (!row || row.state === null) return twiml('');
+    const at = config.now().toISOString();
+    await config.db.run('UPDATE voice_assistant_sessions SET hangup_at = COALESCE(hangup_at, ?) WHERE id = ? AND ended_at IS NULL', [at, row.id]);
+    // Un tour en cours tient l'appel : c'est lui qui le finira, avec l'état qu'il range [R18, R248, R04].
+    const token = await claim(config, row.id, null);
+    if (token) await endSession(config, assistant, row.id, token);
     return twiml('');
   }
 

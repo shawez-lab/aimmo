@@ -14,6 +14,12 @@ CREATE TABLE IF NOT EXISTS voice_assistant_sessions (
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   ended_at TEXT,
+  -- Un seul tour ou une seule fin à la fois : le jeton de celui qui tient l'appel, et son heure (repris s'il est vieux).
+  lease_token TEXT,
+  lease_at TEXT,
+  -- L'heure où le service a dit l'appel fini ; le tour en cours le finit alors lui-même.
+  hangup_at TEXT,
+  CHECK ((lease_token IS NULL) = (lease_at IS NULL)),
   CHECK ((ended_at IS NULL) = (state IS NOT NULL)),
   UNIQUE (provider, call_id)
 );

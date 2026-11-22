@@ -272,6 +272,7 @@ export const COLONNES_MASQUEES: Readonly<Record<string, readonly string[]>> = {
   gbp_reviews: ['author_token_hashes'],
   listing_sync_leases: ['token'],
   portal_sync_leases: ['token'],
+  voice_assistant_sessions: ['lease_token'],
   newsletter_unsubscribe_tokens: ['token_hash'],
   owner_booklet_links: ['token_hash'],
   partner_prospect_mails: ['optout_token_sha256'],

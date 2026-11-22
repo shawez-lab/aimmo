@@ -1146,7 +1146,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   voice_note_recoveries: ['id', 'network_id', 'inbound_id', 'channel', 'failure', 'mime', 'created_at', 'done_at'],
   call_journal: ['call_id', 'claimed_at', 'done'],
   voice_assistant_calls: ['id', 'network_id', 'provider', 'property_id', 'appointment_kind', 'appointment_start', 'created_at'],
-  voice_assistant_sessions: ['id', 'network_id', 'provider', 'turns', 'created_at', 'updated_at', 'ended_at'],
+  voice_assistant_sessions: ['id', 'network_id', 'provider', 'turns', 'created_at', 'updated_at', 'ended_at', 'lease_token', 'lease_at', 'hangup_at'],
   automation_scenarios: ['id', 'version', 'network_id', 'definition', 'created_at'],
   automation_simulations: ['id', 'network_id', 'scenario_id', 'version', 'period_from', 'period_to', 'messages', 'reached', 'tasks', 'refused', 'same_day_twice', 'lit_revision', 'created_at'],
   automation_switches: ['id', 'network_id', 'scenario_id', 'version', 'lit', 'simulation_id', 'at', 'seq'],

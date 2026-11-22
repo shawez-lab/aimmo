@@ -46,6 +46,18 @@ async function world(settings: { mode?: string; accountSid?: string; authToken?:
   const person = await store.createPerson({ networkId: network.id, agentId: paul.id, firstName: 'Client' });
   await store.addIdentifier({ networkId: network.id, personId: person.id, kind: 'phone', value: CALLER });
 
+  // Un crochet appelé une fois, juste avant une écriture choisie : pour livrer une requête au milieu d'une autre.
+  const hooks: { match: RegExp; run: () => Promise<void> }[] = [];
+  const hooked = new Proxy(db, {
+    get(target, prop, receiver) {
+      if (prop !== 'run') return Reflect.get(target, prop, receiver);
+      return async (sql: string, params?: unknown[]) => {
+        const i = hooks.findIndex((h) => h.match.test(sql));
+        if (i >= 0) await hooks.splice(i, 1)[0]!.run();
+        return target.run(sql, params as never);
+      };
+    },
+  }) as SqlDatabase;
   let n = 0;
   const newSid = (): string => `CA${String(++n).padStart(32, '0')}`;
   const post = async (step: 'appel' | 'tour' | 'fin', fields: Record<string, string>, options: { signature?: string } = {}) => {
@@ -57,7 +69,7 @@ async function world(settings: { mode?: string; accountSid?: string; authToken?:
         headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-twilio-signature': options.signature ?? sign(url, all) },
         body: new URLSearchParams(all).toString(),
       }),
-      { db, apiKeys: undefined, mode: 'essai', now, telephonie: { mode: settings.mode, accountSid: settings.accountSid, authToken: settings.authToken } },
+      { db: hooked, apiKeys: undefined, mode: 'essai', now, telephonie: { mode: settings.mode, accountSid: settings.accountSid, authToken: settings.authToken } },
     );
     return { status: response.status, text: await response.text() };
   };
@@ -68,7 +80,7 @@ async function world(settings: { mode?: string; accountSid?: string; authToken?:
   const hangUp = (sid: string, status = 'completed') => post('fin', { CallSid: sid, CallStatus: status, CallDuration: '95' });
   const said = (twiml: string): string[] => [...twiml.matchAll(/<Say language="fr-FR">([^<]*)<\/Say>/g)].map((m) => m[1]!.replace(/&apos;/g, "'"));
   const journalText = async () => JSON.stringify(await db.all('SELECT type, actor, subject, data FROM journal'));
-  return { db, network, paul, person, post, ring, speak, hangUp, said, newSid, journalText };
+  return { db, hooks, network, paul, person, post, ring, speak, hangUp, said, newSid, journalText };
 }
 
 describeWithSqlite('AU045 · le vrai raccordement téléphonique de l’assistant vocal', () => {
@@ -206,6 +218,57 @@ describeWithSqlite('AU045 · le vrai raccordement téléphonique de l’assistan
     await w.hangUp(sid);
     expect(await w.db.first('SELECT status, person_id FROM calls')).toEqual({ status: 'masque', person_id: null });
     expect(await w.db.all('SELECT id FROM appointments')).toEqual([]);
+  });
+
+  it('[R710][R248][R18] la fin livrée pendant la réservation : le rendez-vous pris reste dans le passage de main', async () => {
+    const w = await world();
+    const sid = w.newSid();
+    await w.ring(sid);
+    await w.speak(sid, 'Oui.');
+    await w.speak(sid, 'Je voudrais un rendez-vous.');
+    await w.speak(sid, 'Le premier.');
+    // L'appelant raccroche pendant que le « oui » réserve : la fin arrive au milieu du tour.
+    let fin: { status: number } | null = null;
+    w.hooks.push({ match: /INSERT INTO appointments/, run: async () => void (fin = await w.hangUp(sid)) });
+    await w.speak(sid, 'Oui.');
+    expect(fin!.status).toBe(200);
+    const appointments = await w.db.all<{ start_at: string }>('SELECT start_at FROM appointments');
+    expect(appointments).toHaveLength(1);
+    expect(await w.db.all('SELECT appointment_start FROM voice_assistant_calls')).toEqual([{ appointment_start: appointments[0]!.start_at }]);
+    expect(await w.db.first('SELECT state, ended_at IS NOT NULL AS ended, lease_token FROM voice_assistant_sessions')).toEqual({ state: null, ended: 1, lease_token: null });
+  });
+
+  it('[R710][R04][R18] la fin livrée pendant un tour qui ne raccroche pas : le tour finit l’appel avec son état, arrêt compris', async () => {
+    const w = await world();
+    const sid = w.newSid();
+    await w.ring(sid);
+    await w.speak(sid, 'Oui.');
+    await w.speak(sid, 'Je voudrais un rendez-vous.');
+    // La fin arrive pendant que le tour range son état : elle ne peut pas prendre l'appel, le tour le finit.
+    w.hooks.push({ match: /UPDATE voice_assistant_sessions SET state = \?, turns/, run: async () => void (await w.hangUp(sid)) });
+    await w.speak(sid, 'Pardon, plutôt le deuxième.');
+    expect(await w.db.first('SELECT state, ended_at IS NOT NULL AS ended FROM voice_assistant_sessions')).toEqual({ state: null, ended: 1 });
+    expect(await w.db.all('SELECT id FROM voice_assistant_calls')).toHaveLength(1);
+    // Une demande d'arrêt dite au tour où la fin arrive est rangée [R04].
+    const v = await world();
+    const sid2 = v.newSid();
+    await v.ring(sid2);
+    await v.speak(sid2, 'Oui.');
+    v.hooks.push({ match: /UPDATE voice_assistant_sessions SET state = \?, turns/, run: async () => void (await v.hangUp(sid2)) });
+    await v.speak(sid2, 'Ne m’appelez plus.');
+    expect(await v.db.all('SELECT id FROM voice_assistant_calls')).toHaveLength(1);
+    const passage = await v.db.first<{ data: string }>("SELECT data FROM journal WHERE type = 'voix.assistant_passage'");
+    expect(JSON.parse(passage!.data)).toMatchObject({ stop: true });
+  });
+
+  it('[R710][R18] un tour tombé en route : la fin reprend l’appel une fois son délai passé', async () => {
+    const w = await world();
+    const sid = w.newSid();
+    await w.ring(sid);
+    await w.db.run("UPDATE voice_assistant_sessions SET lease_token = 'tombe', lease_at = '2026-01-01T00:00:00.000Z'");
+    await w.hangUp(sid);
+    expect(await w.db.first('SELECT ended_at IS NOT NULL AS ended FROM voice_assistant_sessions')).toEqual({ ended: 1 });
+    expect(await w.db.all('SELECT id FROM voice_assistant_calls')).toHaveLength(1);
   });
 
   it('[R710] le Worker passe TELEPHONIE_MODE et TWILIO_* à l’adresse du service téléphonique', async () => {
