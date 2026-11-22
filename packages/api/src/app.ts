@@ -5,6 +5,7 @@ import {
   AIMMO_VERSION,
   AlertesAgent,
   ATTRIBUTION_RULES,
+  Attribution,
   ControleBaseLegale,
   AUTOMATION_NAMES,
   Acces,
@@ -1022,6 +1023,30 @@ const ROUTES: RouteDef[] = [
           communes: await new GeographieReseau(s.db, s.journal, { now: s.now }).names(viewer.networkId),
         },
       }),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/attribution\/capacites$/,
+    name: 'attribution.capacites',
+    // La capacité déclarée et les contacts en attente de rappel : la direction pour chaque agent, l'agent pour lui [R681, R16].
+    handle: async (s, viewer) => {
+      const r = await new Attribution(s.db, new FicheUnique(s.db, new FicheClient(s.db, { now: s.now }), { now: s.now }), s.journal, { now: s.now }).capacities(viewer);
+      return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.value }) : refusal(r);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/attribution\/capacites$/,
+    name: 'attribution.capacites.declaration',
+    // L'agent déclare sa capacité, la direction celle d'un agent, avec une raison ; une version s'ajoute [R681, R16, R17].
+    handle: async (s, viewer, _p, request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      const r = await new Attribution(s.db, new FicheUnique(s.db, new FicheClient(s.db, { now: s.now }), { now: s.now }), s.journal, { now: s.now }).declareCapacity(viewer, body);
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      if (r.rule === 'R16') return refusal(r);
+      return json(r.rule ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
+    },
   },
   {
     method: 'GET',

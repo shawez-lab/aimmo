@@ -414,6 +414,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   qualification_corrections: { locate: [via('qualification_id', 'qualifications')] },
   contact_scores: { locate: by('person_id') },
   attributions: { locate: by('person_id') },
+  attribution_capacity: { locate: [via('attribution_id', 'attributions')] },
   callback_tasks: { locate: by('person_id') },
   missed_promise_tasks: { locate: by('person_id') },
   call_notes: { locate: by('person_id') },
@@ -763,6 +764,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   assistant_keys: out('agent', 'Clé que l\'agent confie à son assistant pour le serveur MCP (BR09) : empreinte seule.'),
   agent_zones: out('agent', 'Communes de l\'agent.'),
   agent_availabilities: out('agent', 'Disponibilités de l\'agent.'),
+  agent_capacities: out('agent', 'Capacité déclarée de l\'agent à l\'attribution (AU041).'),
   agent_public_cards: out('agent', 'Carte publique de l\'agent.'),
   agent_language_declarations: out('agent', 'Langues que l\'agent déclare parler.'),
   // HX31 : les écrans de vitrine, sans donnée d'un client.
