@@ -39,6 +39,7 @@ export const MANUAL_REASONS: readonly NoRangeReason[] = ['peu_de_ventes', 'dvf_n
 
 /** Pourquoi il n'y a pas de fourchette automatique, dit au client. */
 export const MANUAL_REASON_TEXT: Readonly<Record<string, string>> = {
+  type: 'le calcul automatique ne traite que les appartements et les maisons, à partir des ventes publiées',
   peu_de_ventes: 'les ventes publiées de biens comparables près de chez vous sont trop peu nombreuses pour un calcul fiable',
   dvf_non_couvert: 'les ventes publiées par l’État ne couvrent pas ce département',
   donnees_absentes: 'les données de ventes publiées ne sont pas disponibles pour ce secteur',

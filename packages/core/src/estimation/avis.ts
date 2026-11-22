@@ -106,7 +106,8 @@ export const MANUAL_ADVICE_NOTICE =
 export interface ManualDraftInput {
   networkId: string;
   propertyId: string;
-  kind: 'apartment' | 'house';
+  /** Un terrain ou un immeuble n'a jamais de fourchette du calcul : seulement l'avis motivé. */
+  kind: 'apartment' | 'house' | 'land' | 'building';
   surface: number;
   manual: ManualInput;
   reason: NoRangeReason;
@@ -320,7 +321,7 @@ export class AvisDeValeur {
     const energy = input.facts?.energy.ok ? input.facts.energy.value.energyClass : null;
     const risks = input.facts?.risks.ok ? input.facts.risks.value.map((x) => x.label) : [];
     const town = input.facts?.address.ok ? input.facts.address.value.town : null;
-    const what = input.kind === 'house' ? 'maison' : 'appartement';
+    const what = { house: 'maison', apartment: 'appartement', land: 'terrain', building: 'immeuble' }[input.kind];
     const lines = [`Pour votre ${what} de ${String(input.surface).replace('.', ',')} m²${town ? ` à ${town}` : ''}, votre agent estime la valeur entre ${euros(low)} et ${euros(high)}.`];
     if (energy) lines.push(`Diagnostic énergétique connu : classe ${energy}.`);
     if (risks.length > 0) lines.push(`Risques signalés sur la commune : ${risks.join(', ').toLowerCase()}.`);
