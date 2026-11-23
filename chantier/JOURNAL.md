@@ -1725,3 +1725,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-23 08:53 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-23 09:22 · AU045 · reprise avec une autre approche : rendez-vous retrouvé par la référence de l'appel, passage de main après HX21 seulement, panne de fin au journal ; Codex 1 P1 corrigé puis rien ; vérification verte ; fusionnée (#785, 87ec4d54) · prochaine : AU040 (autre approche notée au plan)
 - 2026-11-23 09:23 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU040
+- 2026-11-23 09:55 · VOIE 2 : rien de faisable : seul changement depuis 08:53, AU045 fusionnée par la voie 1 (#785), qui reprend AU040 (#791, autre approche) ; restent AU014/AU096b/AU069 (H73), AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05 (humain), AU035 (#757) bloquée chez la voie 1 ; aucun module non découpé
+- 2026-11-23 09:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 07:56 et 08:53 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 09:55 · VOIE 2 : aucune tâche, rien, relancé non
