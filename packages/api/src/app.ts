@@ -103,7 +103,7 @@ import { avantContratRoutes, type AvantContratRoute, type AvantContratServices }
 import { commercesRoutes, dossierReaderRoutes, type CommercesRoute, type CommercesServices } from './commerces.ts';
 import { GpuUrbanism, annonces as m07, conformite } from '@aimmo/core';
 import { CANDIDATURE_PATH, handleCandidature } from './candidature.ts';
-import { accessCut, conformiteRoutes, type ConformiteRoute, type VaultFiles } from './conformite.ts';
+import { accessCut, conformiteRoutes, type ConformiteRoute, type ConformiteServices, type VaultFiles } from './conformite.ts';
 import { securiteRoutes, type RegistreGelsSource, type SecuriteRoute } from './securite.ts';
 import { reseauUtileRoutes, type ReseauUtileRoute } from './reseau-utile.ts';
 import { trousseauxRoutes, type TrousseauxRoute } from './trousseaux.ts';
@@ -260,6 +260,11 @@ export interface ApiConfig {
   candidatureNetworkId?: string | undefined;
   /** M12 (L09) : le stockage du coffre de la conformité (R2, `COFFRE`) ; absent, le dépôt et l'ouverture d'une pièce sont fermés. */
   coffre?: VaultFiles | null;
+  /**
+   * SV05 : l'effacement réel (AU020) monté par le Worker (`erasureOf`) ; absent, ou mode autre que `reel`, la route refuse
+   * et rien n'est effacé. En essai tant que H29 et H50 ne sont pas faits.
+   */
+  erasure?: ConformiteServices['erasure'];
   /** BR82 : les fichiers déposés de l'agence sous licence (R2 : `MEDIA`, `PIECES`, `COMMERCES`, jamais `COFFRE`) ; absents, leurs routes sont fermées. */
   fichiersReprise?: StockageFichiersPlages | null;
   /** M18 (U09) : le stockage des preuves et des pièces des partenaires (R2, `PIECES`, sous `partenaires/`) ; absent, les routes de M18 sont fermées. */
@@ -1467,12 +1472,12 @@ function avantContratRoutesDef(pieces: PieceStore | null, options: Pick<AvantCon
 }
 
 /** Les routes de M12 (L09) : l'arrêt après une opposition passe par le contrôle central des envois [R04]. */
-function m12Routes(coffre: VaultFiles | null): RouteDef[] {
+function m12Routes(coffre: VaultFiles | null, erasure: ConformiteServices['erasure'] = null): RouteDef[] {
   return conformiteRoutes().map((r: ConformiteRoute) => ({
     method: r.method,
     pattern: r.pattern,
     name: r.name,
-    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, acces: s.acces, stop: s.decision, vault: coffre, now: s.now }, viewer, params, request),
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, acces: s.acces, stop: s.decision, vault: coffre, now: s.now, erasure }, viewer, params, request),
   }));
 }
 
@@ -2703,7 +2708,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...m15Routes(config.pieces ?? null, config.location ?? {}),
     ...coproprieteRoutesDef(coproprieteSourcesOf(config)),
     ...avantContratRoutesDef(config.pieces ?? null, config.avantContrat ?? {}),
-    ...m12Routes(config.coffre ?? null),
+    ...m12Routes(config.coffre ?? null, config.erasure ?? null),
     ...securiteRoutesDef(config.registreGels ?? null),
     ...reseauUtileRoutesDef(),
     ...trousseauxRoutesDef(),

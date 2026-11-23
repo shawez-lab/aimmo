@@ -13,6 +13,7 @@ import type { AnnonceOptions } from './annonces.ts';
 import { R2AgentPieceStore, type R2AgentBucket, type ReseauOptions } from './reseau.ts';
 import { D1SandboxStorage } from './bac-a-sable.ts';
 import { R2VaultStorage, type R2VaultBucket } from './conformite.ts';
+import { erasureOf } from './effacement-worker.ts';
 import { R2PartnerFiles, type R2PartnerBucket } from './partenaires.ts';
 import { R2DossierStorage, type R2DossierBucket } from './commerces.ts';
 import { R2FichiersPlages, plagesBucket } from './reprise-fichiers.ts';
@@ -187,6 +188,17 @@ export interface Env {
   TELEPHONIE_MODE?: string;
   TWILIO_ACCOUNT_SID?: string;
   TWILIO_AUTH_TOKEN?: string;
+  /**
+   * SV05 · l'effacement réel (AU020) : `reel` écrit tel quel, après H29 et H50 ; toute autre valeur, ou rien, garde l'essai.
+   * Le registre des effacements va dans `aimmo-copies`, sous `effacements/` seulement, avec la clé limitée de la copie
+   * de chaque nuit et sa clé de chiffrement (`CLOUDFLARE_ACCOUNT_ID`, `COPIES_R2_ACCESS_KEY_ID`,
+   * `COPIES_R2_SECRET_ACCESS_KEY`, `COPY_KEY`) ; un réglage manque : la route refuse avant d'effacer [R231].
+   */
+  ERASURE_MODE?: string;
+  CLOUDFLARE_ACCOUNT_ID?: string;
+  COPIES_R2_ACCESS_KEY_ID?: string;
+  COPIES_R2_SECRET_ACCESS_KEY?: string;
+  COPY_KEY?: string;
 }
 
 /** AU043 : les vraies boîtes des agents, et le rangement de leurs pièces dans `PIECES` ; sinon rien n'est lu [R683]. */
@@ -291,9 +303,12 @@ function listingOptions(_env: Env): AnnonceOptions {
 }
 
 export default {
-  fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env): Promise<Response> {
     const estimation = estimationServices(env);
+    // SV05 : en essai (le cas tant que H29 n'est pas fait), aucun secret n'est lu et rien n'est effacé.
+    const erasure = await erasureOf(env, fetch.bind(globalThis));
     return handleRequest(request, {
+      erasure,
       db: fromD1(env.DB),
       listing: listingOptions(env),
       apiKeys: env.API_KEYS,
