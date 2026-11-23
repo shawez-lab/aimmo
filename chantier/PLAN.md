@@ -489,7 +489,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Décidé (2026-11-21, voie 1) : constat confirmé (`DEFAULT_COMMUNES` écrit dans le code, seule liste de la qualification et de la recherche). Table `network_communes` (migration `4095`), en ajout seul, par versions : la direction inscrit une commune avec son code INSEE ou la retire, avec une raison (`GeographieReseau`, `packages/core/src/geographie/communes.ts`), R679. La qualification, la recherche en langage courant (lecture, voisines, rangement) et `GET /v1/attribution/regles` lisent la liste du réseau ; routes `GET`/`POST /v1/geographie/communes`. Un réseau qui n'a encore rien inscrit garde la liste du pilote, dite `defaut` : aucun code INSEE n'est écrit dans le code (les codes des 38 communes du pilote ne sont pas inventés, la direction les inscrit). Restent : les autres lecteurs de `DEFAULT_COMMUNES` (dictée, appels, fiche acquéreur seule, attribution, communes à pourvoir) et l'écran de la direction.
 
 ### AU040 · Un agent déclaré absent reste candidat à l’attribution dès lors que son statut est « active »
-- Statut : en cours
+- Statut : fait (2026-11-23)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A040 (majeur), endroit : C/qualification/attribution.ts, `agentsOf`.
 - Constat de l'audit : Un agent déclaré absent reste candidat à l’attribution dès lors que son statut est « active ».
@@ -498,6 +498,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 - Décidé (2026-11-22, voie 1) : constat confirmé (`agentsOf` ne lit pas `agent_absences`). Branche `chantier/AU040`, proposition #771 laissée ouverte : R680 (absent jamais candidat ; client suivi au binôme, sinon direction ; nouveau contact à un présent de la commune, sinon au binôme présent d'un absent ; trace en ajout seul `attribution_absences`, migration `4096`), 36 tests. Codex : un P0 par tour sur les réattributions suivantes (binôme en retard, binôme absent, retour de l'absent, contact tenu par la direction). Autre approche à la reprise : ouvrir la fiche au binôme pendant l'absence dans `Acces` (`coversAt` de J09, fichiers du socle), laisser le contact attribué à l'absent sans réattribution, et ne retirer l'absent que des nouveaux contacts.
 
+- Fait (2026-11-23, voie 1) : autre approche, #791 (9e522805), #771 fermée. R680 : un agent absent ce jour (absence J09, heure de Paris) n'est plus candidat à l'attribution ni à la réattribution, passé comme un agent plein ; tous absents ou pleins : direction ; la base revérifie l'absence dans le lot qui attribue. Un client suivi reste à l'absent, sans réattribution ; son binôme ouvre la fiche par `Acces.readFiche` pendant l'absence seulement, au journal avec la référence de l'absence. Codex : 1 P0 (accès du binôme) corrigé, puis rien.
 ### AU041 · Le tirage fixe répartit les contacts sans plafond de charge ni disponibilité de rappel de l’agent
 - Statut : fait (2026-11-22)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
