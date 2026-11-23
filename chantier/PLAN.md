@@ -1155,7 +1155,7 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 
 ### AU100 · Manque
 - Statut : fait (2026-11-23)
-- Suivi : en cours (voie 3)
+- Suivi : #797 fusionnée ; trésorerie après prêt en simulation d'essai pour l'agent, jamais dans la note du client, jusqu'à H72
 - Note de statut : en cours (voie 3, #797). Décision de Shawez du 2026-11-23 : construite en essai, gardée pour l'agent, hors de la note du client jusqu'à H72. Avant : bloquée : la trésorerie après prêt demande des champs de crédit à l'écran Investir, ce que R123 interdit (pas de crédit ni de solvabilité), et une simulation de prêt remise au client peut relever de l'intermédiation en crédit (IOBSP) et de R125 ; avis de l'avocat demandé (H72). Le calcul est prêt sur la branche `voie3/AU100` (annuité testée, rendement inchangé), sans proposition ouverte.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A100 (majeur), endroit : C/investir/calcul.ts, `YieldInputs`.
