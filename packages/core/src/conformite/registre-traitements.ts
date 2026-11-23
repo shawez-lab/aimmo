@@ -1226,7 +1226,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   legal_basis_checks: ['id', 'network_id', 'ran_at', 'from_day', 'to_day', 'plans', 'gaps', 'seen_at'],
   mandate_register_settings: ['network_id', 'prefix', 'first_number', 'width', 'set_at'],
   mandate_register: ['network_id', 'seq', 'kind', 'mandate_id', 'number', 'property_id', 'signed_at', 'cancels_seq', 'at', 'prev_hash', 'hash'],
-  document_templates: ['id', 'network_id', 'kind', 'version', 'status', 'fields', 'hash', 'created_at', 'validated_at'],
+  document_templates: ['id', 'network_id', 'kind', 'version', 'status', 'fields', 'hash', 'created_at', 'validated_at', 'purpose'],
   documents: ['id', 'network_id', 'template_id', 'template_version', 'template_hash', 'kind', 'mode', 'status', 'missing', 'property_id', 'created_at', 'mandate_id'],
   document_co_mandants: ['document_id', 'network_id', 'position', 'added_at'],
   document_proxies: ['document_id', 'network_id', 'power_kind', 'granted_on', 'recorded_at'],

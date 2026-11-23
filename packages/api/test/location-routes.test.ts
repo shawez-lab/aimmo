@@ -6,6 +6,7 @@ import type { Viewer as V } from '@aimmo/core';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 import { enClair } from '../../core/test/boite-essai.ts';
+import { signRentalMandate } from '../../core/test/mandat-location-jeu.ts';
 
 // Réseau, agents, propriétaires, candidats, logements, communes et adresses inventés. Le 12 juillet 2027 est un lundi.
 let clock = Date.parse('2027-07-12T08:00:00.000Z'); // 10 h à Paris
@@ -97,6 +98,8 @@ async function setup() {
     const owner = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: 'Bailleur', lastName: 'Inventé' });
     await store.addIdentifier({ networkId: network.id, personId: owner.id, kind: 'email', value: `bailleur.${uuid()}@example.test` });
     const home = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: `L-${uuid()}`, kind: 'home', postalCode: '21000', city, rooms: 2 });
+    // AU014 : la location se fait sous un mandat de location signé et inscrit.
+    await signRentalMandate(db, { networkId: network.id, agentId: alex.id, personId: owner.id, propertyId: home.id });
     const id = (await ok(agent, 'POST', '/location', { propertyId: home.id, ownerPersonId: owner.id })).listingId as string;
     await ok(agent, 'POST', `/location/${id}/faits`, facts);
     return { id, home, owner };

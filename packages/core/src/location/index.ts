@@ -9,3 +9,4 @@ export * from './remise-cles.ts';
 export * from './signature-bail.ts';
 export * from './branchement.ts';
 export * from './depot.ts';
+export * from './mandat-location.ts';

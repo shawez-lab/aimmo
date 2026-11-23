@@ -124,7 +124,7 @@ const STOP_REFUSALS = {
   withdrawn: 'Le mandant s’est déjà rétracté : rien de plus à noter.',
   unknown_mandate: 'Ce mandat n’est pas dans vos droits.',
 };
-const KINDS = { mandat_vente_simple: 'Mandat simple', mandat_vente_exclusif: 'Mandat exclusif', avenant_mandat: 'Avenant' };
+const KINDS = { mandat_vente_simple: 'Mandat simple', mandat_vente_exclusif: 'Mandat exclusif', avenant_mandat: 'Avenant', mandat_location: 'Mandat de location' };
 const PLACES: Record<SignaturePlace, string> = { agence: 'À l’agence', hors_agence: 'Hors de l’agence', distance: 'À distance' };
 const SOURCES: Record<MandateSource, string> = {
   site: 'Le site',
@@ -417,7 +417,7 @@ globalThis.AIMMO_MANDAT = function (t) {
     if (s && s.complete) card.appendChild(el('p', 'Signé le ' + date(s.signedAt) + ', ' + (PLACES[s.place] || '').toLowerCase() + (s.number ? ', n° ' + s.number : '') + '.'));
     if (s && !s.complete) card.appendChild(el('p', 'Enregistrement arrêté en route : ce mandat n’est pas encore signé.'));
     card.appendChild(button('Lire le document', function () { return read(zone, doc(d.id), 'Le document ne se lit pas : réessayez.'); }));
-    var isMandate = d.kind === 'mandat_vente_simple' || d.kind === 'mandat_vente_exclusif';
+    var isMandate = d.kind === 'mandat_vente_simple' || d.kind === 'mandat_vente_exclusif' || d.kind === 'mandat_location';
     if (s && s.complete) card.appendChild(button('Voir l’exemplaire', function () { return read(zone, doc(d.id) + '/exemplaire', 'L’exemplaire ne se lit pas : réessayez.'); }));
     else if (s && isMandate) card.appendChild(button('Reprendre l’enregistrement', function () { clear(zone); drawResume(zone, d, s); }));
     else if (isMandate && free) card.appendChild(button('Contrôler avant signature', act(function () { return control(zone, d); })));
@@ -629,7 +629,7 @@ globalThis.AIMMO_MANDAT = function (t) {
     known.forEach(function (o) { names[o.personId] = [o.firstName, o.lastName].filter(Boolean).join(' ') || 'Propriétaire sans nom'; });
     var who = choice(box, 'mandat-mandant', 'Mandant', known.map(function (o) { return o.personId; }), names, known.length > 1 ? 'À choisir' : null);
     if (known.length === 1) who.value = known[0].personId;
-    var kind = choice(box, 'mandat-type', 'Type de mandat', ['mandat_vente_simple', 'mandat_vente_exclusif'], KINDS, 'À choisir');
+    var kind = choice(box, 'mandat-type', 'Type de mandat', ['mandat_vente_simple', 'mandat_vente_exclusif', 'mandat_location'], KINDS, 'À choisir');
     var fee = field(box, 'mandat-honoraires', 'Honoraires, en euros');
     fee.setAttribute('inputmode', 'numeric');
     var charge = choice(box, 'mandat-charge', 'À la charge de', ['vendeur', 'acquereur'], { vendeur: 'Le vendeur', acquereur: 'L’acquéreur' }, 'À choisir');
@@ -639,10 +639,12 @@ globalThis.AIMMO_MANDAT = function (t) {
       if (!who.value) { state('Choisissez le mandant.'); return false; }
       if (!kind.value) { state('Choisissez le type de mandat.'); return false; }
       if (!/^\\d{1,9}$/.test(fee.value.trim())) { state('Les honoraires : un montant en euros, sans centimes.'); return false; }
-      if (!charge.value) { state('Dites qui paie les honoraires.'); return false; }
+      // AU014 : un mandat de location dit les honoraires du bailleur ; ceux du locataire suivent le barème plafonné.
+      var renting = kind.value === 'mandat_location';
+      if (!renting && !charge.value) { state('Dites qui paie les honoraires.'); return false; }
       if (!/^\\d{1,3}$/.test(months.value.trim())) { state('La durée : un nombre de mois.'); return false; }
       var mine = ++seq;
-      return send('/v1/documents', 'POST', { kind: kind.value, personId: who.value, propertyId: cur.id, inputs: { 'honoraires.montant': Number(fee.value.trim()), 'honoraires.charge': charge.value, 'mandat.duree_mois': Number(months.value.trim()) } }).then(function (res) {
+      return send('/v1/documents', 'POST', { kind: kind.value, personId: who.value, propertyId: cur.id, inputs: renting ? { 'honoraires.montant': Number(fee.value.trim()), 'mandat.duree_mois': Number(months.value.trim()) } : { 'honoraires.montant': Number(fee.value.trim()), 'honoraires.charge': charge.value, 'mandat.duree_mois': Number(months.value.trim()) } }).then(function (res) {
         if (res.gone || mine !== seq) return false;
         if (res.ok) return load('Mandat préparé : contrôlez-le avant de le signer.');
         state(why(res, 'Le mandat n’est pas préparé : réessayez.'));

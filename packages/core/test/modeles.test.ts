@@ -144,7 +144,7 @@ describeWithSqlite('D02 · bibliothèque de modèles et documents générés', (
     const t = await setup();
     expect(await t.modeles.createVersion(t.direction, 'mandat_vente_exclusif', 'Prix : {{bien.prix_imaginaire}}')).toEqual({ ok: false, rule: 'R40', code: 'unknown_field' });
     expect(await t.modeles.createVersion(t.direction, 'mandat_vente_exclusif', 'Prix : {{ bien.prix }')).toEqual({ ok: false, rule: 'R40', code: 'unknown_field' });
-    expect(await t.modeles.createVersion(t.direction, 'mandat_location' as never, 'x')).toEqual({ ok: false, rule: null, code: 'unknown_kind' });
+    expect(await t.modeles.createVersion(t.direction, 'mandat_bail_inconnu' as never, 'x')).toEqual({ ok: false, rule: null, code: 'unknown_kind' });
     expect(await t.modeles.createVersion(t.as('agent', t.alex.id), 'mandat_vente_exclusif', BODY)).toMatchObject({ ok: false, rule: 'R16' });
     const v = await t.modeles.createVersion(t.direction, 'mandat_vente_exclusif', BODY);
     expect(await t.modeles.validate(t.direction, v.ok ? v.template.id : '')).toMatchObject({ ok: false, rule: 'R16' });
