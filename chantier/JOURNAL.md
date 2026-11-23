@@ -1776,3 +1776,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-23 20:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 18:55 et 19:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-23 20:55 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-23 21:00 · VOIE 3 : X17b fusionnée (#796, code d'essai du bail et du bon de visite à l'écran) ; AU100 (#797) : troisième P0 Codex corrigé (source du financement), relecture demandée. Statuts du PLAN remis au format (fondations.test.ts)
+- 2026-11-23 21:25 · VOIE 3 : AU100 fusionnée (#797, trésorerie après prêt pour l'agent seul, jamais dans la note du client ; trois P0 Codex corrigés) ; plus rien à coder en voie 3 sans compte réel ni avocat ; verrou libéré
