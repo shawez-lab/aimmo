@@ -134,15 +134,18 @@ export class AgendaSync {
   private readonly now: () => Date;
   /** Les événements dont le déplacement est en train d'être repris : ils ne bloquent pas leur propre rendez-vous. */
   private readonly moving = new Set<string>();
+  /** Les seuls agents dont l'agenda est relié (AU053) ; absent, chaque agent qui a des disponibilités. */
+  private readonly agents: (() => readonly string[]) | null;
 
   constructor(
     private readonly db: SqlDatabase,
     private readonly journal: JournalStore,
     private readonly provider: AgendaProvider,
     private readonly rdv: RendezVous,
-    options: { now?: () => Date } = {},
+    options: { now?: () => Date; agents?: () => readonly string[] } = {},
   ) {
     this.now = options.now ?? (() => new Date());
+    this.agents = options.agents ?? null;
   }
 
   /**
@@ -337,7 +340,10 @@ export class AgendaSync {
 
   /** Un passage complet : ramener les changements de chaque agent, puis écrire ce qui doit l'être. */
   async run(): Promise<AgendaSyncResult> {
-    const agents = await this.db.all<{ agent_id: string }>('SELECT agent_id FROM agent_availabilities ORDER BY agent_id');
+    // Avec des agendas reliés (AU053), seuls leurs agents sont lus et écrits : un agent sans agenda n'est jamais appelé.
+    const agents = this.agents
+      ? [...new Set(this.agents())].sort().map((agent_id) => ({ agent_id }))
+      : await this.db.all<{ agent_id: string }>('SELECT agent_id FROM agent_availabilities ORDER BY agent_id');
     const total: AgendaSyncResult = { written: 0, failed: 0, moved: 0, cancelled: 0, conflicts: 0 };
     let failure: unknown = null;
     for (const { agent_id } of agents) {
@@ -350,9 +356,11 @@ export class AgendaSync {
         failure ??= error;
       }
     }
-    const w = await this.push();
-    total.written += w.written;
-    total.failed += w.failed;
+    for (const agentId of this.agents ? agents.map((a) => a.agent_id) : [undefined]) {
+      const w = await this.push(agentId);
+      total.written += w.written;
+      total.failed += w.failed;
+    }
     // Une panne n'arrête pas les autres agents ; elle remonte ensuite au planificateur, notée [R13].
     if (failure !== null) throw failure;
     return total;

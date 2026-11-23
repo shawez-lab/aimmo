@@ -42,6 +42,7 @@
  * n'envoie elle-même : tout envoi passe par le contrôle central des envois, en mode essai [R26].
  */
 import { base64Of, validTile, type TileSource } from './carte.ts';
+import { AgendaUnavailableError, agendaBusyOf, type AgendaDirectory } from './agenda-reel.ts';
 import {
   APPOINTMENT_KINDS,
   AlerteWhatsApp,
@@ -96,6 +97,8 @@ export interface M08Options {
   geocoder?: Geocoder | null;
   /** AU073b · le fournisseur des tuiles de la carte des secteurs (`CARTE_TUILES_URL`) ; absent, la carte n'est pas branchée. */
   tiles?: TileSource | null;
+  /** AU053 · les agendas reliés des agents (H21, H53) : un événement occupé refuse le rendez-vous [R33, R702]. */
+  agendas?: AgendaDirectory | null;
 }
 
 export interface M08Route {
@@ -249,8 +252,15 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
       if (typeof start !== 'string' || !INSTANT.test(start) || Number.isNaN(Date.parse(start))) return failure(400, 'invalid_start', 'start : un instant ISO en UTC.');
       const duration = durationOf(body.durationMinutes);
       if (duration === null) return failure(400, 'invalid_duration', durationHelp);
-      const rdv = new RendezVous(s.db, s.journal, { now: s.now });
-      return reply(await rdv.bookAsAgent(v, s.acces, { personId, propertyId: (propertyId as string | null | undefined) ?? null, kind: kind as AppointmentKind, start: new Date(start), ...duration }));
+      const agenda = agendaBusyOf(s.db, s.journal, options.agendas ?? null, s.now);
+      const rdv = new RendezVous(s.db, s.journal, { now: s.now, ...(agenda ? { agenda } : {}) });
+      try {
+        return reply(await rdv.bookAsAgent(v, s.acces, { personId, propertyId: (propertyId as string | null | undefined) ?? null, kind: kind as AppointmentKind, start: new Date(start), ...duration }));
+      } catch (error) {
+        // L'agenda relié de l'agent n'a pas pu être lu : rien n'est réservé, l'agent le sait [R702].
+        if (error instanceof AgendaUnavailableError) return json(503, { ok: false, code: 'agenda_indisponible', rule: 'R702', message: 'Votre agenda n’a pas pu être lu : réessayez dans quelques minutes.' });
+        throw error;
+      }
     }),
     get('visites.alertes', '/visites/alertes', async (s, v) => reply(await securite(s).list(v))),
     post('visites.alerte', `/visites/alertes/${ID}`, async (s, v, [a]) => {

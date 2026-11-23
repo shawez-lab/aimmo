@@ -25,6 +25,7 @@ import { gbpFromEnv } from './fiche-google-reelle.ts';
 import { dossierFilesOf, mailboxesFromEnv, runMailboxPass, type BoiteEnv } from './boite.ts';
 import { audioSourceFromEnv, transcriberFromEnv, type TranscriptionEnv } from './reprises-vocales.ts';
 import { adsFromEnv, runAdsPass, type AdsEnv } from './publicite-reelle.ts';
+import { agendasFromEnv, runAgendaPass, type AgendaEnv } from './agenda-reel.ts';
 
 /**
  * AU036 : les vrais Facebook et Instagram du réseau. Publier seulement quand tout est rangé (sinon tout reste d'essai) ;
@@ -155,6 +156,18 @@ export interface Env {
   BOITE_MICROSOFT_TENANT?: string;
   BOITE_JETONS?: string;
   /**
+   * AU053 : `reel` relie les vrais agendas des agents (H21, H53), avec le client OAuth de Google
+   * (`AGENDA_GOOGLE_CLIENT_ID`, `AGENDA_GOOGLE_CLIENT_SECRET`) ou de Microsoft (`AGENDA_MICROSOFT_CLIENT_ID`,
+   * `AGENDA_MICROSOFT_CLIENT_SECRET`, `AGENDA_MICROSOFT_TENANT`) et le secret `AGENDA_JETONS` (`agenda-reel.ts`).
+   */
+  AGENDA_MODE?: AgendaEnv['AGENDA_MODE'];
+  AGENDA_GOOGLE_CLIENT_ID?: string;
+  AGENDA_GOOGLE_CLIENT_SECRET?: string;
+  AGENDA_MICROSOFT_CLIENT_ID?: string;
+  AGENDA_MICROSOFT_CLIENT_SECRET?: string;
+  AGENDA_MICROSOFT_TENANT?: string;
+  AGENDA_JETONS?: string;
+  /**
    * AU044 : `reel` branche le vrai transcripteur des notes vocales (H52), avec `TRANSCRIPTION_URL`, `TRANSCRIPTION_MODEL`
    * et le secret `TRANSCRIPTION_KEY` ; le secret `WHATSAPP_MEDIA_TOKEN` lit les notes WhatsApp (`reprises-vocales.ts`).
    */
@@ -168,6 +181,11 @@ export interface Env {
 /** AU043 : les vraies boîtes des agents, et le rangement de leurs pièces dans `PIECES` ; sinon rien n'est lu [R683]. */
 export function boiteOf(env: Env): { mailboxes: ReturnType<typeof mailboxesFromEnv>; files: ReturnType<typeof dossierFilesOf> } {
   return { mailboxes: mailboxesFromEnv(env, fetch.bind(globalThis)), files: dossierFilesOf(env.PIECES ? new R2PieceStore(env.PIECES) : null) };
+}
+
+/** AU053 : les vrais agendas des agents, seulement quand tout est rangé ; sinon aucun agenda n'est lu [R702]. */
+export function agendasOf(env: Env): ReturnType<typeof agendasFromEnv> {
+  return agendasFromEnv(env, fetch.bind(globalThis));
 }
 
 /** Les réglages du fournisseur de pige (AU034), tels quels : leur forme est contrôlée par la couche métier. */
@@ -263,6 +281,8 @@ export default {
       intakeKeys: env.INTAKE_KEYS,
       mode: env.MODE,
       appointmentLinkBase: env.RDV_LINK_BASE,
+      // AU053 : un événement occupé de l'agenda relié de l'agent refuse le créneau [R33, R702].
+      agendas: agendasOf(env),
       alertUnsubscribeBase: env.ALERT_UNSUBSCRIBE_BASE,
       ...(env.MEDIA ? { media: env.MEDIA } : {}),
       ...(env.PIECES ? { pieces: new R2PieceStore(env.PIECES) } : {}),
@@ -374,6 +394,11 @@ export default {
     {
       const db = fromD1(env.DB);
       await runMailboxPass({ db, journal: new SqlJournalStore(db), now: () => new Date(), ...boiteOf(env) });
+    }
+    // AU053 : les agendas reliés, dans les deux sens ; une panne est écrite au journal et reprise [R13, R236, R702].
+    {
+      const db = fromD1(env.DB);
+      await runAgendaPass({ db, journal: new SqlJournalStore(db), now: () => new Date(), agendas: agendasOf(env) });
     }
   },
   async email(message: InboundEmail, env: Env): Promise<void> {

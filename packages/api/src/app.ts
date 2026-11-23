@@ -112,6 +112,7 @@ import { questionnaireRoutes, type QuestionnaireRoute } from './mandat-questionn
 import { scoreAdresseRoutes, type ScoreAdresseRoute } from './score-adresse.ts';
 import { tourneeRoutes, type TourneeRoute } from './tournee.ts';
 import { boiteRoutes, type BoiteRoute, type MailboxDirectory } from './boite.ts';
+import { agendaBusyOf, type AgendaDirectory } from './agenda-reel.ts';
 import { reprisesVocalesRoutes, type ReprisesRoute } from './reprises-vocales.ts';
 import type { AudioSource } from '../../core/src/voix/transcripteur-reel.ts';
 import type { DossierFileStore } from '../../core/src/automatismes/boite-mail.ts';
@@ -231,6 +232,8 @@ export interface ApiConfig {
   /** Réservation des rendez-vous (V08) : limites d'appels, et début du lien pour décaler ou annuler (`RDV_LINK_BASE`). */
   bookingLimits?: BookingLimits;
   appointmentLinkBase?: string | undefined;
+  /** AU053 · les vrais agendas des agents (H21, H53), lus à la réservation ; absents, seuls les rendez-vous d'AIMMO comptent. */
+  agendas?: AgendaDirectory | null;
   /** Début du lien de désinscription des alertes (`ALERT_UNSUBSCRIBE_BASE`) : sans lui, aucune alerte WhatsApp de l'agent [R49]. */
   alertUnsubscribeBase?: string | undefined;
   /** Les médias des biens (R2, `MEDIA`) ; absent, aucune photo n'est servie. */
@@ -2521,6 +2524,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
         intakeKeys: config.intakeKeys,
         ...(config.bookingLimits ? { limits: config.bookingLimits } : {}),
         linkBase: config.appointmentLinkBase ?? null,
+        agenda: agendaBusyOf(config.db, new SqlJournalStore(config.db), config.agendas ?? null, now),
         now,
       });
     } catch (error) {
@@ -2633,7 +2637,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // clients (EC07), fermée sans espace configuré.
   const routes: RouteDef[] = [
     ...ROUTES,
-    ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null, geocoder: config.secteursGeocoder ?? config.estimation?.geocoder ?? null, tiles: config.mapTiles ?? null, ...(config.reportWriter ? { reportWriter: config.reportWriter } : {}) }),
+    ...m08Routes({ agendas: config.agendas ?? null, unsubscribeBase: config.alertUnsubscribeBase ?? null, geocoder: config.secteursGeocoder ?? config.estimation?.geocoder ?? null, tiles: config.mapTiles ?? null, ...(config.reportWriter ? { reportWriter: config.reportWriter } : {}) }),
     ...annonceRoutes(config.listing ?? {}),
     ...offreRoutes(config.pieces ?? null),
     ...m10Routes(config.pieces ?? null),
