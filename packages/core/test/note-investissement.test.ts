@@ -12,6 +12,7 @@ import {
   PROFESSIONAL_REFERRAL,
   ProfilInvestisseur,
   forbiddenPhrases,
+  financingClaims,
   traceParagraph,
   type NoteFacts,
   type NoteWriter,
@@ -240,6 +241,14 @@ describeWithSqlite('Y05 · note d’investissement', () => {
     // Le nombre du prêt n'a pas de ligne dans la note : le texte de l'IA est refusé, le secours prend le relais.
     expect(r.value.origin).not.toBe('ia');
     for (const word of ['Capital emprunté', 'Mensualité du prêt', 'Trésorerie', '759']) expect(r.value.text).not.toContain(word);
+    // Sans chiffre non plus : un paragraphe qui parle du prêt ou de la trésorerie est refusé.
+    const words = await setup({ financing: true, writer: writerOf(['La trésorerie après remboursement du prêt est positive, assurance comprise.']) });
+    const w = await words.notes.draft(words.acces, words.as('agent', words.alex.id), { calculationId: words.calcId, projectId: words.project.id });
+    if (!w.ok) throw new Error(w.code);
+    expect(w.value.origin).not.toBe('ia');
+    expect(w.value.text).not.toContain('trésorerie');
+    expect(financingClaims('Un bien prêt à louer, au loyer de marché.')).toEqual([]);
+    expect(financingClaims('Votre mensualité de crédit')).toEqual(['mensualite', 'credit']);
   });
 
   it('[R16] un autre agent ne fait pas rédiger la note d’une fiche qui n’est pas la sienne', async () => {

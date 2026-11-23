@@ -102,6 +102,16 @@ const key = (text: string): string => ` ${plain(text).replace(/[^a-z0-9]+/g, ' '
 const PHRASE_KEYS = FORBIDDEN_INVEST_PHRASES.map((p) => key(p));
 const WORD_KEYS = FORBIDDEN_TERMS.map((p) => key(p));
 
+/**
+ * AU100 · le financement reste une simulation d'essai de l'agent (H72) : un paragraphe de la note qui en parle, avec ou
+ * sans chiffre, est refusé [R125]. Le renvoi au courtier, texte fixe hors des paragraphes, n'est pas lu ici.
+ */
+const FINANCING_CLAIMS = [' tresorerie ', ' mensualite', ' emprunt', ' credit', ' rembourse', ' cash flow ', ' cashflow', ' autofinanc', ' du pret ', ' un pret ', ' le pret ', ' votre pret ', ' de pret ', ' pret immobilier ', ' prets immobiliers ', ' financement '];
+export function financingClaims(text: string): string[] {
+  const k = key(text);
+  return FINANCING_CLAIMS.filter((w) => k.includes(w)).map((w) => w.trim());
+}
+
 /** Les tournures interdites que porte un texte, dans l'ordre de la liste. */
 export function forbiddenPhrases(text: string): string[] {
   const k = key(text);
@@ -331,6 +341,7 @@ export function traceParagraph(text: string, lines: readonly YieldLine[]): { pro
     else proofs.push({ text: m[0], line: line.key, value: line.value, unit: line.unit, source: line.source, asOf: line.asOf, hypothesis: line.hypothesis });
   }
   for (const p of forbiddenPhrases(text)) problems.push({ code: 'tournure_interdite', value: p });
+  for (const p of financingClaims(text)) problems.push({ code: 'tournure_interdite', value: p });
   return { proofs, problems };
 }
 
