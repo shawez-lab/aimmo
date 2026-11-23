@@ -3,6 +3,7 @@ import { REGISTRE_GELS_URL, REGISTRE_GELS_USER_AGENT } from './securite.ts';
 import { handleEmail, type InboundEmail } from './courrier.ts';
 import { fromD1, type D1Database } from './d1.ts';
 import { investorFeesRate, runScheduler } from './planificateur.ts';
+import { bonVisiteLinkBase } from './bon-visite-public.ts';
 import { letterUnsubscribeBase } from './marketing-passage.ts';
 import { isQuarterMinute, runNotificationsPass } from './notifications.ts';
 import { R2PieceStore, type R2Like } from './dossiers.ts';
@@ -287,7 +288,7 @@ export default {
       agendas: agendasOf(env),
       alertUnsubscribeBase: env.ALERT_UNSUBSCRIBE_BASE,
       // AU075b : les pages du bon de visite, signé à distance, puis son exemplaire, un an.
-      bonVisiteBase: dossierLinkBase(env.BON_VISITE_BASE),
+      bonVisiteBase: bonVisiteLinkBase(env.BON_VISITE_BASE),
       ...(env.MEDIA ? { media: env.MEDIA } : {}),
       ...(env.PIECES ? { pieces: new R2PieceStore(env.PIECES) } : {}),
       // M14 (J13) : sans IA branchée (H13), l'entraînement rend les répliques écrites.

@@ -74,6 +74,15 @@ export interface BonVisitePublicConfig {
   baseUrl: string;
 }
 
+/**
+ * Le début des liens du bon (`BON_VISITE_BASE`) : l'origine seule, en https, sans chiffre, finie par `/`. Les pages
+ * sont servies à la racine (`/visite/…`) : un préfixe de chemin donnerait des liens sans page, refusés ici [R506].
+ */
+export function bonVisiteLinkBase(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  return /^https:\/\/[a-z.-]+\/$/i.test(raw) ? raw : null;
+}
+
 /** Les liens du bon, depuis leur début (`https://…/`) : la signature et l'exemplaire. */
 export function slipLinks(baseUrl: string): { signUrl: (token: string) => string; copyUrl: (token: string) => string } {
   return { signUrl: (token) => `${baseUrl}visite/signer/${token}`, copyUrl: (token) => `${baseUrl}visite/exemplaire/${token}` };

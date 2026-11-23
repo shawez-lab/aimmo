@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { ALERT_PURPOSE, FakeAgenda, PointSemaine, RendezVous, SELLER_UPDATE_PURPOSE, verifyChain } from '@aimmo/core';
 import type { AgendaDirectory } from '../src/agenda-reel.ts';
 import { handleRequest } from '../src/app.ts';
+import { bonVisiteLinkBase } from '../src/bon-visite-public.ts';
 import { sha256Hex } from '../src/index.ts';
 import { setupAnnonce } from '../../core/test/annonces-jeu.ts';
 import { describeWithSqlite } from '../../core/test/sqlite.ts';
@@ -312,6 +313,17 @@ describeWithSqlite('AU075b · les pages publiques du bon de visite', () => {
     const none = await t.open('GET', `/visite/signer/${'a'.repeat(64)}`);
     expect(none.status).toBe(404);
     expect(await none.text()).not.toContain('<form');
+  });
+
+  it('[R506] un début de liens avec un chemin mènerait à des liens sans page : refusé, rien n’est proposé ni servi', async () => {
+    expect(bonVisiteLinkBase('https://aimmo.example.test/')).toBe('https://aimmo.example.test/');
+    for (const bad of ['https://aimmo.example.test/public/', 'http://aimmo.example.test/', 'https://aimmo.example.test', 'https://aimmo2.example.test/', '', undefined]) expect(bonVisiteLinkBase(bad)).toBeNull();
+    const { t, id } = await visitWithSlip('https://aimmo.example.test/public/');
+    expect((await t.call('alex', 'GET', `/visites/${id}`)).body.data.slip).toMatchObject({ distance: false });
+    t.setClock(new Date('2027-03-03T15:00:00.000Z'));
+    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'distance', channel: 'sms', consentProof: 'accord' })).body).toMatchObject({ ok: false, code: 'distance_not_served' });
+    expect((await t.open('GET', `/visite/signer/${'a'.repeat(64)}`)).status).toBe(404);
+    expect(await t.toBuyer()).toEqual([]);
   });
 
   it('[R506] [R40] page servie : lien et code partent chacun dans son message, le visiteur lit et signe par la page, sans script', async () => {
