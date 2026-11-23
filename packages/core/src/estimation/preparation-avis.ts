@@ -166,11 +166,11 @@ export class PreparationAvis {
     previous: unknown,
     exclude: unknown,
     adjust: unknown,
-  ): Promise<{ ok: true; value: AgentExclusion[]; agent: AgentAdjustment[]; previous: string } | PreparationRefusal> {
+  ): Promise<{ ok: true; value: AgentExclusion[]; agent: AgentAdjustment[]; previous: string; condition: string | null } | PreparationRefusal> {
     if (typeof previous !== 'string' || previous.length > 100) return { ok: false, rule: 'R692', code: 'unknown_previous' };
     const row = await this.db.first<{ computed: string }>('SELECT computed FROM valuation_reports WHERE id = ? AND property_id = ? AND network_id = ?', [previous, propertyId, networkId]);
     if (!row) return { ok: false, rule: 'R692', code: 'unknown_previous' };
-    const before = JSON.parse(row.computed) as { method?: string; cited?: CitedSale[]; excluded?: AgentExclusion[]; adjustments?: Adjustment[] };
+    const before = JSON.parse(row.computed) as { method?: string; condition?: string | null; cited?: CitedSale[]; excluded?: AgentExclusion[]; adjustments?: Adjustment[] };
     // Un avis motivé n'a pas de ventes du calcul à écarter.
     if (before.method === 'manual') return { ok: false, rule: 'R692', code: 'unknown_previous' };
     // Une nouvelle version change quelque chose : une vente écartée, ou un ajustement de l'agent.
@@ -207,7 +207,7 @@ export class PreparationAvis {
       }
       if (agent.length > MAX_AGENT_ADJUSTMENTS) return { ok: false, rule: 'R693', code: 'too_many_adjustments' };
     }
-    return { ok: true, value: kept, agent, previous };
+    return { ok: true, value: kept, agent, previous, condition: typeof before.condition === 'string' && CONDITIONS.includes(before.condition) ? before.condition : null };
   }
 
   /**
@@ -227,7 +227,8 @@ export class PreparationAvis {
     const manualOnly = property.kind === 'land' || property.kind === 'building';
     if (property.kind !== 'home' && !manualOnly) return { ok: false, rule: null, code: 'not_a_home' };
     if (property.surface_m2 === null) return { ok: false, rule: null, code: 'no_surface' };
-    const { kind, condition } = input;
+    const { kind } = input;
+    let condition = input.condition;
     // Sans adresse donnée, l'adresse vérifiée du bien ; une adresse donnée est une modification explicite [R695].
     const given = input.address !== undefined && input.address !== null && input.address !== '';
     const address = given ? input.address : await this.savedAddress(property.network_id, propertyId);
@@ -255,6 +256,8 @@ export class PreparationAvis {
       excluded = read.value;
       agentAdjustments = read.agent;
       previous = read.previous;
+      // Sans état donné, celui de la version précédente : écarter une vente ne change pas l'état du bien (AU049b).
+      if (condition === undefined || condition === null) condition = read.condition;
     }
 
     const collected = await new CollecteBien(this.services.collecte, { now: this.now }).collect(address);
@@ -317,7 +320,7 @@ export class PreparationAvis {
     // Le calcul a donné une fourchette : l'avis part de lui, jamais d'une fourchette saisie à côté [R27, R690].
     if (manual) return { ok: false, rule: 'R690', code: 'range_available' };
     const details = await this.details(range.comparables.slice(0, CITED_SALES).map((c) => c.id));
-    const report = await this.avis.draft({ networkId: property.network_id, propertyId, kind: sort, surface: property.surface_m2, range, facts, details, excluded, previous });
+    const report = await this.avis.draft({ networkId: property.network_id, propertyId, kind: sort, surface: property.surface_m2, range, facts, details, excluded, previous, condition: (condition as Condition | null | undefined) ?? null });
     return { ok: true, value: report };
   }
 
