@@ -138,6 +138,8 @@ async function setup() {
   const signParty = async (listingId: string, party: 'bailleur' | 'locataire', drawing?: string) => {
     const s = await signatures.start(agent, listingId, { party, ...CONSENT });
     if (!s.ok) throw new Error(s.code);
+    // X17b · en essai, le code rendu à l'écran est celui de la boîte d'essai.
+    expect(s.value).toMatchObject({ mode: 'essai', trialCode: await lastCode() });
     return signatures.sign(agent, s.value.sessionId, { code: await lastCode(), drawing });
   };
   return { raw, db, journal, store, listings, fees, baux, edl, signatures, annuaire, relations, apps, choix, network, agent, other, dir, owner, leased, codes, lastCode, copies, signParty, tenant: () => tenantId, put, at: (ms: number) => (clock = ms) };

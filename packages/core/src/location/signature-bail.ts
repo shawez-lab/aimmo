@@ -169,7 +169,7 @@ export class SignaturesBail implements LeaseSignatureState {
    * Ouvre la signature d'une partie sur le bail en vigueur : son code lui est envoyé par le contrôle central. La partie
    * accepte, au rendez-vous, de recevoir son code et son exemplaire par mail ; l'agent en garde la preuve [R03].
    */
-  async start(viewer: Viewer, listingId: unknown, input: { party?: unknown; personId?: unknown; consentProof?: unknown }): Promise<LeaseSignatureResult<{ sessionId: string; leaseId: string; contentSha256: string; expiresAt: string; mode: 'essai' }>> {
+  async start(viewer: Viewer, listingId: unknown, input: { party?: unknown; personId?: unknown; consentProof?: unknown }): Promise<LeaseSignatureResult<{ sessionId: string; leaseId: string; contentSha256: string; expiresAt: string; mode: 'essai'; trialCode: string }>> {
     const listing = await this.listings.listing(viewer, listingId, true);
     if ('ok' in listing) return listing;
     if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refuse(viewer, `rental:${listing.id}`, 'role');
@@ -208,7 +208,9 @@ export class SignaturesBail implements LeaseSignatureState {
     // Refusé (heure, exclusion, arrêt, pas de mail…) : la session reste sans code utilisable et expire.
     if (sent.status !== 'sent') return { ok: false, rule: sent.rule, code: 'send_refused' };
     await appendEvent(this.journal, { type: 'location.signature_ouverte', actor: this.actor(viewer), subject: `rental:${listing.id}`, data: { session: id, party, lease: `rental_lease:${target.leaseId}`, mode: 'essai' } }, this.now);
-    return { ok: true, value: { sessionId: id, leaseId: target.leaseId, contentSha256: target.contentSha256, expiresAt, mode: 'essai' } };
+    // X17b (décision de Shawez du 2026-11-23) : la signature du bail n'existe qu'en essai ; son code est rendu pour essayer
+    // le parcours à l'écran. Le jour d'une signature réelle, son code ne partira qu'au signataire, jamais ici.
+    return { ok: true, value: { sessionId: id, leaseId: target.leaseId, contentSha256: target.contentSha256, expiresAt, mode: 'essai', trialCode: code } };
   }
 
   /**

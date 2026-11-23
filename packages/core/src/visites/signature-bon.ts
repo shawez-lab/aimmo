@@ -272,7 +272,7 @@ export class SignatureBon {
     viewer: Viewer,
     appointmentId: string,
     input: { place?: unknown; channel?: unknown; consentProof?: unknown },
-  ): Promise<{ ok: true; value: { sessionId: string; place: SlipPlace; channel: SlipChannel; codeExpiresAt: string; mode: 'essai' } } | SlipSignatureRefusal> {
+  ): Promise<{ ok: true; value: { sessionId: string; place: SlipPlace; channel: SlipChannel; codeExpiresAt: string; mode: 'essai'; trialCode: string } } | SlipSignatureRefusal> {
     const place = input.place;
     const asked = input.channel ?? (place === 'sur_place' ? 'sms' : 'email');
     if (place !== 'sur_place' && place !== 'distance') return { ok: false, rule: null, code: 'bad_place' };
@@ -350,7 +350,9 @@ export class SignatureBon {
     const sentCode = await this.envois.send({ ...base, subject: `bon-visite:${id}:code`, fallbackTexts: [codeText], figures: [code, CODE_TTL_MINUTES], secrets: [{ kind: 'code', value: code }] });
     if (sentCode.status !== 'sent') return this.unsent(id, sentCode.rule, sentCode.reason);
     await appendEvent(this.journal, { type: 'bon_visite.signature_ouverte', actor: this.actor(viewer), subject: `visit:${appointmentId}`, data: { session: id, place, channel, mode: 'essai' } }, this.now);
-    return { ok: true, value: { sessionId: id, place, channel, codeExpiresAt, mode: 'essai' } };
+    // X17b (décision de Shawez du 2026-11-23) : le bon ne se signe qu'en essai ; son code est rendu pour essayer le parcours
+    // à l'écran. Le jour d'une signature réelle, son code ne partira qu'au visiteur, jamais ici.
+    return { ok: true, value: { sessionId: id, place, channel, codeExpiresAt, mode: 'essai', trialCode: code } };
   }
 
   /** Un message refusé par le contrôle central : la signature ouverte est close, aucun code ne pourra servir. */

@@ -145,8 +145,10 @@ globalThis.AIMMO_BON_VISITE = function (t) {
       return t.send('/v1/visites/' + encodeURIComponent(id) + '/bon/signature-en-ligne', 'POST', body).then(function (res) {
         if (res.gone) return;
         if (!res.ok) { say(said, res, 'Rien n’est parti.'); return; }
-        if (place === 'distance') { t.clear(box); said.textContent = 'Lien et code envoyés au visiteur, chacun dans son message : il lit et signe sur son téléphone, sans vous. Il reçoit ensuite son exemplaire.'; return; }
-        said.textContent = 'Code envoyé au visiteur, valable 10 minutes.';
+        // X17b · en essai, le serveur rend le code, posé ici pour essayer le parcours : rien n'est parti.
+        var d = res.body && res.body.data, trial = d && d.mode === 'essai' && typeof d.trialCode === 'string' && /^[0-9]{6}$/.test(d.trialCode) ? ' Essai, rien n’est parti : code d’essai ' + d.trialCode + '.' : '';
+        if (place === 'distance') { t.clear(box); said.textContent = 'Lien et code envoyés au visiteur, chacun dans son message : il lit et signe sur son téléphone, sans vous. Il reçoit ensuite son exemplaire.' + trial; return; }
+        said.textContent = 'Code envoyé au visiteur, valable 10 minutes.' + trial;
         signHere(id, box, said);
       });
     }

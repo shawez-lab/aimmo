@@ -79,6 +79,8 @@ describeWithSqlite('AU075 · le bon de visite signé sans papier', () => {
     // Avant AU075, la seule façon de ranger un bon signé : une date et la référence d'un scan.
     const opened = await t.signature.open(alex, v.id, { place: 'sur_place', consentProof: ACCORD });
     expect(opened).toMatchObject({ ok: true, value: { place: 'sur_place', channel: 'sms', mode: 'essai' } });
+    // X17b · en essai, le code est rendu à l'écran pour essayer le parcours ; il n'est rangé nulle part en clair.
+    expect(opened.ok && opened.value.trialCode).toBe('234567');
     // Le code part au téléphone du visiteur, par SMS, par le contrôle central ; rangé masqué [R26, HX61].
     const box = await t.outbox(v.buyer.id);
     expect(box).toHaveLength(1);
