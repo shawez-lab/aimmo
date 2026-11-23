@@ -1767,3 +1767,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-23 18:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 16:55 et 17:53 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-23 18:55 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-23 19:20 · VOIE 3 : X17 fusionnée (#795, signature en ligne du mandat à l'écran, en essai) ; X17b ouverte (#796, code d'essai du bail et du bon de visite)
+- 2026-11-23 19:45 · VOIE 3 : AU100 reprise en essai (#797) : trésorerie après prêt pour l'agent seul, jamais dans la note du client (H72)
