@@ -160,7 +160,7 @@ import { readCapped, studioRoutes, type StudioRoute, type StudioServices } from 
 import { accordsRoutes, type AccordsRoute } from './accords.ts';
 import { biensFicheRoutes, type BiensFicheRoute } from './biens-fiche.ts';
 import { dicteeRoutes, type DicteeRoute } from './dictee.ts';
-import { horsLigneRoutes, type HorsLigneRoute } from './hors-ligne.ts';
+import { horsLigneRoutes, type HorsLigneRoute, type HorsLigneServices } from './hors-ligne.ts';
 import { appelsRoutes, type AppelsRoute } from './appels.ts';
 import { notificationsRoutes, type NotificationsRoute } from './notifications.ts';
 import { gagnerRoutes, type GagnerRoute, type GagnerServices } from './gagner.ts';
@@ -269,6 +269,8 @@ export interface ApiConfig {
    * Aucun réseau réel n'est accepté ici : les publications partent vers les canaux du mode essai seulement [R26, R134].
    */
   studio?: StudioOptions;
+  /** AU103b : le rangement des images entières des visites ; absent, l'image reste sur le téléphone [R677]. */
+  horsLigne?: HorsLigneOptions;
   /**
    * M20 complet (G12) : le stockage des preuves de coût (sans lui, aucun coût ne se saisit [R144]), le géocodeur des
    * adresses des lettres (sans lui, aucune campagne ne vérifie son rayon [R140]) et les IA de rédaction (absentes, les
@@ -324,6 +326,11 @@ export interface EspacesOptions {
   networkId?: string | undefined;
   baseUrl?: string | undefined;
   releveKeys?: string | undefined;
+}
+
+/** AU103b : la visite sans réseau ; `images` range les images entières des visites (R2, `MEDIA`), absent : 503 [R677]. */
+export interface HorsLigneOptions {
+  images: HorsLigneServices['images'];
 }
 
 export interface StudioOptions {
@@ -1905,12 +1912,14 @@ function appelsFicheRoutes(): RouteDef[] {
 }
 
 /** La visite sans réseau (AU018) : l'agent en activité seul, le rôle contrôlé avant le corps [R16, R276, R278]. */
-function horsLigneRoutesDef(): RouteDef[] {
+function horsLigneRoutesDef(options: HorsLigneOptions | null): RouteDef[] {
+  // AU103b : sans rangement réglé, `images` reste `null` ; le dépôt répond 503 et l'image reste sur le téléphone [R677].
+  const images = options?.images ?? null;
   return horsLigneRoutes().map((r: HorsLigneRoute) => ({
     method: r.method,
     pattern: r.pattern,
     name: r.name,
-    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now }, viewer, params, request),
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, images }, viewer, params, request),
   }));
 }
 
@@ -2715,7 +2724,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...dicteeRoutesDef(config.reportWriter ?? null, config.agendas ?? null),
     ...appelsFicheRoutes(),
     ...notificationsRoutesDef(),
-    ...horsLigneRoutesDef(),
+    ...horsLigneRoutesDef(config.horsLigne ?? null),
     ...m01Routes(config),
     ...avisRoutes(config),
     ...repriseRoutes(),
