@@ -7728,8 +7728,8 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : rien.
 
 ### SV05 · L'effacement réel écrit au registre des effacements
-- Statut : en cours
-- Note de statut : reprise le 2026-11-23 en essai (décision de Shawez du 2026-11-23 : ce qui attend l'avocat se construit en essai, activé plus tard) ; rien d'effacé tant que H29 et H50 ne sont pas faits.
+- Statut : fait (2026-11-23)
+- Reste : fusionnée (#798, ac8fab8b), construite en essai (décision de Shawez du 2026-11-23). `packages/api/src/effacement-worker.ts` : `erasureOf` monte au Worker le registre dans `aimmo-copies` sous `effacements/` seulement (S3, mêmes secrets que la copie de nuit) et l'effaceur des fichiers sur les liaisons R2 ; essai tant que `ERASURE_MODE` n'est pas `reel`. Relecture forte 2 P1 corrigés ; Codex rien à signaler ; vérification GitHub verte. Allumage réel : H29, H50, puis `ERASURE_MODE`, `CLOUDFLARE_ACCOUNT_ID` et les secrets de la copie dans le Worker (`docs/SAUVEGARDE.md`).
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV02
 - Cahier : Conformité ; Architecture technique, « Sauvegardes ».
 - Objectif : quand l'effacement réel sera mis en service (H29, `ERASURE_MODE`), il note chaque effacement au registre `recordErasure`, dans le compartiment des copies, et la procédure réelle passe derrière `PersonEraser` ; le stockage S3 de `packages/api/outils/r2-copies.ts` gagne la liste. Rien à faire tant que tout est en essai.
