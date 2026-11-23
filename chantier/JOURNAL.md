@@ -1749,3 +1749,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-23 14:55 · VOIE 2 : rien de faisable : seuls changements depuis 13:55, AU035 bloquée chez la voie 1 (#757 ouverte sans fusion), la voie 1 passe à AU069 (en cours, verrou 14:30) ; restent AU014 (#792) et AU096b (#793) à la voie 3, AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05 (humain) ; aucun module non découpé
 - 2026-11-23 14:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 12:55 et 13:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-23 14:55 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-23 15:05 · VOIE 3 : AU014 fusionnée (#792, mandat de location signé et inscrit exigé pour le barème, l'annonce et la diffusion location) ; AU096b (#793) remise sur main, charges forfaitaires du bail mobilité, CI et Codex en attente
