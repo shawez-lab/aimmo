@@ -733,10 +733,19 @@ export class Pige {
     const roomed = typeof ad.rooms === 'number';
     const slug = communeSlug(ad.commune);
     const exceptKey = except ? await refKey(except.source, except.sourceRef) : null;
+    // Une annonce qui pourrait être ce bien : sa clé, ses empreintes, et tout son groupe prouvé (annonces reliées sur
+    // preuve, leurs clés et leurs empreintes), pour qu'un message ou une fermeture rangé sur l'une d'elles compte [R05].
+    // Le groupe se parcourt sans ses doutes : le doute ne passe pas d'un bien à un troisième [R672].
+    const group = async (rows: readonly { fingerprint: string }[]): Promise<string[]> => {
+      if (rows.length === 0) return [];
+      const fps = rows.map((f) => f.fingerprint);
+      return (await this.linked(networkId, fps[0]!, fps.slice(1), [], null, false)).keys;
+    };
     const add = async (key: string, rows: readonly { fingerprint: string }[]): Promise<void> => {
       if (key === exceptKey) return;
       out.push(key);
       for (const f of rows) out.push(f.fingerprint);
+      out.push(...(await group(rows)));
     };
     const fpsOf = (source: string, sourceRef: string) =>
       this.db.all<{ fingerprint: string }>('SELECT DISTINCT fingerprint FROM pige_ads WHERE network_id = ? AND source = ? AND source_ref = ?', [networkId, source, sourceRef]);
@@ -795,7 +804,9 @@ export class Pige {
           out.pop();
           continue;
         }
-        for (const f of await fpsOf(o.source, o.source_ref)) out.push(f.fingerprint);
+        const rows = await fpsOf(o.source, o.source_ref);
+        for (const f of rows) out.push(f.fingerprint);
+        out.push(...(await group(rows)));
       }
     }
     return out;
@@ -876,7 +887,7 @@ export class Pige {
    * [R672]. `marks` ajoute le doute, tiré de la relève en cours de chaque annonce, sauf de `current`, dont le doute est
    * donné par `doubtSeeds`.
    */
-  private async linked(networkId: string, fingerprint: string, seeds: readonly string[] = [], doubtSeeds: readonly string[] = [], current: AdRef | null = null): Promise<{ keys: string[]; marks: string[]; complete: boolean; refusedSince: boolean; refKeys: string[] }> {
+  private async linked(networkId: string, fingerprint: string, seeds: readonly string[] = [], doubtSeeds: readonly string[] = [], current: AdRef | null = null, withDoubts = true): Promise<{ keys: string[]; marks: string[]; complete: boolean; refusedSince: boolean; refKeys: string[] }> {
     // Vrai quand une annonce du bien a été revue et refusée après sa dernière relève rangée : ses vieilles relèves ne
     // rouvrent rien [R672, R273].
     let refusedSince = false;
@@ -934,7 +945,7 @@ export class Pige {
         // Une relève qui dit ses pièces relie le bien prouvé ; une relève sans pièces ne relie que sa propre annonce : ses
         // fermetures se rangent sur elle, et les autres les lisent dans le doute tant qu'elle tait ses pièces.
         if (r.rooms !== null) for (const f of await nearFingerprints(property)) add(f);
-        if (latest && freshNow.has(ref) && !isCurrent) for (const f of await this.doubtsOf(networkId, property, { source: r.source, sourceRef: r.source_ref })) doubts.add(f);
+        if (withDoubts && latest && freshNow.has(ref) && !isCurrent) for (const f of await this.doubtsOf(networkId, property, { source: r.source, sourceRef: r.source_ref })) doubts.add(f);
       }
       frontier = next;
     }

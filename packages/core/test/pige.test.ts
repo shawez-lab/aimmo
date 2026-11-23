@@ -810,6 +810,23 @@ describeWithSqlite('HX11 · Pige des annonces de particuliers', () => {
     expect(await s.pige.prepare(s.agentAlex, five)).toMatchObject({ ok: false, rule: 'R05' });
   });
 
+  it('[R672] [R05] un message rangé sur une autre annonce du groupe prouvé d’une annonce qui pourrait être ce bien compte encore', async () => {
+    const s = await setup();
+    const a = s.ad({ ...flat, rooms: 4 });
+    const b = s.ad({ ...flat, source: 'Site B', rooms: 4 });
+    await s.pige.ingest(s.network.id, [a, b]);
+    s.at(MONDAY_10H + 3_600_000);
+    // A se corrige à 55 m², toujours le même bien que B sur preuve, et reçoit un message.
+    await s.pige.ingest(s.network.id, [{ ...a, surfaceM2: 55 }]);
+    const adA = (await s.db.first<{ id: string }>("SELECT id FROM pige_ads WHERE source = 'Site A' ORDER BY collected_at DESC LIMIT 1"))!.id;
+    expect(await s.pige.prepare(s.agentAlex, adA)).toMatchObject({ ok: true });
+    s.at(MONDAY_10H + 2 * 3_600_000);
+    // B revient à 75 m² sans pièces ; C, 75 m² et 3 pièces, pourrait être B, donc A : pas de second message.
+    await s.pige.ingest(s.network.id, [{ ...b, surfaceM2: 75, rooms: undefined }, s.ad({ ...flat, source: 'Site C', surfaceM2: 75, rooms: 3 })]);
+    const adC = (await s.db.first<{ id: string }>("SELECT id FROM pige_ads WHERE source = 'Site C'"))!.id;
+    expect(await s.pige.prepare(s.agentAlex, adC)).toMatchObject({ ok: false, rule: 'R05' });
+  });
+
   it('[R672] une annonce revue et refusée dans le doute n’a plus de message par sa vieille relève ; revue ouverte, son doute s’efface', async () => {
     const s = await setup();
     const a = s.ad({ ...flat, rooms: 3 });
