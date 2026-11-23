@@ -1781,3 +1781,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-23 21:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 19:55 et 20:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-23 21:55 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-23 22:00 · SV05 · fusionnée (#798) en essai : l'effacement réel branché au Worker, noté au registre des copies sous `effacements/` seulement ; relecture forte 2 P1 corrigés, Codex rien, vérification GitHub verte · prochaine : rien de faisable en voie 1 sans humain (B04, C09, S11 : H05, H14, H37)
+- 2026-11-23 22:24 · voie 1 · rien de faisable, état inchangé depuis 22:00 : aucune proposition ouverte ; S11/B04 attendent H05, H14, H37 ; C09 attend H04, H05, H06, H13 ; AU068b à la voie 3 (H10) ; aucun module non découpé ; verrou libéré, pas de relance · prochaine : B04 dès H05, H14 et H37
