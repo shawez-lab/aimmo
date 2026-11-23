@@ -401,7 +401,7 @@ describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien cr
     await expect(insert((await prop('DG')).id, latest.id, latest.fingerprint)).rejects.toThrow(/bien fermé dans le doute/);
   });
 
-  it('[R672] [R295] une annonce reliée sur preuve, tenue depuis dans le doute, refuse en base la clé que la conversion range', async () => {
+  it('[R672] [R295] une annonce reliée sur preuve, tenue depuis dans le doute, est refusée par la base, fiche seule comme clé rangée', async () => {
     const s = await setup({ search: { matching: async () => [] } });
     const a = s.ad({ rooms: 4 });
     const b = s.ad({ source: 'Site B', rooms: 4 });
@@ -413,8 +413,37 @@ describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien cr
     const ad = (await s.db.first<{ id: string; fingerprint: string }>('SELECT id, fingerprint FROM pige_ads WHERE source_ref = ?', [String(a.sourceRef)]))!;
     expect(await s.adresses.convert(s.agentAlex, { adId: ad.id })).toMatchObject({ ok: false, rule: 'R273' });
     const prop = await s.store.createProperty({ networkId: s.network.id, agentId: s.alex.id, reference: 'DH', kind: 'home', city: 'Talant', priceEur: 1, surfaceM2: 90, rooms: 4, status: 'draft' });
-    await s.db.run("INSERT INTO pige_properties (property_id, network_id, source, ad_id, fingerprint, ad_site, ad_kind, published_at, agent_id, created_at) VALUES (?, ?, 'pige', ?, ?, 'Site A', 'house', '2026-12-06', ?, '2026-12-07')", [prop.id, s.network.id, ad.id, ad.fingerprint, s.alex.id]);
+    // La fiche écrite seule, sans aucune clé : la base lit le groupe prouvé de A, où B est tenue dans le doute.
+    await expect(
+      s.db.run("INSERT INTO pige_properties (property_id, network_id, source, ad_id, fingerprint, ad_site, ad_kind, published_at, agent_id, created_at) VALUES (?, ?, 'pige', ?, ?, 'Site A', 'house', '2026-12-06', ?, '2026-12-07')", [prop.id, s.network.id, ad.id, ad.fingerprint, s.alex.id]),
+    ).rejects.toThrow(/bien fermé dans le doute, par son groupe/);
+    // Et la clé de B ne s'attache à aucun bien.
     await expect(s.db.run('INSERT INTO pige_property_keys (network_id, key, property_id) VALUES (?, ?, ?)', [s.network.id, await refKey('Site B', String(b.sourceRef)), prop.id])).rejects.toThrow(/bien fermé dans le doute/);
+  });
+
+  it('[R672] [R295] un lien prouvé plus tard par une troisième annonce est lu par la base ; deux annonces que rien ne relie restent distinctes', async () => {
+    const s = await setup({ search: { matching: async () => [] } });
+    const insert = (propertyId: string, adId: string, fp: string) =>
+      s.db.run("INSERT INTO pige_properties (property_id, network_id, source, ad_id, fingerprint, ad_site, ad_kind, published_at, agent_id, created_at) VALUES (?, ?, 'pige', ?, ?, 'Site A', 'house', '2026-12-06', ?, '2026-12-07')", [propertyId, s.network.id, adId, fp, s.alex.id]);
+    const prop = async (reference: string) => s.store.createProperty({ networkId: s.network.id, agentId: s.alex.id, reference, kind: 'home', city: 'Talant', priceEur: 1, surfaceM2: 90, rooms: 4, status: 'draft' });
+    // A, 4 pièces à 90 m² ; D, un autre 3 pièces à 100 m², sans rien de commun.
+    const a = s.ad({ rooms: 4 });
+    const d = s.ad({ source: 'Site D', surfaceM2: 100, rooms: 3 });
+    await s.pige.ingest(s.network.id, [a, d]);
+    const adA = (await s.db.first<{ id: string; fingerprint: string }>('SELECT id, fingerprint FROM pige_ads WHERE source_ref = ?', [String(a.sourceRef)]))!;
+    s.tick(DAY);
+    // B arrive en 4 pièces à 90 m² : la même que A, sur preuve. Puis B se corrige à 100 m² sans pièces.
+    const b = s.ad({ source: 'Site B', rooms: 4 });
+    await s.pige.ingest(s.network.id, [b]);
+    s.tick(DAY);
+    await s.pige.ingest(s.network.id, [{ ...b, surfaceM2: 100, rooms: undefined }]);
+    // Rien n'est fermé : A se convertit en base.
+    expect((await insert((await prop('DJ')).id, adA.id, adA.fingerprint)).changes).toBe(1);
+    s.tick(DAY);
+    // D se dit « pas d'agence » : B, qui tait ses pièces à 100 m², pourrait être D ; A, reliée à B par la relève de B, aussi.
+    await s.pige.ingest(s.network.id, [{ ...d, text: 'Agences s’abstenir' }]);
+    const adA2 = (await s.db.first<{ id: string; fingerprint: string }>('SELECT id, fingerprint FROM pige_ads WHERE source_ref = ? ORDER BY collected_at DESC LIMIT 1', [String(a.sourceRef)]))!;
+    await expect(insert((await prop('DK')).id, adA2.id, adA2.fingerprint)).rejects.toThrow(/bien fermé/);
   });
 
   it('[R672] un bien fermé avec ses pièces par une annonce sans référence tient dans le doute, en base, une annonce qui tait les siennes', async () => {

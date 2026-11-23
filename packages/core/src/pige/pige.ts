@@ -490,7 +490,10 @@ export class Pige {
       );
       added += r.changes;
       // Ses empreintes du doute, pour que la base le lise aussi [R672].
-      if (r.changes === 1) await this.writeDoubtKeys(networkId, { id: adId, source: ad.source, source_ref: ad.sourceRef, kind: ad.kind, postal_code: ad.postalCode, commune, surface_m2: ad.surfaceM2 });
+      if (r.changes === 1) {
+        await this.writeDoubtKeys(networkId, { id: adId, source: ad.source, source_ref: ad.sourceRef, kind: ad.kind, postal_code: ad.postalCode, commune, surface_m2: ad.surfaceM2 });
+        await this.writeProvenKeys(networkId, { id: adId, fingerprint, source: ad.source, source_ref: ad.sourceRef });
+      }
       // Le jour où l'annonce est vue en ligne, même à prix inchangé : son relevé et sa durée en ligne (HX32) [R303].
       await this.db.run(
         `INSERT OR IGNORE INTO pige_ad_sightings (network_id, source, source_ref, seen_on)
@@ -810,8 +813,25 @@ export class Pige {
     }
   }
 
-  /** Les relèves rangées avant que la base lise le doute reçoivent leurs empreintes, une fois [R672]. */
+  /**
+   * Range avec la relève la clé de chaque annonce de son groupe prouvé, la sienne comprise, et si le parcours est complet :
+   * la base tient alors fermée toute annonce dont une du groupe l'est, même pour une fiche écrite seule [R672, R295].
+   */
+  private async writeProvenKeys(networkId: string, a: { id: string; fingerprint: string; source: string; source_ref: string }): Promise<void> {
+    const l = await this.linked(networkId, a.fingerprint);
+    const own = await refKey(a.source, a.source_ref);
+    for (const k of new Set([own, ...l.refKeys])) {
+      await this.db.run('INSERT INTO pige_ad_proven_keys (network_id, ad_id, ref_key, complete) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING', [networkId, a.id, k, l.complete ? 1 : 0]);
+    }
+  }
+
+  /** Les relèves rangées avant que la base lise le doute reçoivent leurs empreintes et leur groupe, une fois [R672]. */
   async fillDoubtKeys(networkId: string): Promise<void> {
+    const proven = await this.db.all<{ id: string; fingerprint: string; source: string; source_ref: string }>(
+      'SELECT id, fingerprint, source, source_ref FROM pige_ads a WHERE network_id = ? AND NOT EXISTS (SELECT 1 FROM pige_ad_proven_keys k WHERE k.ad_id = a.id)',
+      [networkId],
+    );
+    for (const a of proven) await this.writeProvenKeys(networkId, a);
     const rows = await this.db.all<{ id: string; source: string; source_ref: string; kind: PigeKind; postal_code: string; commune: string; surface_m2: number }>(
       'SELECT id, source, source_ref, kind, postal_code, commune, surface_m2 FROM pige_ads a WHERE network_id = ? AND NOT EXISTS (SELECT 1 FROM pige_ad_doubt_keys k WHERE k.ad_id = a.id)',
       [networkId],
@@ -856,13 +876,15 @@ export class Pige {
    * [R672]. `marks` ajoute le doute, tiré de la relève en cours de chaque annonce, sauf de `current`, dont le doute est
    * donné par `doubtSeeds`.
    */
-  private async linked(networkId: string, fingerprint: string, seeds: readonly string[] = [], doubtSeeds: readonly string[] = [], current: AdRef | null = null): Promise<{ keys: string[]; marks: string[]; complete: boolean; refusedSince: boolean }> {
+  private async linked(networkId: string, fingerprint: string, seeds: readonly string[] = [], doubtSeeds: readonly string[] = [], current: AdRef | null = null): Promise<{ keys: string[]; marks: string[]; complete: boolean; refusedSince: boolean; refKeys: string[] }> {
     // Vrai quand une annonce du bien a été revue et refusée après sa dernière relève rangée : ses vieilles relèves ne
     // rouvrent rien [R672, R273].
     let refusedSince = false;
     const start = [...new Set([fingerprint, ...seeds])];
     const fps = new Set<string>(start);
     const refs = new Set<string>();
+    // La clé de chaque annonce du groupe prouvé, pour que la base le lise aussi [R672].
+    const refKeys = new Set<string>();
     const keys = new Set<string>(start);
     // Ce qui ferme sans réunir : les biens qui pourraient être l'un de ceux-ci faute de pièces dites. Jamais parcourus :
     // le doute ne passe pas d'un bien à un troisième [R672].
@@ -901,6 +923,7 @@ export class Pige {
           refs.add(ref);
           const k = await refKey(r.source, r.source_ref);
           keys.add(k);
+          refKeys.add(k);
           if (!isCurrent && !refusedSince) {
             const said = await this.db.first<{ noted_at: string }>('SELECT max(noted_at) AS noted_at FROM pige_closed_descriptions WHERE network_id = ? AND ref_key = ?', [networkId, k]);
             if (said?.noted_at && said.noted_at >= r.collected_at) refusedSince = true;
@@ -915,7 +938,7 @@ export class Pige {
       }
       frontier = next;
     }
-    return { keys: [...keys], marks: [...new Set([...keys, ...doubts])], complete: frontier.length === 0, refusedSince };
+    return { keys: [...keys], marks: [...new Set([...keys, ...doubts])], complete: frontier.length === 0, refusedSince, refKeys: [...refKeys] };
   }
 
   private async closedReason(networkId: string, fingerprint: string): Promise<Problem | null> {
