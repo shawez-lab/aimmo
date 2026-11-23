@@ -1196,7 +1196,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU103b · Brancher le rangement des images entières des visites
-- Statut : en cours
+- Statut : fait (2026-11-23)
+- Reste : fusionnée (#790, 9434ae5d). `config.horsLigne.images` tiré de `env.MEDIA` par `visitImagesOf` (le dépôt du Studio) ; sans `MEDIA`, 503 `depot_indisponible`, l'image reste sur le téléphone [R677]. Codex rien à signaler ; vérification GitHub verte.
 - Qui : Claude, voie 1 (socle : `app.ts`, `worker.ts`) · Relecture : normale · Dépend de : AU103
 - Cahier : Le produit (téléphone, hors connexion) ; audit A103.
 - Objectif : `horsLigneRoutesDef()` (`packages/api/src/app.ts`) passe aux routes hors ligne un `images` tiré de `env.MEDIA.put` (comme `mediaUploads` du Studio), pour que `POST /v1/hors-ligne/photos/...` range réellement l'image entière (R677). Sans `MEDIA`, `images` reste `null` (503, l'image reste sur le téléphone).
