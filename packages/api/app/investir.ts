@@ -385,6 +385,8 @@ globalThis.AIMMO_INVESTIR = function (t) {
       ul.appendChild(li);
     });
     box.appendChild(ul);
+    /* AU100 · la trésorerie après prêt : simulation d'essai pour l'agent, jamais dans la note du client (H72). */
+    if ((Array.isArray(r.lines) ? r.lines : []).some(function (l) { return l.key === 'monthlyCashflow'; })) box.appendChild(el('p', 'Trésorerie après prêt : simulation d’essai pour vous seul, à valider par l’avocat. Elle n’entre jamais dans la note remise au client.', 'alerte'));
     return true;
   }
   /* Y14 · Retrouver un calcul ou une note d'un projet. Rien n'est lu avant le geste, rien n'est recalculé. */

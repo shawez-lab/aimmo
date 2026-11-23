@@ -22,7 +22,7 @@ import { plain } from '../envoi/texte.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { StoredCalculation } from './calcul.ts';
-import { computeYield, type CalculInvestissement, type Sourced, type YieldInputs, type YieldLine, type YieldResult } from './calcul.ts';
+import { FINANCING_KEYS, computeYield, type CalculInvestissement, type Sourced, type YieldInputs, type YieldLine, type YieldResult } from './calcul.ts';
 import { energyAlertGate, type ConstraintSet, type Contraintes } from './contraintes.ts';
 import { ANIL_CITATION } from './loyers.ts';
 import type { ProfilInvestisseur } from './profil.ts';
@@ -110,6 +110,9 @@ export function forbiddenPhrases(text: string): string[] {
     ...FORBIDDEN_TERMS.filter((_, i) => k.includes(WORD_KEYS[i]!)),
   ];
 }
+
+/** Les lignes que la note peut porter : jamais le financement, simulation d'essai gardée pour l'agent (AU100, H72). */
+const forNote = (lines: readonly YieldLine[]): YieldLine[] => lines.filter((l) => !FINANCING_KEYS.includes(l.key));
 
 /** Ce que l'IA reçoit : les lignes du calcul et les textes des contraintes, rien sur la personne. */
 export interface NoteFacts {
@@ -656,7 +659,7 @@ export class NotesInvestissement {
     if (result.status !== 'complet') return { ok: false, rule: 'R120', code: 'incomplet' };
     const constraints = await this.constraintsFor(viewer.networkId, calc.propertyId, input.projectId, input.inseeCode ?? null, input.energy);
     const facts: NoteFacts = {
-      lines: result.lines,
+      lines: forNote(result.lines),
       grossYieldBp: result.grossYieldBp,
       netYieldBp: result.netYieldBp,
       constraints: constraints.constraints.map((c) => c.text),
@@ -753,7 +756,7 @@ export class NotesInvestissement {
     if (!calc || calc.result.status !== 'complet') return { ok: false, rule: 'R126', code: 'calcul' };
     const constraints = await this.constraintsFor(viewer.networkId, calc.propertyId, row.project_id, input.inseeCode ?? null, input.energy);
     const note = JSON.parse(row.note) as InvestmentNote;
-    const facts: NoteFacts = { lines: calc.result.lines, grossYieldBp: calc.result.grossYieldBp, netYieldBp: calc.result.netYieldBp, constraints: [] };
+    const facts: NoteFacts = { lines: forNote(calc.result.lines), grossYieldBp: calc.result.grossYieldBp, netYieldBp: calc.result.netYieldBp, constraints: [] };
     const check = checkNote(note, row.text, facts, constraints);
     if (!check.ok) {
       await appendEvent(this.journal, { type: 'investir.note.refuse', actor: `agent:${viewer.userId}`, subject: `project:${row.project_id}`, data: { rule: check.rule, code: check.code, note: noteId } }, this.now);
@@ -807,7 +810,7 @@ export class NotesInvestissement {
     };
     if (!calc || calc.result.status !== 'complet') return held('calcul');
     const constraints = await this.constraintsFor(networkId, calc.propertyId, row.project_id, ctx.inseeCode, { energyClass: ctx.energyClass, finalEnergyKwh: ctx.finalEnergyKwh });
-    const facts: NoteFacts = { lines: calc.result.lines, grossYieldBp: calc.result.grossYieldBp, netYieldBp: calc.result.netYieldBp, constraints: [] };
+    const facts: NoteFacts = { lines: forNote(calc.result.lines), grossYieldBp: calc.result.grossYieldBp, netYieldBp: calc.result.netYieldBp, constraints: [] };
     const check = checkNote(note, row.text, facts, constraints);
     if (!check.ok) return held(check.code);
     return { text: row.text, validatedAt: row.validated_at };
@@ -827,7 +830,7 @@ export class NotesInvestissement {
     let held = false;
     if (n.status === 'validee') {
       if (!calc || calc.result.status !== 'complet') held = true;
-      else held = !checkNote(n.note, n.text, { lines: calc.result.lines, grossYieldBp: calc.result.grossYieldBp, netYieldBp: calc.result.netYieldBp, constraints: [] }, constraints).ok;
+      else held = !checkNote(n.note, n.text, { lines: forNote(calc.result.lines), grossYieldBp: calc.result.grossYieldBp, netYieldBp: calc.result.netYieldBp, constraints: [] }, constraints).ok;
     }
     return { ok: true, value: { note: held ? null : n, status: n.status, createdAt: n.createdAt, validatedAt: n.validatedAt, held, alertsFirst: constraints.alertsFirst } };
   }

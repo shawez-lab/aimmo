@@ -168,6 +168,16 @@ describe('Y09 · écran « Investir » de l’application', () => {
     expect(screenJs).not.toMatch(/\*\s*12|\*\s*10000|10000\s*\//);
   });
 
+  it('AU100 · la trésorerie après prêt est dite simulation d’essai pour l’agent seul, jamais dans la note du client', async () => {
+    const plain = await run();
+    await plain.compute();
+    expect(plain.body().textContent).not.toContain('Trésorerie après prêt');
+    const RES = { ...RESULT, formulaVersion: 2, lines: [...RESULT.lines, line('monthlyCashflow', -12_300, 'cents')] };
+    const t = await run({ 'POST /v1/investir/calculs': ok({ id: 'c1', propertyId: 'b1', projectId: 'p1', inputs: {}, result: RES }) });
+    await t.compute();
+    expect(t.body().textContent).toContain('Trésorerie après prêt : simulation d’essai pour vous seul, à valider par l’avocat. Elle n’entre jamais dans la note remise au client.');
+  });
+
   it('[R124] l’alerte d’un bien classé G est en tête, avant tout chiffre', async () => {
     const t = await run();
     await t.compute();
@@ -205,7 +215,10 @@ describe('Y09 · écran « Investir » de l’application', () => {
   it('[R123] le profil n’a aucun champ de revenus, d’emploi, de patrimoine ni de crédit ; une nouvelle version est rangée', async () => {
     const t = await run({ 'POST /v1/investir/projets/p1/profil': ok({ created: true }) });
     await t.openP1();
-    const labels = t.body().all().filter((e) => e.tagName === 'label').map((e) => e.textContent.toLowerCase());
+    // AU100 · le financement du calcul d'un bien (simulation d'essai de l'agent) n'est pas le profil de la personne.
+    const LOAN = ['inv-pret', 'inv-taux', 'inv-duree', 'inv-assurance'];
+    const labels = t.body().all().filter((e) => e.tagName === 'label' && !LOAN.includes(String(e.attributes.for))).map((e) => e.textContent.toLowerCase());
+    expect(t.body().all().filter((e) => e.tagName === 'label' && LOAN.includes(String(e.attributes.for)))).toHaveLength(4);
     for (const l of labels) expect(l, l).not.toMatch(/revenu|salaire|emploi|employeur|patrimoine|épargne|crédit|prêt|solvab|banque/);
     t.input('Budget, en euros').value = '180 000';
     t.input('Secteurs : codes INSEE des communes, séparés par des virgules').value = '99001, 2a004';

@@ -86,6 +86,13 @@ export interface FinancingValue {
   insuranceMonthlyCents: number;
 }
 
+/**
+ * Les lignes du financement (AU100). Décision de Shawez du 2026-11-23 : la trésorerie après prêt est une simulation
+ * d'essai, gardée pour l'agent ; tant que l'avocat n'a pas dit si elle relève de l'intermédiation en crédit (H72),
+ * elle n'entre jamais dans la note remise au client [R125].
+ */
+export const FINANCING_KEYS: readonly string[] = ['loanCents', 'loanRateBp', 'loanMonths', 'loanInsurance', 'loanPayment', 'monthlyCashflow', 'monthlyCashflowLow', 'monthlyCashflowHigh'];
+
 /** La mensualité d'un prêt amortissable à mensualités constantes, au centime le plus proche. */
 export function monthlyPayment(f: FinancingValue): number {
   if (f.annualRateBp === 0) return roundDiv(f.loanCents, f.months);
