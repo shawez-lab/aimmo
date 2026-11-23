@@ -1724,3 +1724,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-23 08:53 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 06:53 et 07:56 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-23 08:53 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-23 09:22 · AU045 · reprise avec une autre approche : rendez-vous retrouvé par la référence de l'appel, passage de main après HX21 seulement, panne de fin au journal ; Codex 1 P1 corrigé puis rien ; vérification verte ; fusionnée (#785, 87ec4d54) · prochaine : AU040 (autre approche notée au plan)
+- 2026-11-23 09:23 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU040
