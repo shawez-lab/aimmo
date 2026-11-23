@@ -8,6 +8,8 @@
  * honoraires [R39] : il pose ce que le code rend. Le formulaire de signature n'existe qu'après un contrôle réussi [R41].
  * Un document d'essai est dit tel [R40]. Après un contrôle réussi, l'écran dit si la signature en ligne est réelle ou
  * seulement d'essai, et ce qu'elle attend (AU003).
+ * X17 : l'agent y fait aussi signer en ligne, accord du mandant noté ; en essai, le code rendu par le serveur est montré
+ * pour essayer le parcours, sans valeur juridique ; en réel, il ne part qu'au mandant.
  * L'agent y note aussi la rétractation reçue et la demande écrite de commencer tout de suite (D16) [R42] ; le code seul
  * décide si la date tient, l'écran n'en dit que le refus. Sur un mandat en cours, il lit les conditions en vigueur,
  * prépare et enregistre un avenant de prix ou de durée (D17) [R41].
@@ -30,6 +32,14 @@ const REFUSALS = {
   scan_deja_utilise: 'Ce scan prouve déjà une autre signature : choisissez le bon fichier.',
   depot_ferme: 'Le dépôt des fichiers n’est pas encore branché : rien ne se signe sans le scan.',
   already_signed: 'Ce mandat est déjà signé.',
+  bad_consent: 'Notez comment le mandant a accepté de signer en ligne (300 caractères au plus).',
+  bad_signer: 'Cette personne n’est pas mandant de ce document.',
+  send_refused: 'Le code n’est pas parti : le mandant n’a pas de mail, ou l’envoi n’est pas permis à cette heure.',
+  wrong_code: 'Code faux : vérifiez-le avec le mandant.',
+  expired: 'Le code a expiré : renvoyez-en un.',
+  blocked: 'Trop de codes faux : renvoyez un nouveau code.',
+  document_changed: 'Le document a changé depuis l’envoi du code : contrôlez-le de nouveau.',
+  unknown_session: 'Cette signature n’est plus ouverte : renvoyez un code.',
   mandate_in_force: 'Un mandat est déjà en cours sur ce bien : ce document ne se signe pas.',
   not_a_mandate: 'Ce document n’est pas un mandat.',
   no_number_field: 'Ce modèle n’a pas de place pour le numéro au registre : voyez avec la direction.',
@@ -261,6 +271,7 @@ globalThis.AIMMO_MANDAT = function (t) {
   }
   function draw(data) {
     var m = data.mandate;
+    cur.owners = Array.isArray(data.owners) ? data.owners.filter(function (o) { return o && ID.test(o.personId); }) : [];
     var box = bloc('Mandat en cours');
     if (!m) box.appendChild(el('p', 'Aucun mandat signé pour ce bien.', 'doux'));
     else {
@@ -463,13 +474,13 @@ globalThis.AIMMO_MANDAT = function (t) {
       if (check.passed !== true) { state('Un point au moins n’est pas réglé : rien ne se signe.'); return true; }
       state('Contrôle réussi : vous pouvez enregistrer la signature.');
       drawSign(zone, d);
-      if (d.kind !== 'avenant_mandat') online(zone);
+      if (d.kind !== 'avenant_mandat') online(zone, d);
       return true;
     });
   }
   // La signature en ligne : réelle seulement quand le mail réel et la validation de l'avocat sont là ; sinon d'essai,
   // dite telle, sans valeur juridique (AU003). Le mode vient du serveur, jamais de l'écran.
-  function online(zone) {
+  function online(zone, d) {
     var line = el('p', '');
     zone.appendChild(line);
     return send('/v1/signature-en-ligne/mode', 'GET').then(function (res) {
@@ -478,7 +489,62 @@ globalThis.AIMMO_MANDAT = function (t) {
       line.textContent = m.mode === 'reel'
         ? 'Signature en ligne : réelle, avec dossier de preuve remis à chaque mandant.'
         : 'Signature en ligne : essai seulement, sans valeur juridique' + (m.missing && m.missing.indexOf('validation_avocat') >= 0 ? ' (validation de l’avocat attendue).' : ' (mail réel pas encore branché).');
+      if (d) drawOnline(zone, d);
     });
+  }
+  // X17 · le geste de la signature en ligne : l'accord du mandant, le code, la signature. Le serveur décide du mode ;
+  // en essai seulement, il rend le code, posé à l'écran pour essayer le parcours, sans valeur juridique.
+  function drawOnline(zone, d) {
+    var box = el('div');
+    zone.appendChild(box);
+    var owners = cur.owners || [], names = {};
+    owners.forEach(function (o) { names[o.personId] = [o.firstName, o.lastName].filter(Boolean).join(' ') || 'Propriétaire sans nom'; });
+    var who = owners.length > 1 ? choice(box, 'mandat-signataire-' + d.id, 'Mandant qui signe en ligne', owners.map(function (o) { return o.personId; }), names, 'Le premier mandant') : null;
+    var proof = field(box, 'mandat-accord-' + d.id, 'Comment le mandant a accepté de recevoir son code par mail');
+    var session = null;
+    var codeZone = el('div');
+    box.appendChild(button('Envoyer le code de signature', act(function () {
+      var text = proof.value.trim();
+      if (!text) { state('Notez comment le mandant a accepté de signer en ligne.'); return false; }
+      var mine = ++seq;
+      state('Envoi du code…');
+      return send(doc(d.id) + '/signature-en-ligne', 'POST', who && who.value ? { consentProof: text, signerId: who.value } : { consentProof: text }).then(function (res) {
+        if (res.gone || mine !== seq) return false;
+        if (!res.ok || !res.body.data) {
+          if (res.offline || res.status >= 500) { state('Pas de réponse : le code est peut-être parti. Attendez dix minutes avant de le renvoyer.'); return false; }
+          state(why(res, 'Le code n’est pas envoyé.'));
+          return false;
+        }
+        session = res.body.data;
+        clear(codeZone);
+        if (session.mode === 'essai' && typeof session.trialCode === 'string') {
+          state('Code préparé pour le mandant (essai, rien n’est parti).');
+          codeZone.appendChild(el('p', 'Code d’essai : ' + session.trialCode + '. En réel, seul le mandant le reçoit, par mail.', 'alerte'));
+        } else state('Code envoyé au mandant par mail : il vaut dix minutes.');
+        var code = field(codeZone, 'mandat-code-' + d.id, 'Code reçu par le mandant');
+        codeZone.appendChild(button('Signer en ligne', act(function () { return signOnline(code.value.trim()); })));
+        return true;
+      });
+    })));
+    box.appendChild(codeZone);
+    function signOnline(code) {
+      if (!session || !ID.test(session.sessionId)) return false;
+      if (!/^[0-9]{6}$/.test(code)) { state('Le code a six chiffres.'); return false; }
+      var mine = ++seq;
+      state('Signature…');
+      return send('/v1/signatures/' + encodeURIComponent(session.sessionId), 'POST', { code: code }).then(function (res) {
+        if (res.gone || mine !== seq) return false;
+        if (!res.ok || !res.body.data) {
+          if (res.offline || res.status >= 500) { state('Pas de réponse : la signature est peut-être rangée. Rouvrez cet écran.'); return false; }
+          state(why(res, 'La signature n’est pas rangée.'));
+          return false;
+        }
+        var r = res.body.data;
+        if (r.realSignature !== true) { state('Signé en essai, sans valeur juridique : aucun mandat n’est inscrit.'); return true; }
+        if (r.allSigned !== true) { state('Signature rangée : les autres mandants doivent encore signer.'); return true; }
+        return load(r.finished && r.finished.ok ? 'Mandat signé en ligne : il est inscrit au registre.' : 'Signé par tous : finissez l’enregistrement du mandat.');
+      });
+    }
   }
   function drawSource(zone, d) {
     var source = choice(zone, 'mandat-source-' + d.id, 'D’où vient ce mandat', SOURCE_KEYS, SOURCES, 'Celle de la fiche');

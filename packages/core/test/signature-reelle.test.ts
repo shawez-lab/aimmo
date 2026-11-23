@@ -82,6 +82,8 @@ describeWithSqlite('AU003 · la signature en ligne réelle, distincte de l’ess
     const s = await none.online.start(none.agent, none.documentId, CONSENT);
     expect(s).toMatchObject({ ok: true, value: { mode: 'essai' } });
     if (!s.ok) throw new Error(s.code);
+    // X17 · la session d'essai rend son code, pour essayer le parcours à l'écran ; c'est celui de la boîte d'essai.
+    expect(s.value.trialCode).toBe((await none.trialCodes())[0]);
     const signed = await none.online.sign(none.agent, s.value.sessionId, { code: (await none.trialCodes())[0]! });
     expect(signed).toMatchObject({ ok: true, value: { mode: 'essai', realSignature: false, allSigned: true } });
     const bodies = (await enClair(none.db.all<{ id: string; body: string }>('SELECT m.id, m.body FROM messages m JOIN trial_outbox t ON t.message_id = m.id'))).map((r) => r.body);
@@ -110,6 +112,9 @@ describeWithSqlite('AU003 · la signature en ligne réelle, distincte de l’ess
     if (!s.ok) throw new Error(s.code);
     // Le code part par le mail réel, jamais par la boîte d'essai, et sans la mention de l'essai.
     expect(t.realCodes()).toHaveLength(1);
+    // X17 · une session réelle ne rend jamais son code à l'agent : il ne part qu'au signataire.
+    expect(s.value).not.toHaveProperty('trialCode');
+    expect(JSON.stringify(s)).not.toContain(t.realCodes()[0]!);
     expect(t.mail.sent[0]!.body).not.toContain('essai');
     expect(await t.trialCount()).toBe(0);
     t.at(60_000);
