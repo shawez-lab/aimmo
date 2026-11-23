@@ -7810,3 +7810,712 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : X17
 - Objectif : décision de Shawez du 2026-11-23, tout se teste en essai. La signature en ligne du bail (W12) et du bon de visite (AU075) n'existent qu'en essai, et leur code restait dans la boîte d'essai : le parcours ne pouvait pas être essayé. Le serveur rend le code d'essai, l'écran le montre.
 - Critères : le code rendu est celui de la boîte d'essai (test) ; il n'est rangé nulle part en clair (test) ; l'écran le dit « rien n'est parti » (test).
+
+## Audit de design de Fable (2026-11-24)
+
+Voie : 3
+
+Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (8 bloquants, 44 majeurs, 32 mineurs, 3 de finition). Consigne : `chantier/taches/DS00.md`. Preuves, captures et sources : `docs/design/AUDIT.md`. Une tâche par point ; une proposition peut en fermer plusieurs, par famille d’écrans. Les tâches qui dépendent de DS000 attendent le choix de la direction de design par Shawez ; sans réponse le 2026-11-25 à 23 h 59, la direction recommandée est prise, sans changer de règle.
+
+### DS000 · Choisir la direction de design
+- Statut : en cours (voie 3)
+- Qui : Claude, voie 3, puis Shawez · Relecture : normale · Dépend de : rien
+- Audit : étape 4 de `chantier/taches/DS00.md`.
+- Objectif : deux ou trois directions vraiment différentes, appliquées à six surfaces (journée de l’agent, fiche d’un bien, fiche d’un client, signature d’un mandat, page publique d’un bien, espace du vendeur), en vrai HTML rendu, téléphone et ordinateur, clair et sombre ; puis une seule question à choix multiple à Shawez.
+- Critères : les captures des directions sont dans `docs/design/captures/directions/` ; la question est posée une fois ; la direction retenue est notée ici.
+
+### DS001 · L'accueil est une pile de 23 cartes égales
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS001 (bloquant, architecture de l'information, effort L), endroit : « Ma journée » — `packages/api/app/fichiers.ts` (`#accueil`)
+- Constat de l’audit : `appli-accueil.jpg`. Sans aucun dossier, l'accueil fait 5,4 écrans et compte 23 blocs, dont 6 vides. Avec un bien, 5,7 écrans.
+- Objectif : l'accueil ne garde que la journée : à faire maintenant, rendez-vous, biens en cours. Tout le reste passe dans les onglets (DS005). Un bloc vide ne s'affiche pas.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS002 · L'accueil n'a pas de limite
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS002 (bloquant, architecture de l'information, effort M), endroit : « Contacts chauds à rappeler », « Mes biens à mettre en vente » — `packages/api/app/fichiers.ts`
+- Constat de l’audit : `appli-accueil-portefeuille-charge.jpg`. Avec 1 000 rappels en attente et 400 biens, l'accueil fait 243 424 px, soit 288 écrans, et porte 2 019 boutons. Les 1 000 contacts sont listés d'un bloc, 4,5 par écran. Tout ce qui suit est hors d'atteinte.
+- Objectif : cinq lignes par liste, triées par urgence, puis « Tout voir » vers la liste complète (DS003). Les retards sont regroupés : « 37 en retard ».
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS003 · Aucune liste ni recherche de clients
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS003 (bloquant, navigation, effort L), endroit : toute l'application — `packages/api/app/fichiers.ts`
+- Constat de l’audit : la coquille n'appelle que `/v1/contacts-chauds`, `/v1/rendez-vous/jour`, `/v1/plan-du-jour` et `/v1/fiches/<id>`. Au stade « rendez-vous pris » du parcours, la vendeuse qui vient d'écrire n'est joignable depuis aucun écran : elle n'est plus « chaude » et son rendez-vous n'est pas aujourd'hui.
+- Objectif : un onglet « Clients » avec recherche par nom, téléphone ou bien, et filtres (vendeurs, acquéreurs, à rappeler). Une recherche générale dans l'en-tête.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS004 · Aucune liste de biens
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS004 (bloquant, navigation, effort L), endroit : toute l'application
+- Constat de l’audit : un bien n'apparaît que dans « Mes biens à mettre en vente », plafonné à 200 lignes sans recherche. Une fois vendu, il n'est plus que dans « Mes ventes conclues ».
+- Objectif : un onglet « Biens » : cartes avec photo, adresse, prix et état, recherche et filtres par état.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS005 · Aucune navigation permanente
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS005 (majeur, navigation, effort L), endroit : toute l'application
+- Constat de l’audit : aucun élément `nav`. Le seul lien entre écrans est « Retour à ma journée ». Passer du mandat aux offres du même bien demande : retour, défilement jusqu'au bien, « Offres ».
+- Objectif : une barre de cinq onglets en bas sur téléphone (Journée, Clients, Biens, Outils, Chiffres), une colonne à gauche sur ordinateur.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS006 · « Se déconnecter » occupe la meilleure place
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS006 (majeur, navigation, effort S), endroit : en-tête de chaque écran — `packages/api/app/fichiers.ts` l. 68
+- Constat de l’audit : toutes les captures. L'en-tête ne porte que la marque et ce bouton.
+- Objectif : l'en-tête porte le titre de l'écran, la recherche et les notifications. La déconnexion passe dans « Mon compte ».
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS007 · Aucun écran n'a d'adresse
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS007 (majeur, navigation, effort M), endroit : toute l'application — fonction `show`
+- Constat de l’audit : ouvrir « Mandat », recharger : l'accueil revient, l'adresse est restée `/app/`.
+- Objectif : une adresse par écran (`/app/#bien=<id>/mandat`), relue à l'ouverture. Aucune donnée de client dans l'adresse, seulement des identifiants internes.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS008 · « Le réseau » empile 35 blocs
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS008 (majeur, architecture de l'information, effort L), endroit : console de la direction — `packages/api/app/fichiers.ts` (`#reseau`)
+- Constat de l’audit : `appli-reseau-chiffres-connexion.jpg`. 12 écrans, 35 blocs dont 11 vides, 33 boutons. Alertes, factures, réglages du mandat, loyers, sauvegardes et preuve à Dijon se suivent sans ordre.
+- Objectif : cinq rubriques : Aujourd'hui (alertes, à valider), Chiffres, Agents, Réglages, Technique.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS009 · « Conformité » empile 13 blocs
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS009 (majeur, architecture de l'information, effort M), endroit : écran du responsable de la conformité — `packages/api/app/conformite.ts`
+- Constat de l’audit : 6,3 écrans, 13 blocs, 7 boutons pleins.
+- Objectif : trois onglets : À décider, Coffre, Modèles.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS010 · La fiche d'un client fait cinq écrans, sans synthèse
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS010 (majeur, architecture de l'information, effort L), endroit : fiche client — `packages/api/app/fichiers.ts` (`#fiche`) et modules chargés
+- Constat de l’audit : `appli-fiche-client.jpg`. 5,2 écrans, 14 blocs dont 6 réduits à un bouton, 9 boutons pleins. La fiche ouvre sur un prénom et un nom, sans rôle, sans coordonnées, sans dernier échange.
+- Objectif : un en-tête de fiche : nom, rôle, bien lié, dernier échange, prochain geste et moyens de contact permis. Dessous, des onglets : Fil, Projets, Biens, Accords.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS011 · Les outils secondaires pèsent autant que le cœur du métier
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS011 (majeur, hiérarchie, effort M), endroit : accueil
+- Constat de l’audit : remises, panneaux, clés, notifications, actualités, intégration, Fiche Google, locations, investisseurs, commerces : dix blocs sur 23, chacun avec une phrase d'explication permanente.
+- Objectif : un onglet « Outils », en grille, sans phrase permanente.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS012 · Des cartes vides, réduites à un bouton
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS012 (mineur, composants, effort S), endroit : accueil (3), fiche client (6), « Mettre en vente » (2)
+- Constat de l’audit : `appli-accueil.jpg` : « Mes remises négociées », « Mes panneaux ».
+- Objectif : une ligne de liste avec chevron, ou une entrée de l'onglet « Outils ».
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS013 · Un bien n'a pas d'écran à lui
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS013 (majeur, navigation, effort L), endroit : « Mettre en vente », « Mandat », « Offres », « Avis de valeur », « Studio », « Dossier de vente »
+- Constat de l’audit : six écrans séparés, ouverts par cinq boutons pleins de même poids sur l'accueil, chacun avec son « Retour à ma journée ».
+- Objectif : une fiche du bien, avec ses étapes en onglets et un fil d'avancement : estimé, sous mandat, en vente, offre, compromis, vendu.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS014 · « Gagner des mandats » déplie sept outils l'un sous l'autre
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS014 (majeur, architecture de l'information, effort M), endroit : `packages/api/app/gagner.ts` et ses modules (pige, tournée, veille, site, calendrier, neuf, viager)
+- Constat de l’audit : 11 blocs, 8 boutons pleins, 3,1 écrans avant toute ouverture, 3,5 après.
+- Objectif : une page d'entrée qui liste les sept outils, chacun ouvert sur son propre écran.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS015 · La marque n'a pas de voix typographique tenue
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS015 (majeur, identité, effort M), endroit : `packages/core/src/design/systeme.ts` (`POLICES`)
+- Constat de l’audit : la pile des titres est Iowan Old Style, Charter, Palatino Linotype, Book Antiqua, Georgia. Un iPhone rend Iowan, un PC Palatino, un téléphone Android aucune des cinq : il tombe sur son serif par défaut, comme le poste d'audit (toutes les captures).
+- Objectif : une police de titres propre à AIMMO, servie par le Worker lui-même, en sous-ensemble latin de moins de 25 Ko. Demande un changement de R201 : c'est la question posée à Shawez. Sans accord : une pile resserrée, corps et graisses réglés pour que le repli se tienne.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS016 · Pas de logotype
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS016 (majeur, identité, effort M), endroit : en-tête, icône de l'application — `systeme.ts` (`.marque`, `ICON_SVG`)
+- Constat de l’audit : la marque est le mot AIMMO en capitales espacées, précédé d'un losange de 12 px. L'icône est une maison générique.
+- Objectif : un logotype dessiné, en SVG, avec son monogramme pour l'icône.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS017 · En sombre, le bordeaux devient rose
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS017 (majeur, identité, mode sombre, effort S), endroit : `systeme.ts` (`PALETTE.sombre.accent` : `#f0a6b0`)
+- Constat de l’audit : `appli-ordinateur-et-sombre.jpg` : le bouton « Noter une rétractation » est rose saumon.
+- Objectif : en sombre, le bouton plein garde un bordeaux profond avec un texte clair ; le rose ne sert qu'aux liens et aux contours.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS018 · La frise rayée se lit comme un ruban de chantier
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS018 (majeur, identité, effort S), endroit : sous chaque en-tête — `systeme.ts` (`--frise`)
+- Constat de l’audit : toutes les captures. Quatre couleurs en biais sur 6 px : le motif n'évoque pas les losanges des toits vernissés.
+- Objectif : selon la direction retenue : un vrai motif de losanges, discret, ou plus de frise du tout.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS019 · Aucune image dans toute l'application
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS019 (majeur, images, effort L), endroit : toute l'application
+- Constat de l’audit : aucun `<img>` dans les 90 scripts. Ni photo de bien, ni visage.
+- Objectif : la photo du bien sur sa carte et sa fiche, en vignette légère servie par `/medias/`. Les initiales du client dans un rond.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS020 · Le losange est partout, donc nulle part
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS020 (mineur, identité, effort S), endroit : devant chaque titre de carte — `systeme.ts` (`.bloc>h3::before`)
+- Constat de l’audit : 23 losanges sur l'accueil.
+- Objectif : le losange reste le signe de la marque et des moments forts, pas une puce.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS021 · Rien ne dit le haut de gamme
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS021 (majeur, confiance et prestige, effort L), endroit : toutes les surfaces vues par un client
+- Constat de l’audit : `site-accueil-et-bien-telephone.jpg`, `espace-client.jpg`. Cartes très arrondies, ombres douces, texte seul : le vocabulaire d'une application grand public. Barnes sert six langues et une quinzaine de devises et met la photo au premier plan.
+- Objectif : de l'air, la photo en grand, une typographie de livre, des filets fins à la place des cartes, et l'anglais (DS073).
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS022 · Trop de boutons pleins : aucune action ne domine
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS022 (majeur, hiérarchie, effort M), endroit : fiche client (9 boutons pleins), « Gagner des mandats » (8), conformité (7), « Mettre en vente » (5), carte d'un bien sur l'accueil (5), mandat (4), offres (4)
+- Constat de l’audit : `appli-accueil.jpg`, `appli-mettre-en-vente.jpg` : « Rédiger de nouveau » et « Corriger le texte » sont pleins tous les deux.
+- Objectif : un seul bouton plein par écran. Les autres sont filaires, ou de simples liens. À inscrire dans le contrôle du système.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS023 · Le bien s'appelle « B-E6B8BB51 »
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS023 (majeur, hiérarchie, microcopie, effort M), endroit : titres de six écrans, carte de l'accueil
+- Constat de l’audit : `appli-mandat-offres-avis.jpg`. 105 occurrences dans les plans des écrans. Le point médian passe seul en début de ligne : « Avis de valeur / · B-E6B8BB51 ».
+- Objectif : le bien se nomme par son type, sa rue et sa commune (« Appartement, rue Monge, Dijon »), la référence en petit. Le titre de l'écran est le bien, l'étape est l'onglet.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS024 · Toutes les cartes ont le même poids
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS024 (majeur, hiérarchie, effort M), endroit : `systeme.ts` (`.bloc`)
+- Constat de l’audit : même rayon, même ombre, même titre pour une alerte, une liste et un réglage.
+- Objectif : trois niveaux : ce qui presse (plein cadre, accent), le contenu (liste sans carte), le réglage (ligne).
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS025 · Les états s'écrivent en phrases
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS025 (mineur, hiérarchie, effort S), endroit : mandat, offres, accueil, publication
+- Constat de l’audit : « État : acceptée », « Annonce en vente. », « site : publiée ». La classe `.pastille` existe et sert peu.
+- Objectif : une étiquette d'état, avec un petit jeu de teintes : en cours, fait, en retard, bloqué.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS026 · Les chiffres qui comptent sont en petit gris
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS026 (mineur, hiérarchie, effort S), endroit : mandat
+- Constat de l’audit : `appli-mandat-offres-avis.jpg` : « En vigueur : prix 200 000 €, durée 12 mois. » est en gris, sous un bouton.
+- Objectif : prix, durée et échéance en tête de carte, en chiffres alignés.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS027 · Trop de texte secondaire en gris
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS027 (mineur, typographie, effort S), endroit : accueil, « Mettre en vente », espace client
+- Constat de l’audit : sur l'accueil, chaque bloc porte une phrase grise permanente. Dans « Mettre en vente », trois à quatre lignes grises suivent chaque phrase de l'annonce.
+- Objectif : le gris pour la précision, pas pour l'explication permanente. L'explication passe derrière un « En savoir plus ».
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS028 · Une graisse de 650 qui n'existe pas partout
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS028 (finition, typographie, effort S), endroit : `systeme.ts` (`strong`, `.pastille`, `.fait`)
+- Constat de l’audit : une police de système sans axe variable rend 650 en 600 ou en 700 selon l'appareil.
+- Objectif : 600 et 700 seulement.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS029 · Une seule échelle pour le téléphone et l'ordinateur
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS029 (mineur, typographie, effort S), endroit : `systeme.ts` (`--t-*`)
+- Constat de l’audit : sur 1 440 px, le titre d'écran et le texte ont les tailles du téléphone ; les lignes font 72 à 83 caractères, à la limite du confort.
+- Objectif : une échelle fluide, et des lignes de 60 à 70 caractères.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS030 · L'action et le danger sont deux rouges voisins
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS030 (majeur, couleur, effort S), endroit : `systeme.ts` (`accent` `#7c1f32`, `danger` `#a3231b`)
+- Constat de l’audit : « Noter une rétractation » (action) et un bouton `.danger` ne se distinguent que par leur largeur.
+- Objectif : le bouton d'action change de teinte selon la direction retenue (encre, ou vert de tuile), et le rouge reste au danger. Ou le danger devient filaire avec une confirmation.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS031 · Le moutarde a quatre sens
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS031 (mineur, couleur, effort S), endroit : losanges, soulignement du titre, bord gauche des formulaires ouverts, numéros de listes
+- Constat de l’audit : `appli-fiche-client.jpg` : le bord moutarde entoure les formulaires, le losange précède les titres.
+- Objectif : un seul sens : la marque.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS032 · Pas de teinte pour « information » ni « attention »
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS032 (mineur, couleur, effort S), endroit : `systeme.ts` (`.alerte`)
+- Constat de l’audit : `appli-fiche-client.jpg` : « Appel fermé… » est une règle à connaître, montrée comme une alerte rouge.
+- Objectif : trois bandeaux : information, attention, erreur.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS033 · Sur ordinateur, une colonne de 608 px
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS033 (majeur, ordinateur, effort L), endroit : toute l'application et toutes les pages publiques — `systeme.ts` (`--colonne:38rem`)
+- Constat de l’audit : `appli-ordinateur-et-sombre.jpg`, `site-accueil-et-bien-ordinateur.jpg` : 58 % de la largeur est vide. La photo du bien fait 155 px de large.
+- Objectif : sur grand écran, navigation à gauche, liste au centre, détail à droite. Pages publiques sur une grille de 12 colonnes.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS034 · Les boutons en ligne se décalent en passant à la ligne
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS034 (mineur, espacement, effort S), endroit : carte d'un bien sur l'accueil — `fichiers.ts` (`.liste button + button`)
+- Constat de l’audit : `appli-accueil.jpg` : la deuxième rangée de boutons est décalée de 8 px vers la droite.
+- Objectif : un groupe de boutons en `flex` avec `gap`.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS035 · Un bouton collé à la phrase
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS035 (mineur, espacement, effort S), endroit : offres — `packages/api/app/offres.ts`
+- Constat de l’audit : `appli-mandat-offres-avis.jpg` : « Prochain pas : ouvrir le dossier de vente.[Ouvrir le dossier de vente] ».
+- Objectif : le bouton sur sa ligne. Et la phrase qui répète le bouton s'en va.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS036 · Un seul rythme vertical
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS036 (mineur, espacement, effort S), endroit : partout
+- Constat de l’audit : 16 px entre tout : entre deux cartes sans lien comme entre un titre et son contenu.
+- Objectif : trois écarts : dans un groupe, entre groupes, entre sections.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS037 · « Retour » a trois formes
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS037 (majeur, composants, effort S), endroit : tous les écrans
+- Constat de l’audit : lien fléché « Retour à ma journée » (mandat), bouton plein « Retour à ma journée » (fiche client), « Ma journée d'agent » (réseau), « Retour » (Fiche Google).
+- Objectif : un seul retour, dans l'en-tête, avec le nom de l'écran d'où l'on vient.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS038 · Les formulaires sont toujours ouverts
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS038 (majeur, composants, effort M), endroit : mandat (« Préparer un avenant » : 6 champs), fiche client (« Biens du client » : 7 champs, « Accords » : 4 champs)
+- Constat de l’audit : `appli-mandat-offres-avis.jpg`, `appli-fiche-client.jpg`.
+- Objectif : le geste s'annonce par un bouton, le formulaire s'ouvre dans une feuille. Une feuille par geste.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS039 · La fiche du bien : 42 champs d'un seul tenant
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS039 (majeur, formulaires, effort M), endroit : « Remplir la fiche du bien » — `packages/api/app/fiche-bien.ts`
+- Constat de l’audit : 42 champs, 7 214 px, soit 8,5 écrans, un seul bouton « Enregistrer la fiche » tout en bas.
+- Objectif : des étapes (Surfaces, Énergie, Copropriété, Photos), chacune enregistrée, avec sa progression.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS040 · La preuve de chaque phrase est toujours dépliée
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS040 (majeur, composants, effort S), endroit : « L'annonce, phrase par phrase » — `packages/api/app/fichiers.ts` (`#vente`)
+- Constat de l’audit : `appli-mettre-en-vente.jpg` : « 3 : pièces, lu dans la fiche du bien » sous chaque phrase. L'écran fait 3,6 écrans.
+- Objectif : l'annonce se lit d'un trait. Un appui sur une phrase montre ses preuves. Une phrase sans preuve est signalée.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS041 · Une liste ne se touche que par son bouton
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS041 (mineur, composants, effort S), endroit : contacts chauds, rendez-vous, biens
+- Constat de l’audit : `appli-accueil-portefeuille-charge.jpg` : chaque ligne fait 185 px, dont un bouton « Voir la fiche » plein.
+- Objectif : la ligne entière est la cible, avec un chevron. 72 px par ligne.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS042 · Pas de composant de niveau produit
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS042 (majeur, système de design, effort L), endroit : `systeme.ts`
+- Constat de l’audit : la base offre une quinzaine de classes. Il manque : barre d'onglets, en-tête de fiche, carte de bien, ligne de personne, étiquette d'état, feuille d'action, squelette de chargement, bandeau d'information, fil d'étapes commun.
+- Objectif : ces neuf composants dans la base, chacun avec son contrôle.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS043 · Le même composant pour naviguer et pour filtrer
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS043 (mineur, composants, effort S), endroit : `.periodes` : « Mon dossier / Académie » (navigation), « Ce mois-ci / Mois dernier » (filtre), Studio (onglets en boutons filaires)
+- Constat de l’audit : Le même composant pour naviguer et pour filtrer.
+- Objectif : des onglets pour naviguer, des segments pour filtrer.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS044 · Des listes déroulantes pour deux ou trois choix
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS044 (mineur, formulaires, effort S), endroit : fiche client, mandat, avenant
+- Constat de l’audit : `appli-fiche-client.jpg` : « Maison ou appartement » dans un `select`.
+- Objectif : des segments ou des boutons radio jusqu'à quatre choix : un appui au lieu de deux.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS045 · Aucune icône
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS045 (majeur, iconographie, effort M), endroit : toute l'application
+- Constat de l’audit : la seule est la flèche « ← », en texte.
+- Objectif : un jeu d'une vingtaine d'icônes au trait, en SVG dans la base : appeler, écrire, agenda, bien, client, document, signer, photo, chercher.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS046 · Le chargement est un mot
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS046 (mineur, mouvement, performance ressentie, effort M), endroit : tous les écrans chargés à la demande
+- Constat de l’audit : « Chargement… » apparaît 143 fois dans les scripts. Aucun squelette.
+- Objectif : un squelette qui a la forme de ce qui arrive.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS047 · Rien ne relie une liste à son détail
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS047 (finition, mouvement, effort M), endroit : ouverture d'une fiche, d'un bien
+- Constat de l’audit : un seul mouvement : un fondu de 220 ms à l'entrée d'un écran.
+- Objectif : le détail glisse depuis la ligne touchée, avec les transitions de vue du navigateur, coupées pour qui réduit les animations.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS048 · Un geste réussi ne se voit qu'en petit texte
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS048 (mineur, mouvement, états, effort S), endroit : `.etat` sous les boutons
+- Constat de l’audit : « Page téléchargée : ouvrez-la… » en gris, à un endroit variable.
+- Objectif : une confirmation au même endroit pour tous les gestes, en bas, avec « Annuler » quand le geste s'annule.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS049 · La signature du mandat n'a pas de fil
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS049 (majeur, parcours, effort M), endroit : mandat — `packages/api/app/mandat.ts`
+- Constat de l’audit : questionnaire, document, contrôle, signature papier ou en ligne, rétractation et avenant sont des cartes de même rang. Le fil d'étapes `.parcours` existe, pour la location seulement.
+- Objectif : le même fil d'étapes sur tous les parcours : préparer, contrôler, signer, inscrit. L'étape en cours porte le bouton plein.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS050 · La fiche n'ouvre pas sur le geste du jour
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS050 (majeur, parcours, effort M), endroit : fiche client
+- Constat de l’audit : `appli-fiche-client.jpg` : aucune coordonnée en tête, aucun lien `tel:`, `sms:` ni `mailto:`. Les gestes sont « J'ai appelé » et « La personne a refusé ».
+- Objectif : en tête, les moyens de contact que les règles d'appel et d'accord permettent, et la raison quand un moyen est fermé. À faire dans le respect de R202 à R204.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS051 · Dix requêtes pour ouvrir l'accueil
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS051 (mineur, performance ressentie, effort M), endroit : accueil
+- Constat de l’audit : 10 appels à l'API et 2 scripts au chargement.
+- Objectif : l'accueil resserré (DS001) n'en demande que trois ou quatre.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS052 · La mention de l'assistant dit « de Alex » et « réponse immédiate » hors de propos
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS052 (majeur, mails et SMS, effort S), endroit : `packages/core/src/envoi/controle.ts` l. 168
+- Constat de l’audit : la demande d'avis, envoyée quatre mois après la vente, commence par « Réponse immédiate de l'assistant IA de Alex, qui vous recontacte personnellement. »
+- Objectif : « d'Alex ». Et une mention qui dit vrai pour un message qui n'est pas une réponse. C'est un texte réglé par une règle : à changer avec son test.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS053 · Une référence interne dans un mot de remerciement
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS053 (mineur, mails et SMS, effort S), endroit : demande d'avis — `packages/core/src/apres-vente/demandes-avis.ts`
+- Constat de l’audit : « …la vente de votre bien à Dijon, référence B-CCD5185A. »
+- Objectif : « votre appartement de la rue … ». La référence n'apprend rien au client.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS054 · Des libellés de bouton qui ne disent rien seuls
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS054 (mineur, microcopie, accessibilité, effort S), endroit : accueil
+- Constat de l’audit : deux boutons « Ouvrir » (Gagner des mandats, Fiche Google), « Voir et régler », « Voir mes clés », « Voir mes clés à rendre ».
+- Objectif : le bouton nomme ce qu'il ouvre. Avec les onglets, la plupart disparaissent.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS055 · Une écriture de tableur
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS055 (mineur, microcopie, effort S), endroit : « Ma semaine »
+- Constat de l’audit : « Plan ouvert avant midi : 0 jour(s) sur 7. », « 05/06 non · 06/06 non · 07/06 non… ».
+- Objectif : sept pastilles, une par jour, et « Aucun jour cette semaine ».
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS056 · Des dates au format des machines dans un document remis au vendeur
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS056 (majeur, microcopie, impression, effort S), endroit : dossier de présentation — `packages/core/src/mandats/gagner/dossier-presentation.ts` l. 364
+- Constat de l’audit : `site-candidature-estimation-dossier.jpg` : « vente la plus récente : 2027-03, avis validé le 2027-10-07 », et « 2027-03 » dans le tableau.
+- Objectif : « mars 2027 », « 7 octobre 2027 ».
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS057 · L'identifiant d'un agent dans un libellé
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS057 (majeur, microcopie, effort S), endroit : grille des commissions — `packages/api/app/finances.ts` l. 964
+- Constat de l’audit : « Taux propre à l'agent acf2c1b2-2d19-49c6-b889-ea38885db2be, en % ».
+- Objectif : le prénom et le nom de l'agent.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS058 · L'erreur s'écrit loin du champ
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS058 (mineur, formulaires, effort M), endroit : tous les formulaires
+- Constat de l’audit : le refus s'écrit dans la zone d'état, sous le bouton. Aucun champ ne porte `aria-invalid`.
+- Objectif : le message sous le champ fautif, le champ marqué, le focus posé dessus.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS059 · Le bouton d'envoi est au bout du formulaire
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS059 (mineur, formulaires, une main, effort S), endroit : fiche du bien (42 champs), offre reçue (16 champs)
+- Constat de l’audit : Le bouton d'envoi est au bout du formulaire.
+- Objectif : un bouton d'envoi collé en bas de l'écran pendant la saisie.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS060 · Un état vide prend la place d'un état plein
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS060 (majeur, états, effort S), endroit : accueil, réseau, « Gagner des mandats »
+- Constat de l’audit : cinq cartes de suite ne disent que « Rien à… » ou « Aucun… ». 11 des 35 blocs du réseau sont vides.
+- Objectif : un bloc vide se réduit à une ligne, ou disparaît. Quand tout est vide, un seul message, avec le premier geste à faire.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS061 · Une panne ressemble à une information
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS061 (majeur, états, effort S), endroit : fiche client, Studio, partenaires
+- Constat de l’audit : `appli-fiche-client.jpg` : « La liste des biens n'a pas pu être lue. » est en gris, sous un bouton, comme une aide.
+- Objectif : un bandeau d'erreur, avec « Réessayer ».
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS062 · L'écran de connexion est nu
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS062 (mineur, états, identité, effort S), endroit : connexion — `fichiers.ts` (`#connexion`)
+- Constat de l’audit : `appli-reseau-chiffres-connexion.jpg` : un titre, une phrase, un lien.
+- Objectif : le premier écran porte la marque, et dit quoi faire en une phrase.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS063 · Le titre de la page ne change jamais
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS063 (mineur, accessibilité, effort S), endroit : toute l'application
+- Constat de l’audit : `document.title` vaut « AIMMO » sur chaque écran. Le seul `h1` est la marque.
+- Objectif : « Mandat · rue Monge · AIMMO ». Le `h1` est le titre de l'écran.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS064 · Le focus se perd à chaque changement d'écran
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS064 (mineur, accessibilité, effort S), endroit : fonction `show`
+- Constat de l’audit : après l'ouverture de « Mandat », l'élément actif est `body`.
+- Objectif : le focus va au titre du nouvel écran.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS065 · Une cible de 40 px dans l'en-tête
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS065 (mineur, accessibilité, effort S), endroit : « Se déconnecter » — `fichiers.ts` l. 248
+- Constat de l’audit : 40 px de haut, pour 48 px promis par le système. WCAG 2.2 demande 24 px au moins : la règle est tenue, la promesse du système ne l'est pas.
+- Objectif : 48 px, ou un bouton d'icône de 48 px.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS066 · Pas de lien d'évitement ni de repère de navigation
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS066 (mineur, accessibilité, effort S), endroit : toute l'application
+- Constat de l’audit : Pas de lien d'évitement ni de repère de navigation.
+- Objectif : « Aller au contenu », et un `nav` pour les onglets.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS067 · Les documents imprimés n'ont ni repère principal ni titre de niveau 1
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS067 (finition, accessibilité, impression, effort S), endroit : fiche imprimable, lettres de quartier, document à signer
+- Constat de l’audit : axe-core : `landmark-one-main`, `page-has-heading-one`, `region`.
+- Objectif : un `main` et un `h1` dans chaque gabarit.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS068 · Les budgets de poids sont pleins
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS068 (majeur, performance, système de design, effort L), endroit : `packages/core/src/design/audit.ts` (`BUDGETS`)
+- Constat de l’audit : la coquille pèse 48 446 octets compressés pour 49 152 permis. `mandat.js` 13 036, `louer.js` 13 431, `finances.js` 14 074, `commerces.js` 14 162, pour 14 336 permis.
+- Objectif : alléger d'abord. Des composants communs à la place des styles et du code propres à chaque écran. Puis sortir de la coquille ce que l'agent ne voit pas (DS069).
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS069 · Chaque agent télécharge l'écran de la direction
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS069 (majeur, performance, effort M), endroit : `fichiers.ts` (`#reseau`)
+- Constat de l’audit : la section `#reseau` fait 16 457 des 33 722 caractères de la page d'accueil de l'application.
+- Objectif : la console de la direction dans son propre fichier, chargé pour la direction seule.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS070 · Les gestes sont hors de portée du pouce
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS070 (majeur, une main, effort M), endroit : tous les écrans
+- Constat de l’audit : « Retour » est en haut à gauche, les boutons sont au fil du texte, rien n'est ancré en bas.
+- Objectif : onglets en bas, action principale ancrée en bas, retour par balayage du navigateur et par l'en-tête.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS071 · L'accueil du site est une liste de liens
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS071 (bloquant, site public, effort L), endroit : `packages/core/src/attirer/accueil-site.ts`
+- Constat de l’audit : `site-accueil-et-bien-telephone.jpg`. Un titre, un champ de recherche, sept liens soulignés avec leur explication. Ni image, ni promesse, ni preuve, ni visage. iad ouvre son estimation sur « 4,9/5 » et 271 107 avis, avec les dernières ventes en photo.
+- Objectif : une promesse, la recherche en grand, les derniers biens en photo, la preuve (le compte public de Dijon, les avis), l'agent, puis les outils.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS072 · La page d'un bien ne vend pas le bien
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS072 (bloquant, site public, effort L), endroit : `packages/core/src/annonces/page-bien.ts`
+- Constat de l’audit : `site-accueil-et-bien-telephone.jpg`, `site-accueil-et-bien-ordinateur.jpg`. Une seule photo, en vignette sur ordinateur. Pas de galerie, pas de faits clés (surface, pièces, étage), pas de bouton « Visiter ». Le contact de l'agent est un numéro et une adresse en liens nus.
+- Objectif : photo plein cadre et galerie, faits clés en une ligne, prix et honoraires lisibles, un bouton « Demander une visite » ancré, l'agent avec son visage, la carte du quartier sans l'adresse exacte.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS073 · Aucune page en anglais
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS073 (majeur, international, effort L), endroit : tout le site public
+- Constat de l’audit : ni `lang="en"` ni `hreflang` dans le code. Barnes sert six langues, Apimo traduit ses annonces.
+- Objectif : l'anglais sur les pages de biens, l'accueil et la page de l'agent, avec les prix dans la devise choisie à titre indicatif. Les textes traduits sont relus par l'agent avant publication : c'est une tâche de fond, à découper à part.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS074 · « Rejoindre AIMMO » demande d'agir par un lien souligné
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS074 (majeur, site public, effort M), endroit : `packages/api/src/candidature.ts`
+- Constat de l’audit : `site-candidature-estimation-dossier.jpg`. Le texte est bon. L'appel à l'action est « Déposer ma candidature » en lien. Aucun chiffre prouvé, aucun visage. 6 621 px sur téléphone.
+- Objectif : un bouton, répété en bas. Les preuves chiffrées du compte public. Le témoignage d'un agent quand il y en aura un vrai.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS075 · Les listes d'agents et de communes n'ont ni recherche ni index
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS075 (mineur, site public, effort S), endroit : `packages/core/src/attirer/annuaire-site.ts`
+- Constat de l’audit : 500 agents : 17 299 px. 2 000 communes : 21 582 px.
+- Objectif : un champ de filtre et un index par lettre, sans script lourd.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS076 · Le jargon de la preuve passe avant le contenu
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS076 (mineur, site public, microcopie, effort S), endroit : accueil du site, « Les derniers biens »
+- Constat de l’audit : la section commence par « Mandats vérifiés le … Un bien sans mandat en vigueur à cette heure n'apparaît pas ici. »
+- Objectif : les biens d'abord. La garantie en une ligne, dessous.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS077 · Des liens trop petits pour le doigt
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS077 (mineur, accessibilité, effort S), endroit : mentions légales, estimation, page du bien, listes
+- Constat de l’audit : sur téléphone, 2 à 12 liens par page font moins de 44 px de haut.
+- Objectif : 44 px au moins pour tout lien isolé.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS078 · L'espace du vendeur montre des valeurs internes
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS078 (bloquant, espace client, effort S), endroit : `packages/api/src/espaces.ts` l. 253 à 256
+- Constat de l’audit : `espace-client.jpg` : « Statut : available », « Mandat de vente · signe ». Le code écrit `shown(b.status)` et `shown(d.signature)` : la valeur de la base, telle quelle.
+- Objectif : chaque valeur a son mot français : « En vente », « Signé », « À signer ». Un test par valeur.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS079 · La source de chaque chiffre coupe la phrase
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS079 (bloquant, espace client, effort M), endroit : `packages/api/src/espaces.ts`
+- Constat de l’audit : `espace-client.jpg` : « 210 000 € annonce publiée, 20 mai 2027 à 10 h 00 · 64 annonce publiée, 20 mai 2027 à 10 h 00 m² ».
+- Objectif : la valeur seule, et « D'où vient ce chiffre ? » qui ouvre la source et la date. Le relevé prouvé reste téléchargeable.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS080 · Le vendeur voit « REF-V1 · Dijon », pas sa maison
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS080 (majeur, espace client, effort M), endroit : `packages/api/src/espaces.ts`
+- Constat de l’audit : Le vendeur voit « REF-V1 · Dijon », pas sa maison.
+- Objectif : la photo et l'adresse du bien, que le vendeur connaît déjà.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS081 · Le seul bouton plein est « Me déconnecter »
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS081 (majeur, espace client, effort S), endroit : `packages/api/src/espaces.ts`
+- Constat de l’audit : `espace-client.jpg`.
+- Objectif : la déconnexion en lien, en bas. Le bouton plein va au geste utile : signer, répondre à une offre, déposer une pièce.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS082 · Ni avancement, ni prochaine étape, ni agent
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS082 (majeur, espace client, parcours, effort M), endroit : espace vendeur, espace acquéreur
+- Constat de l’audit : `espace-client.jpg` : des listes (« Visites », « Offres », « Documents », « Rendez-vous », « Points de la semaine »), la plupart vides.
+- Objectif : en tête, où en est la vente, ce qui se passe ensuite et quand, et l'agent avec son moyen de contact.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS083 · La fiche imprimable rejette la description sur une page presque vide
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS083 (majeur, impression, effort M), endroit : `packages/core/src/annonces/page-bien.ts` (`renderListingPrint`)
+- Constat de l’audit : `documents-imprimes.jpg` : la deuxième page porte un en-tête et une ligne.
+- Objectif : une page : photo, titre, prix, faits clés, description, étiquettes, agent.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS084 · L'avis de valeur ne porte pas la marque
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS084 (majeur, impression, effort M), endroit : `packages/core/src/estimation/avis-imprime.ts`
+- Constat de l’audit : `documents-imprimes.jpg`. Le document qui fait signer le mandat est une page de texte avec un tableau.
+- Objectif : une couverture, la fourchette en grand, les ventes comparables en tableau lisible, la méthode en clair, l'agent en pied de page.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS085 · Les mails sont du texte brut, sans signature
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
+- Audit : `docs/design/AUDIT.md`, DS085 (majeur, mails et SMS, effort L), endroit : `packages/core/src/envoi/`
+- Constat de l’audit : les quatre mails du parcours : un paragraphe, un lien écrit en entier, aucune signature.
+- Objectif : un gabarit de mail sobre : la marque, le texte, un bouton, la signature de l'agent avec son téléphone. En texte et en HTML. Rien ne change au contrôle central des envois.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS086 · Les captures de référence datent d'un mois et couvrent cinq écrans
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS086 (mineur, système de design, effort M), endroit : `docs/design/captures/`
+- Constat de l’audit : 20 images du 28 octobre, pour 26 écrans et une vingtaine de pages.
+- Objectif : un script de captures rejouable, pour comparer avant et après à chaque proposition.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+
+### DS087 · Le contrôle ne compte pas les boutons pleins ni la hauteur des écrans
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
+- Audit : `docs/design/AUDIT.md`, DS087 (mineur, système de design, effort S), endroit : `packages/core/src/design/audit.ts`
+- Constat de l’audit : Le contrôle ne compte pas les boutons pleins ni la hauteur des écrans.
+- Objectif : deux contrôles de plus : un bouton plein par écran, et une hauteur d'écran bornée sur le portefeuille chargé.
+- Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
