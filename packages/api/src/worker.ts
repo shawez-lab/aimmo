@@ -251,6 +251,14 @@ export function mediaUploads(bucket: { put?(key: string, value: Uint8Array, opti
 }
 
 /**
+ * AU103b : les images entières des visites rangées dans `MEDIA`, sous `visites/`, par le même dépôt que le Studio ; sans
+ * `MEDIA` (ou sans `put`), `null` : le dépôt répond 503 et l'image reste sur le téléphone, qui la renverra [R677].
+ */
+export function visitImagesOf(env: Pick<Env, 'MEDIA'>): StudioUploadStore | null {
+  return env.MEDIA ? mediaUploads(env.MEDIA) : null;
+}
+
+/**
  * Les fichiers déposés de l'agence sous licence (BR82) : les compartiments des médias, des pièces et des commerces qui
  * savent `head` et `get`, jamais le coffre [R663] ; aucun : `null`, les routes des contenus sont fermées.
  */
@@ -317,6 +325,8 @@ export default {
       // M19 (X10) : photos, originaux, preuves et accords dans `MEDIA`, dont seule l'existence est lue ; absent, fermé.
       // X12 : les fichiers finis rangés tels quels dans `MEDIA` ; sans lui (H25), le dépôt est fermé.
       // AU036 : les vrais Facebook et Instagram du réseau seulement quand tout est rangé (H06, H77) ; sinon, essai.
+      // AU103b : les images entières des visites sans réseau dans `MEDIA` ; absent, elles restent sur le téléphone.
+      horsLigne: { images: visitImagesOf(env) },
       studio: { files: env.MEDIA ? mediaFiles(env.MEDIA) : null, uploads: env.MEDIA ? mediaUploads(env.MEDIA) : null, ...socialSettings(socialOf(env)) },
       // M20 complet (G12) : preuves de coût dans `PIECES` ; géocodeur des lettres seulement avec les données publiques
       // de l'estimation ; sans IA branchée (H13), les textes du code. Rien ne part : mode essai.
