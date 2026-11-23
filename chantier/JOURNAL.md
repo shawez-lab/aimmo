@@ -1775,3 +1775,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-23 20:55 · VOIE 2 : rien de faisable : seuls changements depuis 19:55, AU035 (#757) fusionnée par la voie 1 et SV05 ouverte par la voie 1 (#798) ; X17b (#796) et AU100 (#797) à la voie 3 ; W23 toujours bloquée (H43, tables du socle) ; restent AU068b (H10, voie 3), B04/C09/S11 (humain) ; aucun module non découpé
 - 2026-11-23 20:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 18:55 et 19:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-23 20:55 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-23 21:00 · VOIE 3 : X17b fusionnée (#796, code d'essai du bail et du bon de visite à l'écran) ; AU100 (#797) : troisième P0 Codex corrigé (source du financement), relecture demandée. Statuts du PLAN remis au format (fondations.test.ts)

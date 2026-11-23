@@ -7804,8 +7804,8 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : rien.
 
 ### X17b · Le code d'essai du bail et du bon de visite à l'écran
-- Statut : en cours (voie 3)
-- Suivi : en cours (voie 3)
+- Statut : fait (2026-11-23)
+- Suivi : #796 fusionnée.
 - Note de statut : en cours (voie 3, #796)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : X17
 - Objectif : décision de Shawez du 2026-11-23, tout se teste en essai. La signature en ligne du bail (W12) et du bon de visite (AU075) n'existent qu'en essai, et leur code restait dans la boîte d'essai : le parcours ne pouvait pas être essayé. Le serveur rend le code d'essai, l'écran le montre.
