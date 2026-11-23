@@ -8442,7 +8442,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS078 · L'espace du vendeur montre des valeurs internes
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS078 (bloquant, espace client, effort S), endroit : `packages/api/src/espaces.ts` l. 253 à 256
 - Constat de l’audit : `espace-client.jpg` : « Statut : available », « Mandat de vente · signe ». Le code écrit `shown(b.status)` et `shown(d.signature)` : la valeur de la base, telle quelle.
