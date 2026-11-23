@@ -1737,3 +1737,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-23 11:53 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 09:55 et 10:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-23 11:53 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-23 12:40 · VOIE 3 : H73 accordée par Shawez (« je t'autorise de A à Z », 2026-11-23) : AU014, AU096b et AU069 débloquées ; la voie 3 prend AU014 puis AU096b, AU069 reste à la voie 1 (à faire)
+- 2026-11-23 12:55 · VOIE 2 : rien de faisable : seul changement depuis 11:53, H73 accordée (AU014 en cours et AU096b prises par la voie 3, AU069 à la voie 1) ; restent AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05 (humain), AU035 (#757) bloquée chez la voie 1 ; aucun module non découpé
+- 2026-11-23 12:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 10:55 et 11:53 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 12:55 · VOIE 2 : aucune tâche, rien, relancé non
