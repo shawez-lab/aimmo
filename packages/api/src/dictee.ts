@@ -99,6 +99,8 @@ function refused(r: Refusal): Response {
   if (r.rule === 'R16') return json(r.code === 'unknown' ? 404 : 403, body);
   if (r.rule === null && /^(bad|invalid)_/.test(r.code)) return json(400, body);
   if (r.code === 'unknown') return json(404, body);
+  // AU053 : l'agenda relié injoignable ; ce qui est déjà rangé est nommé dans `kept` [R702].
+  if (r.code === 'agenda_indisponible') return json(503, body);
   return json(409, body);
 }
 
