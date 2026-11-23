@@ -39,7 +39,15 @@ WHEN NOT EXISTS (SELECT 1 FROM pige_ad_proven_keys g WHERE g.ad_id = NEW.ad_id A
                 AND (p.complete = 0
                   OR EXISTS (SELECT 1 FROM pige_doubt_closed_refs r WHERE r.network_id = p.network_id AND r.ref_key = p.peer_key)
                   OR EXISTS (SELECT 1 FROM pige_no_agency n WHERE n.network_id = p.network_id AND n.fingerprint = p.peer_key)
-                  OR EXISTS (SELECT 1 FROM pige_oppositions o WHERE o.network_id = p.network_id AND o.fingerprint = p.peer_key)))
+                  OR EXISTS (SELECT 1 FROM pige_oppositions o WHERE o.network_id = p.network_id AND o.fingerprint = p.peer_key)
+                  -- Et chaque empreinte qu'une annonce du groupe a portée, anciennes comprises : une fermeture sans clé
+                  -- d'annonce lisible se range sur le bien, jamais sur une annonce.
+                  OR EXISTS (SELECT 1 FROM pige_ad_doubt_keys bk JOIN pige_ads b ON b.id = bk.ad_id
+                               JOIN pige_no_agency n ON n.network_id = b.network_id AND n.fingerprint = b.fingerprint
+                              WHERE bk.network_id = p.network_id AND bk.ref_key = p.peer_key AND bk.exact = 1)
+                  OR EXISTS (SELECT 1 FROM pige_ad_doubt_keys bk JOIN pige_ads b ON b.id = bk.ad_id
+                               JOIN pige_oppositions o ON o.network_id = b.network_id AND o.fingerprint = b.fingerprint
+                              WHERE bk.network_id = p.network_id AND bk.ref_key = p.peer_key AND bk.exact = 1)))
 BEGIN
   SELECT RAISE(ABORT, 'pige_properties : bien fermé dans le doute, par son groupe');
 END;

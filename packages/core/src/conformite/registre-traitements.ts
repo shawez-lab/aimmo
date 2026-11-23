@@ -357,6 +357,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // AU035 : ce qu'une annonce fermée dit d'elle en dernier, des empreintes seulement.
       pige_closed_descriptions: [],
       pige_ad_doubt_keys: [],
+      pige_ad_proven_keys: [],
       // AU034 : les passages de la relève, des nombres et une raison de panne de liste fermée, jamais une annonce.
       pige_runs: [],
       pige_ads: ['commune', 'postal_code'],
@@ -1334,6 +1335,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   presentation_ratings: ['appointment_id', 'network_id', 'property_id', 'rooms', 'rated_at'],
   pige_no_agency: ['network_id', 'fingerprint', 'noted_at'],
   pige_ad_doubt_keys: ['network_id', 'ad_id', 'ref_key', 'legacy_fp', 'exact'],
+  pige_ad_proven_keys: ['network_id', 'ad_id', 'ref_key', 'complete'],
   pige_closed_descriptions: ['network_id', 'ref_key', 'property_fingerprint', 'rooms_said', 'noted_at'],
   pige_runs: ['id', 'network_id', 'ran_at', 'outcome', 'received', 'added', 'no_agency', 'outside', 'unreadable', 'failure'],
   pige_ads: ['id', 'network_id', 'source', 'source_ref', 'fingerprint', 'kind', 'surface_m2', 'rooms', 'price_eur', 'published_at', 'collected_at'],

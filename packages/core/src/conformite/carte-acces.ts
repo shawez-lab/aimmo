@@ -827,6 +827,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // HX11 : la pige des annonces de particuliers, sans nom, numéro, mail ni texte de l'annonce.
   pige_runs: out('sans_client', 'Passage de la relève de la pige : réussi ou en panne, des nombres, aucune annonce.'),
   pige_ad_doubt_keys: out('sans_client', 'Les empreintes du doute d\'une relève, sans pièces : lues par la base pour refuser une conversion fermée dans le doute.'),
+  pige_ad_proven_keys: out('sans_client', 'La clé de chaque annonce du groupe prouvé d\'une relève : lue par la base pour refuser une conversion d\'un groupe fermé.'),
   pige_closed_descriptions: out('sans_client', 'Ce qu\'une annonce fermée dit d\'elle en dernier, en empreintes : lu pour le doute, jamais pour la file.'),
   pige_no_agency: out('sans_client', 'Empreinte d\'un bien vu « pas d\'agence » : il n\'entre jamais dans la file.'),
   pige_ads: out('sans_client', 'Annonce de particulier : le bien sans adresse et sa source, jamais le particulier.'),

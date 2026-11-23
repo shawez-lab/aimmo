@@ -446,6 +446,25 @@ describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien cr
     await expect(insert((await prop('DK')).id, adA2.id, adA2.fingerprint)).rejects.toThrow(/bien fermé/);
   });
 
+  it('[R672] [R295] un bien du groupe prouvé fermé avec ses pièces par une annonce sans référence est refusé par la base, fiche seule', async () => {
+    const s = await setup({ search: { matching: async () => [] } });
+    const a = s.ad({ rooms: 4 });
+    const b = s.ad({ source: 'Site B', rooms: 4 });
+    await s.pige.ingest(s.network.id, [a, b]);
+    s.tick(DAY);
+    // B se corrige à 100 m², ses pièces dites : A et B restent un seul bien sur preuve.
+    await s.pige.ingest(s.network.id, [{ ...b, surfaceM2: 100 }]);
+    s.tick(DAY);
+    // Une annonce sans référence lisible, 100 m² et 4 pièces, « pas d'agence » : elle ferme le bien de B.
+    await s.pige.ingest(s.network.id, [{ kind: 'house', commune: 'Talant', postalCode: '21240', surfaceM2: 100, rooms: 4, noAgency: true } as RawAd]);
+    const ad = (await s.db.first<{ id: string; fingerprint: string }>('SELECT id, fingerprint FROM pige_ads WHERE source_ref = ?', [String(a.sourceRef)]))!;
+    expect(await s.adresses.convert(s.agentAlex, { adId: ad.id })).toMatchObject({ ok: false, rule: 'R273' });
+    const prop = await s.store.createProperty({ networkId: s.network.id, agentId: s.alex.id, reference: 'DL', kind: 'home', city: 'Talant', priceEur: 1, surfaceM2: 90, rooms: 4, status: 'draft' });
+    await expect(
+      s.db.run("INSERT INTO pige_properties (property_id, network_id, source, ad_id, fingerprint, ad_site, ad_kind, published_at, agent_id, created_at) VALUES (?, ?, 'pige', ?, ?, 'Site A', 'house', '2026-12-06', ?, '2026-12-07')", [prop.id, s.network.id, ad.id, ad.fingerprint, s.alex.id]),
+    ).rejects.toThrow(/bien fermé/);
+  });
+
   it('[R672] un bien fermé avec ses pièces par une annonce sans référence tient dans le doute, en base, une annonce qui tait les siennes', async () => {
     const s = await setup({ search: { matching: async () => [] } });
     const u = s.ad({ rooms: undefined });
