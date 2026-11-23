@@ -92,6 +92,7 @@ import { offreRoutes } from './offres.ts';
 import { dossierRoutes, type DossierRoute, type PieceStore } from './dossiers.ts';
 import { pilotageRoutes } from './pilotage.ts';
 import { repriseRoutes } from './reprise.ts';
+import { BON_VISITE_PUBLIC_PATH, handleBonVisitePublic } from './bon-visite-public.ts';
 import { APRES_VENTE_PATH, apresVentePublicError, apresVenteRoutes, handleApresVentePublic } from './apres-vente.ts';
 import { handleVitrine, type MediaStore } from './vitrine.ts';
 import { handleSortiePublic, reseauRoutes, type ReseauOptions } from './reseau.ts';
@@ -237,6 +238,8 @@ export interface ApiConfig {
   agendas?: AgendaDirectory | null;
   /** Début du lien de désinscription des alertes (`ALERT_UNSUBSCRIBE_BASE`) : sans lui, aucune alerte WhatsApp de l'agent [R49]. */
   alertUnsubscribeBase?: string | undefined;
+  /** AU075b · le début des liens du bon de visite (`BON_VISITE_BASE`, `https://…/`) : sans lui, ni page ni signature à distance. */
+  bonVisiteBase?: string | null;
   /** Les médias des biens (R2, `MEDIA`) ; absent, aucune photo n'est servie. */
   media?: MediaStore;
   /** Les pièces des dossiers de vente (R2, `PIECES`) ; absent, les routes de M10 sont fermées. */
@@ -2406,6 +2409,17 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
     }
   }
+  // Les pages publiques du bon de visite (AU075b) : signer à distance et rouvrir son exemplaire, le jeton seul ouvre.
+  if (url.pathname.startsWith(BON_VISITE_PUBLIC_PATH) && config.bonVisiteBase) {
+    if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
+    try {
+      const page = await handleBonVisitePublic(request, { db: config.db, now, baseUrl: config.bonVisiteBase });
+      if (page) return page;
+    } catch (error) {
+      await journalError(new SqlJournalStore(config.db), 'public:bon-visite', 'visites.bon.public', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
   // Le certificat public d'une photo (X10) : sans clé, sans aucune donnée personnelle [R46, R13].
   if (url.pathname.startsWith(CERTIFICATE_PAGE_PATH)) {
     if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
@@ -2645,7 +2659,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // clients (EC07), fermée sans espace configuré.
   const routes: RouteDef[] = [
     ...ROUTES,
-    ...m08Routes({ agendas: config.agendas ?? null, unsubscribeBase: config.alertUnsubscribeBase ?? null, geocoder: config.secteursGeocoder ?? config.estimation?.geocoder ?? null, tiles: config.mapTiles ?? null, ...(config.reportWriter ? { reportWriter: config.reportWriter } : {}) }),
+    ...m08Routes({ agendas: config.agendas ?? null, unsubscribeBase: config.alertUnsubscribeBase ?? null, slipLinkBase: config.bonVisiteBase ?? null, geocoder: config.secteursGeocoder ?? config.estimation?.geocoder ?? null, tiles: config.mapTiles ?? null, ...(config.reportWriter ? { reportWriter: config.reportWriter } : {}) }),
     ...annonceRoutes(config.listing ?? {}),
     ...offreRoutes(config.pieces ?? null),
     ...m10Routes(config.pieces ?? null),

@@ -99,6 +99,8 @@ export interface Env {
   RDV_LINK_BASE?: string;
   /** Début du lien de désinscription des alertes (T03), en https, sans chiffre, terminé par `/alertes/desinscription/`. */
   ALERT_UNSUBSCRIBE_BASE?: string;
+  /** AU075b · début des liens du bon de visite (signer à distance, exemplaire), en https, sans chiffre, terminé par `/` ; absent, aucune signature à distance. */
+  BON_VISITE_BASE?: string;
   /** Début du lien de désinscription de la lettre (BR112), en https, sans chiffre, terminé par `/lettre/desinscription/` ; absent, aucune lettre ne part. */
   LETTRE_DESINSCRIPTION_BASE?: string;
   /**
@@ -284,6 +286,8 @@ export default {
       // AU053 : un événement occupé de l'agenda relié de l'agent refuse le créneau [R33, R702].
       agendas: agendasOf(env),
       alertUnsubscribeBase: env.ALERT_UNSUBSCRIBE_BASE,
+      // AU075b : les pages du bon de visite, signé à distance, puis son exemplaire, un an.
+      bonVisiteBase: dossierLinkBase(env.BON_VISITE_BASE),
       ...(env.MEDIA ? { media: env.MEDIA } : {}),
       ...(env.PIECES ? { pieces: new R2PieceStore(env.PIECES) } : {}),
       // M14 (J13) : sans IA branchée (H13), l'entraînement rend les répliques écrites.
