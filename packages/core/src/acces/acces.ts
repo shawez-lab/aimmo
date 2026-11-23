@@ -90,7 +90,7 @@ export class Acces {
       const row = await this.db.first<{ id: string }>(
         `SELECT x.id FROM agent_absences x
          WHERE x.network_id = ? AND x.agent_id = ? AND x.cover_agent_id = ? AND x.from_day <= ? AND x.until_day >= ?
-         ORDER BY x.declared_at DESC, x.rowid DESC LIMIT 1`,
+         ORDER BY x.declared_at DESC, x.id DESC LIMIT 1`,
         [viewer.networkId, absentId, viewer.userId, day, day],
       );
       if (!row) return null;
