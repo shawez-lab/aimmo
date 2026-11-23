@@ -1694,3 +1694,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-23 00:53 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-23 00:35 · AU049b · écran de l'avis : ventes citées sans numéro de voie, écarter avec motif, ajustement motivé, versions précédentes listées (R692, R693, R29) ; Codex 2 P0 corrigés puis rien ; vérification verte ; fusionnée (#787, 05f642f2) · prochaine : AU053
 - 2026-11-23 00:37 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU053
+- 2026-11-23 01:53 · VOIE 2 : rien de faisable : seul changement depuis 00:53, AU049b fusionnée par la voie 1 (#787), qui passe à AU053 (en cours) ; restent AU053, AU075b, AU103b (voie 1, socle `app.ts`/`worker.ts`), AU014/AU096b/AU069 (H73), AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05 (humain), AU040 (#771) et AU045 (#785) bloquées chez la voie 1 ; aucun module non découpé
+- 2026-11-23 01:53 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 23:53 et 00:53 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 01:53 · VOIE 2 : aucune tâche, rien, relancé non
