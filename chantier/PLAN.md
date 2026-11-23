@@ -489,7 +489,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Décidé (2026-11-21, voie 1) : constat confirmé (`DEFAULT_COMMUNES` écrit dans le code, seule liste de la qualification et de la recherche). Table `network_communes` (migration `4095`), en ajout seul, par versions : la direction inscrit une commune avec son code INSEE ou la retire, avec une raison (`GeographieReseau`, `packages/core/src/geographie/communes.ts`), R679. La qualification, la recherche en langage courant (lecture, voisines, rangement) et `GET /v1/attribution/regles` lisent la liste du réseau ; routes `GET`/`POST /v1/geographie/communes`. Un réseau qui n'a encore rien inscrit garde la liste du pilote, dite `defaut` : aucun code INSEE n'est écrit dans le code (les codes des 38 communes du pilote ne sont pas inventés, la direction les inscrit). Restent : les autres lecteurs de `DEFAULT_COMMUNES` (dictée, appels, fiche acquéreur seule, attribution, communes à pourvoir) et l'écran de la direction.
 
 ### AU040 · Un agent déclaré absent reste candidat à l’attribution dès lors que son statut est « active »
-- Statut : bloquée : trois tours de P0 de Codex sur #771 (le contact passé au binôme d'un absent reste sur une fiche que seul l'absent ouvre)
+- Statut : en cours (reprise 2026-11-23, autre approche)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A040 (majeur), endroit : C/qualification/attribution.ts, `agentsOf`.
 - Constat de l'audit : Un agent déclaré absent reste candidat à l’attribution dès lors que son statut est « active ».
