@@ -1733,3 +1733,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-23 10:55 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-23 11:28 · AU040 · autre approche : absent jamais candidat (R680), client suivi reste à l'absent et son binôme ouvre la fiche pendant l'absence ; Codex 1 P0 corrigé puis rien ; vérification verte ; fusionnée (#791, 9e522805), #771 fermée · prochaine : AU035 (bloquée, autre approche à chercher)
 - 2026-11-23 11:28 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU035
+- 2026-11-23 11:53 · VOIE 2 : rien de faisable : seul changement depuis 10:55, AU040 fusionnée par la voie 1 (#791), qui passe à AU035 (#757) ; restent AU014/AU096b/AU069 (H73), AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05 (humain), AU035 bloquée chez la voie 1 ; aucun module non découpé
+- 2026-11-23 11:53 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 09:55 et 10:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 11:53 · VOIE 2 : aucune tâche, rien, relancé non
