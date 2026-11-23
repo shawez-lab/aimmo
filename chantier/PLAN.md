@@ -808,13 +808,14 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Critères : un test par portail réglé sur sa page rangée ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : H10.
 ### AU069 · Je peux proposer des langues rares pour le réseau français
-- Statut : en cours
+- Statut : fait (2026-11-23)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A069 (majeur), endroit : C/annonces/traductions.ts, `LISTING_LANGUAGES`.
 - Constat de l'audit : Je peux proposer des langues rares pour le réseau français, mais pas l’allemand, l’espagnol, l’italien ou le néerlandais.
 - Objectif : Ces langues se paramètrent selon les besoins des agents, avec la même validation et les mêmes contrôles de chiffres.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : fusionnée (#794, 14375c69), migration `4115` en ajout seul (colonne `language_code`, sans table refaite : H73 non utilisée), R257 mise à jour. Allemand, espagnol, italien, néerlandais ouverts par la déclaration de l'agent ou un relecteur désigné, même contrôle et même validation ; voies soudées (« Lindenstraße », « Kerkstraat ») ou suivies d'un nom (« via Roma », « plaza Mayor ») refusées. Codex : 1 P0 et 1 P2 corrigés, puis rien. Reste : la langue de l'acheteur n'est devinée de son message que pour les écritures non latines ; pour ces quatre langues, elle vient de sa fiche.
 
 ### AU070 · Une maison et un appartement satisfont indifféremment les deux recherches, car tous deux sont rangés « home »
 - Statut : fait (2026-11-19)

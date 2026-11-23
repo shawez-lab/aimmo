@@ -1754,3 +1754,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-23 15:55 · VOIE 2 : rien de faisable : seuls changements depuis 14:55, AU014 (#792) et AU096b (#793) fusionnées par la voie 3, sans tâche qui en dépende ; AU069 (#794) en cours à la voie 1, AU035 (#757) bloquée chez la voie 1 ; restent AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05/S11 (humain ou autre voie) ; aucun module non découpé
 - 2026-11-23 15:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 13:55 et 14:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-23 15:55 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-23 16:24 · AU069 · fusionnée (#794) : allemand, espagnol, italien, néerlandais pour les annonces, migration 4115 en ajout seul (sans table refaite), Codex 1 P0 et 1 P2 corrigés · prochaine : AU035, groupe prouvé rangé par relève
