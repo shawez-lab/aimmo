@@ -631,7 +631,7 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU053 · Les adaptateurs Google, Outlook et Apple sont testés sur faux serveurs mais ne sont pas raccordés au…
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M05 Rendez-vous ; audit A053 (majeur), endroit : H21/H53 ; A/worker.ts ; C/rendezvous/fournisseurs.ts.
 - Constat de l'audit : Les adaptateurs Google, Outlook et Apple sont testés sur faux serveurs mais ne sont pas raccordés au Worker utilisé.
