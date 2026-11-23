@@ -427,6 +427,8 @@ export class AdressePige {
     const energy = await this.energyOf(ad.id);
     const at = this.now().toISOString();
     const propertyId = this.newId();
+    // La base lit le doute de la relève avant de la convertir : ses empreintes doivent y être [R672].
+    await this.pige.fillDoubtKeys(viewer.networkId);
     let reference = this.newReference();
     for (let attempt = 1; ; attempt += 1) {
       try {

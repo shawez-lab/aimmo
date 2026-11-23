@@ -407,6 +407,7 @@ export class Pige {
   async ingest(networkId: string, raws: readonly RawAd[]): Promise<{ added: number; noAgency: number; outside: number; unreadable: number }> {
     const now = this.now();
     const zones = await this.zoneCommunes(networkId);
+    await this.fillDoubtKeys(networkId);
     let added = 0;
     let noAgency = 0;
     let outside = 0;
@@ -488,6 +489,8 @@ export class Pige {
         ],
       );
       added += r.changes;
+      // Ses empreintes du doute, pour que la base le lise aussi [R672].
+      if (r.changes === 1) await this.writeDoubtKeys(networkId, { id: adId, source: ad.source, source_ref: ad.sourceRef, kind: ad.kind, postal_code: ad.postalCode, commune, surface_m2: ad.surfaceM2 });
       // Le jour où l'annonce est vue en ligne, même à prix inchangé : son relevé et sa durée en ligne (HX32) [R303].
       await this.db.run(
         `INSERT OR IGNORE INTO pige_ad_sightings (network_id, source, source_ref, seen_on)
@@ -795,9 +798,43 @@ export class Pige {
     return out;
   }
 
+  /**
+   * Range les empreintes du doute d'une relève : sa clé d'annonce et l'empreinte de son bien sans pièces, à sa surface et
+   * à 1 m² près. La base les lit pour refuser une conversion fermée dans le doute [R672, R295].
+   */
+  private async writeDoubtKeys(networkId: string, a: { id: string; source: string; source_ref: string; kind: PigeKind; postal_code: string; commune: string; surface_m2: number }): Promise<void> {
+    const k = await refKey(a.source, a.source_ref);
+    for (let d = -SURFACE_TOLERANCE_M2; d <= SURFACE_TOLERANCE_M2; d += 1) {
+      const fp = await adFingerprint({ kind: a.kind, postalCode: a.postal_code, commune: a.commune, surfaceM2: a.surface_m2 + d, rooms: null });
+      await this.db.run('INSERT OR IGNORE INTO pige_ad_doubt_keys (network_id, ad_id, ref_key, legacy_fp, exact) VALUES (?, ?, ?, ?, ?)', [networkId, a.id, k, fp, d === 0 ? 1 : 0]);
+    }
+  }
+
+  /** Les relèves rangées avant que la base lise le doute reçoivent leurs empreintes, une fois [R672]. */
+  async fillDoubtKeys(networkId: string): Promise<void> {
+    const rows = await this.db.all<{ id: string; source: string; source_ref: string; kind: PigeKind; postal_code: string; commune: string; surface_m2: number }>(
+      'SELECT id, source, source_ref, kind, postal_code, commune, surface_m2 FROM pige_ads a WHERE network_id = ? AND NOT EXISTS (SELECT 1 FROM pige_ad_doubt_keys k WHERE k.ad_id = a.id)',
+      [networkId],
+    );
+    for (const a of rows) await this.writeDoubtKeys(networkId, a);
+  }
+
   /** Note ce qu'une annonce fermée dit d'elle en revenant : des empreintes seulement, pour le doute [R672]. */
   private async noteClosedDescription(networkId: string, ref: AdRef | null, key: PropertyKey | null, now: Date): Promise<void> {
-    if (!ref || !key) return;
+    if (!key) return;
+    if (!ref) {
+      // Sans clé d'annonce lisible, un bien fermé avec ses pièces l'est pour toujours : son empreinte exacte tient lieu de
+      // clé, pour que la base tienne dans le doute une annonce qui tait les siennes [R672].
+      if (key.rooms === null) return;
+      const k = await adFingerprint(key);
+      const fp = await adFingerprint({ ...key, rooms: null });
+      await this.db.run(
+        `INSERT INTO pige_closed_descriptions (network_id, ref_key, property_fingerprint, rooms_said, noted_at)
+         SELECT ?, ?, ?, 1, ? WHERE NOT EXISTS (SELECT 1 FROM pige_closed_descriptions WHERE network_id = ? AND ref_key = ?)`,
+        [networkId, k, fp, now.toISOString(), networkId, k],
+      );
+      return;
+    }
     const k = await refKey(ref.source, ref.sourceRef);
     const fp = await adFingerprint({ ...key, rooms: null });
     const said = key.rooms === null ? 0 : 1;
