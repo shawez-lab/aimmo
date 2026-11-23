@@ -806,7 +806,7 @@ export class Pige {
     const k = await refKey(a.source, a.source_ref);
     for (let d = -SURFACE_TOLERANCE_M2; d <= SURFACE_TOLERANCE_M2; d += 1) {
       const fp = await adFingerprint({ kind: a.kind, postalCode: a.postal_code, commune: a.commune, surfaceM2: a.surface_m2 + d, rooms: null });
-      await this.db.run('INSERT OR IGNORE INTO pige_ad_doubt_keys (network_id, ad_id, ref_key, legacy_fp, exact) VALUES (?, ?, ?, ?, ?)', [networkId, a.id, k, fp, d === 0 ? 1 : 0]);
+      await this.db.run('INSERT INTO pige_ad_doubt_keys (network_id, ad_id, ref_key, legacy_fp, exact) VALUES (?, ?, ?, ?, ?) ON CONFLICT DO NOTHING', [networkId, a.id, k, fp, d === 0 ? 1 : 0]);
     }
   }
 
