@@ -348,13 +348,25 @@ describeWithSqlite('AU096b · le bail meublé étudiant et le bail mobilité, ch
     expect(await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'etudiant' })).toEqual({ ok: false, rule: null, code: 'no_template' });
     const tpl = await t.template('bail_meuble_etudiant', STUDENT);
     expect(tpl).toMatchObject({ kind: 'bail_meuble_etudiant', version: 2 });
+    // Le modèle étudiant validé par la conformité fait un bail réel ; le meublé ordinaire reste d'essai.
+    expect(await t.baux.validateTemplate(t.compliance, tpl.id)).toEqual({ ok: true, value: true });
     const r = await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'etudiant' });
+    expect(r).toMatchObject({ ok: true, value: { mode: 'reel', status: 'complet' } });
     expect(r.ok && r.value.content).toContain('Bail meublé étudiant de location meublée');
     expect(r.ok && r.value.content).toContain('pour neuf mois');
     expect(r.ok && r.value.content).toContain('Bail de location meublée consenti à un étudiant');
     // Le meublé ordinaire garde son modèle et sa durée d'un an.
     const plain = await t.baux.generate(t.agent, id, t.inp(id));
+    expect(plain).toMatchObject({ ok: true, value: { mode: 'essai' } });
     expect(plain.ok && plain.value.content).toContain('pour un an');
+    // Un meublé ordinaire validé ne sert jamais au meublé étudiant, et l'étudiant validé jamais au meublé ordinaire.
+    const ordinary = await t.template('bail_meuble');
+    expect(await t.baux.validateTemplate(t.compliance, ordinary.id)).toEqual({ ok: true, value: true });
+    const again = await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'etudiant' });
+    expect(again.ok && again.value.content).toContain('Bail meublé étudiant de location meublée');
+    const plain2 = await t.baux.generate(t.agent, id, t.inp(id));
+    expect(plain2).toMatchObject({ ok: true, value: { mode: 'reel' } });
+    expect(plain2.ok && plain2.value.content).not.toContain('étudiant');
     expect(plain.ok && plain.value.content).not.toContain('étudiant');
   });
 
