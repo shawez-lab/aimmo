@@ -12,6 +12,7 @@ import {
   PROFESSIONAL_REFERRAL,
   ProfilInvestisseur,
   forbiddenPhrases,
+  financingClaims,
   traceParagraph,
   type NoteFacts,
   type NoteWriter,
@@ -34,7 +35,7 @@ it('[R125] les promesses et les conseils fiscaux ou financiers personnalisés so
   expect(forbiddenPhrases('Le bien coûte 171 250 € au total.')).toEqual([]);
 });
 
-async function setup(options: { writer?: NoteWriter; energyClass?: string; rentalTarget?: 'none' | 'furnished' | null; csv?: string } = {}) {
+async function setup(options: { writer?: NoteWriter; energyClass?: string; rentalTarget?: 'none' | 'furnished' | null; csv?: string; financing?: boolean; worksHypothesis?: string } = {}) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   let clock = Date.parse(AT);
@@ -74,10 +75,11 @@ async function setup(options: { writer?: NoteWriter; energyClass?: string; renta
     marketRentQuery: { inseeCode: '99001', kind: 'apartment' },
     inputs: {
       acquisitionFeesRateBp: src(750, 'barème de l’ancien'),
-      works: src(1_000_000, 'devis estimé'),
+      works: src(1_000_000, options.worksHypothesis ?? 'devis estimé'),
       nonRecoverableCharges: src(60_000, 'déclarées par le vendeur'), recoverableCharges: src(0),
       propertyTax: src(90_000, 'avis déclaré'),
       vacancyMonths: src(1, 'vacance réglée'),
+      ...(options.financing ? { financing: src({ loanCents: 15_000_000, annualRateBp: 360, months: 300, insuranceMonthlyCents: 2_500 } as never, 'offre de prêt déclarée') } : {}),
     },
   });
   if (!calc.ok) throw new Error(calc.code);
@@ -228,6 +230,29 @@ describeWithSqlite('Y05 · note d’investissement', () => {
     expect(await t.notes.forClient(t.network.id, r.value.id)).toMatchObject({ text: r.value.text });
     await expect(t.db.run("UPDATE investment_notes SET text = 'autre' WHERE id = ?", [r.value.id])).rejects.toThrow(/ne change plus/);
     await expect(t.db.run('DELETE FROM investment_notes WHERE id = ?', [r.value.id])).rejects.toThrow(/rien ne s'efface/);
+  });
+
+  it('[R125] AU100 · la trésorerie après prêt reste une simulation d’essai de l’agent : elle n’entre jamais dans la note du client (H72)', async () => {
+    const t = await setup({ financing: true, writer: writerOf(['Avec une mensualité de 759 € par mois, la trésorerie reste positive.']) });
+    const calc = await t.db.first<{ result: string }>('SELECT result FROM investment_calculations WHERE id = ?', [t.calcId]);
+    expect(calc!.result).toContain('monthlyCashflow');
+    const r = await t.notes.draft(t.acces, t.as('agent', t.alex.id), { calculationId: t.calcId, projectId: t.project.id });
+    if (!r.ok) throw new Error(r.code);
+    // Le nombre du prêt n'a pas de ligne dans la note : le texte de l'IA est refusé, le secours prend le relais.
+    expect(r.value.origin).not.toBe('ia');
+    for (const word of ['Capital emprunté', 'Mensualité du prêt', 'Trésorerie', '759']) expect(r.value.text).not.toContain(word);
+    // Sans chiffre non plus : un paragraphe qui parle du prêt ou de la trésorerie est refusé.
+    const words = await setup({ financing: true, writer: writerOf(['La trésorerie après remboursement du prêt est positive, assurance comprise.']) });
+    const w = await words.notes.draft(words.acces, words.as('agent', words.alex.id), { calculationId: words.calcId, projectId: words.project.id });
+    if (!w.ok) throw new Error(w.code);
+    expect(w.value.origin).not.toBe('ia');
+    expect(w.value.text).not.toContain('trésorerie');
+    expect(financingClaims('Un bien prêt à louer, au loyer de marché.')).toEqual([]);
+    // Ni dans une hypothèse écrite par l'agent, reprise dans les sources : la note est refusée, rien n'est rangé.
+    const hyp = await setup({ financing: true, worksHypothesis: 'La trésorerie après remboursement du prêt est positive, assurance comprise.' });
+    expect(await hyp.notes.draft(hyp.acces, hyp.as('agent', hyp.alex.id), { calculationId: hyp.calcId, projectId: hyp.project.id })).toEqual({ ok: false, rule: 'R125', code: 'financement' });
+    expect(await hyp.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM investment_notes')).toEqual({ n: 0 });
+    expect(financingClaims('Votre mensualité de crédit')).toEqual(['mensualite', 'credit']);
   });
 
   it('[R16] un autre agent ne fait pas rédiger la note d’une fiche qui n’est pas la sienne', async () => {

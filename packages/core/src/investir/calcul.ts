@@ -18,6 +18,9 @@
  * - revenu net avant impôt = loyer perçu − charges non récupérables − taxe foncière ;
  * - rendement net avant impôt (points de base) = revenu net × 10 000 / coût total ;
  * - fourchette : les mêmes rendements avec les bornes basse et haute de l'intervalle du loyer de marché.
+ * - trésorerie (AU100), seulement quand un financement est déclaré : mensualité du prêt = capital × t / (1 − (1 + t)^−n),
+ *   t le taux annuel / 12 (capital / n à taux nul), arrondie au centime ; trésorerie mensuelle = revenu net avant impôt / 12
+ *   − mensualité − assurance mensuelle. Avant impôt, sans aucun avantage fiscal [R125]. Le rendement ne change pas.
  * La version 1 (sans provision : le loyer charges comprises compté comme revenu) reste rejouable à l'identique pour les
  * calculs rangés avant AU099 ; tout nouveau calcul est en version 2. Une provision qui égale ou dépasse le loyer charges
  * comprises de la borne basse rend « incomplet » sur la provision, jamais un loyer négatif.
@@ -68,8 +71,35 @@ export interface YieldInputs {
   propertyTax: Sourced<number> | null;
   /** Vacance réglée, en mois entiers par an. */
   vacancyMonths: Sourced<number> | null;
+  /** Le financement déclaré, s'il y en a un : il ajoute la trésorerie, jamais un manque (AU100). */
+  financing?: Sourced<FinancingValue> | null;
 }
-export type InputKey = keyof YieldInputs;
+
+export interface FinancingValue {
+  /** Capital emprunté, en centimes. */
+  loanCents: number;
+  /** Taux nominal annuel, en points de base. */
+  annualRateBp: number;
+  /** Durée, en mois. */
+  months: number;
+  /** Assurance de l'emprunteur, en centimes par mois. */
+  insuranceMonthlyCents: number;
+}
+
+/**
+ * Les lignes du financement (AU100). Décision de Shawez du 2026-11-23 : la trésorerie après prêt est une simulation
+ * d'essai, gardée pour l'agent ; tant que l'avocat n'a pas dit si elle relève de l'intermédiation en crédit (H72),
+ * elle n'entre jamais dans la note remise au client [R125].
+ */
+export const FINANCING_KEYS: readonly string[] = ['loanCents', 'loanRateBp', 'loanMonths', 'loanInsurance', 'loanPayment', 'monthlyCashflow', 'monthlyCashflowLow', 'monthlyCashflowHigh'];
+
+/** La mensualité d'un prêt amortissable à mensualités constantes, au centime le plus proche. */
+export function monthlyPayment(f: FinancingValue): number {
+  if (f.annualRateBp === 0) return roundDiv(f.loanCents, f.months);
+  const t = f.annualRateBp / 10_000 / 12;
+  return Math.round((f.loanCents * t) / (1 - Math.pow(1 + t, -f.months)));
+}
+export type InputKey = Exclude<keyof YieldInputs, 'financing'>;
 
 export const INPUT_KEYS: readonly InputKey[] = [
   'price',
@@ -121,7 +151,7 @@ const LIMITS: Record<Exclude<InputKey, 'marketRent'>, [number, number]> = {
 };
 const RENT_M2_MAX = 100_000;
 
-export type InputCheck = { ok: true; value: YieldInputs } | { ok: false; code: 'valeur' | 'champ_inconnu'; field?: InputKey };
+export type InputCheck = { ok: true; value: YieldInputs } | { ok: false; code: 'valeur' | 'champ_inconnu'; field?: InputKey | 'financing' };
 
 const isText = (v: unknown, max: number): v is string => typeof v === 'string' && v.trim().length > 0 && v.length <= max;
 const isDate = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}(?:T[\d:.]+Z)?$/.test(v) && !Number.isNaN(Date.parse(v));
@@ -131,7 +161,7 @@ const isInt = (v: unknown, [min, max]: [number, number]): v is number => typeof 
 export function checkYieldInputs(input: unknown): InputCheck {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) return { ok: false, code: 'valeur' };
   const raw = input as Record<string, unknown>;
-  for (const key of Object.keys(raw)) if (!(INPUT_KEYS as readonly string[]).includes(key)) return { ok: false, code: 'champ_inconnu' };
+  for (const key of Object.keys(raw)) if (!(INPUT_KEYS as readonly string[]).includes(key) && key !== 'financing') return { ok: false, code: 'champ_inconnu' };
   const out: Record<string, unknown> = {};
   for (const key of INPUT_KEYS) {
     const v = raw[key];
@@ -153,6 +183,16 @@ export function checkYieldInputs(input: unknown): InputCheck {
     }
     if (!isInt(s.value, LIMITS[key])) return { ok: false, code: 'valeur', field: key };
     out[key] = { value: s.value, source: s.source, asOf: s.asOf, hypothesis: s.hypothesis };
+  }
+  const fin = raw.financing;
+  if (fin !== undefined && fin !== null) {
+    const s = fin as Record<string, unknown>;
+    const v = (typeof fin === 'object' && !Array.isArray(fin) ? s.value : null) as Record<string, unknown> | null;
+    const keys = ['loanCents', 'annualRateBp', 'months', 'insuranceMonthlyCents'];
+    if (typeof v !== 'object' || v === null || Array.isArray(v) || Object.keys(v).length !== 4 || keys.some((k) => !(k in v))) return { ok: false, code: 'valeur', field: 'financing' };
+    if (Object.keys(s).some((k) => !['value', 'source', 'asOf', 'hypothesis'].includes(k)) || !isText(s.source, 200) || !isDate(s.asOf) || !isText(s.hypothesis, 300)) return { ok: false, code: 'valeur', field: 'financing' };
+    if (!isInt(v.loanCents, [100, 100_000_000_000]) || !isInt(v.annualRateBp, [0, 2_000]) || !isInt(v.months, [12, 480]) || !isInt(v.insuranceMonthlyCents, [0, 10_000_000])) return { ok: false, code: 'valeur', field: 'financing' };
+    out.financing = { value: { loanCents: v.loanCents, annualRateBp: v.annualRateBp, months: v.months, insuranceMonthlyCents: v.insuranceMonthlyCents }, source: s.source, asOf: s.asOf, hypothesis: s.hypothesis };
   }
   return { ok: true, value: out as unknown as YieldInputs };
 }
@@ -235,6 +275,23 @@ export function computeYield(inputs: YieldInputs, computedAt: string, version: n
     calc('netYieldBpLow', net(m.lowerM2Cents), 'bp', 'rendement net avant impôt avec la borne basse du loyer de marché'),
     calc('netYieldBpHigh', net(m.upperM2Cents), 'bp', 'rendement net avant impôt avec la borne haute du loyer de marché'),
   ];
+  const fin = inputs.financing ?? null;
+  if (!v1 && fin) {
+    const f = fin.value;
+    const pay = monthlyPayment(f);
+    const flow = (m2: number): number => roundDiv(netIncome(m2), 12) - pay - f.insuranceMonthlyCents;
+    const from = (key: string, value: number, unit: YieldLine['unit']): YieldLine => ({ key, value, unit, source: fin.source, asOf: fin.asOf, hypothesis: fin.hypothesis });
+    lines.push(
+      from('loanCents', f.loanCents, 'cents'),
+      from('loanRateBp', f.annualRateBp, 'bp'),
+      from('loanMonths', f.months, 'months'),
+      from('loanInsurance', f.insuranceMonthlyCents, 'cents'),
+      calc('loanPayment', pay, 'cents', 'capital × t / (1 − (1 + t)^−durée), t = taux annuel / 12'),
+      calc('monthlyCashflow', flow(m.centralM2Cents), 'cents', 'revenu net avant impôt / 12 − mensualité − assurance, avant impôt'),
+      calc('monthlyCashflowLow', flow(m.lowerM2Cents), 'cents', 'trésorerie avec la borne basse du loyer de marché'),
+      calc('monthlyCashflowHigh', flow(m.upperM2Cents), 'cents', 'trésorerie avec la borne haute du loyer de marché'),
+    );
+  }
   return {
     status: 'complet',
     formulaVersion,
@@ -254,7 +311,7 @@ export interface StoredCalculation {
   createdAt: string;
 }
 
-export type CalculationResult = { ok: true; value: StoredCalculation } | { ok: false; rule: 'R16' | 'R120' | 'R122'; code: string; field?: InputKey };
+export type CalculationResult = { ok: true; value: StoredCalculation } | { ok: false; rule: 'R16' | 'R120' | 'R122'; code: string; field?: InputKey | 'financing' };
 
 export interface CalculInvestissementOptions {
   /** Les loyers de marché de Y02 : le calcul y lit le loyer d'une commune. */
@@ -313,7 +370,7 @@ export class CalculInvestissement {
     input: { propertyId?: unknown; projectId?: unknown; inputs: unknown; marketRentQuery?: unknown },
   ): Promise<CalculationResult> {
     const actor = `${String(viewer.role)}:${viewer.userId}`;
-    const refused = async (code: string, rule: 'R16' | 'R120' | 'R122' = 'R16', field?: InputKey): Promise<CalculationResult> => {
+    const refused = async (code: string, rule: 'R16' | 'R120' | 'R122' = 'R16', field?: InputKey | 'financing'): Promise<CalculationResult> => {
       await appendEvent(
         this.journal,
         {
@@ -360,6 +417,8 @@ export class CalculInvestissement {
       const v = inputs[key];
       if (v !== null) (inputs as unknown as Record<string, unknown>)[key] = { ...v, source: `saisi:${actor}`, asOf: createdAt.slice(0, 10) };
     }
+    // AU100 · le financement aussi : saisi par l'agent, il porte son nom et le jour du calcul, jamais une source inventée [R121].
+    if (inputs.financing) inputs.financing = { ...inputs.financing, source: `saisi:${actor}`, asOf: createdAt.slice(0, 10) };
     // Le prix et la surface du bien viennent de sa fiche quand elle les porte.
     if (property !== null) {
       if (property.price_eur !== null && property.price_eur > 0 && inputs.price === null) {

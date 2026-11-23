@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
 import { Acces, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
-import { CalculInvestissement, LoyersMarche, INPUT_KEYS, checkYieldInputs, computeYield, roundDiv, type YieldInputs } from '../src/investir/index.ts';
+import { CalculInvestissement, LoyersMarche, INPUT_KEYS, checkYieldInputs, computeYield, monthlyPayment, roundDiv, type YieldInputs } from '../src/investir/index.ts';
 import { CASES, type Case } from './investir-jeu.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
@@ -220,6 +220,13 @@ describeWithSqlite('Y03 · calcul d’investissement rangé', () => {
     const forged = await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-2', inputs: { ...c, marketRent: null, price: src(5_000_000, 'bien:p-2', 'prix affiché') } });
     if (!forged.ok) throw new Error(forged.code);
     expect(forged.value.inputs.price!.source).toBe(`saisi:agent:${t.alex.id}`);
+    // AU100 · un financement saisi avec une source et une date inventées : il porte le nom de l'agent et le jour du calcul.
+    const loan = { value: { loanCents: 4_000_000, annualRateBp: 360, months: 240, insuranceMonthlyCents: 1_000 }, source: 'bien:fake', asOf: '2001-01-01', hypothesis: 'offre déclarée' };
+    const financed = await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-2', inputs: { ...c, marketRent: null, financing: loan } });
+    if (!financed.ok) throw new Error(financed.code);
+    expect(financed.value.inputs.financing).toMatchObject({ source: `saisi:agent:${t.alex.id}`, hypothesis: 'offre déclarée' });
+    expect(financed.value.inputs.financing!.asOf).not.toBe('2001-01-01');
+    for (const l of financed.value.result.status === 'complet' ? financed.value.result.lines.filter((x) => x.key.startsWith('loan') && x.source !== 'calcul') : []) expect(l.source).toBe(`saisi:agent:${t.alex.id}`);
     // Un loyer de marché saisi est refusé, même avec une source « ANIL » ou une commune connue : seule la base le donne.
     for (const marketRentQuery of [undefined, { inseeCode: '99001', kind: 'apartment' }]) {
       expect(await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-2', marketRentQuery, inputs: c })).toMatchObject({ ok: false, rule: 'R122', code: 'loyer_saisi', field: 'marketRent' });
@@ -265,4 +272,27 @@ it('[R120] AU099 · la provision pour charges récupérables sort du loyer charg
   expect(v1.lines.some((l) => l.key === 'recoverableCharges')).toBe(false);
   // En version 2, la provision manquante est dite.
   expect(computeYield(old as unknown as YieldInputs, AT)).toEqual({ status: 'incomplet', formulaVersion: 2, missing: ['recoverableCharges'] });
+});
+
+it('[R120] AU100 · avec un prêt déclaré, la trésorerie mensuelle après mensualité et assurance, sans toucher au rendement', () => {
+  const base = inputsOf(CASES[0]!.inputs);
+  const plain = computeYield(base, AT);
+  const loan = { loanCents: 15_000_000, annualRateBp: 360, months: 300, insuranceMonthlyCents: 2_500 };
+  const withLoan = computeYield({ ...base, financing: { value: loan, source: 'client_dit:a-1', asOf: '2027-09-01', hypothesis: 'offre de prêt déclarée' } }, AT);
+  if (plain.status !== 'complet' || withLoan.status !== 'complet') throw new Error('incomplet');
+  expect(withLoan.grossYieldBp).toEqual(plain.grossYieldBp);
+  expect(withLoan.netYieldBp).toEqual(plain.netYieldBp);
+  // 150 000 € à 3,60 % sur 25 ans : 759,00 € par mois (calcul à la main de l'annuité).
+  expect(monthlyPayment(loan)).toBe(75_900);
+  expect(monthlyPayment({ ...loan, annualRateBp: 0 })).toBe(50_000);
+  const net = line(withLoan, 'netIncome')!;
+  expect(line(withLoan, 'monthlyCashflow')).toBe(roundDiv(net, 12) - 75_900 - 2_500);
+  expect(line(withLoan, 'monthlyCashflowLow')).toBeLessThanOrEqual(line(withLoan, 'monthlyCashflow')!);
+  expect(withLoan.lines.find((l) => l.key === 'loanCents')).toMatchObject({ source: 'client_dit:a-1', hypothesis: 'offre de prêt déclarée' });
+  // Sans prêt, aucune ligne de trésorerie, et rien ne manque.
+  expect(plain.lines.some((l) => l.key.startsWith('monthlyCashflow'))).toBe(false);
+  // Un prêt mal formé est refusé à l'entrée.
+  const raw = base as unknown as Record<string, unknown>;
+  expect(checkYieldInputs({ ...raw, financing: { value: { ...loan, months: 6 }, source: 's', asOf: '2027-09-01', hypothesis: 'h' } })).toEqual({ ok: false, code: 'valeur', field: 'financing' });
+  expect(checkYieldInputs({ ...raw, financing: { value: loan, source: 'client', asOf: '2027-09-01', hypothesis: 'offre' } })).toMatchObject({ ok: true, value: { financing: { value: loan } } });
 });

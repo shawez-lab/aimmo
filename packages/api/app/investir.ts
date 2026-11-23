@@ -260,6 +260,11 @@ globalThis.AIMMO_INVESTIR = function (t) {
     var provision = said(calc, 'inv-provision', 'Provision pour charges récupérables par mois, en euros', 'provision déclarée par le vendeur');
     var tax = said(calc, 'inv-taxe', 'Taxe foncière par an, en euros', 'avis de taxe foncière déclaré');
     var vacancy = said(calc, 'inv-vacance', 'Vacance, en mois par an', 'vacance réglée');
+    /* AU100 · Le financement, s'il y en a un : la trésorerie après la mensualité, avant impôt. */
+    var loan = said(calc, 'inv-pret', 'Capital emprunté, en euros (si prêt)', 'financement déclaré');
+    var rate = field(calc, 'inv-taux', 'Taux du prêt, en %');
+    var span = field(calc, 'inv-duree', 'Durée du prêt, en mois');
+    var insur = field(calc, 'inv-assurance', 'Assurance du prêt par mois, en euros');
     var result = el('div');
     calc.appendChild(button('Calculer', function () {
       var chosen = biens.filter(function (b) { return b.propertyId === bien.value; })[0];
@@ -268,13 +273,19 @@ globalThis.AIMMO_INVESTIR = function (t) {
       if (r === null || w === null || c === null || pc === null || tx === null || m === null) { investirState('Un champ n’est pas valable : vérifiez la saisie.'); return; }
       var day = new Date().toISOString().slice(0, 10);
       function entry(value, h) { return { value: value, source: 'agent', asOf: day, hypothesis: h.value || 'saisi par l’agent' }; }
+      var financing = null;
+      if (String(loan.value.value || '').trim()) {
+        var lc = toCents(loan.value.value), lr = toBp(rate.value), ln = whole(span.value, 480), li = String(insur.value || '').trim() ? toCents(insur.value) : 0;
+        if (lc === null || lr === null || ln === null || li === null) { investirState('Le prêt n’est pas valable : capital, taux, durée en mois.'); return; }
+        financing = entry({ loanCents: lc, annualRateBp: lr, months: ln, insuranceMonthlyCents: li }, loan.hypothesis);
+      }
       var energyBody = energy.value ? { energyClass: energy.value } : undefined;
       investirState('Calcul…');
       send('/v1/investir/calculs', 'POST', {
         propertyId: chosen.propertyId,
         projectId: x.projectId,
         marketRentQuery: { inseeCode: chosen.inseeCode, kind: chosen.rentKind },
-        inputs: { acquisitionFeesRateBp: entry(r, fees.hypothesis), works: entry(w, works.hypothesis), nonRecoverableCharges: entry(c, charges.hypothesis), recoverableCharges: entry(pc, provision.hypothesis), propertyTax: entry(tx, tax.hypothesis), vacancyMonths: entry(m, vacancy.hypothesis) },
+        inputs: { acquisitionFeesRateBp: entry(r, fees.hypothesis), works: entry(w, works.hypothesis), nonRecoverableCharges: entry(c, charges.hypothesis), recoverableCharges: entry(pc, provision.hypothesis), propertyTax: entry(tx, tax.hypothesis), vacancyMonths: entry(m, vacancy.hypothesis), financing: financing },
       }).then(function (res) {
         if (res.gone) return;
         if (!res.ok) { investirState(res.offline ? 'Pas de réseau : rien n’est calculé.' : investirRefusal(res.body, 'Le calcul n’a pas abouti.')); return; }
@@ -374,6 +385,8 @@ globalThis.AIMMO_INVESTIR = function (t) {
       ul.appendChild(li);
     });
     box.appendChild(ul);
+    /* AU100 · la trésorerie après prêt : simulation d'essai pour l'agent, jamais dans la note du client (H72). */
+    if ((Array.isArray(r.lines) ? r.lines : []).some(function (l) { return l.key === 'monthlyCashflow'; })) box.appendChild(el('p', 'Trésorerie après prêt : simulation d’essai pour vous seul, à valider par l’avocat. Elle n’entre jamais dans la note remise au client.', 'alerte'));
     return true;
   }
   /* Y14 · Retrouver un calcul ou une note d'un projet. Rien n'est lu avant le geste, rien n'est recalculé. */

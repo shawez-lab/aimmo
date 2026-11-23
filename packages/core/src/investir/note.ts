@@ -22,7 +22,7 @@ import { plain } from '../envoi/texte.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { StoredCalculation } from './calcul.ts';
-import { computeYield, type CalculInvestissement, type Sourced, type YieldInputs, type YieldLine, type YieldResult } from './calcul.ts';
+import { FINANCING_KEYS, computeYield, type CalculInvestissement, type Sourced, type YieldInputs, type YieldLine, type YieldResult } from './calcul.ts';
 import { energyAlertGate, type ConstraintSet, type Contraintes } from './contraintes.ts';
 import { ANIL_CITATION } from './loyers.ts';
 import type { ProfilInvestisseur } from './profil.ts';
@@ -102,6 +102,16 @@ const key = (text: string): string => ` ${plain(text).replace(/[^a-z0-9]+/g, ' '
 const PHRASE_KEYS = FORBIDDEN_INVEST_PHRASES.map((p) => key(p));
 const WORD_KEYS = FORBIDDEN_TERMS.map((p) => key(p));
 
+/**
+ * AU100 · le financement reste une simulation d'essai de l'agent (H72) : un paragraphe de la note qui en parle, avec ou
+ * sans chiffre, est refusé [R125]. Le renvoi au courtier, texte fixe hors des paragraphes, n'est pas lu ici.
+ */
+const FINANCING_CLAIMS = [' tresorerie ', ' mensualite', ' emprunt', ' credit', ' rembourse', ' cash flow ', ' cashflow', ' autofinanc', ' du pret ', ' un pret ', ' le pret ', ' votre pret ', ' de pret ', ' pret immobilier ', ' prets immobiliers ', ' financement '];
+export function financingClaims(text: string): string[] {
+  const k = key(text);
+  return FINANCING_CLAIMS.filter((w) => k.includes(w)).map((w) => w.trim());
+}
+
 /** Les tournures interdites que porte un texte, dans l'ordre de la liste. */
 export function forbiddenPhrases(text: string): string[] {
   const k = key(text);
@@ -110,6 +120,9 @@ export function forbiddenPhrases(text: string): string[] {
     ...FORBIDDEN_TERMS.filter((_, i) => k.includes(WORD_KEYS[i]!)),
   ];
 }
+
+/** Les lignes que la note peut porter : jamais le financement, simulation d'essai gardée pour l'agent (AU100, H72). */
+const forNote = (lines: readonly YieldLine[]): YieldLine[] => lines.filter((l) => !FINANCING_KEYS.includes(l.key));
 
 /** Ce que l'IA reçoit : les lignes du calcul et les textes des contraintes, rien sur la personne. */
 export interface NoteFacts {
@@ -218,6 +231,11 @@ const LINE_WORDS: { re: RegExp; keys: string[] }[] = [
   { re: /\b(?:loyers?|loue|louer|location)\b/, keys: ['monthlyRent', 'annualRent', 'collectedRent', 'marketRentM2', 'marketRentM2Low', 'marketRentM2High'] },
   { re: /\bpercus?\b/, keys: ['collectedRent'] },
   { re: /\bcharges\b/, keys: ['nonRecoverableCharges'] },
+  { re: /\btresorerie\b/, keys: ['monthlyCashflow', 'monthlyCashflowLow', 'monthlyCashflowHigh'] },
+  { re: /\b(?:mensualites?|remboursements?)\b/, keys: ['loanPayment'] },
+  { re: /\b(?:emprunte|empruntes|emprunt|pret|credit|capital)\b/, keys: ['loanCents', 'loanMonths'] },
+  { re: /\btaux\b/, keys: ['loanRateBp'] },
+  { re: /\bassurance\b/, keys: ['loanInsurance'] },
   { re: /\b(?:taxe|fonciere)\b/, keys: ['propertyTax'] },
   { re: /\brevenus?\b/, keys: ['netIncome'] },
   { re: /\b(?:surface|m2|m²)\b/, keys: ['livingArea'] },
@@ -245,7 +263,7 @@ function boundOk(key: string, bound: 'low' | 'high' | null): boolean {
 }
 
 /** Les montants d'une ligne du calcul qui valent par mois, et ceux qui valent par an. */
-const MONTHLY: readonly string[] = ['monthlyRent', 'monthlyRentWithCharges', 'recoverableCharges'];
+const MONTHLY: readonly string[] = ['monthlyRent', 'monthlyRentWithCharges', 'recoverableCharges', 'loanPayment', 'loanInsurance', 'monthlyCashflow', 'monthlyCashflowLow', 'monthlyCashflowHigh'];
 const YEARLY: readonly string[] = ['annualRent', 'collectedRent', 'netIncome', 'nonRecoverableCharges', 'propertyTax'];
 
 /** La période que dit un membre de phrase : « par mois », « mensuel » ; « par an », « annuel » ; sinon `null`. */
@@ -323,6 +341,7 @@ export function traceParagraph(text: string, lines: readonly YieldLine[]): { pro
     else proofs.push({ text: m[0], line: line.key, value: line.value, unit: line.unit, source: line.source, asOf: line.asOf, hypothesis: line.hypothesis });
   }
   for (const p of forbiddenPhrases(text)) problems.push({ code: 'tournure_interdite', value: p });
+  for (const p of financingClaims(text)) problems.push({ code: 'tournure_interdite', value: p });
   return { proofs, problems };
 }
 
@@ -374,6 +393,14 @@ export const LINE_LABELS: Record<string, string> = {
   marketRentM2High: 'Loyer de marché au m², haut',
   monthlyRent: 'Loyer mensuel',
   monthlyRentWithCharges: 'Loyer mensuel charges comprises',
+  loanCents: 'Capital emprunté',
+  loanRateBp: 'Taux du prêt',
+  loanMonths: 'Durée du prêt',
+  loanInsurance: 'Assurance du prêt par mois',
+  loanPayment: 'Mensualité du prêt',
+  monthlyCashflow: 'Trésorerie mensuelle avant impôt',
+  monthlyCashflowLow: 'Trésorerie mensuelle, basse',
+  monthlyCashflowHigh: 'Trésorerie mensuelle, haute',
   recoverableCharges: 'Provision pour charges récupérables par mois',
   annualRent: 'Loyer annuel',
   vacancyMonths: 'Vacance',
@@ -480,6 +507,9 @@ export function checkNote(note: InvestmentNote, text: string, facts: NoteFacts, 
   if (note.sources.length === 0 || note.sources.some((s) => !/Source : .+Hypothèse : .+/.test(s.text))) return { ok: false, rule: 'R126', code: 'sans_sources' };
   // Tout le texte, alertes, sources, hypothèses et mentions compris, passe la liste des tournures interdites.
   if (forbiddenPhrases(text).length > 0) return { ok: false, rule: 'R125', code: 'tournure_interdite' };
+  // AU100 · le financement ne se dit nulle part dans la note, sources et hypothèses comprises ; seul le renvoi fixe au
+  // courtier en parle [R125].
+  if (financingClaims(text.split(PROFESSIONAL_REFERRAL).join(' ')).length > 0) return { ok: false, rule: 'R125', code: 'financement' };
   // Une hypothèse écrite par l'agent ne porte que des nombres du calcul.
   for (const l of facts.lines) {
     if (!isWrittenByHand(l)) continue;
@@ -643,7 +673,7 @@ export class NotesInvestissement {
     if (result.status !== 'complet') return { ok: false, rule: 'R120', code: 'incomplet' };
     const constraints = await this.constraintsFor(viewer.networkId, calc.propertyId, input.projectId, input.inseeCode ?? null, input.energy);
     const facts: NoteFacts = {
-      lines: result.lines,
+      lines: forNote(result.lines),
       grossYieldBp: result.grossYieldBp,
       netYieldBp: result.netYieldBp,
       constraints: constraints.constraints.map((c) => c.text),
@@ -740,7 +770,7 @@ export class NotesInvestissement {
     if (!calc || calc.result.status !== 'complet') return { ok: false, rule: 'R126', code: 'calcul' };
     const constraints = await this.constraintsFor(viewer.networkId, calc.propertyId, row.project_id, input.inseeCode ?? null, input.energy);
     const note = JSON.parse(row.note) as InvestmentNote;
-    const facts: NoteFacts = { lines: calc.result.lines, grossYieldBp: calc.result.grossYieldBp, netYieldBp: calc.result.netYieldBp, constraints: [] };
+    const facts: NoteFacts = { lines: forNote(calc.result.lines), grossYieldBp: calc.result.grossYieldBp, netYieldBp: calc.result.netYieldBp, constraints: [] };
     const check = checkNote(note, row.text, facts, constraints);
     if (!check.ok) {
       await appendEvent(this.journal, { type: 'investir.note.refuse', actor: `agent:${viewer.userId}`, subject: `project:${row.project_id}`, data: { rule: check.rule, code: check.code, note: noteId } }, this.now);
@@ -794,7 +824,7 @@ export class NotesInvestissement {
     };
     if (!calc || calc.result.status !== 'complet') return held('calcul');
     const constraints = await this.constraintsFor(networkId, calc.propertyId, row.project_id, ctx.inseeCode, { energyClass: ctx.energyClass, finalEnergyKwh: ctx.finalEnergyKwh });
-    const facts: NoteFacts = { lines: calc.result.lines, grossYieldBp: calc.result.grossYieldBp, netYieldBp: calc.result.netYieldBp, constraints: [] };
+    const facts: NoteFacts = { lines: forNote(calc.result.lines), grossYieldBp: calc.result.grossYieldBp, netYieldBp: calc.result.netYieldBp, constraints: [] };
     const check = checkNote(note, row.text, facts, constraints);
     if (!check.ok) return held(check.code);
     return { text: row.text, validatedAt: row.validated_at };
@@ -814,7 +844,7 @@ export class NotesInvestissement {
     let held = false;
     if (n.status === 'validee') {
       if (!calc || calc.result.status !== 'complet') held = true;
-      else held = !checkNote(n.note, n.text, { lines: calc.result.lines, grossYieldBp: calc.result.grossYieldBp, netYieldBp: calc.result.netYieldBp, constraints: [] }, constraints).ok;
+      else held = !checkNote(n.note, n.text, { lines: forNote(calc.result.lines), grossYieldBp: calc.result.grossYieldBp, netYieldBp: calc.result.netYieldBp, constraints: [] }, constraints).ok;
     }
     return { ok: true, value: { note: held ? null : n, status: n.status, createdAt: n.createdAt, validatedAt: n.validatedAt, held, alertsFirst: constraints.alertsFirst } };
   }
