@@ -118,10 +118,13 @@ WHEN NOT EXISTS (SELECT 1 FROM pige_ad_doubt_keys k WHERE k.ad_id = NEW.ad_id AN
 BEGIN
   SELECT RAISE(ABORT, 'pige_properties : bien fermé dans le doute');
 END;
--- Et aucune clé ne s'attache à un bien converti dont l'annonce est fermée dans le doute depuis.
+-- Et aucune clé ne s'attache à un bien converti dont l'annonce est fermée dans le doute depuis, ni la clé d'une annonce
+-- fermée dans le doute : la conversion range dans le même lot la clé de chaque annonce reliée sur preuve, une fermeture
+-- dans le doute de l'une, même arrivée juste avant l'écriture, refuse le lot entier.
 CREATE TRIGGER IF NOT EXISTS pige_property_keys_doute
 BEFORE INSERT ON pige_property_keys
-WHEN EXISTS (SELECT 1 FROM pige_properties p JOIN pige_ad_doubt_keys k ON k.ad_id = p.ad_id AND k.exact = 1
+WHEN EXISTS (SELECT 1 FROM pige_doubt_closed_refs r WHERE r.network_id = NEW.network_id AND r.ref_key = NEW.key)
+  OR EXISTS (SELECT 1 FROM pige_properties p JOIN pige_ad_doubt_keys k ON k.ad_id = p.ad_id AND k.exact = 1
                JOIN pige_doubt_closed_refs r ON r.network_id = k.network_id AND r.ref_key = k.ref_key
               WHERE p.property_id = NEW.property_id)
 BEGIN

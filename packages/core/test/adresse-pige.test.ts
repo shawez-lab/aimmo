@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { AdressePige, AdemeDiagnosisSearch, proposeAddresses, type AdFacts, type DiagnosisSearch } from '../src/adresse-pige/adresse.ts';
 import type { CadastreService } from '../src/estimation/collecte.ts';
-import { adFingerprint, cleanAd, Pige, type RawAd } from '../src/pige/pige.ts';
+import { adFingerprint, cleanAd, Pige, refKey, type RawAd } from '../src/pige/pige.ts';
 import type { Diagnosis } from '../src/veille-dpe/veille.ts';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, verifyChain, type SqlDatabase } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
@@ -399,6 +399,22 @@ describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien cr
     await s.pige.ingest(s.network.id, [s.ad({ source: 'Site D', rooms: 3, text: 'Agences s’abstenir' })]);
     expect(await s.adresses.convert(s.agentAlex, { adId: old.id })).toMatchObject({ ok: false, rule: 'R273' });
     await expect(insert((await prop('DG')).id, latest.id, latest.fingerprint)).rejects.toThrow(/bien fermé dans le doute/);
+  });
+
+  it('[R672] [R295] une annonce reliée sur preuve, tenue depuis dans le doute, refuse en base la clé que la conversion range', async () => {
+    const s = await setup({ search: { matching: async () => [] } });
+    const a = s.ad({ rooms: 4 });
+    const b = s.ad({ source: 'Site B', rooms: 4 });
+    await s.pige.ingest(s.network.id, [a, b]);
+    s.tick(DAY);
+    await s.pige.ingest(s.network.id, [{ ...b, surfaceM2: 100, rooms: undefined }]);
+    s.tick(DAY);
+    await s.pige.ingest(s.network.id, [s.ad({ source: 'Site C', surfaceM2: 100, rooms: 3, text: 'Agences s’abstenir' })]);
+    const ad = (await s.db.first<{ id: string; fingerprint: string }>('SELECT id, fingerprint FROM pige_ads WHERE source_ref = ?', [String(a.sourceRef)]))!;
+    expect(await s.adresses.convert(s.agentAlex, { adId: ad.id })).toMatchObject({ ok: false, rule: 'R273' });
+    const prop = await s.store.createProperty({ networkId: s.network.id, agentId: s.alex.id, reference: 'DH', kind: 'home', city: 'Talant', priceEur: 1, surfaceM2: 90, rooms: 4, status: 'draft' });
+    await s.db.run("INSERT INTO pige_properties (property_id, network_id, source, ad_id, fingerprint, ad_site, ad_kind, published_at, agent_id, created_at) VALUES (?, ?, 'pige', ?, ?, 'Site A', 'house', '2026-12-06', ?, '2026-12-07')", [prop.id, s.network.id, ad.id, ad.fingerprint, s.alex.id]);
+    await expect(s.db.run('INSERT INTO pige_property_keys (network_id, key, property_id) VALUES (?, ?, ?)', [s.network.id, await refKey('Site B', String(b.sourceRef)), prop.id])).rejects.toThrow(/bien fermé dans le doute/);
   });
 
   it('[R672] un bien fermé avec ses pièces par une annonce sans référence tient dans le doute, en base, une annonce qui tait les siennes', async () => {
