@@ -539,8 +539,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#783, `cd7d61e1`), migration `4108` (ajout seul), R696. Constat confirmé (aucun transcripteur, et `/v1/meta/notifications` n'appelait pas la chaîne des notes vocales). `transcripteur-reel.ts` : audio lu chez Meta (WhatsApp par l'API Graph et `WHATSAPP_MEDIA_TOKEN`, Instagram et Messenger à l'adresse donnée ; serveurs de fichiers de Meta seuls, 25 Mo, délai sur tout le corps), service compatible OpenAI `verbose_json`, confiance des segments (nulle sans eux). Panne : reprise unique liée au message illisible, `GET /v1/notes-vocales/reprises`, `…/<id>/audio`, `POST …/<id>/faite`, agent en activité ou direction. Codex : 1 P2 corrigé (délai), puis rien ; « Vérifier » rouge une fois (cascade interdite par R17), corrigé. Restent : l'écran de la file des reprises ; H52.
 
 ### AU045 · Aucun raccordement téléphonique réel du Worker ne prouve la réception des appels et le renvoi vers…
-- Statut : en cours
-- Reprise (2026-11-23, voie 1) : autre approche, référence d'appel écrite avec le rendez-vous, `finish` sans rien ranger tant que l'appel est `en_cours`.
+- Statut : fait (2026-11-23)
+- Reprise (2026-11-23, voie 1) : fusionnée (#785, `87ec4d54`). Autre approche : le rendez-vous retrouvé l'est par la preuve d'accord qui porte la référence de l'appel (`bookingProofOf`), jamais par le seul créneau ; `AssistantVocal.finish` ne range aucun passage de main tant que HX21 rend `en_cours`, et reprend HX21 si un passage de main ancien pointe un appel inachevé ; une panne de fin après une réponse rangée est écrite au journal. 4 tests de plus (22). Codex : 1 P1 corrigé, puis rien.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A045 (majeur), endroit : A/worker.ts ; C/voix/appels.ts et assistant.ts.
 - Constat de l'audit : Aucun raccordement téléphonique réel du Worker ne prouve la réception des appels et le renvoi vers l’assistant vocal.
