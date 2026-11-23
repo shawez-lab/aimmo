@@ -230,6 +230,7 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   reprise_depot_morceaux: { via: [['depot_id', 'reprise_depots', 'id']] },
   sale_file_steps: { via: [['file_id', 'sale_files', 'id']] },
   sale_files_recopie: { hors: 'technique', why: 'Trace d\'une recopie de la base faite une fois : aucun réseau.' },
+  document_templates_recopie: { hors: 'technique', why: 'Trace d\'une recopie de la base faite une fois : aucun réseau.' },
   scheduled_runs: { hors: 'technique', why: 'Passage du planificateur, pour la base entière : aucun réseau.' },
   schema_migrations: { hors: 'technique', why: 'Les migrations appliquées à la base : aucun réseau.' },
   shop_order_results: { via: [['order_id', 'shop_order_sends', 'order_id']] },

@@ -36,7 +36,12 @@ function namesOf(names: (string | null)[]): string | null {
   return all.length <= 1 ? (all[0] ?? null) : `${all.slice(0, -1).join(', ')} et ${all[all.length - 1]}`;
 }
 
-export const DOCUMENT_KINDS = ['mandat_vente_simple', 'mandat_vente_exclusif', 'avenant_mandat'] as const;
+export const DOCUMENT_KINDS = ['mandat_vente_simple', 'mandat_vente_exclusif', 'avenant_mandat', 'mandat_location'] as const;
+/** Les mandats qui se signent et s'inscrivent au registre : de vente, et de location (AU014). */
+export const MANDATE_KINDS: readonly DocumentKind[] = ['mandat_vente_simple', 'mandat_vente_exclusif', 'mandat_location'];
+/** L'objet d'un mandat, lu dans la sorte du document signé (AU014) : un mandat de vente n'ouvre pas la location, ni l'inverse. */
+export type MandateObject = 'vente' | 'location';
+export const mandateObjectOf = (kind: string): MandateObject => (kind === 'mandat_location' ? 'location' : 'vente');
 export type DocumentKind = (typeof DOCUMENT_KINDS)[number];
 
 /** D'où vient la valeur d'un champ : la base, une saisie de l'agent, ou la signature (rempli plus tard). */
@@ -277,6 +282,7 @@ const KIND_TITLE: Record<DocumentKind, string> = {
   mandat_vente_simple: 'Mandat de vente simple',
   mandat_vente_exclusif: 'Mandat de vente exclusif',
   avenant_mandat: 'Avenant au mandat',
+  mandat_location: 'Mandat de location',
 };
 const PROPERTY_KIND: Record<string, string> = { home: 'logement', land: 'terrain', building: 'immeuble', commercial: 'local commercial', business_walls: 'murs commerciaux', business: 'fonds de commerce' };
 const number = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
@@ -605,6 +611,9 @@ export class Modeles {
     if (template.kind !== 'avenant_mandat' && supplied.some((k) => k.startsWith('avenant.'))) return { ok: false, rule: 'R40', code: 'bad_input' };
     // Un avenant ne change les conditions que par ses propres champs : les saisies du mandat n'y ont pas cours.
     if (template.kind === 'avenant_mandat' && supplied.some((k) => !k.startsWith('avenant.'))) return { ok: false, rule: 'R40', code: 'bad_input' };
+    // Un mandat de location (AU014) dit les honoraires du bailleur ; ceux du locataire suivent le barème plafonné de la
+    // mise en location (W02), jamais une charge choisie ici.
+    if (template.kind === 'mandat_location' && supplied.includes('honoraires.charge')) return { ok: false, rule: 'R40', code: 'bad_input' };
     // Une annexe (le questionnaire de HX33) s'ajoute au document même : ce qui se signe est ce qu'elle montre, et une
     // annexe d'essai ou incomplète rend le document entier d'essai ou incomplet [R40, R442].
     const extra = annex ? await annex({ priceEur: facts.priceEur, templateValidated: template.status === 'valide' }) : null;
@@ -667,7 +676,7 @@ export class Modeles {
        JOIN signed_documents s ON s.mandate_id = m.id AND s.copy_content IS NOT NULL
        JOIN documents d ON d.id = s.document_id
        LEFT JOIN mandate_register r ON r.mandate_id = m.id AND r.kind = 'inscription'
-       WHERE m.id = ? AND m.network_id = ?`,
+       WHERE m.id = ? AND m.network_id = ? AND d.kind <> 'mandat_location'`,
       [mandateId, networkId],
     );
     if (!row || row.number === null || row.seq === null || row.property_id !== propertyId || !personIds.includes(row.person_id)) return null;

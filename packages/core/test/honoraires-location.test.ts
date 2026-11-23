@@ -3,6 +3,7 @@ import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type Sql
 import { FEE_SCALES, HonorairesLocation, MisesEnLocation, feeCeilings, feeProblems, feeScaleOn, type RentalFacts } from '../src/location/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { signRentalMandate } from './mandat-location-jeu.ts';
 
 // Réseau, agents, propriétaire, logements et communes inventés (codes communes fictifs). Le 12 juillet 2027 est un lundi.
 let clock = Date.parse('2027-07-12T08:00:00.000Z');
@@ -85,6 +86,8 @@ async function setup() {
   const bea = await store.createAgent({ networkId: network.id, firstName: 'Béa', lastName: 'Essai' });
   const owner = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: 'Bailleur', lastName: 'Inventé' });
   const home = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'L-1', kind: 'home', postalCode: '21000' });
+  // AU014 : la location se fait sous un mandat de location signé et inscrit.
+  await signRentalMandate(db, { networkId: network.id, agentId: alex.id, personId: owner.id, propertyId: home.id });
   const agent = { role: 'agent' as const, userId: alex.id, networkId: network.id };
   const other = { role: 'agent' as const, userId: bea.id, networkId: network.id };
   const dir = { role: 'direction' as const, userId: 'dir-1', networkId: network.id };

@@ -36,7 +36,7 @@ import { DecisionEnvoi } from '../envoi/service.ts';
 import { FicheUnique } from '../fiche/fusion.ts';
 import { ficheFirstName } from '../fiche/prenom.ts';
 import { ControlesSignature, documentMandants, documentPersons, documentProxies, type SignatureCheck } from './controles.ts';
-import { escapeHtml, sha256 } from './modeles.ts';
+import { MANDATE_KINDS as MANDATE_KINDS_OF_MODELES, escapeHtml, sha256 } from './modeles.ts';
 import { SignaturePapier } from './signature-papier.ts';
 import type { OutboundChannel } from '../envoi/canaux.ts';
 
@@ -58,7 +58,7 @@ export type SignatureMode = 'essai' | 'reel';
 /** Ce qui manque pour signer réellement : le mail réel (H05), la validation de l'avocat (H24). */
 export type RealSignatureMissing = 'mail_reel' | 'validation_avocat';
 
-const MANDATE_KINDS = ['mandat_vente_simple', 'mandat_vente_exclusif'];
+const MANDATE_KINDS: readonly string[] = MANDATE_KINDS_OF_MODELES;
 /** Un essai de remise réservé sans accusé ni échec depuis ce temps est tenu pour abandonné (panne avant la remise). */
 const ABANDONED_SEND_MS = 60 * 60_000;
 const VALIDATION_REF = /^[\p{L}\p{N} ._/'-]{3,120}$/u;
