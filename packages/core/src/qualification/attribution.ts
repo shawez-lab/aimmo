@@ -7,6 +7,7 @@
 import type { Viewer } from '../acces/droits.ts';
 import { runBatch, type SqlDatabase, type SqlStatement } from '../db/sql.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
+import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { callbackDeadline, DEFAULT_CALLBACK_WINDOW, type CallbackWindow } from './delai-rappel.ts';
@@ -51,6 +52,7 @@ export const ATTRIBUTION_RULES: readonly string[] = Object.freeze([
   'Sinon, le contact va à un agent en activité dont la zone couvre sa commune, celle qu’il a donnée, à défaut celle du bien cité, à défaut celle d’un message d’avant, et qui ne l’a pas encore eu.',
   'Si plusieurs agents couvrent la commune, le choix se fait par un tirage fixe sur l’identifiant de la fiche : le même contact va toujours au même agent.',
   'Un agent dont la capacité déclarée est atteinte (0 : aucun nouveau contact) ne reçoit pas de nouveau contact : le tirage passe au suivant, dans l’ordre alphabétique des identifiants à partir de l’agent tiré ; si tous sont pleins, le contact va à la direction. La capacité compte les contacts attribués à l’agent qui attendent encore son rappel.',
+  'Un agent absent ce jour-là (absence déclarée, heure de Paris) ne reçoit aucun nouveau contact, ni à l’attribution ni à la réattribution : le tirage passe au suivant comme pour un agent plein ; si tous sont absents ou pleins, le contact va à la direction. Un client qu’il suit déjà lui reste, et son binôme ouvre ses dossiers pendant l’absence.',
   'Si aucun agent ne couvre la commune, le contact va à la direction, jamais au hasard.',
   'Un contact qui n’a pas été rappelé dans le délai de la charte est réattribué une fois par délai, par la même règle, à un agent qui ne l’a pas encore eu ; s’il n’y en a plus, à la direction.',
   'Le délai ne court que pendant le service de rappel, du lundi au samedi de 8 h à 20 h, heure de Paris : il part de la première heure d’ouverture, il ne court ni le dimanche ni un jour férié, et une limite qui tombe hors de ces heures passe à l’ouverture suivante. Personne ne perd un contact pendant que le rappel est fermé.',
@@ -94,6 +96,16 @@ const WAITING_SQL = `(WITH RECURSIVE up(start, id) AS (
  */
 const ROOM_SQL = `(? IS NULL OR COALESCE((SELECT c.capacity FROM agent_capacities c WHERE c.network_id = ? AND c.agent_id = ? ORDER BY c.version DESC LIMIT 1), ${Number.MAX_SAFE_INTEGER}) > ${WAITING_SQL})`;
 const roomParams = (networkId: string, agentId: string | null): (string | null)[] => [agentId, networkId, agentId, networkId, networkId, agentId];
+
+/** Le fuseau du jour d'absence : celui du réseau, comme la déclaration d'absence le lit (J09). */
+const TIME_ZONE = 'Europe/Paris';
+
+/**
+ * L'agent n'est pas absent ce jour, revérifié par la base dans le lot qui attribue (paramètres : `presentParams`) :
+ * aucun agent (la direction, ou un client déjà suivi), ou aucune absence déclarée qui couvre le jour [R680].
+ */
+const PRESENT_SQL = `(? IS NULL OR NOT EXISTS (SELECT 1 FROM agent_absences x WHERE x.network_id = ? AND x.agent_id = ? AND x.from_day <= ? AND x.until_day >= ?))`;
+const presentParams = (networkId: string, agentId: string | null, day: string): (string | null)[] => [agentId, networkId, agentId, day, day];
 
 /** FNV-1a sur 32 bits : un tirage fixe, le même à chaque fois pour la même fiche. */
 function stableIndex(key: string, n: number): number {
@@ -227,6 +239,7 @@ export class Attribution {
     for (;;) {
       let agentId: string | null = null;
       let fullAgents = 0;
+      let absentAgents = 0;
       let reason: AttributionReason;
       // L'agent qui suit déjà le client, sur toutes les fiches réunies : la fiche gardée d'abord.
       const followed = await this.followedBy(q.network_id, [root.agent_id, ...view.members.map((m) => m.agent_id)]);
@@ -245,6 +258,7 @@ export class Attribution {
           const pick = await this.pick(q.network_id, root.id, commune, tried, raced);
           agentId = pick.agentId;
           fullAgents = pick.fullAgents;
+          absentAgents = pick.absentAgents;
         }
         reason = agentId ? 'zone' : 'no_zone';
       }
@@ -254,7 +268,7 @@ export class Attribution {
       const [inserted] = await runBatch(this.db, [
         {
           sql: `INSERT INTO attributions (id, network_id, person_id, qualification_id, agent_id, reason, callback_hours, replaces_id, created_at)
-              SELECT ?, ?, ?, ?, ?, ?, ?, NULL, ? WHERE ${ROOM_SQL} ON CONFLICT (qualification_id) DO NOTHING`,
+              SELECT ?, ?, ?, ?, ?, ?, ?, NULL, ? WHERE ${ROOM_SQL} AND ${PRESENT_SQL} ON CONFLICT (qualification_id) DO NOTHING`,
           params: [
             attributionId,
             q.network_id,
@@ -265,6 +279,7 @@ export class Attribution {
             hours,
             this.now().toISOString(),
             ...roomParams(q.network_id, reason === 'zone' ? agentId : null),
+            ...presentParams(q.network_id, reason === 'zone' ? agentId : null, this.today()),
           ],
         },
         ...this.capacityTrace(attributionId, q.network_id, fullAgents),
@@ -282,6 +297,7 @@ export class Attribution {
           toDirection: agentId === null,
           callbackHours: hours,
           ...(fullAgents > 0 ? { fullAgents } : {}),
+          ...(absentAgents > 0 ? { absentAgents } : {}),
         });
       }
       return row;
@@ -321,20 +337,31 @@ export class Attribution {
       const tried = new Set(history.map((c) => c.agent_id).filter((id): id is string => id !== null));
       const commune = await this.lastCommune(history);
       const raced = new Set<string>();
-      let pick: { agentId: string | null; fullAgents: number } = {
+      let pick: { agentId: string | null; fullAgents: number; absentAgents: number } = {
         agentId: null,
         fullAgents: 0,
+        absentAgents: 0,
       };
       let id = '';
       let inserted: { changes: number } | undefined;
       for (;;) {
-        pick = commune ? await this.pick(networkId, root.id, commune, tried, raced) : { agentId: null, fullAgents: 0 };
+        pick = commune ? await this.pick(networkId, root.id, commune, tried, raced) : { agentId: null, fullAgents: 0, absentAgents: 0 };
         id = this.newId();
         [inserted] = await runBatch(this.db, [
           {
             sql: `INSERT INTO attributions (id, network_id, person_id, qualification_id, agent_id, reason, callback_hours, replaces_id, created_at)
-                  SELECT ?, ?, ?, NULL, ?, 'reassigned', ?, ?, ? WHERE ${ROOM_SQL} ON CONFLICT (replaces_id) DO NOTHING`,
-            params: [id, networkId, root.id, pick.agentId, delay.hours, a.id, at.toISOString(), ...roomParams(networkId, pick.agentId)],
+                  SELECT ?, ?, ?, NULL, ?, 'reassigned', ?, ?, ? WHERE ${ROOM_SQL} AND ${PRESENT_SQL} ON CONFLICT (replaces_id) DO NOTHING`,
+            params: [
+              id,
+              networkId,
+              root.id,
+              pick.agentId,
+              delay.hours,
+              a.id,
+              at.toISOString(),
+              ...roomParams(networkId, pick.agentId),
+              ...presentParams(networkId, pick.agentId, this.today(at)),
+            ],
           },
           ...this.capacityTrace(id, networkId, pick.fullAgents),
           // Toutes les fiches réunies que suivait l'agent, ou un agent parti, changent de mains : jamais deux agents.
@@ -355,6 +382,7 @@ export class Attribution {
         toDirection: next === null,
         tries: tried.size,
         ...(pick.fullAgents > 0 ? { fullAgents: pick.fullAgents } : {}),
+        ...(pick.absentAgents > 0 ? { absentAgents: pick.absentAgents } : {}),
       });
       const made1 = await this.db.first<AttributionRow>('SELECT * FROM attributions WHERE id = ?', [id]);
       if (made1) made.push(made1);
@@ -392,17 +420,36 @@ export class Attribution {
     commune: string,
     tried: ReadonlySet<string>,
     raced: ReadonlySet<string> = new Set(),
-  ): Promise<{ agentId: string | null; fullAgents: number }> {
+  ): Promise<{ agentId: string | null; fullAgents: number; absentAgents: number }> {
     const candidates = (await this.agentsOf(networkId, commune)).filter((id) => !tried.has(id));
+    // Un agent absent ce jour est passé comme un agent plein : le tirage des autres ne change pas [R680].
+    const absent = await this.absentAmong(networkId, candidates);
     const full = new Set<string>(raced);
     for (const id of candidates) {
-      if (full.has(id)) continue;
+      if (full.has(id) || absent.has(id)) continue;
       const { capacity } = await this.capacityOf(networkId, id);
       if (capacity !== null && (capacity === 0 || (await this.waiting(networkId, id)) >= capacity)) full.add(id);
     }
-    const agentId = chooseAgent(personId, candidates, tried, full);
+    const agentId = chooseAgent(personId, candidates, tried, new Set([...full, ...absent]));
     const free = chooseAgent(personId, candidates, tried);
-    return { agentId, fullAgents: agentId === free ? 0 : full.size };
+    const changed = agentId !== free;
+    return { agentId, fullAgents: changed ? [...full].filter((id) => !absent.has(id)).length : 0, absentAgents: changed ? absent.size : 0 };
+  }
+
+  /** Les agents de la liste absents ce jour, heure de Paris, d'après les absences déclarées (J09) [R680]. */
+  private async absentAmong(networkId: string, agentIds: readonly string[], at: Date = this.now()): Promise<Set<string>> {
+    if (agentIds.length === 0) return new Set();
+    const day = this.today(at);
+    const rows = await this.db.all<{ agent_id: string }>(
+      `SELECT DISTINCT agent_id FROM agent_absences WHERE network_id = ? AND agent_id IN (${placeholders(agentIds.length)}) AND from_day <= ? AND until_day >= ?`,
+      [networkId, ...agentIds, day, day],
+    );
+    return new Set(rows.map((r) => r.agent_id));
+  }
+
+  /** Le jour de Paris de l'instant donné. */
+  private today(at: Date = this.now()): string {
+    return localTime(at, TIME_ZONE).date;
   }
 
   /** La trace d'un choix changé par la capacité, rangée seulement si l'attribution l'a été dans le même lot. */

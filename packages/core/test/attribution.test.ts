@@ -623,3 +623,119 @@ describeWithSqlite('AU041 · capacité déclarée des agents', () => {
     expect(JSON.stringify((await t.journal.all()).filter((e) => e.type.startsWith('attribution.capacite')))).not.toMatch(/Rythme|plafond de|Essai/);
   });
 });
+
+describeWithSqlite('AU040 · un agent absent n’est jamais candidat', () => {
+  /** Une absence inventée de `absentId`, reprise par `coverId`, du jour `from` au jour `until` inclus (J09). */
+  async function absence(t: Awaited<ReturnType<typeof setup>>, absentId: string, coverId: string, from: string, until: string): Promise<void> {
+    const [a, b] = [absentId, coverId].sort();
+    const pairId = `pair-${absentId}-${from}`;
+    await t.db.run('INSERT INTO agent_pairs (id, network_id, agent_a, agent_b, cover_share_pct, written_by, created_at) VALUES (?, ?, ?, ?, 30, ?, ?)', [
+      pairId,
+      t.network.id,
+      a,
+      b,
+      'direction:dir-1',
+      new Date(TUESDAY_10H - 48 * HOUR).toISOString(),
+    ]);
+    await t.db.run(
+      'INSERT INTO agent_absences (id, network_id, agent_id, pair_id, cover_agent_id, from_day, until_day, declared_by, declared_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [`abs-${absentId}-${from}`, t.network.id, absentId, pairId, coverId, from, until, 'direction:dir-1', new Date(TUESDAY_10H - 24 * HOUR).toISOString()],
+    );
+  }
+
+  it('[R680] constat : seul agent de la commune, absent ce jour : le contact va à la direction, au journal sans nom', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await absence(t, t.alex.id, t.sam.id, '2026-12-07', '2026-12-11');
+    const a = await t.attribution.attribute(await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.'));
+    expect(a).toMatchObject({ agent_id: null, reason: 'no_zone' });
+    const entry = (await t.journal.all()).find((e) => e.type === 'attribution');
+    expect(entry?.data).toMatchObject({ toDirection: true, absentAgents: 1 });
+    expect(JSON.stringify(entry)).not.toContain(t.alex.id);
+    // Aucune place de capacité n'est comptée pour une absence [R681].
+    expect(await t.db.all('SELECT * FROM attribution_capacity')).toEqual([]);
+  });
+
+  it('[R680] avant et après l’absence, l’agent reçoit de nouveau ses contacts', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await absence(t, t.alex.id, t.sam.id, '2026-12-09', '2026-12-10');
+    expect(await t.attribution.attribute(await t.contact('a', 'Je souhaite vendre ma maison à Talant.'))).toMatchObject({ agent_id: t.alex.id });
+    t.setClock(TUESDAY_10H + 24 * HOUR);
+    expect(await t.attribution.attribute(await t.contact('b', 'Je souhaite vendre ma maison à Talant.'))).toMatchObject({ agent_id: null });
+    t.setClock(TUESDAY_10H + 72 * HOUR);
+    expect(await t.attribution.attribute(await t.contact('c', 'Je souhaite vendre ma maison à Talant.'))).toMatchObject({ agent_id: t.alex.id });
+  });
+
+  it('[R680] le jour d’absence est celui de Paris : 0 h 30 à Paris est déjà le premier jour', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await absence(t, t.alex.id, t.sam.id, '2026-12-09', '2026-12-09');
+    // 2026-12-08 à 23 h 30 en temps universel : 0 h 30 le 9 décembre à Paris.
+    t.setClock(Date.parse('2026-12-08T23:30:00.000Z'));
+    expect(await t.attribution.attribute(await t.contact('a', 'Je souhaite vendre ma maison à Talant.'))).toMatchObject({ agent_id: null });
+  });
+
+  it('[R680] le contact tiré pour l’absent va au suivant de la file, toujours le même ; le tirage des autres ne bouge pas', async () => {
+    const t = await setup();
+    for (const agent of [t.alex, t.sam, t.lou]) await t.attribution.addZone(t.network.id, agent.id, 'Talant');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    const person = await t.personOf(q);
+    const ids = [t.alex.id, t.sam.id, t.lou.id];
+    const drawn = chooseAgent(person, ids)!;
+    const cover = ids.find((id) => id !== drawn)!;
+    await absence(t, drawn, cover, '2026-12-08', '2026-12-08');
+    const a = await t.attribution.attribute(q);
+    expect(a).toMatchObject({ reason: 'zone', agent_id: chooseAgent(person, ids, new Set(), new Set([drawn])) });
+    expect(a!.agent_id).not.toBe(drawn);
+    expect((await t.journal.all()).find((e) => e.type === 'attribution')?.data).toMatchObject({ absentAgents: 1 });
+  });
+
+  it('[R680] un client déjà suivi par l’absent lui reste : rien n’est réattribué pour l’absence', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
+    const followed = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Zoé' });
+    await absence(t, t.alex.id, t.sam.id, '2026-12-08', '2026-12-12');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    await t.fiche.merge({ survivorId: await t.personOf(q), mergedId: followed.id, reason: 'même personne' });
+    expect(await t.attribution.attribute(q)).toMatchObject({ agent_id: t.alex.id, reason: 'already_followed' });
+    expect((await t.store.getPerson(followed.id))!.agent_id).toBe(t.alex.id);
+  });
+
+  it('[R680] la réattribution d’un contact en retard ne va jamais à un agent absent', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    const first = (await t.attribution.attribute(q))!;
+    const other = first.agent_id === t.alex.id ? t.sam.id : t.alex.id;
+    await absence(t, other, first.agent_id!, '2026-12-08', '2026-12-31');
+    t.setClock(TUESDAY_10H + 30 * HOUR);
+    const [next] = await t.attribution.reassignOverdue(t.network.id);
+    expect(next).toMatchObject({ agent_id: null, reason: 'reassigned' });
+    expect((await t.journal.all()).find((e) => e.type === 'attribution.reattribuee')?.data).toMatchObject({ toDirection: true, absentAgents: 1 });
+  });
+
+  it('[R680] une absence déclarée entre le choix et l’écriture : la base refuse l’absent et le choix est refait', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    // La base revérifie l'absence dans le lot qui attribue : une écriture directe à l'absent n'aboutit pas.
+    await absence(t, t.alex.id, t.sam.id, '2026-12-08', '2026-12-08');
+    const pick = (t.attribution as unknown as { pick: (...a: unknown[]) => Promise<unknown> }).pick.bind(t.attribution);
+    let first = true;
+    (t.attribution as unknown as { pick: (...a: unknown[]) => Promise<unknown> }).pick = async (...args: unknown[]) => {
+      if (first) {
+        first = false;
+        return { agentId: t.alex.id, fullAgents: 0, absentAgents: 0 };
+      }
+      return pick(...args);
+    };
+    expect(await t.attribution.attribute(q)).toMatchObject({ agent_id: null, reason: 'no_zone' });
+  });
+
+  it('[R680] la règle d’absence est publiée avec les autres', () => {
+    expect(ATTRIBUTION_RULES.join(' ')).toMatch(/absent/);
+  });
+});
