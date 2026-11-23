@@ -382,7 +382,7 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
       // ligne (E05), qui ne font que des GET, jamais un envoi. Partout ailleurs, aucun usage de `fetch`.
       const uses = source
         .split('\n')
-        .filter((line) => /\bfetch\b/.test(line) && !/^\s*(\/\/|\*|\/\*)/.test(line) && !/^\s*fetch\(request: Request/.test(line))
+        .filter((line) => /\bfetch\b/.test(line) && !/^\s*(\/\/|\*|\/\*)/.test(line) && !/^\s*(async\s+)?fetch\(request: Request/.test(line))
         .map((line) => line.trim());
       expect(uses, file).toEqual(
         file === 'worker.ts'
@@ -401,6 +401,9 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
               'export function pigeSourceOf(settings: PigeProviderSettings, fetcher: PigeFetcher = fetch.bind(globalThis)): { networkId: string; source: PigeSource } | null {',
               'const reader = env.DVF_BASE_URL ? httpDvfReader(fetch.bind(globalThis), env.DVF_BASE_URL) : null;',
               'return reader ? { geocoder: new BanGeocoder(fetch.bind(globalThis)), sales: new DvfSiteSales(reader) } : undefined;',
+              // SV05 : le registre des effacements dans le compartiment des copies d'AIMMO, sous `effacements/` seulement,
+              // et seulement avec ERASURE_MODE=reel (H29, H50) ; jamais un message à une personne.
+              'const erasure = await erasureOf(env, fetch.bind(globalThis));',
               // La vraie fiche Google de chaque agent (AU037), seulement mise en service quand tout est rangé (H07) :
               // chaque réponse ou publication est validée par un humain (R154), la mise à jour est un geste de la
               // direction. Ce ne sont pas des messages à une personne.
@@ -435,7 +438,13 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
               // Le passage de la publicité (AU038) : les mêmes plateformes, jamais un message à une personne.
               'await runAdsPass(db, new SqlJournalStore(db), () => new Date(), adsFromEnv(env, fetch.bind(globalThis)));',
             ]
-          : [],
+          : file === 'effacement-worker.ts'
+            ? [
+                // SV05 : le seul appel est au compartiment R2 des copies d'AIMMO, par l'API S3, sous `effacements/`.
+                'export async function erasureOf(env: ErasureEnv, http: typeof fetch): Promise<WorkerErasure> {',
+                '? { store: ledgerOnly(r2CopyStore({ accountId, bucket: ERASURE_LEDGER_BUCKET, accessKeyId, secretAccessKey, fetch: http })), key }',
+              ]
+            : [],
       );
     }
   });

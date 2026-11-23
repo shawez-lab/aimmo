@@ -94,7 +94,7 @@ async function copyKeyOf(secret: string | undefined): Promise<CopyKey | null> {
  * Ce que l'effacement réel reçoit du Worker. En essai (le cas tant que H29 n'est pas fait) : ni registre ni stockage,
  * et aucun secret n'est lu.
  */
-export async function erasureOf(env: ErasureEnv, http: typeof fetch = fetch): Promise<WorkerErasure> {
+export async function erasureOf(env: ErasureEnv, http: typeof fetch): Promise<WorkerErasure> {
   const mode = conformite.erasureModeOf(env.ERASURE_MODE);
   if (mode !== 'reel') return { mode, ledger: null, objects: null };
   const accountId = filled(env.CLOUDFLARE_ACCOUNT_ID);
