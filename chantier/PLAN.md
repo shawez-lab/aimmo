@@ -1110,7 +1110,7 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 
 
 ### AU096b · Les modèles du bail meublé étudiant et du bail mobilité
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : AU096
 - Cahier : M15 Louer ; audit A096.
 - Objectif : deux sortes de modèles de bail en plus (`bail_meuble_etudiant`, `bail_mobilite`), chacun avec ses champs obligatoires (durée de 9 mois, ou de 1 à 10 mois non renouvelable et motif de mobilité du locataire, sans dépôt de garantie pour la mobilité), validés par la conformité comme les autres ; la table des modèles reconstruite pour les accepter (SQLite : nouvelle table, copie, triggers) ; la génération choisit le modèle de la variante et refuse sans lui.
