@@ -29,6 +29,7 @@ import { energyPriceText, type PropertySheet } from '../annonces/fiche-bien.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { HonorairesLocation, RentalFees } from './honoraires.ts';
+import { rentalMandateGate, rentalMandateInForce, type RentalMandateGate } from './mandat-location.ts';
 import { rentCeilingCents, type LocationRefusal, type MisesEnLocation, type RentalFacts } from './logement.ts';
 
 const MAX_TITLE = 120;
@@ -183,6 +184,8 @@ export interface AnnoncesLocationOptions {
   newId?: () => string;
   writer?: RentalAdWriter | undefined;
   timeoutMs?: number;
+  /** AU014 : la porte du mandat de location ; par défaut, celle de la diffusion, sur la même base. */
+  rentalMandate?: RentalMandateGate;
 }
 
 interface Basis {
@@ -231,6 +234,7 @@ const toAd = (r: AdRow): RentalAd => ({
 
 export class AnnoncesLocation {
   private readonly now: () => Date;
+  private readonly gate: RentalMandateGate;
   private readonly newId: () => string;
   private readonly writer: RentalAdWriter | undefined;
   private readonly timeoutMs: number;
@@ -244,6 +248,7 @@ export class AnnoncesLocation {
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
+    this.gate = options.rentalMandate ?? rentalMandateGate(db, journal, this.now);
     this.writer = options.writer;
     this.timeoutMs = options.timeoutMs ?? AI_TIMEOUT_MS;
   }
@@ -426,6 +431,9 @@ export class AnnoncesLocation {
     const v = await this.db.first<{ text_sha256: string }>('SELECT text_sha256 FROM rental_ad_validations WHERE ad_id = ?', [row.id]);
     if (!v || v.text_sha256 !== (await sha256(`${row.title}\n${row.body}\n${row.mentions}`))) return null;
     if (await this.stillValid(row)) return null;
+    // AU014 : publiable seulement sous un mandat de location en cours sur le logement [R42, R100].
+    const listing = await this.db.first<{ property_id: string }>('SELECT property_id FROM rental_listings WHERE id = ? AND network_id = ?', [listingId, networkId]);
+    if (!listing || !(await rentalMandateInForce(this.gate, networkId, listing.property_id, this.now()))) return null;
     return { title: row.title, body: row.body, mentions: row.mentions };
   }
 }

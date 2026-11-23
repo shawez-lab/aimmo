@@ -7,6 +7,7 @@ import type { CommuneRanges } from '../src/mandats/suivi-valeur.ts';
 import { setupDossier } from './dossiers-jeu.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { signRentalMandate } from './mandat-location-jeu.ts';
 
 // Réseau, agents, propriétaires, candidats, garants et logements inventés. Le 12 juillet 2027 est un lundi.
 let clock = 0;
@@ -77,6 +78,8 @@ async function setup(options: { real?: boolean; ranges?: CommuneRanges | null } 
   const alex = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Essai' });
   const owner = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: 'Bailleur', lastName: 'Inventé' });
   const home = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'L-1', kind: 'home', postalCode: '21000', city: 'Villeneuve-Essai', rooms: 2 });
+  // AU014 : la location se fait sous un mandat de location signé et inscrit.
+  await signRentalMandate(db, { networkId: network.id, agentId: alex.id, personId: owner.id, propertyId: home.id });
   const agent = { role: 'agent' as const, userId: alex.id, networkId: network.id };
   const dir = { role: 'direction' as const, userId: 'dir-1', networkId: network.id };
   const parties = new SqlClientParties(db);

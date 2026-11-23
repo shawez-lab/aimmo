@@ -21,6 +21,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { rentalMandateGate, rentalMandateInForce, type RentalMandateGate } from './mandat-location.ts';
 import { validDay, type LocationRefusal, type LocationResult, type MisesEnLocation } from './logement.ts';
 
 const TIME_ZONE = 'Europe/Paris';
@@ -118,10 +119,13 @@ const cents = (v: unknown): v is number => typeof v === 'number' && Number.isSaf
 
 export interface HonorairesOptions {
   now?: () => Date;
+  /** AU014 : la porte du mandat de location ; par défaut, celle de la diffusion, sur la même base. */
+  rentalMandate?: RentalMandateGate;
 }
 
 export class HonorairesLocation {
   private readonly now: () => Date;
+  private readonly gate: RentalMandateGate;
 
   constructor(
     private readonly db: SqlDatabase,
@@ -130,6 +134,7 @@ export class HonorairesLocation {
     options: HonorairesOptions = {},
   ) {
     this.now = options.now ?? (() => new Date());
+    this.gate = options.rentalMandate ?? rentalMandateGate(db, journal, this.now);
   }
 
   private actor(viewer: Viewer): string {
@@ -241,6 +246,11 @@ export class HonorairesLocation {
     for (const k of Object.keys(input)) if (!FEE_KEYS.includes(k as keyof FeeInput)) return { ok: false, rule: null, code: 'invalid', field: k };
     for (const k of FEE_KEYS) {
       if (!cents(input[k])) return { ok: false, rule: null, code: 'invalid', field: k };
+    }
+    // AU014 : un barème d'honoraires ne se range que sous un mandat de location en cours [R42, R100].
+    if (!(await rentalMandateInForce(this.gate, listing.networkId, listing.propertyId, this.now()))) {
+      await appendEvent(this.journal, { type: 'location.bareme_refuse', actor: this.actor(viewer), subject: `rental:${listing.id}`, data: { rule: 'R100', problems: ['no_rental_mandate'] } }, this.now);
+      return { ok: false, rule: 'R100', code: 'no_rental_mandate' } as LocationRefusal;
     }
     const c = await this.compute(listing.id);
     if (!c.ok) return c;

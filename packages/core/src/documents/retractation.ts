@@ -20,7 +20,7 @@ import { frenchHolidays, localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { RegistreMandats } from '../mandats/registre.ts';
-import type { DocumentFacts } from './modeles.ts';
+import { mandateObjectOf, type DocumentFacts, type MandateObject } from './modeles.ts';
 import { parisDayStart } from '../pilotage/tableau-agent.ts';
 import { mandateEndDay, mandateTerms, termsFrom, type MandateTerms } from './conditions.ts';
 
@@ -148,11 +148,11 @@ export class Diffusion {
    * AU106 · les biens du réseau que la porte de la diffusion ouvre à cet instant, en huit requêtes pour tout le réseau :
    * exactement ceux pour lesquels `canDiffuse` répondrait « oui », sans la demander bien par bien [R42].
    */
-  async diffusableProperties(networkId: string, at: Date = this.now()): Promise<Set<string>> {
+  async diffusableProperties(networkId: string, at: Date = this.now(), object: MandateObject = 'vente'): Promise<Set<string>> {
     const rows = await this.db.all<SignedMandateRow & { property_id: string }>(
       `SELECT m.property_id, s.mandate_id, s.network_id, s.signed_at, s.place, s.number, d.facts FROM signed_documents s
        JOIN documents d ON d.id = s.document_id JOIN mandates m ON m.id = s.mandate_id
-       WHERE s.network_id = ? AND m.property_id IS NOT NULL AND s.mandate_id IS NOT NULL AND s.copy_content IS NOT NULL
+       WHERE s.network_id = ? AND m.property_id IS NOT NULL AND s.mandate_id IS NOT NULL AND s.copy_content IS NOT NULL AND ${objectSql(object)}
        ORDER BY s.signed_at DESC`,
       [networkId],
     );
@@ -200,11 +200,12 @@ export class Diffusion {
    * Le bien peut-il être diffusé maintenant ? La seule porte de toute publication [R42]. Sans droits : c'est le
    * système qui la consulte avant de publier ; la décision ne porte aucune donnée personnelle.
    */
-  async canDiffuse(networkId: string, propertyId: string, at: Date = this.now()): Promise<DiffusionDecision> {
+  async canDiffuse(networkId: string, propertyId: string, at: Date = this.now(), object: MandateObject = 'vente'): Promise<DiffusionDecision> {
+    // AU014 : la porte s'ouvre par un mandat du même objet ; un mandat de vente n'ouvre pas la location, ni l'inverse.
     const rows = await this.db.all<SignedMandateRow>(
       `SELECT s.mandate_id, s.network_id, s.signed_at, s.place, s.number, d.facts FROM signed_documents s
        JOIN documents d ON d.id = s.document_id JOIN mandates m ON m.id = s.mandate_id
-       WHERE s.network_id = ? AND m.property_id = ? AND s.mandate_id IS NOT NULL AND s.copy_content IS NOT NULL
+       WHERE s.network_id = ? AND m.property_id = ? AND s.mandate_id IS NOT NULL AND s.copy_content IS NOT NULL AND ${objectSql(object)}
        ORDER BY s.signed_at DESC`,
       [networkId, propertyId],
     );
@@ -247,16 +248,20 @@ export class Diffusion {
    * et une seule suffit. Seuls l'annulation, la rétractation et l'échéance rendent le bien. Différent de `canDiffuse`, qui
    * cherche un mandat diffusable et ne voit que les mandats complets.
    */
-  async otherLiveMandate(networkId: string, propertyId: string, exceptMandateId: string, at: Date = this.now()): Promise<string | null> {
+  async otherLiveMandate(networkId: string, propertyId: string, exceptMandateId: string, at: Date = this.now(), objectOfOwn?: MandateObject): Promise<string | null> {
     const lines = await this.db.all<{ seq: number; mandate_id: string; number: string }>(
       `SELECT seq, mandate_id, number FROM mandate_register WHERE network_id = ? AND property_id = ? AND kind = 'inscription' AND mandate_id <> ?`,
       [networkId, propertyId, exceptMandateId],
     );
+    // AU014 : un mandat de location ne gêne pas un mandat de vente du même bien, ni l'inverse ; seul le même objet compte.
+    const own = await this.db.first<{ kind: string }>('SELECT d.kind FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = ?', [exceptMandateId]);
+    const object = objectOfOwn ?? (own ? mandateObjectOf(own.kind) : null);
     for (const line of lines) {
-      const row = await this.db.first<SignedMandateRow>(
-        `SELECT s.mandate_id, s.network_id, s.signed_at, s.place, s.number, d.facts FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = ?`,
+      const row = await this.db.first<SignedMandateRow & { kind: string }>(
+        `SELECT s.mandate_id, s.network_id, s.signed_at, s.place, s.number, d.facts, d.kind FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = ?`,
         [line.mandate_id],
       );
+      if (row && object !== null && mandateObjectOf(row.kind) !== object) continue;
       if (row) {
         // Une coupure peut laisser le numéro au registre sans qu'il soit encore recopié sur la signature.
         const { reason } = await this.decideMandate({ ...row, number: row.number ?? line.number }, at);
@@ -396,4 +401,9 @@ export class Diffusion {
     if (cancelled.ok) return { ok: true };
     return cancelled.code === 'already_cancelled' ? { ok: false, rule: null, code: 'already_recorded' } : (cancelled as Refusal | Problem);
   }
+}
+
+/** La condition SQL sur la sorte du document signé, pour un objet de mandat (AU014). */
+function objectSql(object: MandateObject): string {
+  return object === 'location' ? "d.kind = 'mandat_location'" : "d.kind <> 'mandat_location'";
 }

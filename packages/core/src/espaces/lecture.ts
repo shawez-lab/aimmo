@@ -7,13 +7,14 @@ import type { SourcePerson } from './vendeur.ts';
 
 export const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 
-/** Les mandats qui font d'une personne le mandant d'un bien : inscrits, ni annulés ni rétractés. */
+/** Les mandats de vente qui font d'une personne le mandant d'un bien : inscrits, ni annulés ni rétractés ; un mandat de location n'en fait pas un vendeur (AU014). */
 export const LIVE_MANDATES = `
   SELECT m.id, m.property_id, m.person_id, m.signed_at FROM mandates m
   WHERE m.network_id = ? AND m.property_id IS NOT NULL
     AND EXISTS (SELECT 1 FROM mandate_register r WHERE r.network_id = m.network_id AND r.mandate_id = m.id AND r.kind = 'inscription'
                 AND NOT EXISTS (SELECT 1 FROM mandate_register c WHERE c.network_id = r.network_id AND c.kind = 'annulation' AND c.cancels_seq = r.seq))
-    AND NOT EXISTS (SELECT 1 FROM mandate_withdrawals w WHERE w.mandate_id = m.id)`;
+    AND NOT EXISTS (SELECT 1 FROM mandate_withdrawals w WHERE w.mandate_id = m.id)
+    AND NOT EXISTS (SELECT 1 FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = m.id AND d.kind = 'mandat_location')`;
 
 /**
  * Chaque mandant des mandats vivants, une ligne par mandat et par mandant : le premier (`mandates.person_id`), puis les
@@ -30,6 +31,7 @@ export const DOCUMENT_TITLES: Record<string, string> = {
   mandat_vente_simple: 'Mandat de vente simple',
   mandat_vente_exclusif: 'Mandat de vente exclusif',
   avenant_mandat: 'Avenant au mandat',
+  mandat_location: 'Mandat de location',
 };
 
 /** Ce qui identifie une personne, dans toutes ses fiches réunies, pour la retenir de tout texte [R161]. */
