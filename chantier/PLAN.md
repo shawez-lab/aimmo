@@ -631,7 +631,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU053 · Les adaptateurs Google, Outlook et Apple sont testés sur faux serveurs mais ne sont pas raccordés au…
-- Statut : en cours
+- Statut : fait (2026-11-23)
+- Reste : constat confirmé (adaptateurs construits nulle part dans le Worker). `agenda-reel.ts` : `AGENDA_MODE=reel`, clients OAuth Google / Microsoft, secret `AGENDA_JETONS` (un agenda par agent, Apple en mot de passe d'application) ; un événement occupé refuse le créneau en ligne, le rendez-vous et la visite de l'agent, la dictée et la visite de l'espace client [R33] ; agenda injoignable : 503 `agenda_indisponible`, rien n'est réservé (la dictée nomme ce qui est rangé) ; passage des quarts d'heure dans les deux sens, sans doublon [R236] ; R702. Codex 3 P0 corrigés puis rien ; vérification verte ; fusionnée (#788). Reste : mise en service réelle (H21, H53) ; la tournée de visites (`TourneeRendezVous`) n'est pas branchée dans l'API.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M05 Rendez-vous ; audit A053 (majeur), endroit : H21/H53 ; A/worker.ts ; C/rendezvous/fournisseurs.ts.
 - Constat de l'audit : Les adaptateurs Google, Outlook et Apple sont testés sur faux serveurs mais ne sont pas raccordés au Worker utilisé.
