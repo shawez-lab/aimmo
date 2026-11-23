@@ -1746,3 +1746,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-23 13:55 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-23 14:04 · AU035 · doute lisible par la base (migration 4065, vues et déclencheurs), Codex 3 P0 corrigés et le 4e en partie ; reste l'insertion directe d'une annonce reliée sur preuve ; #757 ouverte sans fusion (SECOURS), tâche bloquée · prochaine : AU035, groupe prouvé rangé par relève
 - 2026-11-23 14:06 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU035
+- 2026-11-23 14:55 · VOIE 2 : rien de faisable : seuls changements depuis 13:55, AU035 bloquée chez la voie 1 (#757 ouverte sans fusion), la voie 1 passe à AU069 (en cours, verrou 14:30) ; restent AU014 (#792) et AU096b (#793) à la voie 3, AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05 (humain) ; aucun module non découpé
+- 2026-11-23 14:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 12:55 et 13:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 14:55 · VOIE 2 : aucune tâche, rien, relancé non
