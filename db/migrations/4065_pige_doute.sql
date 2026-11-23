@@ -30,6 +30,7 @@ CREATE TRIGGER IF NOT EXISTS pige_ad_doubt_keys_garde BEFORE DELETE ON pige_ad_d
 -- et que l'une des deux tait ses pièces :
 --   1. ce que B a dit d'elle en dernier, fermée, le dit, et elle n'a pas été rangée ouverte depuis ;
 --   2. sinon, sa dernière relève rangée le dit.
+-- Et la relève dont l'annonce a été revue et refusée depuis : ce qu'elle dit aujourd'hui compte, pas sa vieille relève.
 -- B compte alors si sa clé ou l'une des empreintes qu'elle a portées est fermée (« pas d'agence » ou non). S'ajoute le
 -- bien sans pièces fermé à 1 m² près, qui pourrait être tout bien de cette surface. Le doute ne passe jamais d'un bien à un
 -- troisième : seule une fermeture rangée sur B compte, jamais un doute sur B.
@@ -70,6 +71,16 @@ SELECT a.ad_id AS ad_id
      OR EXISTS (SELECT 1 FROM pige_ad_doubt_keys ck JOIN pige_ads c ON c.id = ck.ad_id
                   JOIN pige_oppositions o ON o.network_id = c.network_id AND o.fingerprint = c.fingerprint
                  WHERE ck.network_id = bk.network_id AND ck.ref_key = bk.ref_key))
+UNION ALL
+-- L'annonce elle-même revue et refusée depuis sa dernière relève rangée : ce qu'elle dit aujourd'hui l'a fermée, ses
+-- vieilles relèves ne rouvrent rien.
+SELECT a.ad_id AS ad_id
+  FROM pige_ad_doubt_keys a
+ WHERE a.exact = 1
+   AND EXISTS (SELECT 1 FROM pige_closed_descriptions d
+                WHERE d.network_id = a.network_id AND d.ref_key = a.ref_key
+                  AND d.noted_at >= (SELECT max(c.collected_at) FROM pige_ad_doubt_keys ck JOIN pige_ads c ON c.id = ck.ad_id
+                                      WHERE ck.network_id = a.network_id AND ck.ref_key = a.ref_key AND ck.exact = 1))
 UNION ALL
 SELECT a.ad_id AS ad_id
   FROM pige_ad_doubt_keys a
