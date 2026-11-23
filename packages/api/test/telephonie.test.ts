@@ -449,6 +449,32 @@ describeWithSqlite('AU045 · le vrai raccordement téléphonique de l’assistan
     expect(await w.db.first('SELECT ended_at IS NOT NULL AS ended FROM voice_assistant_sessions')).toEqual({ ended: 1 });
   });
 
+  it('[R710][R13] la fin tombe après un au revoir rangé : la réponse est dite, la panne est écrite au journal, la reprise finit l’appel', async () => {
+    const w = await world();
+    const sid = w.newSid();
+    await w.ring(sid);
+    await w.speak(sid, 'Oui.');
+    await w.speak(sid, 'Je voudrais un rendez-vous.');
+    await w.speak(sid, 'Le premier.');
+    w.hooks.push({
+      match: /^UPDATE calls SET/,
+      run: async () => {
+        throw new Error('panne de la base');
+      },
+    });
+    const goodbye = await w.speak(sid, 'Oui.');
+    expect(goodbye.status).toBe(200);
+    expect(w.said(goodbye.text).join(' ')).toContain('C’est réservé');
+    const events = await w.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'voix.telephonie_fin_echec'");
+    expect(events).toHaveLength(1);
+    expect(events[0]!.data).not.toContain(CALLER);
+    // Sans nouvelle du service, l'appel est repris une fois le silence passé.
+    const base = w.now().getTime();
+    expect(await runTelephoniePass({ db: w.db, now: () => new Date(base + 31 * 60_000), linkBase: null })).toBe(1);
+    const start = (await w.db.first<{ start_at: string }>('SELECT start_at FROM appointments'))!.start_at;
+    expect(await w.db.all('SELECT appointment_start FROM voice_assistant_calls')).toEqual([{ appointment_start: start }]);
+  });
+
   it('[R710][R18] reprise cinq heures plus tard : l’appel est rangé avec l’heure de fin dite par le service', async () => {
     const w = await world();
     const sid = w.newSid();

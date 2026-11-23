@@ -345,7 +345,13 @@ export async function handleTelephonie(request: Request, path: string, config: T
         if (again) await endSession(config, assistant, row.id, again).catch(() => release(config.db, row.id, again));
       }
       if (!stored) throw error;
-      // L'état est rangé : la réponse est dite, la fin sera reprise par le passage de reprise.
+      // L'état est rangé : la réponse est dite, la fin sera reprise par le passage de reprise. La panne est écrite au
+      // journal (sa nature seulement, ni numéro ni parole), pour rester visible même si la reprise réussit [R13, R710].
+      await appendEvent(
+        journal,
+        { type: 'voix.telephonie_fin_echec', actor: 'system', subject: 'telephonie', data: { rule: 'R710', error: error instanceof Error ? error.name : 'unknown' } },
+        config.now,
+      ).catch(() => undefined);
     }
     return turn!.done ? hangUp(turn!.say) : listen(turn!.say, tourUrl(turn!.state.turns));
   }
