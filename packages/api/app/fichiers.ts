@@ -319,6 +319,9 @@ export const APP_JS = `'use strict';
   function writeDirectionKey(v) { try { localStorage.setItem(KEY_DIRECTION, v); return true; } catch (e) { return false; } }
   // Sans argument : la sortie efface les deux clés. Avec une clé refusée : seule celle-ci est effacée, l'autre reste.
   function forgetKey(refused) {
+    // AU104 : le mode privé de la clé oubliée s'efface [R676].
+    var k = refused || readKey();
+    if (k) offline(function (H) { H.oublier(k); });
     [KEY, KEY_DIRECTION].forEach(function (slot) {
       try { if (refused === undefined || localStorage.getItem(slot) === refused) localStorage.removeItem(slot); } catch (e) { /* rien à effacer */ }
     });

@@ -29,10 +29,10 @@ export type EntreeReprise =
 /** Les tables qui portent la colonne `network_id`. */
 export const TABLES_RESEAU: readonly string[] = `
   academy_alerts academy_attendance academy_completions academy_modules academy_prior_entries academy_sessions access_invitations
-  access_keys acquisition_fee_scales ad_campaign_contacts ad_campaigns address_score_mandates address_scores
+  access_keys acquisition_fee_scales ad_campaign_arrivals ad_campaign_contacts ad_campaigns address_score_mandates address_scores
   after_sale_choices after_sale_reminders after_sale_tasks after_sale_unsubscribe_tokens agency_delegations
   agency_fee_statements agency_partner_invoices agency_shares agency_visits agent_absences agent_alerts
-  agent_availabilities agent_cost_assignments agent_cost_settings agent_departure_handovers
+  agent_availabilities agent_capacities agent_cost_assignments agent_cost_settings agent_departure_handovers
   agent_departure_reassignments agent_departures agent_exit_access_revocations agent_exit_accesses agent_export_authorizations agent_exports agent_file_alerts agent_file_pieces
   agent_import_contacts agent_import_history agent_import_properties agent_import_property_addresses agent_import_property_pieces agent_import_referrals
   agent_import_reminder_closures agent_import_reminders agent_language_declarations
@@ -40,7 +40,7 @@ export const TABLES_RESEAU: readonly string[] = `
   agent_pairs agent_public_cards agent_push_log agent_push_sends agent_pushes agent_referents agent_review_links
   agent_time_saved agent_whatsapp_alerts agent_zones agents alert_unsubscribe_tokens appointment_briefs
   appointment_reports appointment_tasks appointments assistance_requests assistant_calls assistant_keys
-  assistant_sessions attach_log attributions automation_daily_messages automation_rollouts automation_runs
+  assistant_sessions attach_log attribution_capacity attributions automation_daily_messages automation_rollouts automation_runs
   automation_scenarios automation_simulations automation_switches automation_tasks bank_allocations bank_lines bank_reconciliations
    business_access_requests business_buyer_profiles business_dossier_accesses
   business_dossier_documents business_dossier_link_revocations business_dossier_links business_dossier_open_codes
@@ -51,14 +51,14 @@ export const TABLES_RESEAU: readonly string[] = `
   business_valuation_scales business_valuation_validations business_valuations buyer_searches buyer_search_areas buyer_search_confirmations call_notes
   callback_tasks calls candidate_content_origins candidate_decisions candidate_interview_outcomes
   candidate_interviews candidate_replies candidates card_holders agent_title_settings portal_operations client_date_messages client_date_texts client_dates
-   client_space_favorites client_space_links client_space_sessions commission_grids commission_grid_tiers commission_tier_picks
+   client_space_favorites client_space_links client_space_sessions commission_grids commission_grid_tiers commission_tier_picks commission_revisions
   commission_payouts commission_receipts commissions commune_rental_rules complaint_alerts complaint_answers
   complaint_mediator_offers complaint_settings complaints consents contact_ai_engines
   contact_keys contact_origins contact_scores contact_vitrines conversation_handovers coownership_summaries
   custom_reports daily_plans data_breach_cuts data_breaches diffusion_photo_descriptions diffusion_photo_subjects diffusion_portal_checks
   diffusion_portal_choices diffusion_portal_feedback diffusion_portal_settings diffusion_portal_suspensions
-  diffusion_portal_tasks diffusion_portal_texts document_checks document_co_mandants document_mandant_rights document_proxies document_templates documents person_domiciles property_designations property_positions property_sanitation property_installations local_hazard_orders dpe_alert_items
-  dpe_diagnoses dpe_letters dpe_watch_sectors dpe_watch_stops erasure_object_targets exclusions fee_schedules floor_plans 
+  diffusion_portal_tasks diffusion_portal_texts document_checks document_co_mandants document_mandant_rights document_proxies document_templates documents person_domiciles property_designations valuation_addresses property_positions property_sanitation property_installations local_hazard_orders dpe_alert_items
+  dpe_diagnoses dpe_letters dpe_watch_sectors dpe_watch_stops erasure_object_targets erasure_text_wipes exclusions fee_schedules floor_plans 
      gbp_claims gbp_drafts gbp_locations gbp_reviews
   gbp_sends generated_videos human_replies identity_checks import_keys inbound_message_keys inbound_messages investment_calculations
   investment_notes investor_alerts investor_profiles invoice_drafts invoice_real_numbers invoice_reminders invoices legal_basis_checks
@@ -68,7 +68,7 @@ export const TABLES_RESEAU: readonly string[] = `
   mandate_price_gap_settings mandate_questionnaires mandate_register mandate_register_settings mandate_source_costs
   mandate_source_decisions mandate_tasks mandate_withdrawals mandates market_rent_imports mcp_drafts message_kinds
   message_subjects messages missed_promise_tasks morning_reports neighbourhood_campaigns neighbourhood_drafts
-  neighbourhood_facts neighbourhood_letters network_discount_dismissals network_discounts network_news
+  neighbourhood_facts neighbourhood_letters network_communes network_discount_dismissals network_discounts network_news
   network_news_deliveries new_programs newsletter_editions newsletter_letters newsletter_unsubscribe_tokens
   notary_draft_differences notary_drafts offer_buyer_shares offer_checks offer_co_buyers offer_proposals offer_register offer_responses offer_tasks
   offer_transmissions offer_untransmitted_alerts offline_ops old_contact_followups old_contact_moments outbound_refs
@@ -104,15 +104,18 @@ export const TABLES_RESEAU: readonly string[] = `
    thank_you_tasks training_cases training_sessions valuation_deliveries valuation_market_snapshots
   valuation_reports value_tracking value_tracking_alerts verified_review_invites verified_reviews
   viager_calculations video_montages video_text_checks   
-  virtual_stagings virtual_tour_contacts virtual_tours visit_dossiers visit_field_notes visit_photos visit_reports
+  virtual_stagings virtual_tour_contacts virtual_tours visit_dossiers visit_field_notes visit_photo_files visit_photos visit_reports
   visit_safety visit_energy_audit_handovers visit_shot_skips visit_slip_signatures visit_slip_templates visit_slips visit_tasks visits vitrine_screens
-  voice_assistant_calls voice_assistant_lines voice_notes weekly_points
+  voice_assistant_calls voice_assistant_lines voice_assistant_sessions voice_note_recoveries voice_notes weekly_points
 `.trim().split(/\s+/);
 
 /** Les autres tables : un chemin vers une table reprise, ou la raison de les laisser. */
 export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   fee_schedule_tiers: { via: [['schedule_id', 'fee_schedules', 'id']] },
   ad_campaign_approvals: { via: [['campaign_id', 'ad_campaigns', 'id']] },
+  ad_campaign_failures: { via: [['campaign_id', 'ad_campaigns', 'id']] },
+  ad_campaign_start_modes: { via: [['approval_id', 'ad_campaign_starts', 'approval_id']] },
+  ad_campaign_receipts: { via: [['campaign_id', 'ad_campaigns', 'id'], ['approval_id', 'ad_campaign_starts', 'approval_id']] },
   ad_campaign_launches: { via: [['approval_id', 'ad_campaign_starts', 'approval_id']] },
   ad_campaign_repauses: { via: [['approval_id', 'ad_campaign_stops', 'approval_id']] },
   ad_campaign_spend: { via: [['campaign_id', 'ad_campaigns', 'id']] },
@@ -154,6 +157,7 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   diffusion_portal_text_validations: { via: [['text_id', 'diffusion_portal_texts', 'id']] },
   first_reply_claims: { via: [['inbound_id', 'inbound_messages', 'id']] },
   gbp_validations: { via: [['draft_id', 'gbp_drafts', 'id']] },
+  gbp_receipts: { via: [['send_id', 'gbp_sends', 'id']] },
   invoice_facturx: { via: [['invoice_id', 'invoices', 'id']] },
   invoice_transmission_claims: { via: [['invoice_id', 'invoices', 'id']] },
   invoice_transmissions: { via: [['invoice_id', 'invoices', 'id']] },
@@ -168,6 +172,7 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   life_table_rows: { via: [['table_id', 'life_tables', 'id']] },
   listing_pushes: { via: [['version_id', 'listing_versions', 'id']] },
   listing_version_media_sheets: { via: [['version_id', 'listing_versions', 'id']] },
+  voice_call_endings: { hors: 'technique', why: 'Fin d\'un appel dite par le service téléphonique : son identifiant et l\'heure, aucun réseau ni numéro (AU045).' },
   portal_sync_leases: { hors: 'technique', why: 'Bail de quelques minutes posé pendant un passage vers les portails : un jeton, aucune donnée.' },
   listing_sync_leases: { hors: 'technique', why: 'Bail de quelques minutes posé pendant une synchronisation des annonces : un jeton, aucune donnée.' },
   mailbox_attachment_links: { via: [['attachment_id', 'mailbox_attachments', 'id'], ['mail_id', 'mailbox_mails', 'id']] },
@@ -232,6 +237,9 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   shop_order_validations: { via: [['order_id', 'shop_orders', 'id']] },
   social_calendar_outcomes: { via: [['slot_id', 'social_calendar_runs', 'slot_id']] },
   social_calendar_runs: { via: [['slot_id', 'social_calendar_slots', 'id']] },
+  social_live_attempts: { via: [['post_id', 'social_posts', 'id']] },
+  social_live_removals: { via: [['attempt_id', 'social_live_attempts', 'id']] },
+  social_live_sends: { via: [['attempt_id', 'social_live_attempts', 'id']] },
   social_post_attempts: { via: [['post_id', 'social_posts', 'id']] },
   social_post_sends: { via: [['attempt_id', 'social_post_attempts', 'id']] },
   social_post_validations: { via: [['post_id', 'social_posts', 'id']] },
@@ -265,6 +273,7 @@ export const COLONNES_MASQUEES: Readonly<Record<string, readonly string[]>> = {
   gbp_reviews: ['author_token_hashes'],
   listing_sync_leases: ['token'],
   portal_sync_leases: ['token'],
+  voice_assistant_sessions: ['lease_token'],
   newsletter_unsubscribe_tokens: ['token_hash'],
   owner_booklet_links: ['token_hash'],
   partner_prospect_mails: ['optout_token_sha256'],
@@ -297,8 +306,8 @@ export const ORDRE_REPRISE: readonly string[] = `
   fee_schedule_tiers
   rental_lease_cotenant_copy_deliveries rental_lease_cotenants rental_lease_cotenant_revisions rental_cotenant_changes rental_lease_cotenant_signatures
   academy_alerts academy_attendance academy_completions academy_prior_entries quiz_questions academy_modules academy_sessions access_keys
-  access_invitations acquisition_fee_scales ad_campaign_launches ad_campaign_starts ad_campaign_repauses
-  ad_campaign_stops ad_campaign_approvals ad_campaign_contacts ad_campaign_spend ad_campaigns address_score_mandates
+  access_invitations acquisition_fee_scales ad_campaign_start_modes ad_campaign_receipts ad_campaign_launches ad_campaign_starts ad_campaign_repauses
+  ad_campaign_stops ad_campaign_approvals ad_campaign_arrivals ad_campaign_failures ad_campaign_contacts ad_campaign_spend ad_campaigns address_score_mandates
   address_scores after_sale_choices after_sale_reminders after_sale_tasks after_sale_unsubscribe_tokens
   agency_delegation_files agency_delegation_steps agency_partner_invoices agency_fee_statements agency_visits_done
   agency_visits commission_agency_shares agency_delegations agency_shares agenda_cursors agent_absences agent_alerts
@@ -309,19 +318,19 @@ export const ORDRE_REPRISE: readonly string[] = `
   agent_likeness_revocations generated_videos agent_likeness_consents agent_notification_settings
   agent_notifications agent_onboardings agent_pairs agent_public_cards agent_push_log agent_push_trial_outbox
   agent_push_sends agent_pushes agent_referents agent_review_links agent_time_saved agent_whatsapp_alerts
-  agent_zones appointment_holds appointment_briefs appointment_calendar appointment_links appointment_reminders
+  agent_capacities agent_zones appointment_holds appointment_briefs appointment_calendar appointment_links appointment_reminders
   appointment_reports appointment_tasks presentation_ratings property_key_partner_returns property_key_partner_loans property_key_returns property_key_loans safety_alerts
-  visit_field_notes visit_photos visit_shot_skips remote_slip_signatures remote_visits visit_dossiers visit_reports
+  visit_field_notes visit_photo_files visit_photos visit_shot_skips remote_slip_signatures remote_visits visit_dossiers visit_reports
   visit_safety visit_slip_signatures visit_slips visit_tasks visit_energy_audit_handovers visits appointments assistance_alerts assistance_requests assistant_keys
-  attributions candidate_content_origins candidate_decisions candidate_interview_outcomes candidate_interviews
+  attribution_capacity attributions candidate_content_origins candidate_decisions candidate_interview_outcomes candidate_interviews
   candidate_replies recruiting_tasks candidates phrase_searches consents conversation_handovers daily_plans
   document_checks mandate_questionnaire_gap_acks mandate_questionnaires signature_remises signature_dossiers
   signature_validations signature_session_proxies signature_sessions signed_amendments
-  signed_documents document_co_mandants document_mandant_rights document_proxies documents person_domiciles property_designations property_positions property_sanitation property_installations local_hazard_orders dpe_letters dpe_alert_items dpe_watch_stops dpe_watch_sectors person_request_alerts
-  person_request_answers person_request_outputs person_requests erasure_object_targets exclusions gbp_claims gbp_sends gbp_validations
+  signed_documents document_co_mandants document_mandant_rights document_proxies documents person_domiciles property_designations valuation_addresses property_positions property_sanitation property_installations local_hazard_orders dpe_letters dpe_alert_items dpe_watch_stops dpe_watch_sectors person_request_alerts
+  person_request_answers person_request_outputs person_requests erasure_object_targets erasure_text_wipes exclusions gbp_claims gbp_receipts gbp_sends gbp_validations
   gbp_drafts gbp_locations gbp_reviews attach_claims attach_log contact_ai_engines contact_origins contact_vitrines
   first_reply_claims callback_tasks contact_scores qualification_corrections qualifications reception_log
-  virtual_tour_contacts inbound_message_keys inbound_messages mailbox_attachment_links mailbox_attachments mailbox_drafts mailbox_mails
+  voice_note_recoveries virtual_tour_contacts inbound_message_keys inbound_messages mailbox_attachment_links mailbox_attachments mailbox_drafts mailbox_mails
   mandate_tasks mandate_early_starts mandate_register mandate_withdrawals property_on_sale weekly_points mandates
   mcp_drafts message_kinds human_replies message_subjects outbound_refs property_alerts prospecting_sequence_steps
   sale_file_fund_alerts send_log send_reservations trial_outbox value_tracking_alerts messages missed_promise_tasks
@@ -336,7 +345,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   proposal_responses proposal_tasks proposal_transmissions offer_proposals offer_responses offer_tasks
   offer_transmissions offer_untransmitted_alerts commission_payout_alerts commission_payouts commission_receipts
   commission_shares commission_steps bank_allocations bank_reconciliations invoice_facturx invoice_reminders
-  invoice_real_statuses invoice_real_deposits invoice_real_numbers invoice_transmission_claims invoice_transmissions invoices invoice_drafts commission_tier_picks commissions coownership_summaries
+  invoice_real_statuses invoice_real_deposits invoice_real_numbers invoice_transmission_claims invoice_transmissions invoices invoice_drafts commission_revisions commission_tier_picks commissions coownership_summaries
   notary_draft_differences notary_drafts pre_contract_briefs pre_contract_deposits registered_letter_events
   registered_letters risk_statements sale_commissions sale_file_buyer_notices sale_file_closings sale_file_conditions sale_file_condition_tasks sale_file_dates sale_file_financing
   sale_file_financing_alerts sale_file_pieces sale_file_reminders sale_file_sellers sale_file_steps sale_file_stops
@@ -363,11 +372,11 @@ export const ORDRE_REPRISE: readonly string[] = `
   rental_applications rental_checks rental_fees rental_facts rental_listing_communes rental_owner_notices
   rental_fairness_receipts rental_presentations rental_listings shop_order_results shop_order_sends
   shop_order_validations shop_orders sign_pickup_tasks sign_removals sign_placements social_calendar_outcomes
-  social_calendar_runs social_calendar_slots social_post_sends social_post_attempts social_post_validations
+  social_calendar_runs social_calendar_slots social_live_removals social_live_sends social_live_attempts social_post_sends social_post_attempts social_post_validations
   social_visual_checks social_posts valuation_market_snapshots valuation_reports video_montages video_text_checks
   properties public_sites quiz_attestations quiz_attempts reprise_depot_morceaux reprise_depots sandbox_steps
   sandbox_runs social_calendar_rules sponsorships training_turns training_sessions vitrine_screen_switches
-  vitrine_screens voice_assistant_lines agents alert_unsubscribe_tokens assistant_calls assistant_sessions
+  vitrine_screens voice_assistant_sessions voice_assistant_lines agents alert_unsubscribe_tokens assistant_calls assistant_sessions
   automation_daily_messages automation_rollouts automation_tasks automation_runs automation_switches
   automation_simulations automation_scenarios bank_lines business_nda_templates business_safeguard_communes
   business_valuation_scales card_holders agent_title_settings client_date_texts commission_grid_tiers commission_grids commune_rental_rules complaint_settings
@@ -377,7 +386,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   licence_tariffs licensed_asset_withdrawals licensed_assets life_table_rows life_tables listing_settings
   mandate_clause_validations mandate_clause_versions mandate_price_gap_settings mandate_register_settings
   mandate_source_costs mandate_source_decisions market_rents market_rent_imports morning_reports
-  neighbourhood_validations neighbourhood_drafts neighbourhood_facts network_discount_withdrawals network_discounts
+  neighbourhood_validations neighbourhood_drafts neighbourhood_facts network_communes network_discount_withdrawals network_discounts
   network_news_withdrawals network_news newsletter_editions old_contact_followups old_contact_moments
   owner_booklet_links owner_booklets partner_agencies partner_prospect_mails partner_prospect_optouts
   partner_prospects partner_recommendation_submissions partner_recommendation_withheld partner_recommendations

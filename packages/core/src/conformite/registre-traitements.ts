@@ -40,6 +40,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       qualification_corrections: ['actor'],
       contact_scores: ['person_id', 'score', 'temperature', 'reason'],
       attributions: ['person_id', 'agent_id', 'reason'],
+      // AU041 : le nombre d'agents pleins quand la capacité a changé le choix, rien de personnel.
+      attribution_capacity: [],
       callback_tasks: ['person_id', 'reason'],
       // Le rappel d'un engagement manqué, par le responsable (IN12).
       missed_promise_tasks: ['person_id', 'agent_id', 'done_by', 'outcome'],
@@ -80,11 +82,15 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       inbound_message_keys: [],
       // HX23 : la transcription d'une note vocale et le lien vers son audio chez le canal.
       voice_notes: ['external_id', 'media_ref', 'transcript'],
+      // AU044 : la reprise d'une note non transcrite, avec le lien vers son audio chez le canal, et qui l'a faite.
+      voice_note_recoveries: ['voice_note_id', 'media_ref', 'done_by'],
       // HX21 : l'appel rattaché à la fiche, son enregistrement accepté, sa transcription et ce qui en est tiré.
       calls: ['call_id', 'person_id', 'recording_ref', 'transcript', 'fields', 'consent_announced_at', 'consent_given_at', 'origin_content_id'],
       call_journal: [],
       // HX22 : le passage de main de l'assistant vocal, rattaché à l'appel ; les sujets sans réponse avec l'accord seulement.
       voice_assistant_calls: ['agent_id', 'call_id', 'call_row_id', 'unanswered'],
+      // AU045 : l'état d'un appel en cours, avec le numéro de l'appelant, effacé à la fin de l'appel.
+      voice_assistant_sessions: ['agent_id', 'call_id', 'state', 'last_reply'],
       // HX24 : les scénarios automatiques de la direction, leurs essais, leurs passages et leurs tâches.
       automation_scenarios: ['created_by'],
       automation_simulations: ['created_by'],
@@ -141,6 +147,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
     sousTraitants: ['Hébergeur (Cloudflare : base, fichiers, travaux planifiés)', 'Fournisseur d\'IA (textes proposés, jamais décidés)'],
     tables: {
       valuation_reports: ['agent_id', 'agent_low', 'agent_high', 'text', 'text_by', 'validated_by'],
+      // AU052 : l'adresse vérifiée d'un bien, gardée pour le prochain avis de valeur.
+      valuation_addresses: ['address', 'postal_code', 'set_by'],
       valuation_deliveries: ['report_id', 'person_id', 'conversation_id', 'noted_by'],
       valuation_follow_ups: ['report_id'],
       // HX32 : le relevé du marché joint à l'avis par l'agent qui suit le bien ; ni nom ni adresse de concurrent.
@@ -174,7 +182,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       // HX12 : l'appli sans réseau ; la note de l'agent pendant la visite, sa saisie, et les chiffres des photos.
       offline_ops: ['agent_id', 'device_id', 'content_hash'],
       visit_field_notes: ['agent_id', 'body'],
-      visit_photos: ['agent_id'],
+      visit_photos: ['agent_id', 'image_sha256'],
+      // AU103 : le fichier de l'image entière, une photo de l'intérieur du bien.
+      visit_photo_files: ['photo_id', 'agent_id', 'media_key', 'sha256'],
       visit_shot_skips: ['agent_id', 'reason'],
       // HX13 : les notes que l'acquéreur donne à chaque pièce, à la fin de la visite.
       presentation_ratings: ['ratings', 'outcome', 'content_hash', 'recorded_by'],
@@ -501,6 +511,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       commission_grids: ['agent_rates', 'created_by'],
       commissions: ['agent_id', 'fee_cents', 'fee_charge'],
       commission_tier_picks: ['cumul_cents', 'rate_bp'],
+      commission_revisions: ['fee_before_cents', 'fee_after_cents', 'charge_before', 'charge_after', 'reason', 'shares_before', 'shares_after', 'approved_by'],
       commission_shares: ['beneficiary_id', 'reason', 'amount_cents'],
       commission_steps: ['proof_ref', 'by'],
       invoice_drafts: ['issuer', 'recipient_person_id', 'amount_cents'],
@@ -608,6 +619,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       assistant_keys: ['sha256', 'user_id', 'label', 'device_id'],
       agent_zones: ['agent_id', 'commune'],
       agent_availabilities: ['agent_id'],
+      // AU041 : la capacité que l'agent ou la direction déclare, avec sa raison.
+      agent_capacities: ['agent_id', 'reason', 'decided_by'],
       agent_public_cards: ['agent_id', 'phone', 'email', 'set_by'],
       // HX22 : le numéro de l'agent, vers lequel il renvoie ses appels sans réponse.
       voice_assistant_lines: ['agent_id', 'phone'],
@@ -653,6 +666,8 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       phase_openings: ['opened_by'],
       // HX72 : l'ouverture ou la fermeture d'une région, avec sa raison et qui l'a décidée.
       region_decisions: ['reason', 'decided_by'],
+      // AU039 : les communes du réseau, inscrites ou retirées par la direction, avec sa raison.
+      network_communes: ['commune', 'commune_key', 'reason', 'decided_by'],
       // HX73 : le tarif et les licences du logiciel aux agences hors réseau, avec qui les a décidés ; le nom d'une
       // agence et sa carte peuvent être ceux d'un entrepreneur individuel.
       licence_tariffs: ['reason', 'decided_by'],
@@ -759,6 +774,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       person_request_answers: ['answer_sha256', 'answered_by'],
       person_request_alerts: [],
       erasure_object_targets: ['object_key', 'storage', 'removed_at'],
+      erasure_text_wipes: ['row_id'],
     },
   },
   {
@@ -938,6 +954,9 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       social_post_validations: ['validated_by'],
       social_post_attempts: ['account', 'claimed_by'],
       social_post_sends: [],
+      social_live_attempts: ['account', 'claimed_by'],
+      social_live_sends: ['post_ref', 'url'],
+      social_live_removals: [],
       social_calendar_rules: ['agent_id', 'hours'],
       social_calendar_slots: ['agent_id', 'post_id'],
       social_calendar_runs: [],
@@ -961,6 +980,7 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       gbp_validations: ['draft_id', 'text_sha256', 'validated_by'],
       gbp_sends: ['agent_id', 'draft_id', 'info_sha256', 'sent_by'],
       gbp_claims: ['draft_id', 'claimed_by'],
+      gbp_receipts: ['send_id', 'ack_ref', 'url'],
     },
   },
   {
@@ -1001,6 +1021,11 @@ export const REGISTRE_TRAITEMENTS: readonly Traitement[] = [
       ad_campaign_repauses: [],
       ad_campaign_launches: [],
       ad_campaign_contacts: ['person_id'],
+      // AU038 : l'accusé de la plateforme, ses échecs, et les demandes arrivées par le lien d'une campagne.
+      ad_campaign_start_modes: [],
+      ad_campaign_receipts: ['external_ref'],
+      ad_campaign_failures: [],
+      ad_campaign_arrivals: ['inbound_id'],
     },
   },
   {
@@ -1065,6 +1090,7 @@ export const TABLES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, string>> = 
   listing_pushes: 'Résultat technique de chaque envoi d\'annonce à un portail.',
   portal_operations: 'Chaque geste envoyé à un portail (publier, modifier, retirer), avec la version publiée et l\'accusé du portail : aucune personne.',
   portal_sync_leases: 'Verrou d\'un passage vers les portails, le temps d\'un envoi.',
+  voice_call_endings: 'Fin d\'un appel dite par le service téléphonique (AU045) : son identifiant chez le service et l\'heure, sans numéro.',
   listing_views: 'Nombre de vues d\'une annonce par portail et par jour.',
   property_on_sale: 'Date de mise en vente d\'un bien, datée une fois depuis son mandat.',
   base_copy_alerts: 'Les nuits sans copie réussie : une date et un instant.',
@@ -1120,8 +1146,10 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   send_quota_slots: ['network_id', 'kind', 'day', 'slot', 'reservation_id', 'created_at'],
   inbound_messages: ['id', 'network_id', 'dedup_key', 'channel', 'kind', 'property_ref', 'portal', 'has_attachment', 'status', 'message_id', 'received_at', 'created_at'],
   voice_notes: ['id', 'network_id', 'channel', 'status', 'failure', 'mime', 'language', 'confidence', 'created_at'],
+  voice_note_recoveries: ['id', 'network_id', 'inbound_id', 'channel', 'failure', 'mime', 'created_at', 'done_at'],
   call_journal: ['call_id', 'claimed_at', 'done'],
   voice_assistant_calls: ['id', 'network_id', 'provider', 'property_id', 'appointment_kind', 'appointment_start', 'created_at'],
+  voice_assistant_sessions: ['id', 'network_id', 'provider', 'turns', 'created_at', 'updated_at', 'ended_at', 'lease_token', 'lease_at'],
   automation_scenarios: ['id', 'version', 'network_id', 'definition', 'created_at'],
   automation_simulations: ['id', 'network_id', 'scenario_id', 'version', 'period_from', 'period_to', 'messages', 'reached', 'tasks', 'refused', 'same_day_twice', 'lit_revision', 'created_at'],
   automation_switches: ['id', 'network_id', 'scenario_id', 'version', 'lit', 'simulation_id', 'at', 'seq'],
@@ -1177,7 +1205,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   valuation_follow_ups: ['status', 'rule', 'message_id', 'mode', 'updated_at'],
   agent_availabilities: ['network_id', 'availability', 'updated_at'],
   appointments: ['id', 'network_id', 'property_id', 'kind', 'start_at', 'end_at', 'status', 'token_hash', 'source', 'replaces_id', 'created_at', 'updated_at', 'cancelled_at', 'confirmation_status', 'confirmation_channel', 'group_id'],
-  appointment_holds: ['layer', 'unit', 'appointment_id', 'released_at'],
+  appointment_holds: ['layer', 'unit', 'appointment_id', 'released_at', 'property_id'],
   appointment_calendar: ['appointment_id', 'event_id', 'synced_status', 'synced_start', 'state', 'last_error', 'updated_at'],
   agenda_cursors: ['cursor', 'updated_at'],
   appointment_reminders: ['appointment_id', 'kind', 'status', 'rule', 'message_id', 'mode', 'updated_at'],
@@ -1206,6 +1234,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   document_proxies: ['document_id', 'network_id', 'power_kind', 'granted_on', 'recorded_at'],
   document_mandant_rights: ['document_id', 'network_id', 'right_kind', 'recorded_at'],
   property_designations: ['id', 'network_id', 'property_id', 'version', 'set_at'],
+  valuation_addresses: ['id', 'network_id', 'property_id', 'version', 'set_at'],
   property_positions: ['id', 'network_id', 'property_id', 'version', 'source', 'designation_version', 'set_at'],
   person_domiciles: ['id', 'network_id', 'version', 'set_at'],
   fee_schedules: ['id', 'network_id', 'max_rate_bp', 'min_eur', 'set_at'],
@@ -1298,7 +1327,8 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   address_score_mandates: ['network_id', 'linked_at'],
   offline_ops: ['network_id', 'op_id', 'seq', 'kind', 'appointment_id', 'outcome', 'rule', 'code', 'written_at', 'received_at'],
   visit_field_notes: ['id', 'network_id', 'appointment_id', 'shot', 'written_at', 'received_at'],
-  visit_photos: ['id', 'network_id', 'appointment_id', 'shot', 'exposures', 'brightness', 'clipped', 'sharpness', 'taken_at', 'received_at'],
+  visit_photos: ['id', 'network_id', 'appointment_id', 'shot', 'exposures', 'brightness', 'clipped', 'sharpness', 'taken_at', 'received_at', 'image_width', 'image_height', 'image_bytes', 'kept_brightness', 'kept_clipped', 'kept_sharpness', 'kept_luma'],
+  visit_photo_files: ['network_id', 'bytes', 'deposited_at'],
   visit_shot_skips: ['id', 'network_id', 'appointment_id', 'shot', 'written_at', 'received_at'],
   presentation_ratings: ['appointment_id', 'network_id', 'property_id', 'rooms', 'rated_at'],
   pige_no_agency: ['network_id', 'fingerprint', 'noted_at'],
@@ -1318,6 +1348,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   listing_sync_leases: ['property_id', 'token', 'expires_at'],
   portal_operations: ['id', 'network_id', 'property_id', 'portal', 'n', 'op_key', 'version_id', 'seq', 'action', 'outcome', 'receipt', 'portal_listing_id', 'error_code', 'at'],
   portal_sync_leases: ['property_id', 'token', 'expires_at'],
+  voice_call_endings: ['provider', 'call_id', 'ended_at', 'created_at'],
   agent_public_cards: ['id', 'network_id', 'set_at'],
   agent_legal_mentions: ['id', 'network_id', 'legal_status', 'set_at'],
   video_text_checks: ['id', 'property_id', 'network_id', 'media_ref', 'outcome', 'checked_at'],
@@ -1343,6 +1374,10 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   ad_campaign_repauses: ['approval_id', 'asked_at', 'paused_at'],
   ad_campaign_launches: ['approval_id', 'outcome', 'done_at'],
   ad_campaign_contacts: ['campaign_id', 'network_id', 'arrived_at'],
+  ad_campaign_start_modes: ['approval_id', 'mode'],
+  ad_campaign_receipts: ['approval_id', 'campaign_id', 'mode', 'received_at'],
+  ad_campaign_failures: ['id', 'campaign_id', 'step', 'code', 'action', 'at'],
+  ad_campaign_arrivals: ['campaign_id', 'network_id', 'arrived_at', 'matched_at'],
   newsletter_editions: ['id', 'network_id', 'title', 'created_at'],
   newsletter_letters: ['edition_id', 'network_id', 'status', 'rule', 'properties', 'mode', 'created_at', 'updated_at'],
   newsletter_unsubscribe_tokens: ['token_hash', 'network_id', 'created_at', 'used_at'],
@@ -1423,6 +1458,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   commission_grids: ['id', 'network_id', 'version', 'valid_from', 'default_rate_bp', 'created_at'],
   commission_grid_tiers: ['grid_id', 'network_id', 'seq', 'from_cents', 'rate_bp'],
   commission_tier_picks: ['file_id', 'network_id', 'year', 'tier_seq', 'from_cents', 'created_at'],
+  commission_revisions: ['file_id', 'network_id', 'version', 'amendment_id', 'at'],
   commissions: ['file_id', 'network_id', 'mandate_id', 'compromis_on', 'grid_id', 'created_at'],
   commission_shares: ['file_id', 'seq', 'kind'],
   custom_reports: ['id', 'network_id', 'definition', 'created_at'],
@@ -1466,6 +1502,9 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   phase1_app_inventories: ['network_id', 'version', 'gohighlevel', 'manychat', 'site', 'github_actions', 'autre', 'declared_at'],
   phase_openings: ['network_id', 'phase', 'opened_at', 'evidence', 'evidence_hash'],
   region_decisions: ['network_id', 'version', 'region', 'is_open', 'decided_at', 'phase5_hash', 'prev_hash', 'hash'],
+  network_communes: ['network_id', 'insee_code', 'version', 'is_listed', 'decided_at'],
+  agent_capacities: ['network_id', 'version', 'capacity', 'decided_at'],
+  attribution_capacity: ['attribution_id', 'network_id', 'full_agents', 'created_at'],
   licence_tariffs: ['network_id', 'version', 'monthly_cents', 'decided_at'],
   software_licences: ['id', 'network_id', 'licensee_network_id', 'department', 'tariff_version', 'monthly_cents', 'phase5_hash', 'granted_at'],
   licence_states: ['licence_id', 'version', 'state', 'decided_at'],
@@ -1542,6 +1581,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   person_request_answers: ['request_id', 'answered_on', 'late', 'answered_at'],
   person_request_alerts: ['request_id', 'kind', 'created_at'],
   erasure_object_targets: ['request_id', 'network_id', 'noted_at'],
+  erasure_text_wipes: ['wiped_table', 'request_id', 'network_id', 'wiped_at'],
   prospect_retention_cycles: ['id', 'network_id', 'reached_on', 'listed_on', 'answer_due_on', 'request_mode', 'created_at'],
   prospect_retention_outcomes: ['cycle_id', 'outcome', 'mode', 'decided_on', 'created_at'],
   data_breaches: ['id', 'network_id', 'aware_at', 'deadline_at', 'recorded_at'],
@@ -1677,6 +1717,9 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   social_post_validations: ['post_id', 'validated_at'],
   social_post_attempts: ['id', 'post_id', 'channel', 'attempt', 'mode', 'claimed_at'],
   social_post_sends: ['attempt_id', 'outcome', 'done_at'],
+  social_live_attempts: ['id', 'post_id', 'channel', 'attempt', 'mode', 'claimed_at'],
+  social_live_sends: ['attempt_id', 'outcome', 'error_code', 'action', 'done_at'],
+  social_live_removals: ['id', 'attempt_id', 'outcome', 'error_code', 'done_at'],
   social_calendar_rules: ['id', 'network_id', 'version', 'instagram', 'facebook', 'linkedin', 'google', 'tiktok', 'youtube', 'effective_day', 'created_at'],
   social_calendar_slots: ['id', 'network_id', 'rules_id', 'day', 'channel', 'rank', 'property_id', 'due_at', 'booked_at'],
   social_calendar_runs: ['slot_id', 'claimed_at'],
@@ -1688,6 +1731,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   gbp_validations: ['validated_at'],
   gbp_sends: ['id', 'network_id', 'kind', 'mode', 'outcome', 'sent_at'],
   gbp_claims: ['id', 'network_id', 'target', 'mode', 'attempt', 'claimed_at'],
+  gbp_receipts: ['error_code', 'action', 'done_at'],
   public_sites: ['id', 'network_id', 'kind', 'active', 'set_at'],
   seo_signals: ['id', 'network_id', 'change', 'fingerprint', 'mode', 'outcome', 'at'],
   public_contents: ['id', 'network_id', 'kind', 'created_at'],

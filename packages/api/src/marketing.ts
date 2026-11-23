@@ -11,14 +11,16 @@
  *   publication [R582, R26] ;
  * - la lettre ne fait qu'ouvrir une édition et tirer le magazine ; l'envoi d'une édition est un travail planifié
  *   (`marketing-passage.ts`, BR112), avec sa page de désinscription [R583, R584] ;
- * - les campagnes ne parlent qu'aux plateformes du mode essai [R587] ; la dépense et les contacts sont lus par un
- *   travail planifié (`recordSpend`, `recordContact`, `runChecks`), jamais saisis par une route [R588].
+ * - les campagnes ne parlent qu'aux plateformes du mode essai, sauf celles que le Worker a mises en service avec leur
+ *   plafond (AU038, H63) [R587] ; la dépense et les contacts sont lus par un travail planifié (`runAdsPass` :
+ *   `matchArrivals`, `syncSpend`, `runChecks`), jamais saisis par une route [R588].
  */
 import { Acces, FicheClient, FicheUnique, appendEvent, type JournalStore, type SqlDatabase, type Viewer } from '@aimmo/core';
 import { computeMentions, MentionsAnnonce } from '../../core/src/annonces/mentions.ts';
 import { OrigineContacts } from '../../core/src/attirer/origine-contacts.ts';
 import { Diffusion } from '../../core/src/documents/retractation.ts';
 import { CalendrierPublications, LettreInformation, PublicitePayante, trialAdPlatform, type PublicationGate } from '../../core/src/marketing/index.ts';
+import type { AdsSettings } from './publicite-reelle.ts';
 
 export const TRIAL_MODE = 'essai';
 const MAX_BODY_BYTES = 8_000;
@@ -28,6 +30,8 @@ export interface MarketingServices {
   db: SqlDatabase;
   journal: JournalStore;
   now: () => Date;
+  /** AU038 : les plateformes de la publicité rangées par le Worker (H63) ; absentes, l'essai seul. */
+  ads?: AdsSettings | null;
 }
 
 type Role = Viewer['role'];
@@ -142,8 +146,11 @@ export function letterService(s: MarketingServices, unsubscribeBase: string | nu
   });
 }
 
-/** Les plateformes publicitaires du mode essai seulement : rien ne se paie [R587, R26]. */
-const publicite = (s: MarketingServices) => new PublicitePayante(s.db, s.journal, { google_ads: trialAdPlatform(), meta: trialAdPlatform() }, { now: s.now });
+/** Les plateformes publicitaires de l'essai, ou celles mises en service par le Worker avec leur plafond (AU038) [R587]. */
+const publicite = (s: MarketingServices) =>
+  s.ads
+    ? new PublicitePayante(s.db, s.journal, s.ads.platforms, { now: s.now, ...(s.ads.realCapCents ? { realCapCents: s.ads.realCapCents } : {}) })
+    : new PublicitePayante(s.db, s.journal, { google_ads: trialAdPlatform(), meta: trialAdPlatform() }, { now: s.now });
 
 /** Les routes de `/v1/marketing`, à ajouter à celles de `app.ts`. */
 export function marketingRoutes(): MarketingRoute[] {

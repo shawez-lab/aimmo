@@ -25,6 +25,7 @@ import {
   type Viewer,
   type VisitReport,
 } from '@aimmo/core';
+import { AgendaUnavailableError, agendaBusyOf, type AgendaDirectory } from './agenda-reel.ts';
 
 /** Une dictée de 5 000 caractères, accents et échappements compris, et ce qui l'accompagne. */
 export const MAX_DICTEE_BODY_BYTES = 32_000;
@@ -39,6 +40,8 @@ export interface DicteeServices {
   now: () => Date;
   /** L'IA qui rédige le compte rendu d'une visite d'après la dictée (BR103), la même que celle de l'écran de la visite ; absente : aucun compte rendu proposé. */
   reportWriter?: ReportWriter | null;
+  /** AU053 · les agendas reliés des agents (H21, H53) : la dictée vérifie et réserve ses créneaux avec eux [R33, R702]. */
+  agendas?: AgendaDirectory | null;
 }
 
 export interface DicteeRoute {
@@ -96,6 +99,8 @@ function refused(r: Refusal): Response {
   if (r.rule === 'R16') return json(r.code === 'unknown' ? 404 : 403, body);
   if (r.rule === null && /^(bad|invalid)_/.test(r.code)) return json(400, body);
   if (r.code === 'unknown') return json(404, body);
+  // AU053 : l'agenda relié injoignable ; ce qui est déjà rangé est nommé dans `kept` [R702].
+  if (r.code === 'agenda_indisponible') return json(503, body);
   return json(409, body);
 }
 
@@ -103,7 +108,8 @@ function refused(r: Refusal): Response {
 function voix(s: DicteeServices): dictee.Dictee {
   const store = new FicheClient(s.db, { now: s.now });
   const fiche = new FicheUnique(s.db, store, { now: s.now });
-  const rendezVous = new RendezVous(s.db, s.journal, { now: s.now });
+  const agenda = agendaBusyOf(s.db, s.journal, s.agendas ?? null, s.now);
+  const rendezVous = new RendezVous(s.db, s.journal, { now: s.now, ...(agenda ? { agenda } : {}) });
   const visites = new Visites(s.db, s.journal, s.acces, { now: s.now, rendezVous });
   const comptes = new ComptesRendus(s.db, s.journal, visites, { now: s.now, ...(s.reportWriter ? { writer: s.reportWriter } : {}) });
   const biens = new NouveauBien(s.db, s.acces, s.journal, { now: s.now });
@@ -120,7 +126,13 @@ function agentOnly(run: (s: DicteeServices, viewer: Viewer, request: Request) =>
       const r = await voix(s).prepare(viewer, { dictation: '' });
       return r.ok ? json(500, { ok: false, rule: null, code: 'internal' }) : refused(r);
     }
-    return run(s, viewer, request);
+    try {
+      return await run(s, viewer, request);
+    } catch (error) {
+      // L'agenda relié de l'agent n'a pas pu être lu : rien n'est réservé, l'agent le sait [R702].
+      if (error instanceof AgendaUnavailableError) return json(503, { ok: false, rule: 'R702', code: 'agenda_indisponible' });
+      throw error;
+    }
   };
 }
 

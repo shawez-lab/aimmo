@@ -178,6 +178,8 @@ export class GestesModules implements GestesAcquereur {
         { type: 'espaces.geste_panne', actor: `client:${client.sessionId}`, subject: `person:${client.personId}`, data: { rule: 'R165', kind, error: error instanceof Error ? error.name : 'unknown' } },
         this.now,
       );
+      // AU053 : l'agenda relié de l'agent injoignable : rien n'est réservé, et le client le sait [R702].
+      if (error instanceof Error && error.name === 'AgendaUnavailableError') return refus('R702', 'agenda_indisponible');
       return refus(null, 'indisponible');
     }
   }

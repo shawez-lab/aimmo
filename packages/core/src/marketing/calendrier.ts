@@ -325,10 +325,13 @@ export class CalendrierPublications {
        WHERE s.network_id = ? AND p.agent_id = ?
          AND NOT EXISTS (SELECT 1 FROM social_post_attempts a JOIN social_post_sends d ON d.attempt_id = a.id
                          WHERE a.post_id = s.id AND a.channel = ? AND a.account = 'agent' AND d.outcome = 'envoye')
+         -- Une vraie publication (AU036) compte comme un essai réussi : elle est sortie.
+         AND NOT EXISTS (SELECT 1 FROM social_live_attempts a JOIN social_live_sends d ON d.attempt_id = a.id
+                         WHERE a.post_id = s.id AND a.channel = ? AND a.account = 'agent' AND d.outcome = 'envoye')
          -- Déjà réservée sous cette version sur ce réseau (même passée, manquée ou en échec) : la base ne la reprendrait pas.
          AND NOT EXISTS (SELECT 1 FROM social_calendar_slots k WHERE k.rules_id = ? AND k.post_id = s.id AND k.channel = ?)
        ORDER BY v.validated_at DESC, s.id`,
-      [viewer.networkId, viewer.userId, channel, rulesId, channel],
+      [viewer.networkId, viewer.userId, channel, channel, rulesId, channel],
     );
     const pending = new Set((await this.pendingSlots(viewer.userId, channel)).map((s) => s.post_id));
     return rows.filter((r) => EVENT_STATUSES[r.event].includes(r.status) && !pending.has(r.post_id));
@@ -353,11 +356,15 @@ export class CalendrierPublications {
    */
   private async outings(agentId: string, channel: SocialChannelName): Promise<Map<string, { count: number; lastAt: string }>> {
     const sent = await this.db.all<{ property_id: string; at: string }>(
-      `SELECT s.property_id, min(d.done_at) AS at FROM social_post_attempts a
-       JOIN social_post_sends d ON d.attempt_id = a.id JOIN social_posts s ON s.id = a.post_id
-       WHERE a.claimed_by = ? AND a.channel = ? AND a.account = 'agent' AND d.outcome = 'envoye'
+      `SELECT s.property_id, min(d.at) AS at FROM (
+         SELECT a.post_id, a.claimed_by, a.channel, a.account, d.outcome, d.done_at AS at FROM social_post_attempts a JOIN social_post_sends d ON d.attempt_id = a.id
+         UNION ALL
+         SELECT a.post_id, a.claimed_by, a.channel, a.account, d.outcome, d.done_at AS at FROM social_live_attempts a JOIN social_live_sends d ON d.attempt_id = a.id
+       ) d JOIN social_posts s ON s.id = d.post_id
+       WHERE d.claimed_by = ? AND d.channel = ? AND d.account = 'agent' AND d.outcome = 'envoye'
        GROUP BY s.id, s.property_id`,
-      // Les sorties de cet agent-là, depuis son compte : celles d'un ancien agent du bien ne comptent pas pour lui.
+      // Les sorties de cet agent-là, depuis son compte, essais et vraies publications (AU036) : celles d'un ancien
+      // agent du bien ne comptent pas pour lui.
       [`agent:${agentId}`, channel],
     );
     const pending = (await this.pendingSlots(agentId, channel)).map((s) => ({ property_id: s.property_id, at: s.due_at }));

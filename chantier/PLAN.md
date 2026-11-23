@@ -280,7 +280,9 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H29).
 
 ### AU020b · Les tables en ajout seul du bien d'un vendeur effacé
-- Statut : bloquée : garder d'office les textes du bien ne prouve pas qu'ils sont sans nom (3 P0 de Codex sur #715)
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#773, 3d0b5164), #715 fermée. Fiche du bien gardée d'office (valeurs contrôlées, plan « garder » avec sa raison) ; brouillon d'annonce vidé par la seule voie de la migration 4099 (note dans `erasure_text_wipes`, puis « [effacé] »), jamais publié ni validable ensuite ; le rejeu après restauration le vide de nouveau. Relecture forte : 2 P1 corrigés ; Codex rien à signaler ; vérification GitHub verte. Restent « restantes » les copies à texte libre du brouillon (`listing_translations`, `listing_versions`, `diffusion_portal_texts`) : même voie possible dans une prochaine tâche.
+- Décidé (2026-11-22, voie 2) : nouvelle approche, texte du brouillon vidé par une voie de la migration, fiche du bien gardée (valeurs contrôlées) ; #773.
 - Décidé (2026-11-20, voie 2) : branche `chantier/AU020b` gardée, #715 ouverte sans fusion. Essai fait : une liste blanche `PROPERTY_DESCRIPTION` classait « garder » les tables en ajout seul qui décrivent le bien, et le lien de la personne au bien partait. Relecture forte, 1 P1 : texte libre de `property_details` et `diffusion_portal_feedback`. Codex, 3 P0 : liens et références importées, puis traductions corrigées, puis brouillons et textes des portails. Tous laissent passer un nom de vendeur. Prochaine approche : une migration prévoit une voie qui vide le texte libre de ces tables (table d'effacement des textes, lue par les lecteurs des annonces : lecteurs du socle, donc à voir avec la voie 1) ; seules les tables à valeurs fermées sont gardées d'office (`property_sheets`, sujets des photos, choix des portails, validations). Les tables qui portent l'adresse exacte (`sign_placements`, `pige_properties`) suivent la même voie.
 - Qui : Claude, voie 2 · Relecture : forte · Dépend de : AU020
 - Cahier : Conformité ; audit A020, endroit : packages/core/src/conformite/effacement-reel.ts ; `listing_drafts`, `property_sheets`.
@@ -437,107 +439,123 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#754, e0df09b0). Fournisseur HTTP (`PIGE_SOURCE_URL`, `PIGE_SOURCE_TOKEN`, `PIGE_NETWORK_ID`), relève à 6 h, table `pige_runs`, `GET /v1/pige/etat`, date et alerte à l'écran ; R671. Codex : 2 P0 et 1 P1 corrigés, puis rien.
 
 ### AU035 · Deux appartements de même surface dans la même commune peuvent être pris pour le même bien, y compris pour…
-- Statut : en cours
+- Statut : bloquée : le doute (pièces tues) ne se voit pas en base, les déclencheurs de 1816 ne refusent qu'une empreinte exacte
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A035 (majeur), endroit : C/pige/pige.ts, reconnaissance du bien.
 - Constat de l'audit : Deux appartements de même surface dans la même commune peuvent être pris pour le même bien, y compris pour propager « pas d’agence ».
 - Objectif : Deux annonces distinctes de 65 m² dans la même commune restent distinctes tant qu’aucune preuve suffisante ne permet leur réunion.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : branche `chantier/AU035` gardée, #757 ouverte sans fusion (2026-11-21, voie 1). Fait sur la branche : empreinte avec les pièces quand elles sont dites, empreinte propre à l'annonce sans pièces, parcours sur preuve seulement, doute lu pour fermer (fermetures, messages préparés et remis), description notée d'une annonce fermée revue (migration 4064, table `pige_closed_descriptions`), R672 ; 11 tests [R672]. Codex : 9 P0 corrigés en six tours ; le dernier (juste) reste : une conversion directe en base d'une annonce fermée seulement dans le doute passe, car les déclencheurs de `pige_properties` et `pige_property_keys` ne lisent que l'empreinte exacte. Prochaine approche : rendre le doute lisible par la base, en ajout seul : pour chaque relève, une table de ses empreintes « bien sans pièces » à 1 m² près ; pour chaque fermeture d'une annonce sans pièces, ces empreintes tant que sa dernière description tait ses pièces ; puis les déclencheurs de fermeture (`pige_ads`, `pige_drafts`, `pige_handovers`, `pige_properties`, `pige_property_keys`) joignent ces tables. Repartir de la branche.
 
 ### AU036 · Valider mes contenus ne les publie pas réellement sur mes réseaux sociaux
-- Statut : à faire
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A036 (majeur), endroit : C/annonces/publication.ts, `trialChannel` ; A/app.ts, marketing.
 - Constat de l'audit : Valider mes contenus ne les publie pas réellement sur mes réseaux sociaux : les canaux de l’application restent d’essai.
 - Objectif : Une publication autorisée apparaît sur chaque compte choisi avec lien, statut réel et traitement d’échec.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : fusionnée (#762, 6e701665), migration `4076`, R134 mise à jour. Vrais Facebook et Instagram du compte du réseau (`reseaux-meta.ts`), mis en service par le Worker seulement quand tout est rangé (H77, après H06) ; lien public relu chez le réseau ; échecs avec code et action ; issue inconnue jamais refaite ; confirmation réelle par cible vérifiée par le serveur ; retrait chez le réseau à l'annulation ou la rétractation, puis par le passage planifié, même envois coupés [R42]. Codex : 8 P0 et 2 P1 corrigés en six tours, puis rien à signaler. Restent : relier les comptes personnels des agents (aujourd'hui « relier ») ; LinkedIn, Google, TikTok, YouTube restent d'essai ; le calendrier (HX52) reste sur les canaux d'essai ; une publication « à vérifier » n'a pas encore de geste pour la rapprocher.
 
 ### AU037 · La fiche Google et les signaux de référencement restent servis en essai malgré les écrans disponibles
-- Statut : à faire
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A037 (majeur), endroit : A/app.ts, `attirerServices` ; H07.
 - Constat de l'audit : La fiche Google et les signaux de référencement restent servis en essai malgré les écrans disponibles.
 - Objectif : Une mise à jour autorisée de la fiche Google remonte son accusé réel et une erreur de connexion devient actionnable.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien (mise en service réelle : H07).
+- Reste : fusionnée (#766, da1f338a), migration `4077` (`gbp_receipts`), R154 mise à jour. Vrai client Google Business Profile (`fiche-google-reel.ts`), rangé par le Worker seulement quand tout est réglé (`GBP_MODE=reel`, client OAuth, secret, jeton de rafraîchissement : H07) ; la fiche seule passe en réel, pages et IndexNow restent d'essai. Accusé de Google gardé dans le même lot que l'envoi ; échec en code fermé et geste (reconnecter, relier, corriger, réessayer, vérifier), « à reconnecter » ou « à relier » tient jusqu'au prochain envoi confirmé ; publication à réponse perdue jamais refaite. Référence complète `accounts/…/locations/…` acceptée (le constat). Route `POST /v1/attirer/google/agents/<agent>/informations`, direction seule. Codex : 1 P0 et 2 P2, puis 1 P0, corrigés ; 1 P0 réfuté (lien public facultatif, R154 précisée) ; puis rien. Restent : lecture des avis et mise à jour non planifiées (geste à l'écran seulement).
 
 ### AU038 · Le module de publicité ne me permet pas encore de lancer une campagne réelle avec son suivi jusqu’au mandat
-- Statut : à faire
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A038 (majeur), endroit : chantier/HUMAIN.md, H63 ; A/worker.ts.
 - Constat de l'audit : Le module de publicité ne me permet pas encore de lancer une campagne réelle avec son suivi jusqu’au mandat.
 - Objectif : Une campagne test à budget plafonné est créée sur le compte réel et ses dépenses et demandes se rapprochent de la campagne.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien (mise en service réelle : H63).
+- Reste : fusionnée (#768, 9083dc81), migration `4090` (mode au lancement, accusés, échecs, demandes arrivées). Vrais Google Ads (v26) et Meta (catégorie « logement ») dans `publicite-reelle.ts`, mis en réel plateforme par plateforme par le Worker seulement quand tout est rangé, avec un plafond du budget total relu à la validation et au lancement (H63). Accusé rangé avant la réponse ; échec en code et geste ; une campagne partie en réel n'a jamais sa pause confirmée par l'essai. Passage du quart d'heure : demandes `?o=<code>` rapprochées des fiches, dépense des trois derniers jours lue, seuil contrôlé ; R587 et R588 mises à jour. Codex : 2 P0 et 2 P1 corrigés, puis rien. Restent : les lieux des communes se règlent à la main dans `ADS_LIEUX` ; chez Google, le rayon n'est pas envoyé (communes seules) ; textes des annonces réglés au Worker, pas encore à l'écran.
 
 ### AU039 · La qualification et la recherche restent bornées par défaut aux communes du pilote dijonnais
-- Statut : à faire
+- Statut : fait (2026-11-22)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A039 (majeur), endroit : C/qualification/regles.ts, `DEFAULT_COMMUNES` ; A/app.ts.
 - Constat de l'audit : La qualification et la recherche restent bornées par défaut aux communes du pilote dijonnais : « Lyon » ressort inconnu.
 - Objectif : La liste des communes et leurs codes INSEE provient du paramétrage géographique du réseau, sans modification du code.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Décidé (2026-11-21, voie 1) : constat confirmé (`DEFAULT_COMMUNES` écrit dans le code, seule liste de la qualification et de la recherche). Table `network_communes` (migration `4095`), en ajout seul, par versions : la direction inscrit une commune avec son code INSEE ou la retire, avec une raison (`GeographieReseau`, `packages/core/src/geographie/communes.ts`), R679. La qualification, la recherche en langage courant (lecture, voisines, rangement) et `GET /v1/attribution/regles` lisent la liste du réseau ; routes `GET`/`POST /v1/geographie/communes`. Un réseau qui n'a encore rien inscrit garde la liste du pilote, dite `defaut` : aucun code INSEE n'est écrit dans le code (les codes des 38 communes du pilote ne sont pas inventés, la direction les inscrit). Restent : les autres lecteurs de `DEFAULT_COMMUNES` (dictée, appels, fiche acquéreur seule, attribution, communes à pourvoir) et l'écran de la direction.
 
 ### AU040 · Un agent déclaré absent reste candidat à l’attribution dès lors que son statut est « active »
-- Statut : à faire
+- Statut : fait (2026-11-23)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A040 (majeur), endroit : C/qualification/attribution.ts, `agentsOf`.
 - Constat de l'audit : Un agent déclaré absent reste candidat à l’attribution dès lors que son statut est « active ».
 - Objectif : Pendant une absence, un nouveau lead suit la règle de remplacement prévue et ne reste pas en attente chez l’absent.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Décidé (2026-11-22, voie 1) : constat confirmé (`agentsOf` ne lit pas `agent_absences`). Branche `chantier/AU040`, proposition #771 laissée ouverte : R680 (absent jamais candidat ; client suivi au binôme, sinon direction ; nouveau contact à un présent de la commune, sinon au binôme présent d'un absent ; trace en ajout seul `attribution_absences`, migration `4096`), 36 tests. Codex : un P0 par tour sur les réattributions suivantes (binôme en retard, binôme absent, retour de l'absent, contact tenu par la direction). Autre approche à la reprise : ouvrir la fiche au binôme pendant l'absence dans `Acces` (`coversAt` de J09, fichiers du socle), laisser le contact attribué à l'absent sans réattribution, et ne retirer l'absent que des nouveaux contacts.
 
+- Fait (2026-11-23, voie 1) : autre approche, #791 (9e522805), #771 fermée. R680 : un agent absent ce jour (absence J09, heure de Paris) n'est plus candidat à l'attribution ni à la réattribution, passé comme un agent plein ; tous absents ou pleins : direction ; la base revérifie l'absence dans le lot qui attribue. Un client suivi reste à l'absent, sans réattribution ; son binôme ouvre la fiche par `Acces.readFiche` pendant l'absence seulement, au journal avec la référence de l'absence. Codex : 1 P0 (accès du binôme) corrigé, puis rien.
 ### AU041 · Le tirage fixe répartit les contacts sans plafond de charge ni disponibilité de rappel de l’agent
-- Statut : à faire
+- Statut : fait (2026-11-22)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A041 (majeur), endroit : C/qualification/attribution.ts, `chooseAgent`.
 - Constat de l'audit : Le tirage fixe répartit les contacts sans plafond de charge ni disponibilité de rappel de l’agent.
 - Objectif : Un agent à capacité déclarée nulle ne reçoit pas de nouveau lead ; la règle et la file de secours restent déterministes et visibles.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : fusionnée (#772, 7c0de947), migration `4097` (`agent_capacities`, `attribution_capacity`), R681. Capacité déclarée par l'agent pour lui ou par la direction (0 à 200, ou sans plafond, avec raison, versions en ajout seul) ; un agent plein est passé, file de secours fixe dans l'ordre des identifiants à partir du tiré, puis direction ; client déjà suivi gardé ; charge = fiches entières (réunies comprises) dont la dernière attribution est à l'agent sans message d'un agent depuis, revérifiée par la base dans le lot qui attribue ; égalité à la milliseconde lue prudemment (pas de `rowid`, R633). Routes `GET`/`POST /v1/attribution/capacites`. Codex : 3 P0 (course à l'écriture, fiches réunies, file arrêtée trop tôt) corrigés, 1 P0 (égalité d'heure) traité par la lecture prudente, puis rien. Restent : l'écran de déclaration ; la disponibilité de rappel par heures d'ouverture (AU042).
 
 ### AU042 · Le délai de rappel court en heures écoulées
-- Statut : à faire
+- Statut : fait (2026-11-22)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A042 (majeur), endroit : C/qualification/attribution.ts, `callback_hours`, réattribution.
 - Constat de l'audit : Le délai de rappel court en heures écoulées : un contact du samedi soir peut changer d’agent pendant une période où le rappel est fermé.
 - Objectif : Le délai tient compte des heures d’ouverture et des disponibilités de service avant de déclencher une réattribution.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : fusionnée (#775, 6ff9c1f2), `packages/core/src/qualification/delai-rappel.ts`, R682. Décidé, lecture prudente (le cahier dit seulement « délai de la charte de service ») : service de rappel du lundi au samedi, 8 h à 20 h, Paris, hors jours fériés (réglage `callbackWindow`) ; le délai part de la première ouverture, ne court pas un jour fermé, une limite hors des heures passe à l'ouverture suivante ; la nuit d'un jour ouvert compte, pour qu'un contact ne reste pas plus de deux jours sans rappel ; jamais plus tôt que l'heure écoulée. La réattribution, la tâche « rappeler », la liste des contacts chauds et la fiche de l'agent lisent la même limite, recalculée à la lecture (rien n'est réécrit). Codex : 4 P0 corrigés en trois tours (tâches déjà rangées, changement d'heure, réglage transmis à la fiche, heures élargies), puis rien. Restent : le réglage des heures par réseau à l'écran ; les absences d'agent (AU040).
 
 ### AU043 · Le Worker ne branche pas de fournisseur de boîte Gmail ou Outlook pour le tri annoncé
-- Statut : à faire
+- Statut : fait (2026-11-22)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A043 (majeur), endroit : A/worker.ts ; H55 ; module boîte mail.
 - Constat de l'audit : Le Worker ne branche pas de fournisseur de boîte Gmail ou Outlook pour le tri annoncé.
 - Objectif : Après connexion autorisée, un mail reçu dans la boîte personnelle de l’agent apparaît dans sa file et reste rattaché à son message d’origine.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien (mise en service réelle : H55).
+- Reste : fusionnée (#782, `8b8e44f9`), `packages/core/src/automatismes/boite-mail-reelle.ts`, `packages/api/src/boite.ts`, R683. Constat confirmé (interface et faux seulement, aucune route). Vrais Gmail (API v1) et Outlook (Graph `me/messages`, toute la boîte hors brouillons, supprimés, indésirables ; clés immuables), lecture seule, jeton de rafraîchissement par agent dans le secret `BOITE_JETONS` (`BOITE_MODE=reel`, clients OAuth) ; 50 mails au plus par lecture, les plus anciens d'abord, mails déjà triés autour du curseur hors du lot (`skip`, ajouté à `MailboxProvider`) ; texte au bon jeu de caractères et entités du HTML rendues (arrêt lu) ; copies cachées ; pièces lourdes jamais téléchargées. `GET /v1/boite` (la file) et `POST /v1/boite/lecture`, agent en activité seul ; passage des quarts d'heure. Codex : 13 P0 et 1 P1 en cinq tours, corrigés, puis rien. Restent : l'écran de la boîte ; les routes des pièces en attente et des réponses préparées ; l'accord pris à l'écran (OAuth dans l'application) au lieu du secret ; le jeton renouvelé par Microsoft n'est pas gardé ; le nombre d'appels du passage grandit avec les agents reliés.
 
 ### AU044 · Les vocaux n’ont pas de transcripteur réel branché et retombent sur la reprise manuelle
-- Statut : à faire
+- Statut : fait (2026-11-22)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A044 (majeur), endroit : A/worker.ts ; H52 ; C/voix/notes-vocales.ts.
 - Constat de l'audit : Les vocaux n’ont pas de transcripteur réel branché et retombent sur la reprise manuelle.
 - Objectif : Un vocal réel devient un texte traçable et une panne conserve l’audio accessible avec une tâche de reprise.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien (mise en service réelle : H52).
+- Reste : fusionnée (#783, `cd7d61e1`), migration `4108` (ajout seul), R696. Constat confirmé (aucun transcripteur, et `/v1/meta/notifications` n'appelait pas la chaîne des notes vocales). `transcripteur-reel.ts` : audio lu chez Meta (WhatsApp par l'API Graph et `WHATSAPP_MEDIA_TOKEN`, Instagram et Messenger à l'adresse donnée ; serveurs de fichiers de Meta seuls, 25 Mo, délai sur tout le corps), service compatible OpenAI `verbose_json`, confiance des segments (nulle sans eux). Panne : reprise unique liée au message illisible, `GET /v1/notes-vocales/reprises`, `…/<id>/audio`, `POST …/<id>/faite`, agent en activité ou direction. Codex : 1 P2 corrigé (délai), puis rien ; « Vérifier » rouge une fois (cascade interdite par R17), corrigé. Restent : l'écran de la file des reprises ; H52.
 
 ### AU045 · Aucun raccordement téléphonique réel du Worker ne prouve la réception des appels et le renvoi vers…
-- Statut : à faire
+- Statut : fait (2026-11-23)
+- Reprise (2026-11-23, voie 1) : fusionnée (#785, `87ec4d54`). Autre approche : le rendez-vous retrouvé l'est par la preuve d'accord qui porte la référence de l'appel (`bookingProofOf`), jamais par le seul créneau ; `AssistantVocal.finish` ne range aucun passage de main tant que HX21 rend `en_cours`, et reprend HX21 si un passage de main ancien pointe un appel inachevé ; une panne de fin après une réponse rangée est écrite au journal. 4 tests de plus (22). Codex : 1 P1 corrigé, puis rien.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A045 (majeur), endroit : A/worker.ts ; C/voix/appels.ts et assistant.ts.
 - Constat de l'audit : Aucun raccordement téléphonique réel du Worker ne prouve la réception des appels et le renvoi vers l’assistant vocal.
 - Objectif : Un appel sur le numéro déclaré produit le parcours d’accord, la fiche et le relais attendus, vérifiés depuis un téléphone extérieur.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
-- Attend : rien.
+- Attend : rien (mise en service réelle : H78).
+- Reste : branche `chantier/AU045`, proposition #785, vérification verte. Fait : `packages/api/src/telephonie.ts` (Twilio, signature, `/v1/telephonie/appel`, `/tour?n=`, `/fin`), migration `4112` (`voice_assistant_sessions`, `voice_call_endings`), motif de renvoi `conditional`, passage de reprise du quart d'heure, R710, H78, 18 tests. À reprendre : rattacher la réservation à l'appel par une référence écrite avec le rendez-vous ; `AssistantVocal.finish` ne doit rien ranger tant que `Appels.receive` rend `en_cours`.
+
+Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22, la voie 1 étant sur l'attribution)
 
 ### AU046 · En secteur pauvre en DVF ou non couvert, je ne peux même pas ouvrir un avis motivé avec mes propres…
-- Statut : à faire
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#774, `1fd422bb`). Constat confirmé (seul le refus R27). Avis motivé `manual` dans le corps de la route existante : 3 à 20 ventes vérifiées de l'agent, preuve d'une liste fermée, fourchette de l'agent revérifiée à l'ajustement et à la validation ; l'absence de fourchette automatique et sa raison sont dans le pied gardé par le code ; R690. Codex : 2 P0 corrigés, puis rien. Écran de saisie des ventes : avec AU052.
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A046 (majeur), endroit : C/estimation/preparation-avis.ts, refus `peu_de_ventes`.
 - Constat de l'audit : En secteur pauvre en DVF ou non couvert, je ne peux même pas ouvrir un avis motivé avec mes propres références vérifiées.
 - Objectif : Un avis manuel sourcé reste possible, avec validation humaine et absence clairement indiquée de fourchette automatique.
@@ -545,8 +563,9 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU047 · L’avis de valeur ne traite pas les terrains ni les immeubles, pourtant présents dans mon portefeuille
-- Statut : à faire
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#776, `095b62fb`). Constat confirmé (`not_a_home` pour tout sauf `home`). Terrain et immeuble par l'avis motivé de R690 seulement (`kind` = sa sorte), refus R27 `type` avec `manualPossible` sans ventes de l'agent ; prix au m² au centime (Codex 1 P0 corrigé, puis rien). Commerces : M16. Écran : avec AU052.
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A047 (majeur), endroit : C/estimation/preparation-avis.ts, `not_a_home`.
 - Constat de l'audit : L’avis de valeur ne traite pas les terrains ni les immeubles, pourtant présents dans mon portefeuille.
 - Objectif : Chaque type dispose d’un avis adapté ou d’un parcours manuel documenté, imprimable et validable.
@@ -554,8 +573,9 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU048 · La sélection privilégie la distance sans limite d’ancienneté ni ajustement temporel explicite des ventes…
-- Statut : à faire
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#777, `2399cfd0`). Constat confirmé (aucune borne d'ancienneté). Méthode : exclusion, sans correction (pas d'indice local publié et daté) ; fenêtre de 36 mois avant l'estimation (`maxSaleAgeMonths`), le rayon s'élargit plutôt que de garder une vente ancienne ; `window` rendue et dite dans le pied de l'avis ; R691. Codex rien à signaler ; vérification verte.
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A048 (majeur), endroit : C/estimation/fourchette.ts, sélection des comparables.
 - Constat de l'audit : La sélection privilégie la distance sans limite d’ancienneté ni ajustement temporel explicite des ventes retenues.
 - Objectif : Une fenêtre temporelle et sa justification sont visibles ; une vente trop ancienne est exclue ou corrigée selon une méthode traçable.
@@ -563,17 +583,29 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU049 · Je ne peux ni écarter une vente aberrante ni sélectionner mes comparables avant de recalculer l’avis
-- Statut : à faire
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#778, `88d90ef5`). Constat confirmé (aucune sélection possible, ventes citées sans identifiant). `previous` + `exclude` (motif d'une liste fermée) : nouvelle version recalculée, précédente intacte, écarts cumulés (10 au plus) et dits dans le pied ; R692. Codex rien ; vérification verte. Écran : AU049b (voie 1, socle).
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A049 (majeur), endroit : C/estimation/preparation-avis.ts, `prepare`.
 - Constat de l'audit : Je ne peux ni écarter une vente aberrante ni sélectionner mes comparables avant de recalculer l’avis.
 - Objectif : Exclure un comparable avec motif produit une nouvelle version recalculée et conserve la sélection précédente.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
 
+### AU049b · L'écran de l'avis montre les ventes citées et permet de les écarter
+- Statut : fait (2026-11-23)
+- Reste : fusionnée (#787, `05f642f2`). La vue rend ventes citées (voie sans numéro, R29), écarts, ajustements (source, motif), version précédente, sorte et état ; une nouvelle version reprend l'état de la précédente. L'écran écarte une vente (motif R692) ou retient un ajustement (R693), un seul recalcul à la fois, et liste les versions précédentes ; validé, il les garde lisibles. Codex 2 P0 corrigés puis rien ; vérification verte.
+- Qui : Claude, voie 1 (socle : `app.ts`) · Relecture : normale · Dépend de : AU049
+- Cahier : M04 Estimer ; suite de l'audit A049.
+- Objectif : `avisView` (`packages/api/src/app.ts`) rend les ventes citées (`cited` avec `id`, mois, surface, prix au m², distance, voie sans numéro), les ventes écartées (`excluded`) et la version précédente (`previous`) ; l'écran de l'avis (`packages/api/app/avis.ts`) propose d'écarter une vente citée avec un motif de la liste de R692, ce qui appelle `POST /v1/biens/{id}/avis` avec `previous` et `exclude`.
+- Avec AU050 : la vue rend aussi les ajustements (`adjustments`, `source`, `motive`) et l'écran propose d'en retenir un, avec un motif de R693.
+- Critères : la vue ne rend ni nom ni numéro de voie [R29] ; écarter depuis l'écran donne une nouvelle version, la précédente reste listée [R692] ; refus dits en français.
+- Attend : rien.
+
 ### AU050 · Les décotes et surcotes sont des pourcentages fixes sans calibration locale attachée au calcul
-- Statut : à faire
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#780, `cdaf49e9`). Constat confirmé (barème fixe, ni méthode ni périmètre dits). Décidé : pas de calibration locale annoncée (DVF ne dit ni l'état ni l'étage) ; la méthode et le périmètre du barème sont dits dans le pied de l'avis ; `previous` + `adjust` (caractéristique du barème, -15 à +15 %, motif d'une liste fermée, 5 au plus) : nouvelle version recalculée, dite dans l'avis et la page imprimée ; R693. Codex rien ; vérification verte. Écran : AU049b.
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A050 (majeur), endroit : C/estimation/fourchette.ts, `adjustmentsFor`.
 - Constat de l'audit : Les décotes et surcotes sont des pourcentages fixes sans calibration locale attachée au calcul.
 - Objectif : Chaque coefficient publié cite sa méthode et son périmètre ; l’agent peut retenir un ajustement motivé, versionné et visible dans l’avis.
@@ -581,8 +613,9 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU051 · La piscine, le garage, la cave et le plain-pied prévus dans le calcul ne lui sont pas transmis depuis la…
-- Statut : à faire
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#779, `0c62c0c3`). Constat confirmé (`featuresOf` ne lisait aucun équipement ; garage et plain-pied impossibles à dire). Fiche : équipements `garage` et `plain_pied` ; piscine, cave, garage, plain-pied passent au calcul ; l'annonce lie « garage » (place ou équipement) et « plain-pied » à leur source (Codex 1 P0 et 1 P2 corrigés) ; R694. Vérification verte.
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A051 (majeur), endroit : C/estimation/preparation-avis.ts, `featuresOf`.
 - Constat de l'audit : La piscine, le garage, la cave et le plain-pied prévus dans le calcul ne lui sont pas transmis depuis la fiche utilisée par le parcours réel.
 - Objectif : Deux biens ne différant que par chacun de ces équipements produisent l’ajustement attendu dans l’avis préparé par l’API.
@@ -590,8 +623,9 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU052 · Je ressaisis l’adresse à chaque préparation, puisque le parcours la collecte puis l’oublie
-- Statut : à faire
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#781). Constat confirmé (adresse exigée à chaque fois, gardée nulle part). `valuation_addresses` (migration 4105, figée, déclarée au registre, à la carte d'accès et à la reprise) : l'adresse vérifiée est gardée et reprise, sinon celle de la désignation du mandat, sinon `address_needed` ; une autre adresse = nouvelle version, prise en une écriture (Codex 1 P0 corrigé) ; R695. Écran : adresse facultative, terrain et immeuble, formulaire de l'avis motivé (AU046) relu au geste (Codex 1 P2 corrigé). Deux tests instables hors tâche : HX32 `marche-avis.test.ts` (« 280 » dans un identifiant, resserré) et `bouclier-detours.test.ts` (durée de 500 ms dépassée sur GitHub, socle : à voir par la voie 1).
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M04 Estimer ; audit A052 (majeur), endroit : UI/avis.ts ; C/estimation/preparation-avis.ts.
 - Constat de l'audit : Je ressaisis l’adresse à chaque préparation, puisque le parcours la collecte puis l’oublie.
 - Objectif : Une adresse privée vérifiée se réutilise sur un nouvel avis sans ressaisie, avec modification explicite si nécessaire.
@@ -599,7 +633,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU053 · Les adaptateurs Google, Outlook et Apple sont testés sur faux serveurs mais ne sont pas raccordés au…
-- Statut : à faire
+- Statut : fait (2026-11-23)
+- Reste : constat confirmé (adaptateurs construits nulle part dans le Worker). `agenda-reel.ts` : `AGENDA_MODE=reel`, clients OAuth Google / Microsoft, secret `AGENDA_JETONS` (un agenda par agent, Apple en mot de passe d'application) ; un événement occupé refuse le créneau en ligne, le rendez-vous et la visite de l'agent, la dictée et la visite de l'espace client [R33] ; agenda injoignable : 503 `agenda_indisponible`, rien n'est réservé (la dictée nomme ce qui est rangé) ; passage des quarts d'heure dans les deux sens, sans doublon [R236] ; R702. Codex 3 P0 corrigés puis rien ; vérification verte ; fusionnée (#788). Reste : mise en service réelle (H21, H53) ; la tournée de visites (`TourneeRendezVous`) n'est pas branchée dans l'API.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M05 Rendez-vous ; audit A053 (majeur), endroit : H21/H53 ; A/worker.ts ; C/rendezvous/fournisseurs.ts.
 - Constat de l'audit : Les adaptateurs Google, Outlook et Apple sont testés sur faux serveurs mais ne sont pas raccordés au Worker utilisé.
@@ -608,8 +643,9 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H21, H53).
 
 ### AU054 · Le meilleur créneau repose sur une distance à vol d’oiseau majorée
-- Statut : à faire
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Statut : fait (2026-11-22)
+- Reste : constat confirmé (vol d'oiseau majoré seul, rien ne disait que le temps n'était pas garanti). Service d'itinéraires branchable dans `MeilleursCreneaux` (`RoadTimeSource`, positions seules), créneau `guaranteed` et `sources`, sinon « non garanti, à confirmer » (R701). Codex 1 P0 corrigé (seule une position identique évite le service) puis rien ; vérification verte ; fusionnée (#786). Reste : brancher un vrai service d'itinéraires au Worker (H21 de l'agenda ou nouvelle clé, voie 1, socle) ; la tournée de prospection garde l'estimation.
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M05 Rendez-vous ; audit A054 (majeur), endroit : C/rendezvous/trajets.ts.
 - Constat de l'audit : Le meilleur créneau repose sur une distance à vol d’oiseau majorée, sans itinéraire routier réel.
 - Objectif : Un trajet avec obstacle ou détour important utilise un temps routier sourcé ou reste explicitement non garanti avant confirmation.
@@ -617,8 +653,9 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU055 · Les 30 minutes minimales de trajet empêchent d’enchaîner simplement deux visites dans le même immeuble
-- Statut : à faire
-- Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#784, `9799592b`). Constat confirmé (trajet de 30 min partout, même au même bien). `samePlaceMinutes` (10 par défaut, 0 au trajet, pas de 5) ; au même bien connu, la marge ; ailleurs le trajet ; R700. La base tranche : chaque tranche porte son bien (migration 4110, tranches d'avant remplies), le trajet tenu au même bien est partagé et passe, dans l'instruction qui libère, au rendez-vous du bien qui le demande encore, même en train d'être pris ; la marge se revérifie à la prise des tranches. Créneaux proposés (agent et en ligne, bien du réseau seulement), réservation en ligne et meilleur créneau suivent la marge. Codex 3 P0 corrigés (course à l'annulation, découverte en ligne, tranches d'avant) puis rien ; vérification verte. Restent : deux lots distincts d'un même immeuble gardent le trajet entier (la fiche n'a pas d'identifiant d'immeuble) ; la dictée vérifie ses créneaux sans le bien.
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M05 Rendez-vous ; audit A055 (majeur), endroit : C/rendezvous/creneaux.ts, `DEFAULT_SLOT_SETTINGS`.
 - Constat de l'audit : Les 30 minutes minimales de trajet empêchent d’enchaîner simplement deux visites dans le même immeuble.
 - Objectif : Deux visites au même lieu peuvent s’enchaîner avec une marge spécifique paramétrée, sans affaiblir les contrôles des autres trajets.
@@ -753,7 +790,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU068 · La surveillance portail par portail repose encore sur un lecteur d’annonces simulé, donc je ne sais pas si…
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A068 (majeur), endroit : C/diffusion/surveillance.ts ; H10.
 - Constat de l'audit : La surveillance portail par portail repose encore sur un lecteur d’annonces simulé, donc je ne sais pas si ma baisse de prix est réellement en ligne.
@@ -761,6 +798,15 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien (mise en service réelle : H10).
 
+
+### AU068b · Le lecteur des annonces en ligne réglé portail par portail, sur les pages réelles
+- Statut : à faire
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU068, H10
+- Cahier : M07 Commercialiser ; suite de l'audit A068 (relectures de Codex sur #761).
+- Constat : le lecteur générique (données schema.org, puis texte de l'annonce sans les blocs d'autres annonces) couvre les mises en page usuelles, mais chaque portail a la sienne ; six tours de relecture ont trouvé chaque fois une mise en page de plus.
+- Objectif : avec les accords de flux (H10), une page réelle de chaque portail réglé, rangée en jeu de test anonymisé ; le lecteur lit son prix, ses classes et ses mentions, et une page qu'il ne sait pas lire est dite illisible plutôt qu'en écart.
+- Critères : un test par portail réglé sur sa page rangée ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : H10.
 ### AU069 · Je peux proposer des langues rares pour le réseau français
 - Statut : bloquée : H73 (refaire les tables des traductions pour admettre l'allemand, l'espagnol, l'italien et le néerlandais, exception à R17)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
@@ -807,7 +853,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU073b · Dessiner le secteur d'une recherche au doigt, sur une carte
-- Statut : à faire
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU073
 - Cahier : M08 Acquéreurs et visites ; suite de l'audit A073 (relecture de Codex sur #692).
 - Constat : le secteur dessiné existe dans le serveur (polygone de 3 à 40 points) mais l'écran ne propose que le rayon autour d'un lieu.
@@ -829,7 +875,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#719, f70c5451), migration `4030`, R506 en service. Constat confirmé (seul le bon papier, date et scan, pour une visite sur place). `visites/signature-bon.ts`, `SignatureBon` : sur place, le visiteur lit son bon sur le téléphone de l'agent (rendu en texte, paragraphe par paragraphe, depuis le document rangé), tape le code reçu par SMS ou mail, trace s'il veut ; bon et signature rangés ensemble seulement si la signature est encore ouverte ; exemplaire et preuve affichés aussitôt (et rouvrables), preuve avec l'empreinte du bon envoyée par le contrôle central ; papier en secours, le premier qui signe ferme l'autre. Routes M08 `bon/signature-en-ligne`, `bon/a-signer`, `bon/signature-sur-place`, `bon/exemplaire` ; écran `/app/bon-visite.js` chargé au geste. Jamais vu : l'empreinte SHA-256 du bon signé, au caractère près, remise au visiteur. Codex : 2 P0, puis 1 P1, puis 1 P0 et 1 P2, puis 1 P0, tous corrigés, puis rien (👍). Restent : AU075b (voie 1) ; signature réelle (H24) ; canal réel (H05).
 
 ### AU075b · Les pages publiques du bon de visite : signer à distance et rouvrir son exemplaire
-- Statut : à faire
+- Statut : fait (2026-11-23)
+- Reste : fusionnée (#789, 59346094). `api/src/bon-visite-public.ts` : `/visite/signer/<jeton>` (le bon en texte, un vrai formulaire du code, sans script) et `/visite/exemplaire/<jeton>` (un an, puis 410), servies par `app.ts` avec `BON_VISITE_BASE` (origine seule, `bonVisiteLinkBase`) ; `signUrl`/`copyUrl` donnés à `SignatureBon` ; `slip.distance` à l'écran de la visite, et « Envoyer le lien pour signer à distance » à l'écran du bon ; l'exemplaire passe au cadre `renderPublicPage`. R506 précisée. Jamais vu : signer son bon d'un simple lien, sans compte ni script, et rouvrir un an un exemplaire portant l'empreinte SHA-256 du bon. Codex : 1 P0 (base avec chemin) corrigé, puis rien ; vérification GitHub verte. Restent : `BON_VISITE_BASE` au déploiement ; signature réelle (H24) ; canal réel (H05).
 - Qui : Claude, voie 1 (socle : `app.ts`) · Relecture : normale · Dépend de : AU075
 - Cahier : M08 Acquéreurs et visites ; endroit : packages/api/src/app.ts ; C/visites/signature-bon.ts (`readByLink`, `signByLink`, `copy`, `renderSlipCopy`).
 - Objectif : servir sans clé, sous `/visite/signer/<jeton>` et `/visite/exemplaire/<jeton>`, la lecture et la signature à distance du bon et l'exemplaire signé, puis donner `signUrl` et `copyUrl` à `SignatureBon` dans les routes de M08 ; l'écran propose alors « Envoyer le lien pour signer à distance ».
@@ -988,12 +1035,22 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H54).
 
 ### AU091 · Une réduction d’honoraires après compromis laisse ma commission prévue bloquée
-- Statut : à faire
+- Statut : fait (2026-11-21)
+- Fusion : #767 (c3a41ee9) après relance de « Vérifier ». Suite : AU091b (agence partenaire).
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M13 Pilotage et finances ; audit A091 (majeur), endroit : C/pilotage/commissions.ts, commission prévue figée.
 - Constat de l'audit : Une réduction d’honoraires après compromis laisse ma commission prévue bloquée, sans parcours de régularisation métier décrit.
 - Objectif : La direction approuve un recalcul motivé, conserve les versions et propage les corrections aux parts et factures sans double rémunération.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU091b · La régularisation d'honoraires d'une vente avec une agence partenaire
+- Statut : fait (2026-11-22)
+- Où : fusionnée (#769, 3ff024c0).
+- Qui : Claude, voie 2 · Relecture : normale · Dépend de : AU091
+- Cahier : M13 Pilotage et finances ; M18 Partenaires (HX59) ; audit A091.
+- Objectif : une vente rattachée à une délégation d'agence partenaire se régularise aussi après un avenant d'honoraires : la part de l'agence (`commission_agency_shares`) et le relevé de l'agence (`PartageAgences.ensureStatement`, garde `agency_fee_statements_calcul`, aujourd'hui sur `sale_commissions.fee_eur`) suivent la version approuvée, sans payer deux fois un relevé déjà fait.
+- Critères : 10 000 € ramenés à 8 000 € avec un bon à 40 % : part et relevé à 3 200 € (test) ; un relevé déjà émis refuse la régularisation (test) ; R678 complétée.
 - Attend : rien.
 
 ### AU092 · Ma rémunération ne peut pas suivre automatiquement une grille progressive selon mon chiffre d’affaires cumulé
@@ -1024,7 +1081,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU094b · Une relance remplacée après un paiement partiel ne consomme pas l'un des trois rangs
-- Statut : à faire
+- Statut : fait (2026-11-21)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : AU094
 - Cahier : M13 Pilotage et finances ; relecture Codex de #751 (P2), endroit : C/facturation/relances.ts, `MAX_REMINDERS`.
 - Constat : chaque relance fermée par une nouvelle part (`paiement_partiel`) prend un rang ; après trois remplacements, plus aucune relance ne se prépare, même si un reste dû n'a jamais été relancé.
@@ -1131,7 +1188,8 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien.
 
 ### AU103 · Le HDR reste un calcul sur prises fournies
-- Statut : à faire
+- Statut : fait (2026-11-21)
+- Reste : fusionnée (#763, `c0bc3452`). Constat confirmé (HDR calculé sur prises réduites seulement, aucune image entière). `packages/core/src/hors-ligne/image.ts`, `POST /v1/hors-ligne/photos/<appareil>/<saisie>`, migration `4085`, R677 en service, R277 complétée. Caméra : trois lumières prises par l'appli quand `exposureCompensation` existe, sinon deux prises de l'agent ; fusion en couleurs à la taille de la prise (1 280 à 2 048 points), JPEG relu et jugé ; image gardée sur le téléphone jusqu'au rangement ; le serveur rejuge l'image réduite, vérifie la fusion, puis au dépôt lit le JPEG de base jusqu'à ses blocs et refuse un fichier qui ne montre pas l'image jugée. Codex : 3 P0 corrigés (image partagée effacée trop tôt, JPEG non validé, fichier non lié à l'image jugée), puis rien à signaler ; 1 P1 reporté en AU103b (branchement du rangement, socle). Test HX34 rendu sûr (un identifiant tiré au hasard contenait « 0042 »). Jamais vu : la photo HDR contrôlée sur le JPEG réellement gardé, rangée seulement si le fichier reçu montre l'image jugée. Tant que AU103b n'est pas fait, la route répond 503 et les images restent sur le téléphone, sans perte.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A103 (majeur), endroit : chantier/PLAN.md, HX12 ; C/hors-ligne/photo.ts.
 - Constat de l'audit : Le HDR reste un calcul sur prises fournies, sans capture multi-exposition ni dépôt de l’image entière raccordés au téléphone.
@@ -1139,8 +1197,18 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
 
+### AU103b · Brancher le rangement des images entières des visites
+- Statut : fait (2026-11-23)
+- Reste : fusionnée (#790, 9434ae5d). `config.horsLigne.images` tiré de `env.MEDIA` par `visitImagesOf` (le dépôt du Studio) ; sans `MEDIA`, 503 `depot_indisponible`, l'image reste sur le téléphone [R677]. Codex rien à signaler ; vérification GitHub verte.
+- Qui : Claude, voie 1 (socle : `app.ts`, `worker.ts`) · Relecture : normale · Dépend de : AU103
+- Cahier : Le produit (téléphone, hors connexion) ; audit A103.
+- Objectif : `horsLigneRoutesDef()` (`packages/api/src/app.ts`) passe aux routes hors ligne un `images` tiré de `env.MEDIA.put` (comme `mediaUploads` du Studio), pour que `POST /v1/hors-ligne/photos/...` range réellement l'image entière (R677). Sans `MEDIA`, `images` reste `null` (503, l'image reste sur le téléphone).
+- Critères : par l'adaptateur réel de l'application, une image annoncée est rangée dans `MEDIA` sous `visites/` (test) ; sans `MEDIA`, 503 sans rien écrire (test).
+- Attend : rien.
+
 ### AU104 · Même le paquet hors ligne prévu exclut l’adresse et le téléphone
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-21)
+- Reste : fusionnée (#760, `c7a54416`), `packages/core/src/hors-ligne/prive.ts`, `POST /v1/hors-ligne/prive`, R676 en service, R278 précisée. Décidé, lecture prudente : adresse de la désignation du bien seulement (l'adresse reprise reste dans son espace privé, R46), nom et un numéro de la personne rencontrée, jamais le mail ni le vendeur, visites du jour seulement ; chiffré sur le téléphone sous un code de 6 à 12 chiffres (PBKDF2, AES-GCM), une visite par enregistrement ; refermé 5 min après le dernier geste ; effacé 2 h après chaque visite, à minuit, à la sortie, à la clé refusée, après 5 codes faux, à l'annulation. Codex 9 P0 corrigés en six tours, puis rien à signaler. Jamais vu : l'adresse et le numéro en zone blanche, chiffrés sous un code qui ne quitte pas l'appareil, effacés d'eux-mêmes visite par visite.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : Le produit (téléphone, hors connexion) ; audit A104 (majeur), endroit : C/hors-ligne/reception.ts, `OfflinePack`, R278.
 - Constat de l'audit : Même le paquet hors ligne prévu exclut l’adresse et le téléphone : en zone blanche je ne retrouve ni l’entrée ni mon contact.

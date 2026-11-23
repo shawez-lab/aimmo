@@ -89,6 +89,15 @@ type Json = Record<string, unknown>;
 const isObj = (v: unknown): v is Json => typeof v === 'object' && v !== null && !Array.isArray(v);
 const str = (v: unknown): string | null => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null);
 
+/** Une note que le transcripteur n'a pas pu lire, de quoi ouvrir sa reprise [R696]. */
+export interface FailedNote {
+  noteId: string;
+  channel: VoiceChannel;
+  failure: ImpossibleReason;
+  mediaRef: string;
+  mime: string | null;
+}
+
 /** Une note vocale trouvée dans une notification brute, avec de quoi la réécrire. */
 interface FoundNote {
   channel: VoiceChannel;
@@ -233,10 +242,11 @@ export class NotesVocales {
     source: string,
     raw: unknown,
     ownIds: readonly string[] = [],
-  ): Promise<{ raw: unknown; unreadable: UnreadableInbound[]; inProgress: number }> {
-    if (findNotes(source, raw, ownIds).length === 0) return { raw, unreadable: [], inProgress: 0 };
+  ): Promise<{ raw: unknown; unreadable: UnreadableInbound[]; failed: FailedNote[]; inProgress: number }> {
+    if (findNotes(source, raw, ownIds).length === 0) return { raw, unreadable: [], failed: [], inProgress: 0 };
     const copy = structuredClone(raw);
     const unreadable: UnreadableInbound[] = [];
+    const failed: FailedNote[] = [];
     let inProgress = 0;
     for (const note of findNotes(source, copy, ownIds)) {
       const row = await this.transcribeOnce(networkId, note);
@@ -245,9 +255,31 @@ export class NotesVocales {
         note.remove();
         inProgress += 1;
       } else if (row.status === 'transcrite') note.asText(row.transcript!);
-      else unreadable.push({ channel: note.channel, reason: `note vocale : ${REASON_TEXT[row.failure!]}`, raw: JSON.stringify(note.remove()) });
+      else {
+        unreadable.push({ channel: note.channel, reason: `note vocale : ${REASON_TEXT[row.failure!]}`, raw: JSON.stringify(note.remove()) });
+        failed.push({ noteId: row.id, channel: note.channel, failure: row.failure!, mediaRef: note.audio.mediaRef, mime: note.audio.mime });
+      }
     }
-    return { raw: copy, unreadable, inProgress };
+    return { raw: copy, unreadable, failed, inProgress };
+  }
+
+  /**
+   * AU044 · La tâche de reprise d'une note impossible, liée au message illisible rangé [R696] : une seule par note, même
+   * livrée deux fois. Au journal, ni la référence de l'audio, ni le texte [R13].
+   */
+  async openRecovery(networkId: string, note: FailedNote, inboundId: string): Promise<void> {
+    const id = this.newId();
+    const { changes } = await this.db.run(
+      `INSERT INTO voice_note_recoveries (id, network_id, voice_note_id, inbound_id, channel, failure, media_ref, mime, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (voice_note_id) DO NOTHING`,
+      [id, networkId, note.noteId, inboundId, note.channel, note.failure, note.mediaRef.slice(0, 2048), note.mime, this.now().toISOString()],
+    );
+    if (changes === 0) return;
+    await appendEvent(
+      this.journal,
+      { type: 'voix.reprise_ouverte', actor: 'system', subject: `voice_recovery:${id}`, data: { rule: 'R696', channel: note.channel, failure: note.failure } },
+      this.now,
+    );
   }
 
   /** La note d'un message reçu, telle que la fiche la montre, ou null si ce message n'était pas une note transcrite. */
@@ -416,6 +448,11 @@ export class ChaineVocale {
     const results = await this.chaine.receive(networkId, source, prepared.raw, ctx, hooks);
     if (prepared.unreadable.length > 0) {
       const stored = await this.reception.store(networkId, { messages: [], unreadable: prepared.unreadable, ignored: 0 });
+      // Chaque note impossible ouvre sa reprise, liée à son message illisible : l'audio reste à écouter [R696].
+      for (const [i, item] of stored.received.entries()) {
+        const failed = prepared.failed[i];
+        if (failed) await this.notes.openRecovery(networkId, failed, item.inboundId);
+      }
       for (const item of stored.received) {
         results.push({ inboundId: item.inboundId, status: item.outcome === 'duplicate' ? 'duplicate' : 'unreadable', messageId: null, elapsedMs: this.now().getTime() - started });
       }

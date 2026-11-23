@@ -4,7 +4,9 @@
  * L'agent fixe ses disponibilités : des plages par jour de la semaine, heure de Paris, et des exceptions datées qui
  * remplacent la journée (fermée, ou d'autres plages). Son agenda donne les événements occupés, derrière une interface
  * (V03). Un créneau est proposé seulement s'il tient entier dans une plage [R33], ne touche aucun événement occupé
- * [R33] et ne chevauche aucun rendez-vous, temps de trajet compris entre deux rendez-vous sur place [R32].
+ * [R33] et ne chevauche aucun rendez-vous, temps de trajet compris entre deux rendez-vous sur place [R32]. Deux
+ * rendez-vous sur place au même bien s'enchaînent avec la marge du même lieu, plus courte, réglée à part (AU055) : le
+ * trajet entre deux lieux différents ne change pas.
  * Un appel se fait à distance : il ne demande pas de trajet. Tout se calcule en heure de Paris, changement d'heure compris.
  */
 import { localTime } from '../envoi/horaires.ts';
@@ -32,9 +34,10 @@ export interface Interval {
   end: Date;
 }
 
-/** Un rendez-vous déjà pris, sur place ou à distance. */
+/** Un rendez-vous déjà pris, sur place ou à distance, et son bien s'il est connu (AU055). */
 export interface BookedInterval extends Interval {
   kind: AppointmentKind;
+  propertyId?: string | null;
 }
 
 /** Les événements occupés de l'agenda de l'agent, entre deux instants (V03). */
@@ -47,6 +50,11 @@ export interface SlotSettings {
   durations: Record<AppointmentKind, number>;
   /** Temps de trajet laissé avant et après un rendez-vous sur place, en minutes [R32]. */
   travelMinutes: number;
+  /**
+   * Marge laissée entre deux rendez-vous sur place au même bien, en minutes (AU055) : de 0 au trajet réglé, par pas de
+   * 5. Absente, le trajet réglé s'applique aussi au même bien.
+   */
+  samePlaceMinutes?: number;
   /** Les créneaux commencent toutes les `stepMinutes` à partir du début de la plage. */
   stepMinutes: number;
   /** Délai minimal entre maintenant et le début d'un créneau, en minutes. */
@@ -58,6 +66,7 @@ export interface SlotSettings {
 export const DEFAULT_SLOT_SETTINGS: SlotSettings = Object.freeze({
   durations: Object.freeze({ estimation: 60, visite: 45, signature: 60, appel: 20 }),
   travelMinutes: 30,
+  samePlaceMinutes: 10,
   stepMinutes: 15,
   minNoticeMinutes: 120,
   travelAroundBusy: true,
@@ -65,6 +74,8 @@ export const DEFAULT_SLOT_SETTINGS: SlotSettings = Object.freeze({
 
 export interface Slot extends Interval {
   kind: AppointmentKind;
+  /** Le bien du rendez-vous, s'il est connu : seul un même bien connu ouvre la marge du même lieu (AU055). */
+  propertyId?: string | null;
 }
 
 export const isOnSite = (kind: AppointmentKind): boolean => kind !== 'appel';
@@ -132,6 +143,27 @@ function addDays(date: string, days: number): string {
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }
 
+/** La marge du même lieu réglée, ou le trajet s'il n'y en a pas (AU055). */
+export const samePlaceMinutesOf = (settings: SlotSettings): number => settings.samePlaceMinutes ?? settings.travelMinutes;
+
+/** Vérifie la marge du même lieu : un multiple de 5 minutes, de 0 au trajet réglé (AU055). */
+export function checkSamePlace(settings: SlotSettings): void {
+  const m = samePlaceMinutesOf(settings);
+  if (!Number.isInteger(m) || m < 0 || m % 5 !== 0 || m > settings.travelMinutes) {
+    throw new Error('Marge du même lieu non valable : un multiple de 5 minutes, de 0 au temps de trajet.');
+  }
+}
+
+/** Deux rendez-vous au même bien connu (AU055). Un bien inconnu d'un côté ne l'est jamais. */
+export const samePlace = (a: { propertyId?: string | null }, b: { propertyId?: string | null }): boolean =>
+  typeof a.propertyId === 'string' && a.propertyId !== '' && a.propertyId === b.propertyId;
+
+/** L'écart à laisser entre deux rendez-vous, en minutes : rien autour d'un appel, la marge au même bien, sinon le trajet [R32]. */
+export function gapMinutes(a: { kind: AppointmentKind; propertyId?: string | null }, b: { kind: AppointmentKind; propertyId?: string | null }, settings: SlotSettings): number {
+  if (!isOnSite(a.kind) || !isOnSite(b.kind)) return 0;
+  return samePlace(a, b) ? samePlaceMinutesOf(settings) : settings.travelMinutes;
+}
+
 const overlaps = (a: Interval, b: Interval, gapMs: number): boolean => a.start.getTime() < b.end.getTime() + gapMs && b.start.getTime() < a.end.getTime() + gapMs;
 
 /**
@@ -169,8 +201,7 @@ export function conflictOf(
 ): 'R32' | 'R33' | null {
   const travel = settings.travelMinutes * MINUTE;
   for (const b of booked) {
-    const gap = isOnSite(slot.kind) && isOnSite(b.kind) ? travel : 0;
-    if (overlaps(slot, b, gap)) return 'R32';
+    if (overlaps(slot, b, gapMinutes(slot, b, settings) * MINUTE)) return 'R32';
   }
   const busyGap = isOnSite(slot.kind) && settings.travelAroundBusy ? travel : 0;
   for (const b of busy) {
@@ -201,6 +232,8 @@ export interface FreeSlotsInput {
   kind: AppointmentKind;
   /** La durée propre de ce rendez-vous (AU056) ; absente, celle du type dans les réglages. */
   durationMinutes?: number;
+  /** Le bien du rendez-vous à placer, s'il est connu (AU055). */
+  propertyId?: string | null;
   from: Date;
   to: Date;
   now: Date;
@@ -215,6 +248,7 @@ export function freeSlots(input: FreeSlotsInput): Slot[] {
   const settings = input.settings ?? DEFAULT_SLOT_SETTINGS;
   const timeZone = input.timeZone ?? AGENDA_TIME_ZONE;
   checkAvailability(input.availability);
+  checkSamePlace(settings);
   if (!APPOINTMENT_KINDS.includes(input.kind)) throw new Error('Type de rendez-vous inconnu.');
   if (input.durationMinutes !== undefined && !validDuration(input.durationMinutes)) throw new Error('Durée non valable.');
   const duration = input.durationMinutes ?? settings.durations[input.kind];
@@ -229,7 +263,7 @@ export function freeSlots(input: FreeSlotsInput): Slot[] {
       for (let m = from; m < to; m += settings.stepMinutes) {
         const start = parisInstant(date, m, timeZone);
         if (!start) continue;
-        const slot: Slot = { kind: input.kind, start, end: new Date(start.getTime() + duration * MINUTE) };
+        const slot: Slot = { kind: input.kind, start, end: new Date(start.getTime() + duration * MINUTE), ...(input.propertyId ? { propertyId: input.propertyId } : {}) };
         if (start.getTime() < earliest || slot.end.getTime() > input.to.getTime()) continue;
         if (!withinAvailability(slot, input.availability, timeZone)) continue;
         if (conflictOf(slot, input.booked, input.busy, settings) !== null) continue;

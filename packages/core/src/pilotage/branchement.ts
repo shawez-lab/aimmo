@@ -103,7 +103,11 @@ export class ExportQuotidien {
     const board = await this.tableau.of(viewer, { from: day, to: day });
     if (!board.ok) return board;
     const d = board.value;
-    const fees = await this.db.all<{ agent_id: string; eur: number }>('SELECT agent_id, SUM(fee_eur) AS eur FROM sale_commissions WHERE network_id = ? AND due_on = ? GROUP BY agent_id', [viewer.networkId, d.from]);
+    // AU091 · les honoraires de la commission, régularisés s'il le faut ; à défaut de commission calculée, ceux de l'acte.
+    const fees = await this.db.all<{ agent_id: string; eur: number }>(
+      'SELECT k.agent_id, SUM(COALESCE(c.fee_cents / 100.0, k.fee_eur)) AS eur FROM sale_commissions k LEFT JOIN commissions c ON c.file_id = k.file_id WHERE k.network_id = ? AND k.due_on = ? GROUP BY k.agent_id',
+      [viewer.networkId, d.from],
+    );
     const feeOf = new Map(fees.map((f) => [f.agent_id, Number(f.eur)]));
     const lines = [DAILY_EXPORT_HEADER.join(';')];
     let total = 0;

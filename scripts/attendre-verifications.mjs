@@ -40,9 +40,9 @@ if (expected && pr.head.sha !== expected) {
 const sha = pr.head.sha;
 console.log(`Proposition n° ${number}, « ${pr.title} », commit ${sha.slice(0, 7)}`);
 
-// 1. Vérifications : 40 minutes au plus, au-delà du délai de 35 minutes du travail. Sans aucune vérification au bout de 3 minutes, on n'attend plus.
+// 1. Vérifications : 50 minutes au plus, au-delà du délai de 45 minutes du travail. Sans aucune vérification au bout de 3 minutes, on n'attend plus.
 let checks = [];
-const checksDeadline = minutesFromNow(40);
+const checksDeadline = minutesFromNow(50);
 const noChecksDeadline = minutesFromNow(3);
 for (;;) {
   checks = api(`repos/${REPO}/commits/${sha}/check-runs?per_page=100`).check_runs ?? [];

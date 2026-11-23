@@ -5,6 +5,7 @@ import {
   AIMMO_VERSION,
   AlertesAgent,
   ATTRIBUTION_RULES,
+  Attribution,
   ControleBaseLegale,
   AUTOMATION_NAMES,
   Acces,
@@ -43,6 +44,7 @@ import {
   Modeles,
   Designations,
   FicheUnique,
+  GeographieReseau,
   JourneeRendezVous,
   Qualification,
   ROUTES as NEXT_MODULES,
@@ -79,16 +81,19 @@ import { localTime as parisLocalTime } from '../../core/src/envoi/horaires.ts';
 import { ASSISTANT_PATH, handleAssistant, type AssistantLimits } from './assistant.ts';
 import type { ReplyWriter, ReportWriter } from '@aimmo/core';
 import { META_PATH, handleMeta, type MetaConfig } from './meta.ts';
+import { TELEPHONIE_PATHS, handleTelephonie, type TelephonieSettings } from './telephonie.ts';
 import { handleAgentApp } from './agent-app.ts';
 import { ESTIMATION_PATH, handleEstimation, type EstimationLimits } from './estimation.ts';
 import { BOOKING_PATH, BOOKING_SLOTS_PATH, handleBooking, type BookingLimits } from './rendezvous.ts';
 import type { DetailedSales, Geocoder } from '@aimmo/core';
 import { m08Routes } from './acquereurs.ts';
+import type { TileSource } from './carte.ts';
 import { annonceRoutes, type AnnonceOptions } from './annonces.ts';
 import { offreRoutes } from './offres.ts';
 import { dossierRoutes, type DossierRoute, type PieceStore } from './dossiers.ts';
 import { pilotageRoutes } from './pilotage.ts';
 import { repriseRoutes } from './reprise.ts';
+import { BON_VISITE_PUBLIC_PATH, bonVisiteLinkBase, handleBonVisitePublic } from './bon-visite-public.ts';
 import { APRES_VENTE_PATH, apresVentePublicError, apresVenteRoutes, handleApresVentePublic } from './apres-vente.ts';
 import { handleVitrine, type MediaStore } from './vitrine.ts';
 import { handleSortiePublic, reseauRoutes, type ReseauOptions } from './reseau.ts';
@@ -108,6 +113,12 @@ import { veilleDpeRoutes, type VeilleDpeRoute } from './veille-dpe.ts';
 import { questionnaireRoutes, type QuestionnaireRoute } from './mandat-questionnaire.ts';
 import { scoreAdresseRoutes, type ScoreAdresseRoute } from './score-adresse.ts';
 import { tourneeRoutes, type TourneeRoute } from './tournee.ts';
+import { boiteRoutes, type BoiteRoute, type MailboxDirectory } from './boite.ts';
+import { agendaBusyOf, type AgendaDirectory } from './agenda-reel.ts';
+import { RendezVous as RendezVousAgenda } from '../../core/src/rendezvous/reservation.ts';
+import { reprisesVocalesRoutes, type ReprisesRoute } from './reprises-vocales.ts';
+import type { AudioSource } from '../../core/src/voix/transcripteur-reel.ts';
+import type { DossierFileStore } from '../../core/src/automatismes/boite-mail.ts';
 import { rechercheRoutes, type RechercheRoute } from './recherche.ts';
 import { statistiquesSiteRoutes, type StatistiquesSiteRoute } from './statistiques-site.ts';
 import { pigeRoutes, type PigeRoute } from './pige.ts';
@@ -125,6 +136,7 @@ import { handleLicencesPublic, licencesRoutes, type LicencesRoute } from './lice
 import type { StockageFichiersPlages } from '../../core/src/licences/index.ts';
 import { recrutementRoutes, type RecrutementRoute } from './recrutement.ts';
 import { marketingRoutes, type MarketingRoute } from './marketing.ts';
+import type { AdsSettings } from './publicite-reelle.ts';
 import { financesRoutes, type FinancesRoute } from './finances.ts';
 import { handleMcpPublic, mcpRoutes, MCP_PUBLIC_PREFIX, type McpPublicLimits, type McpRoute } from './mcp.ts';
 import { formationRoutes, handleAttestationPublic, type FormationRoute } from './formation.ts';
@@ -144,11 +156,12 @@ import {
 import type { FeeSettings } from '../../core/src/partenaires/index.ts';
 import { Annuaire, MiseEnRelation } from '../../core/src/partenaires/index.ts';
 import { investirRoutes, type InvestirRoute, type InvestirServices } from './investir.ts';
+import { withdrawLiveNow } from './reseaux-reels.ts';
 import { readCapped, studioRoutes, type StudioRoute, type StudioServices } from './studio.ts';
 import { accordsRoutes, type AccordsRoute } from './accords.ts';
 import { biensFicheRoutes, type BiensFicheRoute } from './biens-fiche.ts';
 import { dicteeRoutes, type DicteeRoute } from './dictee.ts';
-import { horsLigneRoutes, type HorsLigneRoute } from './hors-ligne.ts';
+import { horsLigneRoutes, type HorsLigneRoute, type HorsLigneServices } from './hors-ligne.ts';
 import { appelsRoutes, type AppelsRoute } from './appels.ts';
 import { notificationsRoutes, type NotificationsRoute } from './notifications.ts';
 import { gagnerRoutes, type GagnerRoute, type GagnerServices } from './gagner.ts';
@@ -187,6 +200,8 @@ export interface ApiConfig {
   captationRollout?: { open: boolean; connected: readonly OutboundChannelName[] };
   /** Notifications de Meta (C07) : secrets et variables `META_*`, voir meta.ts. */
   meta?: Omit<MetaConfig, 'db' | 'now'>;
+  /** AU045 : le vrai raccordement téléphonique de l'assistant vocal (`TELEPHONIE_MODE`, `TWILIO_*`), voir telephonie.ts. */
+  telephonie?: TelephonieSettings;
   /** AU032 : les réglages de la réception des mails (`MAIL_*`), dont l'état se lit sur `/captation/mail`. */
   mail?: Omit<MailIntakeSettings, 'mode'>;
   /** Limites d'appels de l'assistant du site (C08) ; absentes : les réglages par défaut. */
@@ -202,12 +217,18 @@ export interface ApiConfig {
   estimation?: { geocoder: Geocoder; sales: DetailedSales };
   /** AU073 : la Base adresse nationale pour les secteurs des recherches et la position des biens, sans lien avec DVF. */
   secteursGeocoder?: Geocoder;
+  /** AU073b : le fournisseur des tuiles de la carte des secteurs ; absent, la carte n'est pas branchée. */
+  mapTiles?: TileSource | null;
   /** Les données publiques d'un bien (E09), en lecture seule ; absentes, aucun avis ne se prépare. */
   fetchPublicData?: Fetcher;
   /** Les sources du score par adresse (BR27) ; absentes, celles de `estimation` et de `fetchPublicData`, sinon aucune. */
   scoreSources?: ScoreServices | null;
   /** La source des annonces de particuliers de la pige (BR29) ; absente, aucune relève, rien n'est rangé. */
   pigeSource?: PigeSource | null;
+  /** AU043 : les vraies boîtes Gmail et Outlook reliées par les agents (H55) et le rangement des pièces ; absentes, rien n'est lu [R683]. */
+  boite?: { mailboxes: MailboxDirectory | null; files: DossierFileStore | null };
+  /** AU044 : la lecture de l'audio d'origine chez Meta, pour écouter une note vocale en reprise ; absente, l'écoute est fermée [R696]. */
+  voiceAudio?: AudioSource | null;
   /** AU034 : les réglages du vrai fournisseur de la pige, pour l'état de la relève ; avec eux, seul son réseau relève. */
   pigeProvider?: PigeProviderSettings | null;
   /** La base de l'ADEME et le cadastre de l'adresse de pige (BR30) ; absents, ceux de `fetchPublicData`, sinon seuls les diagnostics de la veille. */
@@ -216,8 +237,12 @@ export interface ApiConfig {
   /** Réservation des rendez-vous (V08) : limites d'appels, et début du lien pour décaler ou annuler (`RDV_LINK_BASE`). */
   bookingLimits?: BookingLimits;
   appointmentLinkBase?: string | undefined;
+  /** AU053 · les vrais agendas des agents (H21, H53), lus à la réservation ; absents, seuls les rendez-vous d'AIMMO comptent. */
+  agendas?: AgendaDirectory | null;
   /** Début du lien de désinscription des alertes (`ALERT_UNSUBSCRIBE_BASE`) : sans lui, aucune alerte WhatsApp de l'agent [R49]. */
   alertUnsubscribeBase?: string | undefined;
+  /** AU075b · le début des liens du bon de visite (`BON_VISITE_BASE`, `https://…/`) : sans lui, ni page ni signature à distance. */
+  bonVisiteBase?: string | null;
   /** Les médias des biens (R2, `MEDIA`) ; absent, aucune photo n'est servie. */
   media?: MediaStore;
   /** Les pièces des dossiers de vente (R2, `PIECES`) ; absent, les routes de M10 sont fermées. */
@@ -247,6 +272,8 @@ export interface ApiConfig {
    * Aucun réseau réel n'est accepté ici : les publications partent vers les canaux du mode essai seulement [R26, R134].
    */
   studio?: StudioOptions;
+  /** AU103b : le rangement des images entières des visites ; absent, l'image reste sur le téléphone [R677]. */
+  horsLigne?: HorsLigneOptions;
   /**
    * M20 complet (G12) : le stockage des preuves de coût (sans lui, aucun coût ne se saisit [R144]), le géocodeur des
    * adresses des lettres (sans lui, aucune campagne ne vérifie son rayon [R140]) et les IA de rédaction (absentes, les
@@ -255,10 +282,13 @@ export interface ApiConfig {
   gagner?: Pick<GagnerServices, 'proofs' | 'uploads' | 'geocoder' | 'drafter' | 'letterDrafter' | 'dossierDrafter'>;
   /**
    * M01 (AT11) : les IA des réponses aux avis et des pages de quartier (absentes, les textes de secours contrôlés). Les
-   * ventes DVF du recalcul des prix sont celles de l'estimation en ligne ; IndexNow et la fiche Google réelle ne sont
-   * jamais passés d'ici : rien ne part, aucune page n'est indexée en mode essai [R26].
+   * ventes DVF du recalcul des prix sont celles de l'estimation en ligne ; IndexNow n'est jamais passé d'ici : aucune
+   * page n'est indexée en mode essai [R26]. AU037 : `gbp` est le vrai client de la fiche Google, rangé par le Worker
+   * seulement quand tout est réglé (H07) ; il met la fiche seule en mode réel.
    */
-  attirer?: Pick<AttirerServices, 'gbpWriter' | 'neighbourhoodWriter'>;
+  attirer?: Pick<AttirerServices, 'gbpWriter' | 'neighbourhoodWriter' | 'gbp'>;
+  /** AU038 : les plateformes de la publicité payante, réelles seulement quand le Worker les a mises en service (H63). */
+  ads?: AdsSettings | null;
   /**
    * La copropriété et l'urbanisme résumés (RC52, BR87) : la Base adresse nationale, le Géoportail de l'urbanisme et le
    * lecteur IA de la prélecture. Absents, le géocodeur de l'estimation et le Géoportail lu par `fetchPublicData` ; sans
@@ -301,11 +331,20 @@ export interface EspacesOptions {
   releveKeys?: string | undefined;
 }
 
+/** AU103b : la visite sans réseau ; `images` range les images entières des visites (R2, `MEDIA`), absent : 503 [R677]. */
+export interface HorsLigneOptions {
+  images: HorsLigneServices['images'];
+}
+
 export interface StudioOptions {
   files: StudioServices['files'] | null;
   writer?: StudioServices['writer'];
   /** X12 : le stockage où les fichiers finis sont rangés tels quels (R2, `MEDIA`) ; absent, le dépôt est fermé. */
   uploads?: StudioServices['uploads'];
+  /** AU036 : les vrais réseaux, faits par `liveSocialChannels` ; absents, tous les réseaux restent d'essai [R26, R134]. */
+  social?: { channels: NonNullable<StudioServices['channels']>; live: true } | null;
+  /** AU036 : les canaux qui retirent les vraies publications, rangés tant que le compte l'est, même envois coupés [R42]. */
+  withdrawals?: { channels: NonNullable<StudioServices['channels']>; live: true } | null;
 }
 
 export interface PartenairesOptions {
@@ -998,16 +1037,62 @@ const ROUTES: RouteDef[] = [
     pattern: /^\/attribution\/regles$/,
     name: 'attribution.regles',
     // Les règles d'attribution, publiées, les mêmes pour tous [R25] : rien de personnel.
-    handle: async () =>
+    // Les communes sont celles du paramétrage géographique du réseau [R679].
+    handle: async (s, viewer) =>
       json(200, {
         ok: true,
         mode: TRIAL_MODE,
         data: {
           rules: ATTRIBUTION_RULES,
           callbackHours: { hot: DEFAULT_ATTRIBUTION_SETTINGS.hotCallbackHours, other: DEFAULT_ATTRIBUTION_SETTINGS.otherCallbackHours },
-          communes: DEFAULT_ATTRIBUTION_SETTINGS.communes,
+          communes: await new GeographieReseau(s.db, s.journal, { now: s.now }).names(viewer.networkId),
         },
       }),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/attribution\/capacites$/,
+    name: 'attribution.capacites',
+    // La capacité déclarée et les contacts en attente de rappel : la direction pour chaque agent, l'agent pour lui [R681, R16].
+    handle: async (s, viewer) => {
+      const r = await new Attribution(s.db, new FicheUnique(s.db, new FicheClient(s.db, { now: s.now }), { now: s.now }), s.journal, { now: s.now }).capacities(viewer);
+      return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.value }) : refusal(r);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/attribution\/capacites$/,
+    name: 'attribution.capacites.declaration',
+    // L'agent déclare sa capacité, la direction celle d'un agent, avec une raison ; une version s'ajoute [R681, R16, R17].
+    handle: async (s, viewer, _p, request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      const r = await new Attribution(s.db, new FicheUnique(s.db, new FicheClient(s.db, { now: s.now }), { now: s.now }), s.journal, { now: s.now }).declareCapacity(viewer, body);
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      if (r.rule === 'R16') return refusal(r);
+      return json(r.rule ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/geographie\/communes$/,
+    name: 'geographie.communes',
+    // Le paramétrage géographique du réseau (AU039) : des noms de communes et leurs codes INSEE, rien de personnel [R679].
+    handle: async (s, viewer) => json(200, { ok: true, mode: TRIAL_MODE, data: await new GeographieReseau(s.db, s.journal, { now: s.now }).geography(viewer.networkId) }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/geographie\/communes$/,
+    name: 'geographie.communes.decision',
+    // La direction seule inscrit ou retire une commune, par une nouvelle version [R679, R16].
+    handle: async (s, viewer, _p, request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      const r = await new GeographieReseau(s.db, s.journal, { now: s.now }).decide(viewer, body);
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      if (r.rule === 'R16') return refusal(r);
+      return json(r.rule ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
+    },
   },
   {
     method: 'GET',
@@ -1510,6 +1595,26 @@ function tourneeRoutesDef(geocoder: Geocoder | null): RouteDef[] {
   }));
 }
 
+/** Les routes de la boîte mail de l'agent (AU043) : l'agent en activité seul [R16], rien ne part [R409, R683]. */
+function boiteRoutesDef(boite: ApiConfig['boite']): RouteDef[] {
+  return boiteRoutes().map((r: BoiteRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, mailboxes: boite?.mailboxes ?? null, files: boite?.files ?? null }, viewer, params, request),
+  }));
+}
+
+/** Les reprises des notes vocales non transcrites (AU044) : agent en activité ou direction [R16], rien ne part [R696]. */
+function reprisesVocalesRoutesDef(audio: AudioSource | null): RouteDef[] {
+  return reprisesVocalesRoutes().map((r: ReprisesRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, audio }, viewer, params, request),
+  }));
+}
+
 /** Les routes de la pige (BR29) : rôles contrôlés avant le corps [R16], rien n'est envoyé [R275]. */
 function pigeRoutesDef(source: PigeSource | null, provider: PigeProviderSettings | null): RouteDef[] {
   return pigeRoutes().map((r: PigeRoute) => ({
@@ -1647,12 +1752,12 @@ function formationRoutesDef(): RouteDef[] {
 }
 
 /** Les routes du marketing (BR03) : chaque rôle contrôlé avant le corps [R16] ; rien ne part ni ne se paie [R26, R587]. */
-function marketingRoutesDef(): RouteDef[] {
+function marketingRoutesDef(ads: AdsSettings | null): RouteDef[] {
   return marketingRoutes().map((r: MarketingRoute) => ({
     method: r.method,
     pattern: r.pattern,
     name: r.name,
-    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now }, viewer, params, request),
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, ads }, viewer, params, request),
   }));
 }
 
@@ -1748,8 +1853,8 @@ function m16Routes(options: ApiConfig['commerces']): RouteDef[] {
 
 /**
  * Les routes de M19 (X10) : chacune contrôle son rôle avant de lire le corps et écrit le refus au journal [R16] ; sans
- * stockage des fichiers, elles sont fermées. Les réseaux ne sont jamais passés d'ici : la couche métier ne reçoit que
- * ses canaux du mode essai, et la porte de diffusion de D05 [R26, R42, R134].
+ * stockage des fichiers, elles sont fermées. Les réseaux sont ceux du mode essai, sauf les vrais canaux mis en service
+ * par le Worker (AU036) ; la porte de diffusion de D05 est relue par la couche métier [R26, R42, R134].
  */
 function m19Routes(options: StudioOptions | null): RouteDef[] {
   return studioRoutes().map((r: StudioRoute) => ({
@@ -1758,7 +1863,8 @@ function m19Routes(options: StudioOptions | null): RouteDef[] {
     name: r.name,
     handle: (s, viewer, params, request) => {
       if (!options?.files) return Promise.resolve(failure(503, 'studio_files_not_configured', 'Studio fermé : aucun stockage des fichiers.'));
-      return r.handle({ db: s.db, journal: s.journal, now: s.now, files: options.files, writer: options.writer ?? null, uploads: options.uploads ?? null }, viewer, params, request);
+      const social = options.social ? { channels: options.social.channels, live: true as const } : {};
+      return r.handle({ db: s.db, journal: s.journal, now: s.now, files: options.files, writer: options.writer ?? null, uploads: options.uploads ?? null, ...social }, viewer, params, request);
     },
   }));
 }
@@ -1789,12 +1895,12 @@ function biensDeFicheRoutes(): RouteDef[] {
 }
 
 /** La création à la voix (BR100) : l'agent seul, le rôle contrôlé avant le corps [R16]. */
-function dicteeRoutesDef(reportWriter: ReportWriter | null): RouteDef[] {
+function dicteeRoutesDef(reportWriter: ReportWriter | null, agendas: AgendaDirectory | null): RouteDef[] {
   return dicteeRoutes().map((r: DicteeRoute) => ({
     method: r.method,
     pattern: r.pattern,
     name: r.name,
-    handle: (s, viewer, params, request) => r.handle({ db: s.db, acces: s.acces, journal: s.journal, now: s.now, reportWriter }, viewer, params, request),
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, acces: s.acces, journal: s.journal, now: s.now, reportWriter, agendas }, viewer, params, request),
   }));
 }
 
@@ -1809,12 +1915,14 @@ function appelsFicheRoutes(): RouteDef[] {
 }
 
 /** La visite sans réseau (AU018) : l'agent en activité seul, le rôle contrôlé avant le corps [R16, R276, R278]. */
-function horsLigneRoutesDef(): RouteDef[] {
+function horsLigneRoutesDef(options: HorsLigneOptions | null): RouteDef[] {
+  // AU103b : sans rangement réglé, `images` reste `null` ; le dépôt répond 503 et l'image reste sur le téléphone [R677].
+  const images = options?.images ?? null;
   return horsLigneRoutes().map((r: HorsLigneRoute) => ({
     method: r.method,
     pattern: r.pattern,
     name: r.name,
-    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now }, viewer, params, request),
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, images }, viewer, params, request),
   }));
 }
 
@@ -1837,7 +1945,7 @@ function m20Routes(options: ApiConfig['gagner']): RouteDef[] {
   }));
 }
 
-/** Les services de M01 sur ceux du socle, toujours en mode essai : ni IndexNow ni fiche Google réels [R26]. */
+/** Les services de M01 sur ceux du socle, en mode essai : IndexNow n'est jamais réel ; la fiche Google l'est avec son vrai client (AU037) [R26]. */
 function m01Services(db: SqlDatabase, journal: JournalStore, acces: Acces, now: () => Date, config: Pick<ApiConfig, 'estimation' | 'estimationLimits' | 'attirer' | 'candidatureNetworkId'>): AttirerServices {
   const diffusion = new Diffusion(db, acces, journal, { now });
   return {
@@ -1847,7 +1955,8 @@ function m01Services(db: SqlDatabase, journal: JournalStore, acces: Acces, now: 
     mode: 'essai',
     priceSales: config.estimation?.sales ?? null,
     indexNow: null,
-    gbp: null,
+    gbp: config.attirer?.gbp ?? null,
+    gbpMode: config.attirer?.gbp ? 'reel' : 'essai',
     gbpWriter: config.attirer?.gbpWriter ?? null,
     neighbourhoodWriter: config.attirer?.neighbourhoodWriter ?? null,
     diffusion: { canDiffuse: (networkId, propertyId, at) => diffusion.canDiffuse(networkId, propertyId, at) },
@@ -1870,20 +1979,53 @@ function m01Routes(config: Pick<ApiConfig, 'estimation' | 'attirer'>): RouteDef[
   }));
 }
 
-/** Ce que l'agent lit d'un avis : ni le détail brut du calcul, ni les chiffres permis. */
-const avisView = (r: ValuationReport) => ({
-  id: r.id,
-  propertyId: r.property_id,
-  status: r.status,
-  computedLow: r.computed_low,
-  computedHigh: r.computed_high,
-  low: r.agent_low ?? r.computed_low,
-  high: r.agent_high ?? r.computed_high,
-  text: r.text,
-  createdAt: r.created_at,
-  updatedAt: r.updated_at,
-  validatedAt: r.validated_at,
-});
+/** Une voie sans numéro : un numéro resté en tête ne sort jamais vers l'écran [R29]. */
+const streetOnly = (v: unknown): string | null => {
+  if (typeof v !== 'string') return null;
+  const s = v.replace(/^\s*\d+\s*(?:bis|ter|quater|[a-d])?\b[\s,]*/i, '').trim();
+  return s === '' || /\d/.test(s.slice(0, 1)) ? null : s.slice(0, 120);
+};
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const str = (v: unknown, max = 100): string | null => (typeof v === 'string' && v.length <= max ? v : null);
+const listOf = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x)) : []);
+
+/**
+ * Ce que l'agent lit d'un avis : ni le détail brut du calcul, ni les chiffres permis. Les ventes citées (pour les
+ * écarter), les ventes déjà écartées, les ajustements et la version précédente (AU049b) sont relus champ par champ :
+ * rien d'autre ne sort du calcul, ni nom, ni numéro de voie [R29, R692, R693].
+ */
+const avisView = (r: ValuationReport) => {
+  let c: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(r.computed);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) c = parsed as Record<string, unknown>;
+  } catch {
+    c = {};
+  }
+  const manual = c.method === 'manual';
+  return {
+    id: r.id,
+    propertyId: r.property_id,
+    status: r.status,
+    method: manual ? ('manual' as const) : ('computed' as const),
+    kind: c.kind === 'apartment' || c.kind === 'house' || c.kind === 'land' || c.kind === 'building' ? c.kind : null,
+    condition: str(c.condition, 20),
+    computedLow: r.computed_low,
+    computedHigh: r.computed_high,
+    low: r.agent_low ?? r.computed_low,
+    high: r.agent_high ?? r.computed_high,
+    text: r.text,
+    cited: manual
+      ? []
+      : listOf(c.cited).map((s) => ({ id: str(s.id), month: str(s.month, 10), surface: num(s.surface), pricePerM2: num(s.pricePerM2), distance: num(s.distance), street: streetOnly(s.street), town: str(s.town) })),
+    excluded: listOf(c.excluded).map((e) => ({ id: str(e.id), reason: str(e.reason, 40), month: str(e.month, 10), surface: num(e.surface), pricePerM2: num(e.pricePerM2), in: str(e.in) })),
+    adjustments: listOf(c.adjustments).map((a) => ({ label: str(a.label), pct: num(a.pct), source: a.source === 'agent' ? ('agent' as const) : ('bareme' as const), motive: a.source === 'agent' ? str(a.motive, 40) : null })),
+    previous: str(c.previous),
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    validatedAt: r.validated_at,
+  };
+};
 
 /** Un refus de l'avis : droit ou validation en 403, inconnu en 404, le reste en 409 ou 422 selon sa cause. */
 function avisRefusal(r: { rule: string | null; code: string; comparablesFound?: number }): Response {
@@ -1979,12 +2121,18 @@ export function espaceBase(raw: string | undefined): string | null {
 /** Sans stockage des pièces, aucune offre signée n'est reconnue : l'offre écrite depuis l'espace est refusée. */
 const NO_SIGNED_OFFERS = { has: async (): Promise<boolean> => false };
 
+/** AU053 : les événements occupés de l'agenda relié de l'agent, pour un rendez-vous pris hors de la réservation en ligne. */
+function agendaOption(db: SqlDatabase, journal: JournalStore, agendas: AgendaDirectory | null, now: () => Date) {
+  const agenda = agendaBusyOf(db, journal, agendas, now);
+  return agenda ? { agenda } : {};
+}
+
 /**
  * Les services des espaces sur ceux du socle (EC07) : les lecteurs SQL de EC08, EC09 et EC11, les gestes de EC10
  * passés aux modules qui les tiennent [R165], l'identité lue au coffre par son seul état, le rendement par la seule
  * porte des notes validées de M17 [R163]. `null` si l'espace n'est pas configuré.
  */
-function espacesServices(db: SqlDatabase, journal: JournalStore, acces: Acces, now: () => Date, config: Pick<ApiConfig, 'espaces' | 'estimation' | 'pieces'>): EspacesServices | null {
+function espacesServices(db: SqlDatabase, journal: JournalStore, acces: Acces, now: () => Date, config: Pick<ApiConfig, 'espaces' | 'estimation' | 'pieces' | 'agendas'>): EspacesServices | null {
   const networkId = config.espaces?.networkId?.trim();
   const baseUrl = espaceBase(config.espaces?.baseUrl);
   if (!networkId || !baseUrl) return null;
@@ -2010,7 +2158,8 @@ function espacesServices(db: SqlDatabase, journal: JournalStore, acces: Acces, n
         journal,
         fiche,
         consents: store,
-        visites: new Visites(db, journal, acces, { now }),
+        // AU053 : la visite demandée depuis l'espace se contrôle sur l'agenda relié de l'agent [R33, R702].
+        visites: new Visites(db, journal, acces, { now, rendezVous: new RendezVousAgenda(db, journal, { now, ...agendaOption(db, journal, config.agendas ?? null, now) }) }),
         offres: new m09core.RegistreOffres(db, acces, journal, { now }),
         financement: new m10core.FinancementDossier(db, acces, journal, { now }),
         signedOffers: config.pieces ?? NO_SIGNED_OFFERS,
@@ -2214,6 +2363,8 @@ export async function journalError(journal: JournalStore, actor: string, route: 
 export async function handleRequest(request: Request, config: ApiConfig): Promise<Response> {
   const now = config.now ?? (() => new Date());
   const url = new URL(request.url);
+  // AU075b · un début de liens qui ne mènerait pas aux pages du bon n'est pas pris : ni page, ni signature à distance.
+  const bonVisiteBase = bonVisiteLinkBase(config.bonVisiteBase);
   // L'application de l'agent (A01) : une coquille sans aucune donnée, servie seulement en mode essai.
   const app = handleAgentApp(request);
   if (app) return config.mode === TRIAL_MODE ? app : failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
@@ -2269,6 +2420,17 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       if (page) return page;
     } catch (error) {
       await partenairesPublicError(config.db, error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
+  // Les pages publiques du bon de visite (AU075b) : signer à distance et rouvrir son exemplaire, le jeton seul ouvre.
+  if (url.pathname.startsWith(BON_VISITE_PUBLIC_PATH) && bonVisiteBase) {
+    if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
+    try {
+      const page = await handleBonVisitePublic(request, { db: config.db, now, baseUrl: bonVisiteBase });
+      if (page) return page;
+    } catch (error) {
+      await journalError(new SqlJournalStore(config.db), 'public:bon-visite', 'visites.bon.public', error, now);
       return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
     }
   }
@@ -2398,10 +2560,26 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
         intakeKeys: config.intakeKeys,
         ...(config.bookingLimits ? { limits: config.bookingLimits } : {}),
         linkBase: config.appointmentLinkBase ?? null,
+        agenda: agendaBusyOf(config.db, new SqlJournalStore(config.db), config.agendas ?? null, now),
         now,
       });
     } catch (error) {
       await journalError(new SqlJournalStore(config.db), 'intake:site_booking', 'rendez-vous', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
+
+  // AU045 : les appels renvoyés vers l'assistant vocal, signés par le service téléphonique [R710].
+  if (path === TELEPHONIE_PATHS.appel || path === TELEPHONIE_PATHS.tour || path === TELEPHONIE_PATHS.fin) {
+    try {
+      return await handleTelephonie(request, path, {
+        ...(config.telephonie ?? { mode: undefined, accountSid: undefined, authToken: undefined }),
+        db: config.db,
+        now,
+        linkBase: config.appointmentLinkBase ?? null,
+      });
+    } catch (error) {
+      await journalError(new SqlJournalStore(config.db), 'telephonie', 'voix.telephonie', error, now);
       return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
     }
   }
@@ -2510,7 +2688,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // clients (EC07), fermée sans espace configuré.
   const routes: RouteDef[] = [
     ...ROUTES,
-    ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null, geocoder: config.secteursGeocoder ?? config.estimation?.geocoder ?? null, ...(config.reportWriter ? { reportWriter: config.reportWriter } : {}) }),
+    ...m08Routes({ agendas: config.agendas ?? null, unsubscribeBase: config.alertUnsubscribeBase ?? null, slipLinkBase: bonVisiteBase, geocoder: config.secteursGeocoder ?? config.estimation?.geocoder ?? null, tiles: config.mapTiles ?? null, ...(config.reportWriter ? { reportWriter: config.reportWriter } : {}) }),
     ...annonceRoutes(config.listing ?? {}),
     ...offreRoutes(config.pieces ?? null),
     ...m10Routes(config.pieces ?? null),
@@ -2538,6 +2716,8 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...rechercheRoutesDef(),
     ...statistiquesSiteRoutesDef(),
     ...pigeRoutesDef(config.pigeSource ?? null, config.pigeProvider ?? null),
+    ...boiteRoutesDef(config.boite),
+    ...reprisesVocalesRoutesDef(config.voiceAudio ?? null),
     ...adressePigeRoutesDef(adressePigeSourcesOf(config)),
     ...sequencesRoutesDef(),
     ...phasesRoutesDef(),
@@ -2547,7 +2727,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...postgresqlRoutesDef(config.platformNetworkId || null),
     ...licencesRoutesDef(),
     ...recrutementRoutesDef(),
-    ...marketingRoutesDef(),
+    ...marketingRoutesDef(config.ads ?? null),
     ...formationRoutesDef(),
     ...mcpRoutesDef(),
     ...financesRoutesDef(config.lecteurFactures ?? null),
@@ -2559,10 +2739,10 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...m20Routes(config.gagner),
     ...accordsFicheRoutes(),
     ...biensDeFicheRoutes(),
-    ...dicteeRoutesDef(config.reportWriter ?? null),
+    ...dicteeRoutesDef(config.reportWriter ?? null, config.agendas ?? null),
     ...appelsFicheRoutes(),
     ...notificationsRoutesDef(),
-    ...horsLigneRoutesDef(),
+    ...horsLigneRoutesDef(config.horsLigne ?? null),
     ...m01Routes(config),
     ...avisRoutes(config),
     ...repriseRoutes(),
@@ -2618,8 +2798,12 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       const propertyId = await retraits.propertyOfMandate(viewer.networkId, params[0]);
       if (propertyId !== null) {
         const done = await retraits.run(viewer.networkId, propertyId, `${String(viewer.role)}:${viewer.userId}`);
+        // AU036 · les vraies publications du bien sur les réseaux sont retirées dans le même geste ; ce qui échoue reste
+        // dû au passage planifié (`runLiveWithdrawals`) [R42].
+        const pull = config.studio?.withdrawals ?? config.studio?.social ?? null;
+        const reseaux = pull ? await withdrawLiveNow(s.db, s.journal, now, pull, viewer.networkId, propertyId, `${String(viewer.role)}:${viewer.userId}`) : null;
         const body = (await response.json()) as Record<string, unknown>;
-        return json(response.status, { ...body, retraits: { state: done.state, channels: done.channels, portals: done.portals, busy: done.busy } });
+        return json(response.status, { ...body, retraits: { state: done.state, channels: done.channels, portals: done.portals, busy: done.busy, ...(reseaux ? { reseaux } : {}) } });
       }
     }
     if (route.name === 'cles.appareils.retrait' && response.ok && params[0]) await retireApplicationKeysOf(s.db, s.journal, params[0], `${viewer.role}:${viewer.userId}`, now);

@@ -60,6 +60,11 @@ export interface AttirerServices {
   /** IndexNow, Google Business Profile, rédactions par l'IA : absents, rien ne part et le texte de secours sert. */
   indexNow?: IndexNowClient | null;
   gbp?: GbpClient | null;
+  /**
+   * AU037 : la fiche Google seule passe en `reel` quand le Worker a rangé son vrai client (H07) ; les pages, IndexNow
+   * et le reste de M01 gardent `mode`. Absent : celui de `mode`.
+   */
+  gbpMode?: 'essai' | 'reel';
   gbpWriter?: ReviewReplyWriter | null;
   neighbourhoodWriter?: NeighbourhoodWriter | null;
   diffusion?: DiffusionGate | null;
@@ -135,7 +140,8 @@ const services = (s: AttirerServices) => {
       now: s.now,
       client: s.gbp ?? undefined,
       writer: s.gbpWriter ?? undefined,
-      mode: s.mode ?? 'essai',
+      // Le mode réel exige le vrai client : sans lui, rien ne part [R26].
+      mode: s.gbp ? (s.gbpMode ?? s.mode ?? 'essai') : 'essai',
       ...(s.diffusion ? { diffusion: s.diffusion } : {}),
     }),
   };
@@ -249,6 +255,8 @@ export function attirerRoutes(): AttirerRoute[] {
     } },
     // AT06 · fiche Google
     { method: 'POST', pattern: new RegExp(`${P}/google/agents/${ID}/fiche$`), name: 'attirer.google_fiche', roles: DIRECTION, handle: withBody(async (s, v, [id], b) => reply(await services(s).google.setLocation(v, id!, { locationRef: b.locationRef, title: b.title, websiteUri: b.websiteUri }))) },
+    // AU037 · la mise à jour des informations de la fiche : l'accusé de Google, ou l'échec et son geste.
+    { method: 'POST', pattern: new RegExp(`${P}/google/agents/${ID}/informations$`), name: 'attirer.google_informations', roles: DIRECTION, handle: async (s, v, [id]) => reply(await services(s).google.sendInfo(v, id!)) },
     { method: 'GET', pattern: new RegExp(`${P}/google/agents/${ID}/avis$`), name: 'attirer.google_avis', roles: STAFF, handle: async (s, v, [id]) => reply(await services(s).google.reviews(v, id!)) },
     // AT14 · l'écran de la fiche : l'agent ouvre la sienne sans connaître son identifiant, la direction choisit un agent.
     { method: 'GET', pattern: new RegExp(`${P}/google/moi$`), name: 'attirer.google_moi', roles: ['agent'], handle: async (s, v) => reply(await services(s).google.screen(v, v.userId)) },

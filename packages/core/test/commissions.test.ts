@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { ActeVente, Echeancier } from '../src/dossiers/index.ts';
-import { COMMISSION_STATUSES, Commissions, computeShares, type CommissionShare } from '../src/pilotage/index.ts';
+import { COMMISSION_STATUSES, Commissions, Factures, PlateformeEssai, computeShares, type CommissionShare } from '../src/pilotage/index.ts';
+import { ExportQuotidien } from '../src/pilotage/branchement.ts';
 import { PROOF, setupDossier } from './dossiers-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -93,6 +94,7 @@ describeWithSqlite('K01 · cycle de la commission', () => {
         signedOn: null,
         cancelled: false,
         tier: null,
+        revisions: [],
       },
     ]);
     // Rien ne se facture ni ne se paie avant l'acte [R67].
@@ -334,3 +336,169 @@ describeWithSqlite('AU092 · une grille à paliers selon le chiffre d’affaires
   });
 });
 
+
+describeWithSqlite('AU091 · une baisse d’honoraires signée après le compromis se régularise', () => {
+  /** Un avenant au mandat de la vente, signé et rangé comme le fait D07 (honoraires changés), inventé. */
+  async function avenant(t: Awaited<ReturnType<typeof setup>>, feeEur: number, signedAt: string, n = 1, charge?: 'vendeur' | 'acquereur') {
+    const m = (await t.db.first<{ mandate_id: string }>('SELECT mandate_id FROM commissions WHERE file_id = ?', [t.fileId]))!;
+    const id = `avenant-essai-${n}`;
+    const facts = { feeChanged: true, feeEur, ...(charge ? { feeChargeChanged: true, feeCharge: charge } : {}) };
+    await t.db.run(
+      `INSERT INTO documents (id, network_id, template_id, template_version, template_hash, kind, mode, status, missing, agent_id, person_id, property_id, content, content_hash, created_by, created_at, facts, mandate_id)
+       SELECT ?, d.network_id, d.template_id, d.template_version, d.template_hash, 'avenant_mandat', d.mode, 'complet', '[]', d.agent_id, d.person_id, d.property_id, 'Avenant inventé', 'h', d.created_by, ?, ?, s.mandate_id
+         FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = ? AND s.copy_content IS NOT NULL`,
+      [id, signedAt, JSON.stringify(facts), m.mandate_id],
+    );
+    await t.db.run(
+      "INSERT INTO signed_amendments (document_id, network_id, mandate_id, signed_at, place, scan_ref, copy_content, copy_hash, registered_by, created_at) VALUES (?, ?, ?, ?, 'agence', ?, 'copie', 'h', 'agent:x', ?)",
+      [id, t.network.id, m.mandate_id, signedAt, `scans/avenant-${n}.pdf`, signedAt],
+    );
+    return id;
+  }
+
+  it('[R678] constat : la commission prévue restait au montant du compromis ; la direction approuve un recalcul motivé, versionné, propagé aux parts et aux factures', async () => {
+    const t = await setup();
+    const c = t.commissions();
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000 });
+    await t.compromis();
+    expect(await c.sync(t.network.id)).toEqual({ planned: 1, due: 0 });
+    // Après le compromis, le vendeur et l'agent signent un avenant : 8 000 € au lieu de 10 000 €.
+    const a = await avenant(t, 8000, '2027-04-02T09:00:00.000Z');
+    await t.acte();
+    // Constat reproduit : l'acte ne rend plus la commission due à l'ancien montant ; la direction la voit à trancher.
+    expect(await c.sync(t.network.id)).toEqual({ planned: 0, due: 0 });
+    expect(await c.blocked(t.direction)).toEqual({ ok: true, value: [{ fileId: t.fileId, code: 'avenant_honoraires' }] });
+    // La direction seule ; un motif est exigé ; un fichier inconnu n'existe pas.
+    expect(await c.regularize(t.agent, t.fileId, { reason: 'Avenant de baisse signé le 2 avril.' })).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+    expect(await c.regularize({ role: 'compliance', networkId: t.network.id, userId: 'c-1' }, t.fileId, { reason: 'Avenant de baisse signé le 2 avril.' })).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await c.regularize(t.direction, t.fileId, { reason: '  court   ' })).toEqual({ ok: false, rule: null, code: 'bad_reason' });
+    expect(await c.regularize(t.direction, 'inconnu', { reason: 'Avenant de baisse signé le 2 avril.' })).toEqual({ ok: false, rule: null, code: 'unknown' });
+    expect(await c.regularize(t.direction, t.fileId, { reason: 'Avenant de baisse signé le 2 avril.', expectedVersion: 1 })).toEqual({ ok: false, rule: null, code: 'stale' });
+    expect(await t.db.all('SELECT version FROM commission_revisions')).toEqual([]);
+    const reason = 'Avenant de baisse signé le 2 avril, accord du vendeur.';
+    expect(await c.regularize(t.direction, t.fileId, { reason, expectedVersion: 0 })).toEqual({ ok: true, value: { version: 1, feeBeforeCents: 1_000_000, feeAfterCents: 800_000 } });
+    // Rejouée : rien à régulariser, aucune seconde version.
+    expect(await c.regularize(t.direction, t.fileId, { reason })).toEqual({ ok: false, rule: 'R678', code: 'nothing_to_fix' });
+    const list = await c.list(t.direction);
+    const view = list.ok ? list.value[0]! : null;
+    expect(view).toMatchObject({ feeCents: 800_000, status: 'prevue' });
+    expect(view!.shares.map((x) => [x.kind, x.amountCents])).toEqual([['reseau', 240_000], ['agent', 560_000]]);
+    // Les versions : avant et après, avec le motif, l'avenant et qui a approuvé.
+    expect(view!.revisions).toEqual([
+      {
+        version: 1,
+        at: t.now().toISOString(),
+        feeBeforeCents: 1_000_000,
+        feeAfterCents: 800_000,
+        chargeBefore: 'acquereur',
+        chargeAfter: 'acquereur',
+        amendmentId: a,
+        reason,
+        approvedBy: 'direction:direction-1',
+        sharesBefore: [
+          { kind: 'reseau', beneficiaryId: null, reason: null, amountCents: 300_000 },
+          { kind: 'agent', beneficiaryId: t.alexId, reason: null, amountCents: 700_000 },
+        ],
+        sharesAfter: [
+          { kind: 'reseau', beneficiaryId: null, reason: null, amountCents: 240_000 },
+          { kind: 'agent', beneficiaryId: t.alexId, reason: null, amountCents: 560_000 },
+        ],
+      },
+    ]);
+    // L'acte, aux honoraires du compromis, rend maintenant la commission due, une fois.
+    expect(await c.sync(t.network.id)).toEqual({ planned: 0, due: 1 });
+    expect(await c.blocked(t.direction)).toEqual({ ok: true, value: [] });
+    // Les factures se préparent sur les montants régularisés : aucun centime de l'ancien calcul [R69].
+    const f = new Factures(t.db, t.acces, t.journal, { now: t.now, plateforme: new PlateformeEssai() });
+    expect(await f.prepare(t.network.id)).toBe(2);
+    const drafts = await f.drafts(t.direction);
+    expect(drafts.ok && drafts.value.map((d) => [d.kind, d.amountCents]).sort()).toEqual([['honoraires', 800_000], ['reversement', 560_000]]);
+    // L'export quotidien du jour de l'acte dit les honoraires régularisés.
+    const csv = await new ExportQuotidien(t.db, t.journal, { now: t.now }).csv(t.direction, '2027-06-10');
+    expect(csv.ok && csv.value.split('\r\n').find((l) => l.includes(';total;'))).toMatch(/;8000$/);
+    // Due : plus de régularisation (l'avoir de K02 prend le relais), et la base refuse toute retouche [R17].
+    expect(await c.regularize(t.direction, t.fileId, { reason })).toEqual({ ok: false, rule: 'R678', code: 'already_due' });
+    await expect(t.db.run('UPDATE commissions SET fee_cents = 1 WHERE file_id = ?', [t.fileId])).rejects.toThrow();
+    await expect(t.db.run('DELETE FROM commission_shares WHERE file_id = ?', [t.fileId])).rejects.toThrow();
+    await expect(t.db.run('DELETE FROM commission_revisions WHERE file_id = ?', [t.fileId])).rejects.toThrow();
+    await expect(t.db.run('UPDATE commission_revisions SET reason = ? WHERE file_id = ?', ['autre motif écrit', t.fileId])).rejects.toThrow();
+    // Au journal : la version et l'avenant, jamais un montant [R13].
+    const events = (await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((e) => e.type === 'commission.regularisation');
+    expect(events.map((e) => e.data)).toEqual([{ rule: 'R678', version: 1, amendmentId: a }]);
+    expect(JSON.stringify(events)).not.toMatch(/800000|560000|1000000/);
+  });
+
+  it('[R678] avant l’acte : parts de M14 recalculées, chacun ne voit que ses parts, deux avenants font deux versions', async () => {
+    const t = await setup();
+    const c = t.commissions({
+      partages: { of: async () => [{ agentId: t.sam.userId, ratioBp: 5000, reason: 'fichier_commun' }] },
+      primes: { of: async (_n, _a, networkCents) => ({ parrainId: 'parrain-1', amountCents: Math.floor(networkCents / 10) }) },
+    });
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000 });
+    await t.compromis();
+    await c.sync(t.network.id);
+    // Aucun avenant : rien à régulariser, et la base refuse une retouche sans version [R17].
+    expect(await c.regularize(t.direction, t.fileId, { reason: 'Demande sans avenant signé.' })).toEqual({ ok: false, rule: 'R678', code: 'nothing_to_fix' });
+    await expect(t.db.run('DELETE FROM commission_shares WHERE file_id = ?', [t.fileId])).rejects.toThrow();
+    await expect(t.db.run('UPDATE commissions SET fee_cents = 900000 WHERE file_id = ?', [t.fileId])).rejects.toThrow();
+    t.setClock(at9('2027-04-03'));
+    await avenant(t, 9000, '2027-04-02T09:00:00.000Z', 1);
+    expect(await c.regularize(t.direction, t.fileId, { reason: 'Premier avenant : 9 000 € signés.' })).toMatchObject({ ok: true, value: { version: 1, feeAfterCents: 900_000 } });
+    t.setClock(at9('2027-04-11'));
+    await avenant(t, 8000, '2027-04-10T09:00:00.000Z', 2, 'vendeur');
+    expect(await c.regularize(t.direction, t.fileId, { reason: 'Second avenant : 8 000 € à la charge du vendeur.', expectedVersion: 1 })).toMatchObject({ ok: true, value: { version: 2, feeBeforeCents: 900_000, feeAfterCents: 800_000 } });
+    const all = await c.list(t.direction);
+    const v = all.ok ? all.value[0]! : null;
+    // 800 000 : 30 % au réseau (240 000) dont 10 % au parrain ; 70 % à l'agent (560 000), moitié cédée à Sam.
+    expect(v!.shares.map((x) => [x.kind, x.amountCents])).toEqual([['reseau', 216_000], ['agent', 280_000], ['partage', 280_000], ['parrainage', 24_000]]);
+    expect(v!.shares.reduce((n, x) => n + x.amountCents, 0)).toBe(800_000);
+    expect(v).toMatchObject({ feeCharge: 'vendeur' });
+    expect(v!.revisions.map((r) => [r.version, r.feeBeforeCents, r.feeAfterCents, r.chargeBefore, r.chargeAfter])).toEqual([
+      [1, 1_000_000, 900_000, 'acquereur', 'acquereur'],
+      [2, 900_000, 800_000, 'acquereur', 'vendeur'],
+    ]);
+    // L'agent de la vente : ses seules parts, avant et après [R68] ; Sam, qui partage, ne voit pas les versions.
+    const alex = await c.list(t.agent);
+    const av = alex.ok ? alex.value[0]! : null;
+    expect(av!.revisions.map((r) => [r.sharesBefore, r.sharesAfter])).toEqual([
+      [[{ kind: 'agent', beneficiaryId: t.alexId, reason: null, amountCents: 350_000 }], [{ kind: 'agent', beneficiaryId: t.alexId, reason: null, amountCents: 315_000 }]],
+      [[{ kind: 'agent', beneficiaryId: t.alexId, reason: null, amountCents: 315_000 }], [{ kind: 'agent', beneficiaryId: t.alexId, reason: null, amountCents: 280_000 }]],
+    ]);
+    const sam = await c.list(t.sam);
+    expect(sam.ok && sam.value[0]).toMatchObject({ feeCents: null, revisions: [], shares: [{ kind: 'partage', amountCents: 280_000 }] });
+    // Un partage ou une prime rangés ne s'effacent jamais faute de leur source : sans M14 branché, rien ne change.
+    t.setClock(at9('2027-04-21'));
+    await avenant(t, 7000, '2027-04-20T09:00:00.000Z', 3);
+    expect(await t.commissions().regularize(t.direction, t.fileId, { reason: 'Troisième avenant : 7 000 € signés.' })).toEqual({ ok: false, rule: null, code: 'partage_inconnu' });
+    expect((await t.db.all<{ kind: string }>('SELECT kind FROM commission_shares WHERE file_id = ? ORDER BY seq', [t.fileId])).map((x) => x.kind)).toEqual(['reseau', 'agent', 'partage', 'parrainage']);
+    // Un partage disparu depuis le compromis : les parts ne changeraient pas que de montant, refus, rien n'est écrit [R17].
+    const solo = t.commissions({ partages: { of: async () => [] }, primes: { of: async () => ({ parrainId: 'parrain-1', amountCents: 1 }) } });
+    expect(await solo.regularize(t.direction, t.fileId, { reason: 'Troisième avenant : 7 000 € signés.' })).toEqual({ ok: false, rule: null, code: 'parts_changees' });
+    await expect(t.db.run('UPDATE commission_shares SET amount_cents = 1 WHERE file_id = ? AND seq = 1', [t.fileId])).rejects.toThrow();
+    // Une vue d'écran ancienne ne rejoue rien.
+    expect(await c.regularize(t.direction, t.fileId, { reason: 'Troisième avenant : 7 000 € signés.', expectedVersion: 1 })).toEqual({ ok: false, rule: null, code: 'stale' });
+  });
+
+  it('[R678] une version approuvée avant l’acte se revérifie à la date réelle de l’acte', async () => {
+    const t = await setup();
+    const c = t.commissions();
+    await c.setGrid(t.direction, { validFrom: '2027-03-01', defaultRateBp: 7000 });
+    await t.compromis();
+    await c.sync(t.network.id);
+    // Avenant signé le 15 juin, régularisé le 16 ; l'acte du 10 juin est rapporté le 20.
+    await avenant(t, 8000, '2027-06-15T09:00:00.000Z');
+    t.setClock(at9('2027-06-16'));
+    expect(await c.regularize(t.direction, t.fileId, { reason: 'Avenant de baisse signé le 15 juin.' })).toMatchObject({ ok: true, value: { feeAfterCents: 800_000 } });
+    await t.acte();
+    // L'avenant ne valait pas au jour de l'acte : rien n'est dû à 8 000 €, la direction tranche.
+    expect(await c.sync(t.network.id)).toEqual({ planned: 0, due: 0 });
+    expect(await c.blocked(t.direction)).toEqual({ ok: true, value: [{ fileId: t.fileId, code: 'avenant_honoraires' }] });
+    // Une nouvelle version revient aux honoraires du mandat, versionnée ; puis la commission est due à 10 000 €.
+    expect(await c.regularize(t.direction, t.fileId, { reason: 'Acte du 10 juin, avant l’avenant : retour au mandat.' })).toMatchObject({ ok: true, value: { version: 2, feeBeforeCents: 800_000, feeAfterCents: 1_000_000 } });
+    const m = (await t.db.first<{ mandate_id: string }>('SELECT mandate_id FROM commissions WHERE file_id = ?', [t.fileId]))!;
+    expect((await t.db.first<{ amendment_id: string }>('SELECT amendment_id FROM commission_revisions WHERE version = 2'))!.amendment_id).toBe(`mandat:${m.mandate_id}`);
+    expect(await c.sync(t.network.id)).toEqual({ planned: 0, due: 1 });
+    const list = await c.list(t.direction);
+    expect(list.ok && list.value[0]).toMatchObject({ feeCents: 1_000_000, status: 'due' });
+  });
+});

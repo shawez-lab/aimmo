@@ -102,9 +102,11 @@ describeWithSqlite('HX54 · publicité payante mesurée au mandat', () => {
     expect(await t.pub.start(t.dir, c.value.id)).toMatchObject({ ok: false, rule: 'R587' });
     await expect(t.db.run('DELETE FROM ad_campaign_stops')).rejects.toThrow(/efface/);
     await expect(t.db.run("UPDATE ad_campaign_stops SET reason = 'seuil'")).rejects.toThrow();
-    // Une plateforme qui ne serait pas en essai est refusée dès la construction.
+    // AU038 : une plateforme réelle sans plafond réglé (H63) est refusée dès la construction ; un mode inconnu aussi.
     const real = { ...trialAdPlatform(), mode: 'reel' } as unknown as AdPlatform;
-    await expect(setup({ google_ads: real, meta: trialAdPlatform() })).rejects.toThrow(/essai/);
+    await expect(setup({ google_ads: real, meta: trialAdPlatform() })).rejects.toThrow(/plafond/);
+    const odd = { ...trialAdPlatform(), mode: 'autre' } as unknown as AdPlatform;
+    await expect(setup({ google_ads: odd, meta: trialAdPlatform() })).rejects.toThrow(/mode inconnu/);
   });
 
   it('[R587] une dépense sur une campagne jamais lancée n’est pas rangée, elle est signalée', async () => {

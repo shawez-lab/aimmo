@@ -460,7 +460,7 @@ export async function handleEspacePublic(request: Request, s: EspacesServices): 
             ? await c.acquereur.addFinancingPiece(viewer, target, input)
             : await c.acquereur.requestAlerts(viewer, input);
     if (r.ok) return json(200, { ok: true, mode: 'essai', data: r.value });
-    return json(r.rule === 'R161' || r.rule === 'R165' ? 403 : r.rule ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
+    return json(r.rule === 'R161' || r.rule === 'R165' ? 403 : r.code === 'agenda_indisponible' ? 503 : r.rule ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
   }
 
   return page(404, 'Page inconnue', `<p>Cette page n’existe pas. <a href="${ESPACE_PATH}">Revenir à votre espace</a></p>`);

@@ -30,6 +30,7 @@ import { Rappels } from '../qualification/rappel.ts';
 import { FicheAcquereur } from '../acquereurs/fiche-acquereur.ts';
 import { BouclierFonds } from '../dossiers/bouclier.ts';
 import { OrigineContacts, type OriginSignals } from '../attirer/origine-contacts.ts';
+import { recordAdArrival } from '../marketing/publicite.ts';
 
 export type ChainStatus =
   /** Le même message, déjà reçu : rien de plus [R18]. */
@@ -261,6 +262,8 @@ export function createCaptation(db: SqlDatabase, journal: JournalStore, options:
   const recordOrigin: OriginRecorder = async (networkId, inboundId, signals) => {
     try {
       await origine.record(networkId, inboundId, signals);
+      // AU038 : la demande venue par le lien d'une campagne de publicité, rapprochée d'elle au passage planifié [R588].
+      await recordAdArrival(db, journal, now, networkId, inboundId, signals);
     } catch (error) {
       try {
         await appendEvent(journal, { type: 'attirer.origine_erreur', actor: 'system:attirer', subject: `inbound:${inboundId}`, data: { rule: 'R156', error: error instanceof Error ? error.name : 'unknown' } }, now);

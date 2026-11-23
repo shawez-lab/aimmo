@@ -17,6 +17,8 @@ import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import { AvisDeValeur, euros, type CitedSale, type ValuationReport } from './avis.ts';
+import { perM2Text } from './avis-manuel.ts';
+import { AGENT_ADJUSTMENT_MOTIVES } from './fourchette.ts';
 import { renderMarketSection, type MarketSection } from './marche-avis.ts';
 
 /** Ce que l'avis garde du calcul et que la page montre. */
@@ -25,7 +27,11 @@ interface PrintedFacts {
   comparables: number;
   radius: number;
   cited: CitedSale[];
-  adjustments: { label: string; pct: number }[];
+  adjustments: { label: string; pct: number; source?: 'agent'; motive?: string }[];
+  /** L'avis motivé par les ventes vérifiées de l'agent [R690]. */
+  method?: 'manual';
+  references?: { month: string; surface: number; pricePerM2: number; proofLabel: string; street?: string; town?: string }[];
+  referencesMedianPerM2?: number;
 }
 
 export interface ValuationPrintInput {
@@ -82,7 +88,7 @@ export function renderValuationPrint(input: ValuationPrintInput): string {
     .join('');
   const adjustments =
     facts.adjustments.length > 0
-      ? `<h2>Caractéristiques prises en compte</h2><ul>${facts.adjustments.map((a) => `<li>${escapeHtml(a.label)} : ${a.pct > 0 ? '+' : '-'}${decimal(Math.abs(a.pct))} %</li>`).join('')}</ul>`
+      ? `<h2>Caractéristiques prises en compte</h2><ul>${facts.adjustments.map((a) => `<li>${escapeHtml(a.label)} : ${a.pct > 0 ? '+' : a.pct < 0 ? '-' : ''}${decimal(Math.abs(a.pct))} %${a.source === 'agent' ? ` — retenu par votre agent, ${escapeHtml(a.motive && Object.hasOwn(AGENT_ADJUSTMENT_MOTIVES, a.motive) ? AGENT_ADJUSTMENT_MOTIVES[a.motive as keyof typeof AGENT_ADJUSTMENT_MOTIVES] : 'motif non dit')}` : ''}</li>`).join('')}</ul>`
       : '';
   const rows = facts.cited
     .map((c) => {
@@ -95,6 +101,16 @@ export function renderValuationPrint(input: ValuationPrintInput): string {
     rows !== ''
       ? `<table><caption>Les ${facts.cited.length} plus proches des ${facts.comparables} ventes retenues, à moins de ${facts.radius} m. Prix médian de ces ${facts.comparables} ventes : ${escapeHtml(euros(facts.medianPerM2))} le m².</caption><thead><tr><th scope="col">Vente</th><th scope="col">Lieu</th><th scope="col" class="nombre">Surface</th><th scope="col" class="nombre">Prix</th><th scope="col" class="nombre">Distance</th></tr></thead><tbody>${rows}</tbody></table>`
       : '';
+  // L'avis motivé : les ventes que l'agent a vérifiées, chacune avec sa preuve, sous un titre qui ne les fait jamais
+  // passer pour des ventes publiées [R690, R29].
+  const references = facts.method === 'manual' && facts.references && facts.references.length > 0
+    ? `<h2>Ventes vérifiées par votre agent</h2><table><caption>Il n’y a pas de fourchette automatique pour ce bien. Les ${facts.references.length} ventes réelles retenues par votre agent${facts.referencesMedianPerM2 ? `, de prix médian ${escapeHtml(perM2Text(facts.referencesMedianPerM2))} le m²` : ''}.</caption><thead><tr><th scope="col">Vente</th><th scope="col">Lieu</th><th scope="col" class="nombre">Surface</th><th scope="col" class="nombre">Prix</th><th scope="col">Preuve</th></tr></thead><tbody>${facts.references
+        .map((r) => {
+          const placeName = [safeStreet(r.street), r.town].filter((x): x is string => Boolean(x)).join(', ');
+          return `<tr><td>${escapeHtml(monthLabel(r.month))}</td><td>${escapeHtml(placeName)}</td><td class="nombre">${decimal(r.surface)} m²</td><td class="nombre">${escapeHtml(perM2Text(r.pricePerM2))}/m²</td><td>${escapeHtml(r.proofLabel)}</td></tr>`;
+        })
+        .join('')}</tbody></table>`
+    : '';
   return (
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Avis de valeur</title><style>${CSS}</style></head><body><main>` +
     `<div class="marque"><span>AIMMO</span><span>${escapeHtml(`${agent.firstName} ${agent.lastName}`)}</span></div>` +
@@ -105,6 +121,7 @@ export function renderValuationPrint(input: ValuationPrintInput): string {
     agentBlock(agent) +
     adjustments +
     (sales ? `<h2>Ventes réelles comparables</h2>${sales}` : '') +
+    references +
     (input.market ? renderMarketSection(input.market) : '') +
     `</main></body></html>`
   );

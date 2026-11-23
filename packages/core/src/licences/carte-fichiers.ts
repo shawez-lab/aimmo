@@ -54,6 +54,7 @@ export const CARTE_FICHIERS: Readonly<Record<string, ClasseReference>> = {
   'visit_energy_audit_handovers.audit_ref': F,
   'visit_slips.scan_ref': F,
   'voice_notes.media_ref': F,
+  'voice_note_recoveries.media_ref': F,
   'academy_modules.script_ref': F,
   'agent_file_pieces.ref': F,
   // AU028 : la pièce qui prouve le cycle de formation d'avant l'arrivée.
@@ -114,6 +115,9 @@ export const CARTE_FICHIERS: Readonly<Record<string, ClasseReference>> = {
   'pige_ad_sightings.source_ref': externe('L’identifiant de l’annonce chez sa source publique.'),
   'pige_ads.source_ref': externe('L’identifiant de l’annonce chez sa source publique.'),
   'public_content_posts.post_ref': externe('L’identifiant de la publication chez le réseau social.'),
+  'social_live_sends.post_ref': externe('L’identifiant de la vraie publication chez le réseau social (AU036).'),
+  'ad_campaign_receipts.external_ref': externe('La référence chez Google Ads ou Meta de la campagne lancée (AU038).'),
+  'gbp_receipts.ack_ref': externe('La référence chez Google de la réponse, de la publication ou de la fiche envoyée (AU037).'),
   'quiz_attempts.scope_ref': externe('Le parcours ou le module de la formation interrogé : un identifiant interne.'),
   'shop_order_results.printer_ref': externe('Le numéro de commande chez l’imprimeur.'),
   'virtual_tour_contacts.view_ref': externe('L’identifiant de la vue chez l’hébergeur de la visite.'),

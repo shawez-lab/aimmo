@@ -100,3 +100,5 @@ export {
   renderPublicPage,
 } from './design/systeme.ts';
 export type { PublicPageOptions, Teinte } from './design/systeme.ts';
+export { GeographieReseau, NETWORK_COMMUNE_FIELDS, isInseeCode } from './geographie/communes.ts';
+export type { GeographyRefusal, NetworkCommune, NetworkGeography } from './geographie/communes.ts';

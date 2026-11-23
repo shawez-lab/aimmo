@@ -5,6 +5,9 @@ import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { HORS_LIGNE_DB, HORS_LIGNE_SCRIPT } from '../app/hors-ligne.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL } from '../src/agent-app.ts';
 import { BATCH_LIMIT, MAX_SAISIES_BODY_BYTES, horsLigneRoutes } from '../src/hors-ligne.ts';
+import { handleRequest, sha256Hex, type ApiConfig } from '../src/index.ts';
+import { visitImagesOf, type Env } from '../src/worker.ts';
+import { encodeJpeg } from '../../core/test/jpeg-essai.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
@@ -121,31 +124,83 @@ function fakeIndexedDb(data: Map<string, unknown>) {
   };
 }
 
-/** L'appareil photo inventé : un « fichier » porte son image ; la toile la rend en couleurs, point pour point. */
+/**
+ * L'appareil photo inventé : un « fichier » porte son image (et sa taille, 1 280 points sur 960 par défaut) ; la toile
+ * la rend en couleurs, point pour point, et en fait un JPEG inventé qui garde son image.
+ */
+type Shot = { luma: Luma; width?: number; height?: number };
 const camera = {
-  createImageBitmap: async (file: { luma: Luma }) => ({ width: file.luma.width, height: file.luma.height, src: file.luma, close: () => undefined }),
+  createImageBitmap: async (file: Shot) => ({ width: file.width ?? 1280, height: file.height ?? 960, src: file.luma, close: () => undefined }),
   OffscreenCanvas: class {
+    px: Uint8ClampedArray;
     constructor(
       public width: number,
       public height: number,
-    ) {}
+    ) {
+      this.px = new Uint8ClampedArray(width * height * 4);
+    }
     getContext() {
+      const c = this;
       let src: Luma | null = null;
       return {
         drawImage: (b: { src: Luma }) => void (src = b.src),
         getImageData: (_x: number, _y: number, w: number, h: number) => {
           const data = new Uint8ClampedArray(w * h * 4);
-          for (let y = 0; y < h; y++)
-            for (let x = 0; x < w; x++) {
-              const v = src!.luma[Math.floor((y * src!.height) / h) * src!.width + Math.floor((x * src!.width) / w)]!;
-              data.set([v, v, v, 255], (y * w + x) * 4);
+          const l = src!.luma;
+          const cols = Array.from({ length: w }, (_, x) => Math.floor((x * src!.width) / w));
+          for (let y = 0, k = 0; y < h; y++) {
+            const row = Math.floor((y * src!.height) / h) * src!.width;
+            for (let x = 0; x < w; x++, k += 4) {
+              const v = l[row + cols[x]!]!;
+              data[k] = v;
+              data[k + 1] = v;
+              data[k + 2] = v;
+              data[k + 3] = 255;
             }
+          }
           return { data };
         },
+        putImageData: (img: { data: Uint8ClampedArray }) => void c.px.set(img.data),
       };
+    }
+    async convertToBlob(o: { type: string }) {
+      const gray = new Uint8Array(this.width * this.height);
+      for (let i = 0; i < gray.length; i++) gray[i] = this.px[4 * i]!;
+      const bytes = encodeJpeg({ width: this.width, height: this.height, luma: gray });
+      return { type: o.type, size: bytes.length, width: this.width, height: this.height, luma: { width: this.width, height: this.height, luma: gray }, arrayBuffer: async () => bytes.slice().buffer };
     }
   },
 };
+
+/**
+ * La caméra inventée du téléphone : elle sait (ou non) régler sa lumière ; chaque prise rend la scène plus sombre ou
+ * plus claire selon la lumière réglée. Elle note les lumières demandées et si elle a été fermée.
+ */
+type FakeCam = ReturnType<typeof fakeCam>;
+function fakeCam(caps: { min: number; max: number } | null) {
+  const asked: number[] = [];
+  let ev = 0;
+  let stopped = 0;
+  const light: Record<number, number> = { [-2]: 0.25, 0: 1, 2: 2.2 };
+  const track = {
+    getCapabilities: () => (caps ? { exposureCompensation: { ...caps, step: 1 } } : {}),
+    getSettings: () => ({ exposureCompensation: ev }),
+    applyConstraints: async (c: { advanced: { exposureCompensation: number }[] }) => void asked.push((ev = c.advanced[0]!.exposureCompensation)),
+    stop: () => void (stopped += 1),
+  };
+  const stream = { getVideoTracks: () => [track], getTracks: () => [track] };
+  return {
+    asked,
+    stopped: () => stopped,
+    mediaDevices: { getUserMedia: async () => stream },
+    ImageCapture: class {
+      async takePhoto() {
+        const f = light[ev] ?? 1;
+        return { luma: scene((v) => v * f), width: 1280, height: 960 };
+      }
+    },
+  };
+}
 
 const packOf = (idb: Map<string, unknown>): horsLigne.OfflinePack | null => {
   const k = [...idb.keys()].find((x) => x.startsWith(`${HORS_LIGNE_DB.paquet}:`));
@@ -155,7 +210,11 @@ const settle = async () => {
   for (let i = 0; i < 40; i++) await new Promise((r) => setTimeout(r, 0));
 };
 
-async function setup() {
+/**
+ * `app` : les appels passent par l'adaptateur réel (`handleRequest`), le rangement tiré de `MEDIA` comme dans le Worker
+ * (AU103b) ; sinon, les routes sont appelées directement avec le rangement inventé.
+ */
+async function setup(opts: { app?: Pick<Env, 'MEDIA'> } = {}) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   let clock = MONDAY_9H;
@@ -185,8 +244,35 @@ async function setup() {
   if (!r.ok) throw new Error(r.code);
   const visitId = r.visit.appointment.id;
   const visitStart = Date.parse(r.visit.appointment.start_at);
-  const s = { db, journal, now };
-  const call = async (viewer: Viewer, method: 'GET' | 'POST', url: string, body?: string, headers: Record<string, string> = {}) => {
+  // Le rangement des images entières, inventé : ce qui y est rangé, sous sa clé.
+  const media = new Map<string, { bytes: Uint8Array; type: string }>();
+  const s: { db: SqlDatabase; journal: SqlJournalStore; now: () => Date; images: horsLigne.VisitImageStore | null } = {
+    db,
+    journal,
+    now,
+    images: { put: async (key: string, bytes: Uint8Array, type: string) => void media.set(key, { bytes: bytes.slice(), type }) },
+  };
+  const keys = new Map<string, string>([agent, agentB, direction].map((v, i) => [v.userId, `test-cle-au103b-${i}-aaaaaaaaaaaaaaaaaaaaaaaaaaaa`]));
+  const roles = [agent, agentB, direction];
+  const config: ApiConfig | null = opts.app
+    ? {
+        db,
+        apiKeys: JSON.stringify(await Promise.all(roles.map(async (v) => ({ sha256: await sha256Hex(keys.get(v.userId)!), networkId: v.networkId, role: v.role, userId: v.userId })))),
+        mode: 'essai',
+        now,
+        horsLigne: { images: visitImagesOf(opts.app) },
+      }
+    : null;
+  /** Les réponses des dépôts d'images, dans l'ordre. */
+  const deposits: { status: number; code: unknown }[] = [];
+  const call = async (viewer: Viewer, method: 'GET' | 'POST', url: string, body?: string | Uint8Array, headers: Record<string, string> = {}) => {
+    if (config) {
+      const init: RequestInit = { method, headers: { 'content-type': 'application/json', ...headers, authorization: `Bearer ${keys.get(viewer.userId)}` } };
+      if (body !== undefined) init.body = body;
+      const r = await handleRequest(new Request(`https://api.example.test${url}`, init), config);
+      if (url.startsWith('/v1/hors-ligne/photos/')) deposits.push({ status: r.status, code: ((await r.clone().json()) as { code?: unknown }).code });
+      return r;
+    }
     const path = new URL(url, 'https://api.example.test').pathname.replace(/^\/v1/, '');
     const route = horsLigneRoutes().find((x) => x.method === method && x.pattern.test(path));
     if (!route) throw new Error(`route absente : ${method} ${path}`);
@@ -196,7 +282,7 @@ async function setup() {
     return route.handle(s, viewer, params, new Request(`https://api.example.test${url}`, init));
   };
   const count = async (t: string) => (await db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM ${t}`))!.n;
-  return { db, journal, agent, agentB, direction, visitId, visitStart, call, count, setClock: (t: number) => (clock = t), clock: () => clock };
+  return { db, journal, media, deposits, services: s, agent, agentB, direction, visitId, visitStart, call, count, setClock: (t: number) => (clock = t), clock: () => clock };
 }
 type World = Awaited<ReturnType<typeof setup>>;
 
@@ -204,11 +290,20 @@ type World = Awaited<ReturnType<typeof setup>>;
  * Le téléphone : l'application et la visite sans réseau, chargées comme la page les charge. `network` décide si le
  * réseau répond ; `loseAnswer` fait perdre la réponse d'un envoi après que le serveur l'a reçu.
  */
-async function phone(w: World, idb: Map<string, unknown>, net: { network: boolean; loseAnswer?: boolean; hold?: Promise<void>; decode?: Promise<void>; dropPack?: boolean }, who: { key: string; viewer?: Viewer } = { key: KEY }) {
+async function phone(w: World, idb: Map<string, unknown>, net: { network: boolean; camera?: FakeCam; loseAnswer?: boolean; hold?: Promise<void>; decode?: Promise<void>; dropPack?: boolean; refuseMe?: boolean; holdDay?: Promise<void> }, who: { key: string; viewer?: Viewer } = { key: KEY }) {
   const viewer = who.viewer ?? w.agent;
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
   const winListeners: Record<string, () => void> = {};
   const calls: string[] = [];
+  const bodies: unknown[] = [];
+  const later: { f: () => unknown; done: boolean }[] = [];
+  /** Les attentes longues échues : chacune une fois, sans celles qu'elles posent elles-mêmes. */
+  const fire = async () => {
+    for (const t of later.filter((x) => !x.done)) {
+      t.done = true;
+      await t.f();
+    }
+  };
   let uuids = 0;
   const NowDate = class extends Date {
     constructor(...a: unknown[]) {
@@ -219,6 +314,14 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
       return w.clock();
     }
   };
+  // Les calculs de chiffrement et d'empreinte sont réels et prennent leur temps : l'attente des tests les attend.
+  let inflight = 0;
+  const subtle = new Proxy(crypto.subtle, {
+    get: (t, k) => {
+      const f = (t as unknown as Record<string | symbol, unknown>)[k];
+      return typeof f === 'function' ? (...a: unknown[]) => (inflight++, (f.apply(t, a) as Promise<unknown>).finally(() => inflight--)) : f;
+    },
+  });
   const stub = (data: unknown) => Response.json({ ok: true, mode: 'essai', data });
   const ctx: Record<string, unknown> = {
     document,
@@ -229,27 +332,36 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
     btoa,
     indexedDB: fakeIndexedDb(idb),
     ...camera,
-    createImageBitmap: async (file: { luma: Luma }) => (net.decode && (await net.decode), camera.createImageBitmap(file)),
+    createImageBitmap: async (file: Shot) => (net.decode && (await net.decode), camera.createImageBitmap(file)),
     TextEncoder,
-    crypto: { subtle: crypto.subtle, randomUUID: () => `7d1c2b3a-2222-4a2b-8c3d-${String(Math.floor(Math.random() * 1e6)).padStart(6, '0')}${String(++uuids).padStart(6, '0')}` },
-    setTimeout: (f: () => void, ms: number) => (ms === 0 ? setTimeout(f, 0) : 0),
+    TextDecoder,
+    atob,
+    crypto: { subtle, getRandomValues: (a: Uint8Array) => crypto.getRandomValues(a), randomUUID: () => `7d1c2b3a-2222-4a2b-8c3d-${String(Math.floor(Math.random() * 1e6)).padStart(6, '0')}${String(++uuids).padStart(6, '0')}` },
+    // Les attentes longues sont gardées, pas lancées : le test les déclenche quand il avance l'horloge.
+    setTimeout: (f: () => void, ms: number) => (ms === 0 ? setTimeout(f, 0) : (later.push({ f, done: false }), later.length)),
+    clearTimeout: (id: number) => void (later[id - 1] && (later[id - 1]!.done = true)),
     localStorage: { getItem: () => who.key, setItem: () => undefined, removeItem: () => undefined },
     addEventListener: (n: string, f: () => void) => (winListeners[n] = f),
-    navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
-    fetch: async (url: string, init: { method?: string; body?: string; headers?: Record<string, string> } = {}) => {
+    navigator: { serviceWorker: { register: () => Promise.resolve({}) }, ...(net.camera ? { mediaDevices: net.camera.mediaDevices } : {}) },
+    ...(net.camera ? { ImageCapture: net.camera.ImageCapture } : {}),
+    fetch: async (url: string, init: { method?: string; body?: string | Uint8Array; headers?: Record<string, string> } = {}) => {
       const method = (init.method ?? 'GET') as 'GET' | 'POST';
       // Seuls les appels qui atteignent le réseau sont comptés.
       if (!net.network) throw new TypeError('hors ligne');
       calls.push(`${method} ${url}`);
+      bodies.push(init.body);
       expect(init.headers?.authorization).toBe(`Bearer ${who.key}`);
       if (url.startsWith('/v1/hors-ligne/')) {
         if (net.dropPack) throw new TypeError('hors ligne');
         if (method === 'POST' && net.hold) await net.hold;
-        const r = await w.call(viewer, method, url, init.body);
+        // Le serveur au travail compte comme un calcul en cours : l'attente des tests attend sa réponse.
+        inflight++;
+        const r = await w.call(viewer, method, url, init.body, init.headers?.['content-type'] ? { 'content-type': init.headers['content-type'] } : {}).finally(() => inflight--);
         if (net.loseAnswer && method === 'POST') throw new TypeError('réponse perdue');
         return r;
       }
-      if (url === '/v1/moi') return stub({ role: 'agent', firstName: 'Alex' });
+      if (url === '/v1/plan-du-jour' && net.holdDay) await net.holdDay;
+      if (url === '/v1/moi') return net.refuseMe ? Response.json({ ok: false }, { status: 401 }) : stub({ role: 'agent', firstName: 'Alex' });
       if (url === '/v1/rendez-vous/jour') return stub({ day: '2026-12-08', appointments: [] });
       if (url === '/v1/contacts-chauds') return stub({ contacts: [] });
       return stub(null);
@@ -259,14 +371,19 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
   // La page ne charge pas la visite sans réseau : l'application la demande quand elle sert, et l'appareil la sert.
   const loads: string[] = [];
   const settle = async () => {
-    for (let i = 0; i < 40; i++) {
-      await new Promise((r) => setTimeout(r, 0));
-      for (const e of els['hors-ligne']!.all()) {
-        if (e.tagName !== 'script' || e.attributes['data-lu']) continue;
-        e.setAttribute('data-lu', '1');
-        loads.push(e.attributes.src!);
-        if (!ctx.AimmoHorsLigne) runInNewContext(OFFLINE, ctx);
-        e.listeners.load!({});
+    // Quarante tours, puis de nouveau quarante tant qu'un calcul réel était en cours pendant les précédents.
+    for (let round = 0, again = true; again && round < 200; round++) {
+      again = false;
+      for (let i = 0; i < 40; i++) {
+        if (inflight > 0) again = true;
+        await new Promise((r) => setTimeout(r, inflight > 0 ? 2 : 0));
+        for (const e of els['hors-ligne']!.all()) {
+          if (e.tagName !== 'script' || e.attributes['data-lu']) continue;
+          e.setAttribute('data-lu', '1');
+          loads.push(e.attributes.src!);
+          if (!ctx.AimmoHorsLigne) runInNewContext(OFFLINE, ctx);
+          e.listeners.load!({});
+        }
       }
     }
   };
@@ -281,7 +398,7 @@ async function phone(w: World, idb: Map<string, unknown>, net: { network: boolea
     await settle();
   };
   const H = (ctx.AimmoHorsLigne ?? { pending: async () => [], refused: async () => [] }) as { pending: (o?: string) => Promise<unknown[]>; refused: () => Promise<unknown[]> };
-  return { els, ctx, calls, loads, root, find, click, H, online: async () => (winListeners.online?.(), await settle()) };
+  return { els, ctx, calls, bodies, later, fire, tick: settle, focus: async () => (winListeners.focus?.(), await settle()), loads, root, find, click, H, online: async () => (winListeners.online?.(), await settle()) };
 }
 
 describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’envoi', () => {
@@ -306,7 +423,7 @@ describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’e
     expect(field.els.connexion!.hidden).toBe(true);
     expect(field.els.erreur!.hidden).toBe(true);
     expect(field.root().hidden).toBe(false);
-    expect(field.find('h3')!.textContent).toMatch(/^Visite à 10:30 · B1, Talant$/);
+    expect(field.find('h3', /^Visite/)!.textContent).toMatch(/^Visite à 10:30 · B1, Talant$/);
     expect(field.find('p', /^Avant de repartir, il manque : Vue d’ensemble, Accès, Limites/)).toBeDefined();
     // Une note.
     field.find('textarea')!.value = '  Terrain en pente douce, accès par le chemin communal.  ';
@@ -604,6 +721,300 @@ describeWithSqlite('AU018 · la visite sans réseau, de la préparation à l’e
   });
 });
 
+/** Attendre, en temps réel, que la clé tirée du code soit prête : PBKDF2 prend du temps. */
+const until = async (ok: () => unknown, what: string) => {
+  for (let i = 0; i < 600; i++) {
+    if (ok()) return;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  throw new Error(`jamais vu : ${what}`);
+};
+const privOf = (idb: Map<string, unknown>) => [...idb.keys()].find((k) => k.startsWith(`${HORS_LIGNE_DB.prive}:`));
+
+describeWithSqlite('AU104 · le mode privé de la visite, sur le téléphone', () => {
+  const designate = async (w: World) => {
+    const p = (await w.db.first<{ id: string; network_id: string }>("SELECT id, network_id FROM properties WHERE reference = 'B1'"))!;
+    await w.db.run(
+      'INSERT INTO property_designations (id, network_id, property_id, version, street, postal_code, city, parcels, set_by, set_at) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?)',
+      ['des-test-1', p.network_id, p.id, '12 rue des Vignes', '21240', 'Talant', '[{"prefix":null,"section":"AB","number":"12"}]', 'agent:test', new Date(MONDAY_9H).toISOString()],
+    );
+  };
+  const end = async (w: World) => Date.parse((await w.db.first<{ end_at: string }>('SELECT end_at FROM appointments WHERE id = ?', [w.visitId]))!.end_at);
+  type Phone = Awaited<ReturnType<typeof phone>>;
+  const openDay = async (p: Phone) => p.click(p.els.accueil!.all().find((e) => e.textContent === 'Mes visites sans réseau'));
+  const typeCode = (p: Phone, label: RegExp, code: string) => {
+    const f = p.root().all().find((e) => e.tagName === 'input' && label.test(e.attributes['aria-label'] ?? ''));
+    if (!f) throw new Error(`champ du code absent : ${JSON.stringify(p.root().all().filter((e) => e.tagName === 'input').map((e) => e.attributes))}`);
+    expect(f.attributes).toMatchObject({ type: 'password', inputmode: 'numeric', autocomplete: 'off' });
+    f.value = code;
+  };
+  const address = (p: Phone) => p.root().all().find((e) => e.tagName === 'p' && e.textContent === '12 rue des Vignes, 21240 Talant');
+  const callLink = (p: Phone) => p.root().all().find((e) => e.tagName === 'a' && /^Appeler /.test(e.textContent));
+  const KEEP = /^Choisissez un code/;
+  const OPEN = /^Code des adresses/;
+
+  it('[R676] gardés sous un code, l’adresse et le numéro s’ouvrent en zone blanche ; chiffrés sur le téléphone, refermés seuls, effacés après la visite', async () => {
+    const w = await setup();
+    await designate(w);
+    const idb = new Map<string, unknown>();
+    w.setClock(w.visitStart - 2 * HOUR);
+    const home = await phone(w, idb, { network: true });
+    await openDay(home);
+    // Le constat d'avant : sans le mode privé, ni l'entrée ni le contact.
+    expect(address(home)).toBeUndefined();
+    expect(callLink(home)).toBeUndefined();
+    // Un code trop court est refusé sur place, sans rien demander au serveur.
+    typeCode(home, KEEP, '1234');
+    await home.click(home.find('button', 'Garder pour aujourd’hui'));
+    expect(home.find('p', 'Un code de 6 à 12 chiffres.')).toBeDefined();
+    expect(home.calls).not.toContain('POST /v1/hors-ligne/prive');
+    typeCode(home, KEEP, '482913');
+    await home.click(home.find('button', 'Garder pour aujourd’hui'));
+    await until(() => address(home), 'adresse');
+    expect(home.find('p', '1 visite gardée, ouvertes.')).toBeDefined();
+    expect(callLink(home)!.textContent).toBe('Appeler Inès Durandal · +33612345678');
+    expect(callLink(home)!.attributes.href).toBe('tel:+33612345678');
+    // Le code ne part jamais : la demande n'a aucun corps. Sur le téléphone, rien en clair.
+    const i = home.calls.indexOf('POST /v1/hors-ligne/prive');
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(home.bodies[i]).toBeUndefined();
+    const stored = JSON.stringify([...idb.entries()]);
+    for (const secret of ['Vignes', 'Durandal', 'Inès', '33612', '0612', '482913']) expect(stored).not.toContain(secret);
+    expect(privOf(idb)).toBeDefined();
+    await home.click(home.find('button', 'Verrouiller'));
+    expect(address(home)).toBeUndefined();
+
+    // Dans la cour, sans réseau : fermé ; un code faux compte, le bon ouvre.
+    w.setClock(w.visitStart - 5 * MIN);
+    const field = await phone(w, idb, { network: false });
+    expect(address(field)).toBeUndefined();
+    typeCode(field, OPEN, '000000');
+    await field.click(field.find('button', 'Ouvrir'));
+    await until(() => field.find('p', /^Code faux/), 'code faux');
+    expect(field.find('p', 'Code faux. Encore 4 essais avant l’effacement.')).toBeDefined();
+    typeCode(field, OPEN, '482913');
+    await field.click(field.find('button', 'Ouvrir'));
+    await until(() => address(field), 'adresse sans réseau');
+    expect(callLink(field)).toBeDefined();
+    // Cinq minutes sans geste, personne ne touche l'écran : refermé, et l'adresse quitte l'écran d'elle-même.
+    // Une note en cours d'écriture : le verrouillage seul ne l'efface pas.
+    field.find('textarea')!.value = 'Note pas encore gardée';
+    w.setClock(w.clock() + 6 * MIN);
+    expect(field.later.length).toBeGreaterThan(0);
+    await field.fire();
+    await settle();
+    expect(field.find('textarea')!.value).toBe('Note pas encore gardée');
+    expect(address(field)).toBeUndefined();
+    expect(callLink(field)).toBeUndefined();
+    expect(field.find('button', 'Ouvrir')).toBeDefined();
+
+    // Deux heures après la fin de la visite : effacé du téléphone dès l'ouverture, sans même le code.
+    w.setClock((await end(w)) + 2 * HOUR + MIN);
+    const late = await phone(w, idb, { network: false });
+    expect(late.root().hidden).toBe(false);
+    expect(late.find('button', 'Ouvrir')).toBeUndefined();
+    expect(late.find('button', 'Garder pour aujourd’hui')).toBeDefined();
+    expect(privOf(idb)).toBeUndefined();
+  });
+
+  it('[R676] cinq codes faux, la sortie, une visite annulée, une clé refusée (à l’entrée ou à la préparation) ou minuit effacent le mode privé du téléphone', async () => {
+    const w = await setup();
+    await designate(w);
+    const idb = new Map<string, unknown>();
+    w.setClock(w.visitStart - 2 * HOUR);
+    const keep = async () => {
+      const p = await phone(w, idb, { network: true });
+      await openDay(p);
+      typeCode(p, KEEP, '482913');
+      await p.click(p.find('button', 'Garder pour aujourd’hui'));
+      await until(() => privOf(idb) && address(p), 'gardé').catch((e) => {
+        throw new Error(`${String(e)} ${p.root().all().filter((x) => x.tagName === 'section').map((x) => x.textContent).join('|')} ${p.calls.join(',')}`);
+      });
+      return p;
+    };
+    // Cinq codes faux.
+    await keep();
+    const thief = await phone(w, idb, { network: false });
+    for (let n = 1; n <= 5; n++) {
+      typeCode(thief, OPEN, `11111${n}`);
+      await thief.click(thief.find('button', 'Ouvrir'));
+      const said = n < 4 ? `Code faux. Encore ${5 - n} essais avant l’effacement.` : n === 4 ? 'Code faux. Dernier essai avant l’effacement.' : 'Cinq codes faux : adresses et numéros sont effacés du téléphone.';
+      await until(() => thief.find('p', said), `essai ${n}`);
+    }
+    expect(privOf(idb)).toBeUndefined();
+    // La sortie.
+    const out = await keep();
+    out.els.sortir!.listeners.click!({});
+    await until(() => !privOf(idb), 'effacé à la sortie');
+    // La sortie pendant que la journée s'ouvre encore, avant que la visite sans réseau ne soit chargée.
+    await keep();
+    let open: () => void = () => undefined;
+    const slow = await phone(w, idb, { network: true, holdDay: new Promise<void>((r) => (open = r)) });
+    expect(slow.loads).toEqual([]);
+    slow.els.sortir!.listeners.click!({});
+    open();
+    await slow.tick();
+    await until(() => !privOf(idb), 'effacé à la sortie pendant l’ouverture');
+    expect(slow.loads).toEqual(['/app/hors-ligne.js']);
+    // La visite annulée : la préparation suivante, avec du réseau, efface tout.
+    await keep();
+    await w.db.run("UPDATE appointments SET status = 'cancelled' WHERE id = ?", [w.visitId]);
+    await phone(w, idb, { network: true });
+    await until(() => !privOf(idb), 'effacé après annulation');
+    await w.db.run("UPDATE appointments SET status = 'booked' WHERE id = ?", [w.visitId]);
+    // La clé refusée par le serveur (appareil retiré, agent parti) : effacé à la préparation suivante.
+    await keep();
+    await phone(w, idb, { network: true }, { key: KEY, viewer: { ...w.agent, role: 'compliance' } as Viewer });
+    await until(() => !privOf(idb), 'effacé avec la clé refusée');
+    // La clé refusée dès l'entrée, avant même la journée : effacé aussi.
+    await keep();
+    await phone(w, idb, { network: true, refuseMe: true });
+    await until(() => !privOf(idb), 'effacé avec la clé refusée à l’entrée');
+    // Minuit : même sans ouvrir, la lecture efface ce qui a passé sa fin.
+    await keep();
+    w.setClock(Date.parse('2026-12-08T23:00:00.000Z'));
+    await phone(w, idb, { network: false });
+    await until(() => !privOf(idb), 'effacé à minuit');
+  });
+
+  it('[R676] verrouillé, une visite passée s’efface seule du téléphone, et les autres restent', async () => {
+    const w = await setup();
+    await designate(w);
+    // Une seconde visite le même jour, deux heures plus tard.
+    await w.db.run(
+      `INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, created_at, updated_at)
+       SELECT 'visite-test-2', network_id, agent_id, person_id, property_id, kind, ?, ?, status, 'jeton-test-2', source, created_at, updated_at FROM appointments WHERE id = ?`,
+      [new Date(w.visitStart + 3 * HOUR).toISOString(), new Date(w.visitStart + 4 * HOUR).toISOString(), w.visitId],
+    );
+    const idb = new Map<string, unknown>();
+    w.setClock(w.visitStart - 2 * HOUR);
+    const home = await phone(w, idb, { network: true });
+    await openDay(home);
+    typeCode(home, KEEP, '482913');
+    await home.click(home.find('button', 'Garder pour aujourd’hui'));
+    await until(() => home.find('p', '2 visites gardées, ouvertes.'), 'deux visites');
+    await home.click(home.find('button', 'Verrouiller'));
+    const items = () => ((idb.get(privOf(idb)!) as { items: { id: string }[] } | undefined)?.items ?? []).map((i) => i.id);
+    expect(items()).toEqual([w.visitId, 'visite-test-2']);
+    // Deux heures après la fin de la première, l'application restée ouverte et verrouillée, sans un geste : elle a quitté
+    // le téléphone à son heure, la seconde reste.
+    w.setClock((await end(w)) + 2 * HOUR + MIN);
+    expect(items()).toHaveLength(2);
+    await home.fire();
+    await until(() => items().length === 1, 'première effacée');
+    expect(items()).toEqual(['visite-test-2']);
+    const field = await phone(w, idb, { network: false });
+    typeCode(field, OPEN, '482913');
+    await field.click(field.find('button', 'Ouvrir'));
+    await until(() => address(field), 'seconde ouverte');
+    expect(field.root().all().filter((e) => e.tagName === 'p' && e.textContent === '12 rue des Vignes, 21240 Talant')).toHaveLength(1);
+  });
+
+  it('[R676] un effacement à l’heure ne repousse pas le verrouillage : seule une main sur l’écran le fait', async () => {
+    const w = await setup();
+    await designate(w);
+    await w.db.run(
+      `INSERT INTO appointments (id, network_id, agent_id, person_id, property_id, kind, start_at, end_at, status, token_hash, source, created_at, updated_at)
+       SELECT 'visite-test-2', network_id, agent_id, person_id, property_id, kind, ?, ?, status, 'jeton-test-2', source, created_at, updated_at FROM appointments WHERE id = ?`,
+      [new Date(w.visitStart + 3 * HOUR).toISOString(), new Date(w.visitStart + 4 * HOUR).toISOString(), w.visitId],
+    );
+    const idb = new Map<string, unknown>();
+    // Ouvert quatre minutes avant que la première visite ne s'efface.
+    const wipe1 = (await end(w)) + 2 * HOUR;
+    w.setClock(wipe1 - 4 * MIN);
+    const p = await phone(w, idb, { network: true });
+    await openDay(p);
+    typeCode(p, KEEP, '482913');
+    await p.click(p.find('button', 'Garder pour aujourd’hui'));
+    await until(() => p.find('p', '1 visite gardée, ouvertes.') || p.find('p', '2 visites gardées, ouvertes.'), 'gardé');
+    const opened = w.clock();
+    const run = async () => {
+      await p.fire();
+      await settle();
+    };
+    // La première s'efface à son heure, sans geste.
+    w.setClock(wipe1 + 10_000);
+    await run();
+    expect(p.root().all().filter((e) => e.tagName === 'p' && e.textContent === '12 rue des Vignes, 21240 Talant')).toHaveLength(1);
+    // Cinq minutes après l'ouverture : refermé, l'effacement n'a rien repoussé.
+    w.setClock(opened + 5 * MIN + 2_000);
+    await run();
+    expect(address(p)).toBeUndefined();
+    // Un geste repousse, lui : ouvert de nouveau, touché à quatre minutes, encore ouvert à six.
+    typeCode(p, OPEN, '482913');
+    await p.click(p.find('button', 'Ouvrir'));
+    await until(() => address(p), 'rouvert');
+    const again = w.clock();
+    w.setClock(again + 4 * MIN);
+    p.root().listeners.pointerdown!({});
+    w.setClock(again + 6 * MIN);
+    await run();
+    expect(address(p)).toBeDefined();
+    w.setClock(again + 9 * MIN + 2_000);
+    await run();
+    expect(address(p)).toBeUndefined();
+  });
+
+  it('[R676] une sortie pendant que le mode privé se prépare : rien n’est écrit ensuite, rien ne reste ouvert', async () => {
+    const w = await setup();
+    await designate(w);
+    const idb = new Map<string, unknown>();
+    w.setClock(w.visitStart - 2 * HOUR);
+    let release: () => void = () => undefined;
+    const net: { network: boolean; hold?: Promise<void> } = { network: true };
+    const p = await phone(w, idb, net);
+    await openDay(p);
+    net.hold = new Promise<void>((r) => (release = r));
+    typeCode(p, KEEP, '482913');
+    p.find('button', 'Garder pour aujourd’hui')!.listeners.click!({});
+    await settle();
+    p.els.sortir!.listeners.click!({});
+    await settle();
+    release();
+    await new Promise((r) => setTimeout(r, 1500));
+    await settle();
+    expect(privOf(idb)).toBeUndefined();
+    expect(JSON.stringify([...idb.values()])).not.toMatch(/items/);
+  });
+
+  it('[R676] ouvert dans deux onglets, la sortie de l’un efface aussi ce que montre l’autre', async () => {
+    const w = await setup();
+    await designate(w);
+    const idb = new Map<string, unknown>();
+    w.setClock(w.visitStart - 2 * HOUR);
+    const a = await phone(w, idb, { network: true });
+    await openDay(a);
+    typeCode(a, KEEP, '482913');
+    await a.click(a.find('button', 'Garder pour aujourd’hui'));
+    await until(() => address(a), 'ouvert dans le premier onglet');
+    const b = await phone(w, idb, { network: true });
+    await openDay(b);
+    typeCode(b, OPEN, '482913');
+    await b.click(b.find('button', 'Ouvrir'));
+    await until(() => address(b), 'ouvert dans le second onglet');
+    b.els.sortir!.listeners.click!({});
+    await until(() => !privOf(idb), 'effacé par la sortie');
+    // Le premier onglet, revenu au premier plan : plus d'adresse, plus de clé.
+    await a.focus();
+    expect(address(a)).toBeUndefined();
+    expect(callLink(a)).toBeUndefined();
+  });
+
+  it('[R676] [R16] seul l’agent obtient le mode privé ; un autre rôle est refusé et le refus est au journal', async () => {
+    const w = await setup();
+    w.setClock(w.visitStart - HOUR);
+    const r = await w.call({ ...w.direction, role: 'compliance' } as Viewer, 'POST', '/v1/hors-ligne/prive');
+    expect(r.status).toBe(403);
+    expect(await r.json()).toMatchObject({ ok: false, rule: 'R16', code: 'role' });
+    const ok = await w.call(w.agent, 'POST', '/v1/hors-ligne/prive');
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get('cache-control')).toBe('no-store');
+    const body = (await ok.json()) as { data: { pack: { visits: { contact: { phone: string } }[] } } };
+    expect(body.data.pack.visits[0]?.contact.phone).toBe('+33612345678');
+    expect(JSON.stringify(body)).not.toContain('example.test');
+  });
+});
+
 describe('AU018 · la visite sans réseau dans la coquille', () => {
   it('[R276] sans IndexedDB, rien n’est dit gardé : la saisie est refusée avec un message clair', async () => {
     const shown: string[] = [];
@@ -640,5 +1051,199 @@ describe('AU018 · la visite sans réseau dans la coquille', () => {
     expect(OFFLINE).not.toMatch(/caches\./);
     expect(budgetProblems({ html: '', js: OFFLINE }, BUDGETS.page)).toEqual([]);
     expect(budgetProblems({ html: HTML, css: AGENT_APP_FILES['/app/app.css']!, js: APP }, BUDGETS.application)).toEqual([]);
+  });
+});
+
+describeWithSqlite('AU103 · la photo entière, de la caméra au rangement', () => {
+  const field = async (w: World, idb: Map<string, unknown>, net: Parameters<typeof phone>[2]) => {
+    w.setClock(w.visitStart - 2 * HOUR);
+    await phone(w, idb, { network: true });
+    w.setClock(w.visitStart + 10 * MIN);
+    return phone(w, idb, net);
+  };
+  const shoot = async (t: Awaited<ReturnType<typeof phone>>, one: Shot, two: Shot) => {
+    const [a, b] = t.root().all().filter((e) => e.tagName === 'input' && e.attributes.type === 'file');
+    (a as unknown as { files: unknown[] }).files = [one];
+    a!.listeners.change!({});
+    (b as unknown as { files: unknown[] }).files = [two];
+    b!.listeners.change!({});
+    await t.tick();
+  };
+  const images = (idb: Map<string, unknown>) => [...idb.keys()].filter((k) => k.startsWith('image:'));
+
+  it('[R677] la caméra prend elle-même trois lumières sans que l’agent bouge ; l’image entière fondue est gardée, puis rangée au retour du réseau', async () => {
+    const w = await setup();
+    const idb = new Map<string, unknown>();
+    const cam = fakeCam({ min: -2, max: 2 });
+    const net = { network: false, camera: cam };
+    const t = await field(w, idb, net);
+    await t.click(t.find('button', 'Photo en trois lumières'));
+    expect(t.root().all().some((e) => e.tagName === 'video')).toBe(true);
+    expect(t.find('p', 'Cadrez la pièce, puis déclenchez.')).toBeDefined();
+    await t.click(t.find('button', 'Déclencher, sans bouger'));
+    // Sombre, moyenne, claire : la caméra a réglé sa lumière trois fois, puis s'est fermée.
+    expect(cam.asked).toEqual([-2, 0, 2]);
+    expect(cam.stopped()).toBeGreaterThan(0);
+    expect(t.find('strong', 'Vue d’ensemble : faite')).toBeDefined();
+    const [op] = (await t.H.pending()) as { payload: { exposures: unknown[]; image: { width: number; height: number; bytes: number; sha256: string } } }[];
+    expect(op!.payload.exposures).toHaveLength(3);
+    // L'image entière, à la taille de la prise, et non la version réduite de 128 points.
+    expect(op!.payload.image).toMatchObject({ width: 1280, height: 960 });
+    expect(images(idb)).toHaveLength(1);
+    // Sans réseau, rien n'est rangé ; le réseau revient : la saisie puis l'image partent.
+    net.network = true;
+    await t.online();
+    expect(t.calls.filter((c) => c.startsWith('POST /v1/hors-ligne/photos/'))).toHaveLength(1);
+    expect(await w.db.first('SELECT exposures, image_width, image_height FROM visit_photos')).toEqual({ exposures: 3, image_width: 1280, image_height: 960 });
+    expect(w.media.size).toBe(1);
+    const [stored] = [...w.media.values()];
+    expect(stored!.type).toBe('image/jpeg');
+    expect(stored!.bytes.length).toBe(op!.payload.image.bytes);
+    expect(horsLigne.jpegSize(stored!.bytes)).toEqual({ width: 1280, height: 960 });
+    expect(await horsLigne.sha256Hex(stored!.bytes)).toBe(op!.payload.image.sha256);
+    // Rangée : elle s'efface du téléphone, et l'écran dit que tout est envoyé.
+    expect(images(idb)).toEqual([]);
+    expect(await (t.ctx.AimmoHorsLigne as { uploads: () => Promise<unknown[]> }).uploads()).toEqual([]);
+    expect(t.find('p', /^Tout est envoyé/)).toBeDefined();
+  });
+
+  it('[R677] une caméra qui ne règle pas sa lumière est refermée ; l’agent fait deux prises, fondues de même en image entière', async () => {
+    const w = await setup();
+    const idb = new Map<string, unknown>();
+    const cam = fakeCam(null);
+    const t = await field(w, idb, { network: false, camera: cam });
+    await t.click(t.find('button', 'Photo en trois lumières'));
+    expect(t.find('p', /^Cette caméra ne règle pas sa lumière/)).toBeDefined();
+    expect(cam.stopped()).toBe(1);
+    expect(t.root().all().some((e) => e.tagName === 'video')).toBe(false);
+    await shoot(t, { luma: dark, width: 1600, height: 1200 }, { luma: bright, width: 1600, height: 1200 });
+    const [op] = (await t.H.pending()) as { payload: { exposures: unknown[]; image: { width: number; height: number } } }[];
+    expect(op!.payload.exposures).toHaveLength(2);
+    expect(op!.payload.image).toMatchObject({ width: 1600, height: 1200 });
+  });
+
+  it('[R677] une image trop petite pour une annonce, ou un JPEG relu sombre, est refusée sur place ; rien n’est gardé', async () => {
+    const w = await setup();
+    const idb = new Map<string, unknown>();
+    const t = await field(w, idb, { network: false });
+    // Sans caméra réglable, pas de bouton des trois lumières.
+    expect(t.find('button', 'Photo en trois lumières')).toBeUndefined();
+    await shoot(t, { luma: dark, width: 800, height: 800 }, { luma: bright, width: 800, height: 800 });
+    expect(t.find('p', /^Photo refusée\. Image trop petite/)).toBeDefined();
+    expect(await t.H.pending()).toEqual([]);
+    expect(images(idb)).toEqual([]);
+    // Le JPEG produit est relu : une toile qui rend une image sombre la fait refuser, même de bonnes prises.
+    const Real = t.ctx.OffscreenCanvas as typeof camera.OffscreenCanvas;
+    t.ctx.OffscreenCanvas = class extends Real {
+      override async convertToBlob(o: { type: string }) {
+        const b = await super.convertToBlob(o);
+        for (let i = 0; i < b.luma.luma.length; i++) b.luma.luma[i] = Math.round(b.luma.luma[i]! * 0.2);
+        return b;
+      }
+    };
+    await shoot(t, { luma: dark }, { luma: bright });
+    expect(t.find('p', /^Photo refusée\. Trop sombre/)).toBeDefined();
+    expect(await t.H.pending()).toEqual([]);
+    expect(images(idb)).toEqual([]);
+  });
+
+  it('[R677] deux photos faites des mêmes prises partagent leur image : elle reste jusqu’à ce que les deux soient rangées', async () => {
+    const w = await setup();
+    const idb = new Map<string, unknown>();
+    const net = { network: false };
+    const t = await field(w, idb, net);
+    await shoot(t, { luma: dark }, { luma: bright });
+    await shoot(t, { luma: dark }, { luma: bright });
+    const ops = (await t.H.pending()) as { payload: { shot: string; image: { sha256: string } } }[];
+    expect(ops.map((o) => o.payload.shot)).toEqual(['vue-ensemble', 'acces']);
+    expect(ops[0]!.payload.image.sha256).toBe(ops[1]!.payload.image.sha256);
+    expect(images(idb)).toHaveLength(1);
+    net.network = true;
+    await t.online();
+    for (let i = 0; i < 5 && (await w.count('visit_photo_files')) < 2; i++) await t.tick();
+    expect(t.calls.filter((c) => c.startsWith('POST /v1/hors-ligne/photos/'))).toHaveLength(2);
+    expect(await w.count('visit_photo_files')).toBe(2);
+    expect(images(idb)).toEqual([]);
+  });
+
+  it('[R677] le rangement fermé : l’image reste sur le téléphone, l’écran le dit, et elle part dès qu’il rouvre', async () => {
+    const w = await setup();
+    const idb = new Map<string, unknown>();
+    const net = { network: false };
+    const t = await field(w, idb, net);
+    await shoot(t, { luma: dark }, { luma: bright });
+    w.services.images = null;
+    net.network = true;
+    await t.online();
+    expect(await w.count('visit_photos')).toBe(1);
+    expect(await w.count('visit_photo_files')).toBe(0);
+    expect(images(idb)).toHaveLength(1);
+    expect(t.find('p', /^1 image entière attend d’être rangée/)).toBeDefined();
+    // Fermée puis rouverte, l'application garde l'image et la liste des images à envoyer.
+    const again = await phone(w, idb, net);
+    expect(await (again.ctx.AimmoHorsLigne as { uploads: () => Promise<unknown[]> }).uploads()).toHaveLength(1);
+    w.services.images = { put: async (key, bytes, type) => void w.media.set(key, { bytes: bytes.slice(), type }) };
+    await again.online();
+    expect(await w.count('visit_photo_files')).toBe(1);
+    expect(images(idb)).toEqual([]);
+    expect(await (again.ctx.AimmoHorsLigne as { uploads: () => Promise<unknown[]> }).uploads()).toEqual([]);
+  });
+
+  it('[R677] AU103b · par l’adaptateur réel de l’application, l’image annoncée est rangée dans `MEDIA` sous `visites/`', async () => {
+    const kept = new Map<string, { bytes: Uint8Array; type: string | undefined }>();
+    const MEDIA = {
+      get: async () => null,
+      put: async (key: string, value: Uint8Array, options?: { httpMetadata?: { contentType?: string } }) => void kept.set(key, { bytes: value.slice(), type: options?.httpMetadata?.contentType }),
+    } as unknown as NonNullable<Env['MEDIA']>;
+    const w = await setup({ app: { MEDIA } });
+    const idb = new Map<string, unknown>();
+    const net = { network: false };
+    const t = await field(w, idb, net);
+    await shoot(t, { luma: dark }, { luma: bright });
+    const [op] = (await t.H.pending()) as { payload: { image: { bytes: number; sha256: string } } }[];
+    net.network = true;
+    await t.online();
+    expect(w.deposits).toEqual([{ status: 200, code: undefined }]);
+    expect(w.media.size).toBe(0);
+    const [[key, stored]] = [...kept.entries()] as [[string, { bytes: Uint8Array; type: string | undefined }]];
+    expect(kept.size).toBe(1);
+    expect(key).toMatch(new RegExp(`^visites/${w.agent.networkId}/${w.visitId}/[0-9a-f]+\\.jpg$`));
+    expect(stored.type).toBe('image/jpeg');
+    expect(stored.bytes.length).toBe(op!.payload.image.bytes);
+    expect(await horsLigne.sha256Hex(stored.bytes)).toBe(op!.payload.image.sha256);
+    expect(await w.db.first('SELECT media_key FROM visit_photo_files')).toEqual({ media_key: key });
+    expect(images(idb)).toEqual([]);
+  });
+
+  it('[R677] AU103b · sans `MEDIA`, l’adaptateur réel répond 503 sans rien écrire ; l’image reste sur le téléphone', async () => {
+    for (const env of [{}, { MEDIA: { get: async () => null } as unknown as NonNullable<Env['MEDIA']> }]) {
+      const w = await setup({ app: env });
+      const idb = new Map<string, unknown>();
+      const net = { network: false };
+      const t = await field(w, idb, net);
+      await shoot(t, { luma: dark }, { luma: bright });
+      net.network = true;
+      await t.online();
+      expect(w.deposits.length).toBeGreaterThan(0);
+      expect(w.deposits.every((d) => d.status === 503 && d.code === 'depot_indisponible')).toBe(true);
+      expect(await w.count('visit_photos')).toBe(1);
+      expect(await w.count('visit_photo_files')).toBe(0);
+      expect(images(idb)).toHaveLength(1);
+      expect(t.find('p', /^1 image entière attend d’être rangée/)).toBeDefined();
+    }
+  });
+
+  it('[R677] [R16] le dépôt : un autre rôle est refusé avant la lecture du fichier ; un autre type ou un fichier trop lourd ne sont pas lus', async () => {
+    const w = await setup();
+    const path = '/v1/hors-ligne/photos/device-test-1/op-photo-01';
+    const jpeg = { 'content-type': 'image/jpeg' };
+    const r1 = await w.call(w.direction, 'POST', path, new Uint8Array([1]), jpeg);
+    expect(r1.status).toBe(403);
+    expect(await r1.json()).toMatchObject({ rule: 'R16' });
+    expect((await w.call(w.agent, 'POST', path, '{}')).status).toBe(415);
+    expect((await w.call(w.agent, 'POST', path, new Uint8Array([1]), { ...jpeg, 'content-length': String(horsLigne.IMAGE_MAX_BYTES + 1) })).status).toBe(413);
+    const r4 = await w.call(w.agent, 'POST', path, new Uint8Array([0xff, 0xd8, 0xff, 0xd9]), jpeg);
+    expect(r4.status).toBe(404);
+    expect(await r4.json()).toMatchObject({ code: 'photo_inconnue' });
   });
 });

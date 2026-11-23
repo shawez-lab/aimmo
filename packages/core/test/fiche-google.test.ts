@@ -6,6 +6,8 @@ import {
   fallbackReply,
   listingPostText,
   nameTokenHashes,
+  GbpError,
+  type GbpAck,
   type GbpClient,
   type GbpReview,
   type ReviewReplyWriter,
@@ -24,21 +26,32 @@ class FakeGbp implements GbpClient {
   calls: string[] = [];
   reviewsToGive: GbpReview[] = [];
   fail = false;
+  /** L'erreur que Google lève à la place de la panne simple (AU037). */
+  error: Error | null = null;
+  /** L'accusé rendu à la place de celui de Google, pour un accusé absent ou mal formé. */
+  ack: unknown = undefined;
+  private n = 0;
+  private answer(ref: string, url: string | null = null): GbpAck {
+    if (this.error) throw this.error;
+    if (this.fail) throw new Error('panne inventée');
+    return (this.ack === undefined ? { ref, url } : this.ack) as GbpAck;
+  }
   async listReviews(): Promise<GbpReview[]> {
     this.calls.push('listReviews');
+    if (this.error) throw this.error;
     return this.reviewsToGive;
   }
-  async replyToReview(_l: string, reviewRef: string, text: string): Promise<void> {
+  async replyToReview(_l: string, reviewRef: string, text: string): Promise<GbpAck> {
     this.calls.push(`reply:${reviewRef}:${text.length}`);
-    if (this.fail) throw new Error('panne inventée');
+    return this.answer(`${reviewRef}/reply`);
   }
-  async createPost(_l: string, post: { text: string; linkUri: string }): Promise<void> {
+  async createPost(l: string, post: { text: string; linkUri: string }): Promise<GbpAck> {
     this.calls.push(`post:${post.linkUri}`);
-    if (this.fail) throw new Error('panne inventée');
+    return this.answer(`${l}/localPosts/p${++this.n}`, `https://local.google.test/post/${this.n}`);
   }
-  async updateInfo(): Promise<void> {
+  async updateInfo(l: string): Promise<GbpAck> {
     this.calls.push('info');
-    if (this.fail) throw new Error('panne inventée');
+    return this.answer(l);
   }
   writes(): string[] {
     return this.calls.filter((c) => c !== 'listReviews');
@@ -363,7 +376,7 @@ describeWithSqlite('AT06 · fiche Google : publications et réponses aux avis pr
     expect(await s.fiche.syncInfo('net-1', 'ag-1')).toEqual({ ok: true, changed: false, mode: 'reel' });
     expect(await s.fiche.setLocation(direction, 'ag-1', { locationRef: 'locations/123', title: 'Camille Exemple, agent immobilier à Dijon', websiteUri: 'https://camille.exemple.test' })).toEqual({ ok: true });
     s.client.fail = true;
-    expect(await s.fiche.syncInfo('net-1', 'ag-1')).toEqual({ ok: false, rule: null, code: 'echec' });
+    expect(await s.fiche.syncInfo('net-1', 'ag-1')).toEqual({ ok: false, rule: null, code: 'echec', error: 'panne', action: 'reessayer' });
     s.client.fail = false;
     expect(await s.fiche.syncInfo('net-1', 'ag-1')).toEqual({ ok: true, changed: true, mode: 'reel' });
     expect(s.client.writes()).toEqual(['info', 'info', 'info']);
@@ -534,7 +547,7 @@ describeWithSqlite('AT06 · fiche Google : publications et réponses aux avis pr
     if (!d.ok) throw new Error('refusé');
     await s.fiche.validate(agent, d.value.draftId);
     s.client.fail = true;
-    expect(await s.fiche.publish(agent, d.value.draftId)).toEqual({ ok: false, rule: null, code: 'echec' });
+    expect(await s.fiche.publish(agent, d.value.draftId)).toEqual({ ok: false, rule: null, code: 'echec', error: 'panne', action: 'reessayer' });
     s.client.fail = false;
     expect(await s.fiche.publish(agent, d.value.draftId)).toEqual({ ok: true, mode: 'reel' });
     expect(await s.db.all('SELECT outcome FROM gbp_sends ORDER BY rowid')).toEqual([{ outcome: 'echec' }, { outcome: 'envoye' }]);
@@ -693,5 +706,172 @@ describeWithSqlite('AT14 · ce que l’écran de la fiche Google montre', () => 
     expect(v.reviewsTotal).toBe(52);
     expect(v.reviewsWaiting).toBe(52);
     expect(v.reviews[0]!.reviewedAt).toBe(new Date(Date.UTC(2026, 0, 52)).toISOString());
+  });
+});
+
+describeWithSqlite('AU037 · l’accusé réel de Google et l’échec qui dit quoi faire', () => {
+  const view = async (s: Awaited<ReturnType<typeof setup>>, viewer: typeof agent | typeof direction = agent) => {
+    const r = await s.fiche.screen(viewer, 'ag-1');
+    if (!r.ok) throw new Error(r.code);
+    return r.value;
+  };
+  const validReply = async (s: Awaited<ReturnType<typeof setup>>) => {
+    const id = await withReview(s);
+    const d = await s.fiche.draftReply(agent, id);
+    if (!d.ok) throw new Error(d.code);
+    await s.fiche.validate(agent, d.value.draftId);
+    return d.value.draftId;
+  };
+  const validPost = async (s: Awaited<ReturnType<typeof setup>>) => {
+    await listing(s.db, 'b1', 1, 'en_vente', 'Maison lumineuse avec jardin');
+    const p = await s.fiche.duePost('net-1', 'ag-1');
+    if (!p.ok || !p.value) throw new Error('rien de préparé');
+    await s.fiche.validate(agent, p.value.draftId);
+    return p.value.draftId;
+  };
+
+  it('le constat : une fiche réglée avec sa référence complète chez Google est acceptée, l’ancienne aussi', async () => {
+    const s = await setup({ mode: 'reel' });
+    expect(await s.fiche.setLocation(direction, 'ag-1', { locationRef: 'accounts/7/locations/42', title: 'Camille Exemple, agent immobilier', websiteUri: 'https://camille.exemple.test' })).toEqual({ ok: true });
+    expect((await view(s)).location).toMatchObject({ locationRef: 'accounts/7/locations/42' });
+    expect(await s.fiche.setLocation(direction, 'ag-1', { locationRef: 'accounts/x/locations/42', title: 'Camille Exemple', websiteUri: 'https://camille.exemple.test' })).toMatchObject({ ok: false, code: 'invalide' });
+  });
+
+  it('[R154] une réponse partie pour de vrai remonte l’accusé de Google, gardé à côté de l’envoi et montré à l’écran', async () => {
+    const s = await setup({ mode: 'reel' });
+    const draftId = await validReply(s);
+    expect(await s.fiche.publish(agent, draftId)).toEqual({ ok: true, mode: 'reel' });
+    expect(await s.db.all('SELECT r.ack_ref, r.url, r.error_code, r.action FROM gbp_receipts r JOIN gbp_sends s ON s.id = r.send_id WHERE s.draft_id = ?', [draftId])).toEqual([
+      { ack_ref: 'accounts/1/locations/123/reviews/r1/reply', url: null, error_code: null, action: null },
+    ]);
+    const v = await view(s);
+    expect(v.reviews[0]!.draft).toMatchObject({ state: 'envoye', ackRef: 'accounts/1/locations/123/reviews/r1/reply', error: null, action: null });
+    expect(v.link).toEqual({ state: 'pret', action: null, info: null });
+  });
+
+  it('une publication partie garde sa référence et son lien public chez Google', async () => {
+    const s = await setup({ mode: 'reel' });
+    const draftId = await validPost(s);
+    expect(await s.fiche.publish(agent, draftId)).toEqual({ ok: true, mode: 'reel' });
+    expect((await view(s)).publications[0]).toMatchObject({ state: 'envoye', ackRef: 'locations/123/localPosts/p1', url: 'https://local.google.test/post/1' });
+  });
+
+  it('une connexion refusée par Google devient « reconnecter » : dit par l’envoi, gardé, et montré sur la fiche jusqu’au retour', async () => {
+    const s = await setup({ mode: 'reel' });
+    const draftId = await validReply(s);
+    s.client.error = new GbpError('connexion');
+    expect(await s.fiche.publish(agent, draftId)).toEqual({ ok: false, rule: null, code: 'echec', error: 'connexion', action: 'reconnecter' });
+    const v = await view(s);
+    expect(v.link).toMatchObject({ state: 'a_reconnecter', action: 'reconnecter' });
+    expect(v.reviews[0]!.draft).toMatchObject({ state: 'echec', error: 'connexion', action: 'reconnecter', ackRef: null });
+    // Le journal garde le code et le geste, jamais le texte de Google ni celui de la réponse [R13].
+    const events = await s.db.all<{ data: string }>("SELECT data FROM journal WHERE type = 'attirer.google.envoi'");
+    expect(events.map((e) => JSON.parse(e.data))).toContainEqual(expect.objectContaining({ outcome: 'echec', error: 'connexion', action: 'reconnecter' }));
+    expect(JSON.stringify(events)).not.toContain('fiche Google : connexion');
+    // Le compte reconnecté : le texte repart, et la fiche redevient prête.
+    s.client.error = null;
+    expect(await s.fiche.publish(agent, draftId)).toEqual({ ok: true, mode: 'reel' });
+    expect((await view(s)).link.state).toBe('pret');
+    expect((await view(s)).reviews[0]!.draft).toMatchObject({ state: 'envoye', error: null, action: null });
+  });
+
+  it('[R154] l’envoi et son accusé s’écrivent ensemble : si l’accusé ne peut être gardé, rien n’est dit parti', async () => {
+    const s = await setup({ mode: 'reel' });
+    const draftId = await validReply(s);
+    await s.db.exec("CREATE TRIGGER essai_accuse BEFORE INSERT ON gbp_receipts BEGIN SELECT RAISE(ABORT, 'panne inventée'); END");
+    await expect(s.fiche.publish(agent, draftId)).rejects.toThrow();
+    expect(await s.db.all('SELECT id FROM gbp_sends')).toEqual([]);
+    expect((await view(s)).reviews[0]!.draft!.state).toBe('envoi_en_cours');
+    await expect(s.fiche.sendInfo(direction, 'ag-1')).rejects.toThrow();
+    expect(await s.db.all('SELECT id FROM gbp_sends')).toEqual([]);
+    await s.db.exec('DROP TRIGGER essai_accuse');
+    expect(await s.fiche.sendInfo(direction, 'ag-1')).toEqual({ ok: true, changed: true, mode: 'reel' });
+  });
+
+  it('« reconnecter » tient jusqu’au prochain envoi confirmé, même si une panne vient après', async () => {
+    const s = await setup({ mode: 'reel' });
+    const draftId = await validReply(s);
+    s.client.error = new GbpError('connexion');
+    await s.fiche.publish(agent, draftId);
+    s.client.error = new GbpError('panne');
+    expect(await s.fiche.publish(agent, draftId)).toMatchObject({ error: 'panne', action: 'reessayer' });
+    expect((await view(s)).link).toMatchObject({ state: 'a_reconnecter', action: 'reconnecter' });
+    s.client.error = new GbpError('droits');
+    await s.fiche.sendInfo(direction, 'ag-1');
+    expect((await view(s)).link).toMatchObject({ state: 'a_relier', action: 'relier' });
+    s.client.error = null;
+    expect(await s.fiche.publish(agent, draftId)).toEqual({ ok: true, mode: 'reel' });
+    expect((await view(s)).link.state).toBe('pret');
+  });
+
+  it('une mise à jour autorisée de la fiche remonte son accusé réel ; un refus de droits demande de la relier', async () => {
+    const s = await setup({ mode: 'reel' });
+    expect(await s.fiche.sendInfo(agent, 'ag-1')).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    expect(await s.fiche.sendInfo({ ...direction, networkId: 'net-2' }, 'ag-1')).toMatchObject({ ok: false, rule: 'R16' });
+    expect(s.client.writes()).toEqual([]);
+    expect(await s.fiche.sendInfo(direction, 'ag-1')).toEqual({ ok: true, changed: true, mode: 'reel' });
+    expect((await view(s, direction)).link.info).toMatchObject({ ackRef: 'locations/123', error: null, action: null });
+    expect(await s.fiche.sendInfo(direction, 'ag-1')).toEqual({ ok: true, changed: false, mode: 'reel' });
+    await s.fiche.setLocation(direction, 'ag-1', { locationRef: 'accounts/7/locations/42', title: 'Camille Exemple, agent immobilier', websiteUri: 'https://camille.exemple.test' });
+    s.client.error = new GbpError('droits');
+    expect(await s.fiche.sendInfo(direction, 'ag-1')).toEqual({ ok: false, rule: null, code: 'echec', error: 'droits', action: 'relier' });
+    const v = await view(s, direction);
+    expect(v.link).toMatchObject({ state: 'a_relier', action: 'relier', info: { ackRef: null, error: 'droits', action: 'relier' } });
+  });
+
+  it('une publication dont la réponse de Google s’est perdue n’est ni dite partie ni refaite : à vérifier', async () => {
+    const s = await setup({ mode: 'reel' });
+    const draftId = await validPost(s);
+    s.client.ack = { state: 'LIVE' };
+    expect(await s.fiche.publish(agent, draftId)).toEqual({ ok: false, rule: null, code: 'a_verifier', action: 'verifier' });
+    expect(await s.db.all('SELECT id FROM gbp_sends')).toEqual([]);
+    expect((await view(s)).publications[0]!.state).toBe('envoi_en_cours');
+    s.client.ack = undefined;
+    expect(await s.fiche.publish(agent, draftId)).toMatchObject({ ok: false, code: 'deja_parti' });
+    expect(s.client.writes().filter((c) => c.startsWith('post:'))).toHaveLength(1);
+  });
+
+  it('une réponse à un avis sans accusé est un échec « à vérifier », qui peut repartir : elle remplace la précédente chez Google', async () => {
+    const s = await setup({ mode: 'reel' });
+    const draftId = await validReply(s);
+    s.client.ack = { ref: '' };
+    expect(await s.fiche.publish(agent, draftId)).toEqual({ ok: false, rule: null, code: 'echec', error: 'accuse_absent', action: 'verifier' });
+    s.client.ack = undefined;
+    s.client.error = new GbpError('incertain');
+    expect(await s.fiche.publish(agent, draftId)).toEqual({ ok: false, rule: null, code: 'echec', error: 'panne', action: 'reessayer' });
+    s.client.error = null;
+    expect(await s.fiche.publish(agent, draftId)).toEqual({ ok: true, mode: 'reel' });
+  });
+
+  it('un texte refusé par Google demande de le corriger ; la lecture des avis dit aussi son geste', async () => {
+    const s = await setup({ mode: 'reel' });
+    const draftId = await validReply(s);
+    s.client.error = new GbpError('refuse_google');
+    expect(await s.fiche.publish(agent, draftId)).toMatchObject({ error: 'refuse_google', action: 'corriger' });
+    s.client.error = new GbpError('connexion');
+    expect(await s.fiche.importReviews('net-1', 'ag-1')).toEqual({ ok: false, rule: null, code: 'echec', error: 'connexion', action: 'reconnecter' });
+  });
+
+  it('[R26] en essai, aucun accusé ni échec n’est gardé, et la fiche dit qu’elle est en essai', async () => {
+    const s = await setup();
+    const draftId = await validReply(s);
+    s.client.error = new GbpError('connexion');
+    expect(await s.fiche.publish(agent, draftId)).toEqual({ ok: true, mode: 'essai' });
+    expect(await s.fiche.sendInfo(direction, 'ag-1')).toEqual({ ok: true, changed: true, mode: 'essai' });
+    expect(await s.db.all('SELECT * FROM gbp_receipts')).toEqual([]);
+    expect((await view(s)).link).toEqual({ state: 'essai', action: null, info: null });
+  });
+
+  it('[R17] un accusé ne change plus et ne s’efface pas ; un envoi réussi sans référence est refusé par la base', async () => {
+    const s = await setup({ mode: 'reel' });
+    await s.fiche.publish(agent, await validReply(s));
+    await expect(s.db.run("UPDATE gbp_receipts SET ack_ref = 'autre/ref'")).rejects.toThrow();
+    await expect(s.db.run('DELETE FROM gbp_receipts')).rejects.toThrow();
+    const send = (await s.db.first<{ id: string }>('SELECT id FROM gbp_sends'))!.id;
+    await s.db.run("INSERT INTO gbp_sends (id, network_id, agent_id, draft_id, kind, info_sha256, mode, outcome, sent_by, sent_at) VALUES ('s2', 'net-1', 'ag-1', NULL, 'informations', 'h', 'reel', 'envoye', 'system:fiche_google', 'x')");
+    await expect(s.db.run("INSERT INTO gbp_receipts (send_id, ack_ref, url, error_code, action, done_at) VALUES ('s2', NULL, NULL, NULL, NULL, 'x')")).rejects.toThrow();
+    await expect(s.db.run("INSERT INTO gbp_receipts (send_id, ack_ref, url, error_code, action, done_at) VALUES ('s2', NULL, NULL, 'inventee', 'reessayer', 'x')")).rejects.toThrow();
+    await expect(s.db.run("INSERT INTO gbp_receipts (send_id, ack_ref, url, error_code, action, done_at) VALUES ('s2', 'ref/ok', 'http://non.test', NULL, NULL, 'x')")).rejects.toThrow();
+    expect(send).toBeTruthy();
   });
 });

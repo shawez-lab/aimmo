@@ -265,4 +265,21 @@ describeWithSqlite('V08 · réservation depuis le site et les messages, en mode 
     for (const secret of ['Léa', 'lea.exemple', 'case cochée']) expect(dump, secret).not.toContain(secret);
     expect(dump).toContain('rdv.en_ligne');
   });
+  it('[R700] avec le bien, les créneaux proposés suivent la marge du même lieu, et le créneau proposé se réserve', async () => {
+    const w = await world();
+    const mine = await w.store.createProperty({ networkId: w.net.id, agentId: w.paul.id, reference: 'AU055-API', kind: 'home', postalCode: '21000', city: 'Commune test' });
+    const theirs = await w.store.createProperty({ networkId: (await w.store.createNetwork('Réseau tiers')).id, reference: 'AU055-TIERS', kind: 'home', postalCode: '21000', city: 'Commune test' });
+    const marc = await w.store.createPerson({ networkId: w.net.id, firstName: 'Marc', lastName: 'Essai' });
+    // Mercredi 11 novembre, 9 h à 9 h 45 : une visite au bien, prise par l'agent.
+    expect((await w.rdv.book({ networkId: w.net.id, agentId: w.paul.id, personId: marc.id, propertyId: mine.id, kind: 'visite', start: at('2026-11-11', '09:00'), source: 'agent' })).ok).toBe(true);
+    const first = async (over: Record<string, unknown>) => ((await w.call('creneaux', w.slotsAsk({ kind: 'visite', from: '2026-11-11', ...over }))).body.slots as { start: string }[])[0]!.start;
+    expect(await first({ propertyId: mine.id })).toBe(at('2026-11-11', '10:00').toISOString());
+    expect(await first({})).toBe(at('2026-11-11', '10:15').toISOString());
+    // Un bien d'un autre réseau n'ouvre rien : les créneaux sans marge, comme sans bien.
+    expect(await first({ propertyId: theirs.id })).toBe(at('2026-11-11', '10:15').toISOString());
+    expect((await w.call('creneaux', w.slotsAsk({ propertyId: 42 }))).status).toBe(400);
+    const booked = await w.call('reservation', w.bookAsk(at('2026-11-11', '10:00').toISOString(), { kind: 'visite', propertyId: mine.id }));
+    expect(booked.status).toBe(200);
+    expect((await w.rdv.bookedOf(w.paul.id)).map((a) => a.start_at)).toContain(at('2026-11-11', '10:00').toISOString());
+  });
 });

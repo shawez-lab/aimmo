@@ -224,4 +224,12 @@ describeWithSqlite('EC10 · gestes du client branchés sur les modules', () => {
     expect(JSON.stringify(panne)).not.toContain('@');
     expect(panne[0]!.data).toMatchObject({ rule: 'R165', kind: 'offre', error: 'Error' });
   });
+
+  it('[R702] AU053 · l’agenda relié de l’agent injoignable : la visite n’est pas fixée et le client le sait', async () => {
+    const t = await setup();
+    const b = await t.buyer('Bruno');
+    const down = Object.assign(new Error('agenda injoignable'), { name: 'AgendaUnavailableError' });
+    const broken = new GestesModules({ ...t.deps, visites: { schedule: async () => { throw down; } } as never }, { now: t.now });
+    expect(await broken.bookVisit(await t.viewer(b), t.propertyId, { start: WEDNESDAY_10H })).toEqual({ ok: false, rule: 'R702', code: 'agenda_indisponible' });
+  });
 });

@@ -243,8 +243,10 @@ describeWithSqlite('AU019 · la copie prend aussi les objets de chaque stockage'
     for (const pkg of ['core/src', 'api/src']) walk(join(root, pkg));
     // Pas des fichiers des stockages : les copies elles-mêmes, et les fichiers publics des ventes (DVF) servis à part.
     // `signature-en-ligne/` marque un document signé dont la copie vit en base ; `candidatures/`, `bail/`, `choix/` sont
-    // des dossiers sous `location/` ; `effacements/` est le registre du compartiment des copies ; le reste, des types MIME.
-    const autres = new Set(['copies/', 't/', 'd/', 'candidatures/', 'bail/', 'choix/', 'effacements/', 'signature-en-ligne/', 'multipart/', 'text/']);
+    // des dossiers sous `location/` ; `effacements/` est le registre du compartiment des copies ; `accounts/` et
+    // `locations/` sont les chemins de l'API Google Business Profile (AU037), `customers/` ceux de l'API Google Ads
+    // (AU038), jamais des fichiers ; le reste, des types MIME.
+    const autres = new Set(['copies/', 't/', 'd/', 'candidatures/', 'bail/', 'choix/', 'effacements/', 'signature-en-ligne/', 'accounts/', 'locations/', 'customers/', 'multipart/', 'text/']);
     const seen = new Set<string>();
     for (const f of files) {
       const text = readFileSync(f, 'utf8');
