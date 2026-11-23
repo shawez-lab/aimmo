@@ -5861,7 +5861,7 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### X17 · Signature en ligne, avenant et identité à l'écran
-- Statut : bloquée : la signature en ligne attend H24 ; D12 a pour critère, testé, qu'elle reste absente de l'écran tant que l'avocat ne l'a pas validée, et X17 contredit ce critère
+- Statut : en cours (voie 3, #795). Décision de Shawez du 2026-11-23 : ce qui attend l'avocat est construit et testable en essai, activé plus tard ; elle remplace le critère de D12 qui gardait la signature en ligne hors de l'écran. Avant : bloquée : la signature en ligne attend H24
 - Décidé (2026-11-03), lecture prudente (`SECOURS.md`) : rien n'est livré, le test de D12 (`la signature en ligne n’existe pas sur cet écran tant que l’avocat ne l’a pas validée`) reste tel quel. Le geste écrit puis retiré aurait aussi été une impasse : seul un document au modèle validé passe le contrôle, il aurait noté un accord sur une vraie fiche, et le code resté dans la boîte d'essai n'arrive à personne. La signature d'un avenant est déjà à l'écran (D17). `fiche.identite` ne reçoit aucun geste : le contrôle lit le coffre, jamais cette note [R92], et un bouton « identité vérifiée » laisserait croire que le contrôle passera. À reprendre à H24 et H05, en retirant alors le test de D12.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D08
 - Cahier : M06 ; R16, R201.

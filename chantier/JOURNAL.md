@@ -1762,3 +1762,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-23 17:53 · VOIE 2 : rien de faisable : seul changement depuis 16:55, la voie 1 a repris AU035 (verrou 17:23, #757 seule proposition ouverte) ; restent AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05 (humain) ; aucun module non découpé
 - 2026-11-23 17:53 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 15:55 et 16:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-23 17:53 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-23 18:45 · VOIE 3 : décision de Shawez (18:08) : tout ce qui attend l'avocat se construit en essai, activé plus tard ; il teste l'application tout de suite (lien d'accès Z04 recréé). X17 reprise : signature en ligne du mandat à l'écran, en essai, code d'essai montré (#795)
