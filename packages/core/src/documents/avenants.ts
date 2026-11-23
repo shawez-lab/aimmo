@@ -29,7 +29,7 @@ const PLACE_LABEL: Record<SignaturePlace, string> = { agence: 'à l’agence', h
 type Refusal = { ok: false; rule: 'R16'; code: string };
 type Problem =
   | { ok: false; rule: 'R41'; code: 'checks_failed'; check: SignatureCheck }
-  | { ok: false; rule: null; code: 'bad_date' | 'bad_place' | 'bad_scan' | 'not_an_amendment' | 'already_signed' | 'no_mandate' | 'before_mandate' | 'bad_schedule' | 'bad_piece' | 'unknown_document' | 'depot_ferme' | 'scan_absent' | 'scan_deja_utilise' };
+  | { ok: false; rule: null; code: 'bad_date' | 'bad_place' | 'bad_scan' | 'not_an_amendment' | 'already_signed' | 'no_mandate' | 'before_mandate' | 'bad_schedule' | 'bad_tiers' | 'bad_piece' | 'unknown_document' | 'depot_ferme' | 'scan_absent' | 'scan_deja_utilise' };
 
 export interface AmendmentSignatureOptions {
   now?: () => Date;
@@ -77,7 +77,7 @@ export class SignatureAvenant {
     if (doc.kind !== 'avenant_mandat') return { ok: false, rule: null, code: 'not_an_amendment' };
     if (!doc.mandate_id) return { ok: false, rule: null, code: 'no_mandate' };
 
-    const checked = await this.controles.check(viewer, documentId);
+    const checked = await this.controles.check(viewer, documentId, { signedAt: input.signedAt });
     if (!checked.ok) return checked;
     const existing = await this.db.first<{ document_id: string; mandate_id: string; copy_hash: string }>('SELECT document_id, mandate_id, copy_hash FROM signed_amendments WHERE document_id = ?', [documentId]);
     if (existing) {
@@ -143,7 +143,7 @@ export class SignatureAvenant {
   }
 
   /** Les conditions en vigueur d'un mandat et l'historique de ses avenants : qui voit la fiche en entier [R16]. */
-  async terms(viewer: Viewer, mandateId: string): Promise<{ ok: true; value: MandateTerms } | Refusal | { ok: false; rule: null; code: 'unknown_mandate' }> {
+  async terms(viewer: Viewer, mandateId: string): Promise<{ ok: true; value: MandateTerms & { pending: MandateTerms['amendments'] } } | Refusal | { ok: false; rule: null; code: 'unknown_mandate' }> {
     const m = await this.db.first<{ person_id: string; network_id: string }>('SELECT person_id, network_id FROM mandates WHERE id = ?', [mandateId]);
     if (!m || m.network_id !== viewer.networkId) {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'mandate', code: 'unknown' } }, this.now);
@@ -155,8 +155,11 @@ export class SignatureAvenant {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `mandate:${mandateId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'mandate', code: 'not_assigned' } }, this.now);
       return { ok: false, rule: 'R16', code: 'not_assigned' };
     }
-    const terms = await mandateTerms(this.db, mandateId);
-    if (!terms) return { ok: false, rule: null, code: 'unknown_mandate' };
-    return { ok: true, value: terms };
+    // Les conditions de ce jour ; les avenants signés dont la date d'effet n'est pas venue se disent à part (AU057b).
+    const terms = await mandateTerms(this.db, mandateId, this.now());
+    const all = await mandateTerms(this.db, mandateId);
+    if (!terms || !all) return { ok: false, rule: null, code: 'unknown_mandate' };
+    const inForce = new Set(terms.amendments.map((a) => a.documentId));
+    return { ok: true, value: { ...terms, pending: all.amendments.filter((a) => !inForce.has(a.documentId)) } };
   }
 }

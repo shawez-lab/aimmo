@@ -15,7 +15,7 @@
  * - « gratuit », « mandataire » et toute mention de l'IA sont refusés (AGENTS.md).
  */
 import type { PropertyKind } from '../db/types.ts';
-import type { EnergyClass, HeatingKind, OutdoorKind } from './fiche-bien.ts';
+import { surfacesFor, type Amenity, type Condition, type EnergyClass, type HeatingKind, type OutdoorKind } from './fiche-bien.ts';
 
 /** Ce que l'IA reçoit du bien : ni nom, ni coordonnée, ni adresse, ni texte libre [R15, R46]. */
 export interface ListingFacts {
@@ -35,10 +35,16 @@ export interface ListingFacts {
   elevator: boolean | null;
   energyClass: EnergyClass | null;
   climateClass: EnergyClass | null;
+  /** AU061 · équipements et état dits sur la fiche ; absents, ils ne sont jamais une source. */
+  amenities?: Amenity[];
+  condition?: Condition | null;
+  /** AU063 · surfaces Carrez et utile, au centième de m² ; absentes, elles ne sont jamais une source. */
+  carrezM2?: number | null;
+  usableM2?: number | null;
 }
 
 export const FACT_KEYS: readonly (keyof ListingFacts)[] = [
-  'kind', 'city', 'postalCode', 'surfaceM2', 'rooms', 'bedrooms', 'floor', 'floorsTotal', 'buildYear', 'heating', 'outdoor', 'landM2', 'parkingSpaces', 'elevator', 'energyClass', 'climateClass',
+  'kind', 'city', 'postalCode', 'surfaceM2', 'rooms', 'bedrooms', 'floor', 'floorsTotal', 'buildYear', 'heating', 'outdoor', 'landM2', 'parkingSpaces', 'elevator', 'energyClass', 'climateClass', 'amenities', 'condition', 'carrezM2', 'usableM2',
 ];
 
 export type SentenceProblem =
@@ -129,7 +135,8 @@ const FEATURES: { terms: string[]; field: keyof ListingFacts | null; has: (f: Li
   { terms: ['cour', 'courette'], field: 'outdoor', has: (f) => f.outdoor.includes('cour') },
   { terms: ['ascenseur'], field: 'elevator', has: (f) => f.elevator === true },
   { terms: ['sans ascenseur'], field: 'elevator', has: (f) => f.elevator === false },
-  { terms: ['parking', 'parkings', 'stationnement', 'garage', 'garages', 'box'], field: 'parkingSpaces', has: (f) => (f.parkingSpaces ?? 0) > 0 },
+  // Un garage dit sur la fiche (AU051) est aussi une place : il prouve « garage » comme un nombre de places.
+  { terms: ['parking', 'parkings', 'stationnement', 'garage', 'garages', 'box'], field: 'parkingSpaces', has: (f) => (f.parkingSpaces ?? 0) > 0 || (f.amenities ?? []).includes('garage') },
   { terms: ['rez-de-chaussée', 'rez de chaussée'], field: 'floor', has: (f) => f.floor === 0 },
   { terms: ['dernier étage'], field: 'floorsTotal', has: (f) => f.floor !== null && f.floor === f.floorsTotal },
   { terms: ['chauffage collectif'], field: 'heating', has: (f) => f.heating === 'collectif' },
@@ -139,10 +146,42 @@ const FEATURES: { terms: string[]; field: keyof ListingFacts | null; has: (f: Li
   { terms: ['fioul', 'fuel'], field: 'heating', has: (f) => f.heating === 'fioul' },
   { terms: ['poêle', 'chauffage au bois', 'chaudière bois'], field: 'heating', has: (f) => f.heating === 'bois' },
   { terms: ['terrain'], field: 'landM2', has: (f) => f.kind === 'land' || f.landM2 !== null },
+  // AU061 · équipements et état dits sur la fiche : nommés seulement s'ils y sont.
+  { terms: ['piscine'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('piscine') },
+  { terms: ['cave', 'caves'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('cave') },
+  { terms: ['cheminée'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('cheminee') },
+  { terms: ['grenier', 'combles'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('grenier') },
+  { terms: ['véranda'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('veranda') },
+  { terms: ['climatisation', 'climatisé', 'climatisée'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('climatisation') },
+  // AU051 · le plain-pied, dit sur la fiche seulement.
+  { terms: ['plain-pied', 'plain pied', 'de plain-pied'], field: 'amenities', has: (f) => (f.amenities ?? []).includes('plain_pied') },
+  // Un état nié (« non rénové », « jamais refait », « pas en bon état ») ne se prouve pas par la fiche : jamais de source,
+  // et il se lit avant le terme positif (AU061).
+  {
+    terms: ['non', 'pas', 'ni', 'jamais', 'pas encore', 'pas été', 'jamais été', 'pas vraiment'].flatMap((n) =>
+      ['rénové', 'rénovée', 'rénovés', 'rénovées', 'refait', 'refaite', 'refaits', 'refaites', 'refait à neuf', 'neuf', 'neuve', 'en bon état'].map((t) => `${n} ${t}`),
+    ),
+    field: null,
+    has: () => false,
+  },
+  // « Sans travaux » se lit avant « travaux » : vrai seulement pour un bien dit neuf, refait ou en bon état.
+  { terms: ['sans travaux', 'aucun travaux', 'aucuns travaux', 'pas de travaux', 'aucun travail', 'sans travaux à prévoir', 'aucun travaux à prévoir', 'aucuns travaux à prévoir', 'pas de travaux à prévoir', 'rien à prévoir'], field: 'condition', has: (f) => f.condition === 'neuf' || f.condition === 'refait_a_neuf' || f.condition === 'bon_etat' },
+  { terms: ['travaux à prévoir', 'des travaux', 'travaux'], field: 'condition', has: (f) => f.condition === 'travaux_a_prevoir' || f.condition === 'a_renover' },
+  { terms: ['à rénover'], field: 'condition', has: (f) => f.condition === 'a_renover' },
+  { terms: ['refait à neuf', 'rénové', 'rénovée', 'refait', 'refaite', 'refaits'], field: 'condition', has: (f) => f.condition === 'refait_a_neuf' },
+  { terms: ['bon état'], field: 'condition', has: (f) => f.condition === 'bon_etat' || f.condition === 'refait_a_neuf' || f.condition === 'neuf' },
+  { terms: ['neuf'], field: 'condition', has: (f) => f.condition === 'neuf' },
+  // L'absence d'un équipement ne se prouve pas par la fiche (une case vide veut dire « je ne sais pas ») : « sans piscine »
+  // n'a jamais de source, et se lit avant « piscine » (AU061).
+  {
+    terms: ['piscine', 'cave', 'cheminée', 'grenier', 'combles', 'véranda', 'climatisation', 'garage', 'plain-pied'].flatMap((t) => [`sans ${t}`, `pas de ${t}`, `aucune ${t}`, `ni ${t}`]),
+    field: null,
+    has: () => false,
+  },
   // Sans champ dans la fiche : jamais de source.
   {
-    terms: ['piscine', 'cave', 'caves', 'cellier', 'grenier', 'combles', 'véranda', 'cheminée', 'climatisation', 'climatisé', 'fibre', 'double vitrage', 'parquet', 'dressing', 'buanderie',
-      'neuf', 'rénové', 'rénovée', 'refait', 'refaite', 'refaits', 'travaux', 'vue', 'sans vis-à-vis', 'traversant', 'traversante', 'plein sud', 'exposé', 'exposée', 'interphone',
+    terms: ['cellier', 'fibre', 'double vitrage', 'parquet', 'dressing', 'buanderie',
+      'vue', 'sans vis-à-vis', 'traversant', 'traversante', 'plein sud', 'exposé', 'exposée', 'interphone',
       'digicode', 'gardien', 'gardienne', 'loggia', 'mezzanine', 'sous-sol', 'dépendance', 'dépendances', 'puits', 'portail', 'motorisé', 'alarme', 'domotique', 'tramway', 'gare',
       'écoles', 'école', 'commerces', 'métro'],
     field: null,
@@ -182,6 +221,8 @@ function numericSources(f: ListingFacts): { field: keyof ListingFacts; value: nu
   push('floorsTotal', f.floorsTotal);
   push('buildYear', f.buildYear);
   push('landM2', f.landM2);
+  push('carrezM2', f.carrezM2 ?? null);
+  push('usableM2', f.usableM2 ?? null);
   push('parkingSpaces', f.parkingSpaces);
   if (f.postalCode !== null && /^\d{5}$/.test(f.postalCode)) push('postalCode', Number(f.postalCode));
   return out;
@@ -253,6 +294,18 @@ export function traceSentence(sentence: string, facts: ListingFacts): SourcedSen
     if (unit) fields = unit.fields;
     else if (/(?<![\p{L}])sur\s*$/u.test(before)) fields = ['floorsTotal'];
     else fields = NO_UNIT_FIELDS;
+    // AU063 · une surface dite « Carrez », « utile » ou « habitable » est celle-là, jamais une autre de même valeur.
+    if (unit && unit.fields.includes('surfaceM2')) {
+      // Le qualificatif d'une mesure est le sien : juste après son unité d'abord, sinon juste avant le nombre, depuis la
+      // mesure ou la virgule qui précède (« Surface Carrez : 60 m² » garde le sien) ; celui d'une autre mesure ne compte jamais.
+      // Après l'unité : jusqu'à la virgule, à la mesure suivante ou au mot qui l'annonce (« et », « dont », « surface »…) :
+      // « 60 m² loi Carrez », « 60 m² (Carrez) », « 70 m² utiles » ; jamais le libellé de la mesure suivante.
+      const behind = (/^\s*(?:m²|m2|metres? carres?|metres?)([^,;\d]{0,30})/u.exec(after)?.[1] ?? '').replace(/^\s*(?:de\s+(?:la\s+)?)?surface(?![\p{L}])/u, ' ').split(/(?<![\p{L}])(?:et|dont|soit|ou|avec|plus|surface|terrain)(?![\p{L}])/u)[0] ?? '';
+      const ahead = before.slice(-40).split(/[,;]|\d/u).at(-1) ?? '';
+      const qualifier = (text: string): (keyof ListingFacts)[] | null =>
+        /(?<![\p{L}])carrez(?![\p{L}])/u.test(text) ? ['carrezM2'] : /(?<![\p{L}])utiles?(?![\p{L}])/u.test(text) ? ['usableM2'] : /(?<![\p{L}])habitables?(?![\p{L}])/u.test(text) ? ['surfaceM2'] : null;
+      fields = qualifier(behind) ?? qualifier(ahead) ?? fields;
+    }
     const src = numbers.find((n) => fields.includes(n.field) && n.value === value);
     if (src) addSource(src.field, raw);
     else problems.push({ code: 'nombre_sans_source', value: raw });
@@ -311,6 +364,24 @@ export function traceSentence(sentence: string, facts: ListingFacts): SourcedSen
   return { text: sentence, sources, problems };
 }
 
+/**
+ * Une source rangée à la validation est-elle encore vraie pour la fiche du jour (AU066) ? Le nombre vaut encore son
+ * champ, l'équipement ou l'état est encore dit, la ville et la classe sont les mêmes. Un nombre écrit en lettres se
+ * relit comme le contrôle le lit ; un nombre qu'il ne sait pas relire ne vaut plus.
+ */
+export function bindingHolds(source: { field: keyof ListingFacts; value: string }, facts: ListingFacts): boolean {
+  const { field, value } = source;
+  if (field === 'city') return facts.city !== null && norm(facts.city) === norm(value);
+  if (field === 'energyClass' || field === 'climateClass') return facts[field] === value;
+  const feature = FEATURES.find((f) => f.field === field && f.terms.some((t) => norm(t) === norm(value)));
+  if (feature) return feature.has(facts);
+  // Un nombre en chiffres, ou en lettres comme le contrôle les lit (« trois »).
+  const digits = parseNumber(value);
+  const n = Number.isFinite(digits) ? digits : SPELLED_NORM.get(norm(value).trim());
+  if (n === undefined || !Number.isFinite(n)) return false;
+  return numericSources(facts).some((s) => s.field === field && s.value === n);
+}
+
 /** Contrôle tout un texte, titre compris : chaque phrase avec ses sources et ses problèmes. */
 export function traceListing(title: string, body: string, facts: ListingFacts): TraceResult {
   const all = [...sentences(title), ...sentences(body)].map((s) => traceSentence(s, facts));
@@ -338,18 +409,25 @@ const HEATING_LABEL: Record<HeatingKind, string | null> = {
   autre: null,
 };
 const OUTDOOR_LABEL: Record<OutdoorKind, string> = { balcon: 'balcon', terrasse: 'terrasse', jardin: 'jardin', cour: 'cour' };
+const AMENITY_LABEL: Record<Amenity, string> = { piscine: 'piscine', cave: 'cave', cheminee: 'cheminée', grenier: 'grenier', veranda: 'véranda', climatisation: 'climatisation', garage: 'garage', plain_pied: 'plain-pied' };
+const CONDITION_LABEL: Record<Condition, string> = { neuf: 'Logement neuf.', refait_a_neuf: 'Refait à neuf.', bon_etat: 'En bon état.', travaux_a_prevoir: 'Travaux à prévoir.', a_renover: 'À rénover.' };
 
 /** Le texte de secours, fait par le code depuis la fiche seule : sobre, vrai, et qui passe toujours le contrôle. */
 export function fallbackListing(f: ListingFacts): { title: string; body: string } {
   const label = KIND_LABEL[f.kind];
+  // AU063 · les surfaces que l'annonce affiche, dans l'ordre de sa règle : la première ouvre le titre et le texte.
+  const shown = surfacesFor('annonce', { kind: f.kind, surfaceM2: f.surfaceM2, carrezM2: f.carrezM2 ?? null, usableM2: f.usableM2 ?? null });
+  const main = shown[0] ?? null;
+  const QUALIFIED: Record<string, string> = { habitable: '', carrez: ' Carrez', utile: ' utiles' };
+  const mainText = main ? `${fr(main.m2)} m²${QUALIFIED[main.kind]}` : null;
   const titleParts = [label];
   if (f.rooms !== null && f.kind !== 'land') titleParts.push(`${f.rooms} pièce${f.rooms > 1 ? 's' : ''}`);
-  if (f.surfaceM2 !== null) titleParts.push(`${fr(f.surfaceM2)} m²`);
+  if (mainText) titleParts.push(mainText);
   if (f.city) titleParts.push(f.city);
   const title = titleParts.join(', ');
   const lines: string[] = [];
   const first: string[] = [];
-  if (f.surfaceM2 !== null) first.push(`${label} de ${fr(f.surfaceM2)} m²`);
+  if (mainText) first.push(`${label} de ${mainText}`);
   else first.push(label);
   if (f.city) first.push(`à ${f.city}`);
   let s1 = first.join(' ');
@@ -366,9 +444,18 @@ export function fallbackListing(f: ListingFacts): { title: string; body: string 
     lines.push(`${list.charAt(0).toUpperCase()}${list.slice(1)}.`);
   }
   if (f.landM2 !== null && f.kind !== 'land') lines.push(`Terrain de ${fr(f.landM2)} m².`);
+  // AU063 · les autres surfaces que l'annonce affiche, chacune nommée.
+  for (const x of shown.slice(1)) lines.push(`${x.label.charAt(0).toUpperCase()}${x.label.slice(1)} de ${fr(x.m2)} m².`);
   if (f.parkingSpaces !== null && f.parkingSpaces > 0) lines.push(`${f.parkingSpaces} place${f.parkingSpaces > 1 ? 's' : ''} de stationnement.`);
   const heating = f.heating ? HEATING_LABEL[f.heating] : null;
   if (heating) lines.push(`${heating}.`);
+  // AU061 · équipements et état, dans les mots que le contrôle relie à la fiche.
+  const amenities = (f.amenities ?? []).map((a) => AMENITY_LABEL[a]);
+  if (amenities.length > 0) {
+    const list = amenities.length === 1 ? amenities[0]! : `${amenities.slice(0, -1).join(', ')} et ${amenities[amenities.length - 1]}`;
+    lines.push(`${list.charAt(0).toUpperCase()}${list.slice(1)}.`);
+  }
+  if (f.condition) lines.push(CONDITION_LABEL[f.condition]);
   if (f.energyClass) lines.push(`Classe énergie ${f.energyClass}.`);
   return { title, body: lines.join(' ') };
 }

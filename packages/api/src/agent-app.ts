@@ -18,6 +18,7 @@ import { CLASSEMENT_SCRIPT } from '../app/classement.ts';
 import { BIENS_FICHE_SCRIPT } from '../app/biens-fiche.ts';
 import { SEQUENCE_FICHE_SCRIPT } from '../app/sequence-fiche.ts';
 import { RECHERCHE_SCRIPT } from '../app/recherche.ts';
+import { SECTEUR_CARTE_SCRIPT } from '../app/secteur-carte.ts';
 import { AVIS_SCRIPT } from '../app/avis.ts';
 import { OFFRES_SCRIPT } from '../app/offres.ts';
 import { DOSSIER_SCRIPT } from '../app/dossier.ts';
@@ -30,6 +31,7 @@ import { ESPACE_AGENT_SCRIPT } from '../app/espace-agent.ts';
 import { LOUER_SCRIPT } from '../app/louer.ts';
 import { LOUER_DOSSIER_SCRIPT } from '../app/louer-dossier.ts';
 import { LOUER_EDL_SCRIPT } from '../app/louer-edl.ts';
+import { LOUER_FAITS_SCRIPT } from '../app/louer-faits.ts';
 import { LOUER_MODELES_SCRIPT } from '../app/louer-modeles.ts';
 import { MANDAT_MODELES_SCRIPT } from '../app/mandat-modeles.ts';
 import { LOUER_REMISE_SCRIPT } from '../app/louer-remise.ts';
@@ -80,19 +82,25 @@ import { BANQUE_SCRIPT } from '../app/banque.ts';
 import { RAPPORTS_AGENT_SCRIPT, RAPPORTS_SCRIPT } from '../app/rapports.ts';
 import { VIAGER_SCRIPT } from '../app/viager.ts';
 import { VISITES_EN_LIGNE_SCRIPT } from '../app/visites-en-ligne.ts';
+import { BON_VISITE_SCRIPT } from '../app/bon-visite.ts';
 import { RECOMMANDATION_SCRIPT } from '../app/recommandation.ts';
 import { FINANCES_SCRIPT } from '../app/finances.ts';
 import { FICHE_GOOGLE_SCRIPT } from '../app/fiche-google.ts';
 import { FICHE_BIEN_SCRIPT } from '../app/fiche-bien.ts';
 import { INTEGRATION_SCRIPT } from '../app/integration.ts';
 import { NOTIFICATIONS_SCRIPT } from '../app/notifications.ts';
+import { HORS_LIGNE_PATH, HORS_LIGNE_SCRIPT } from '../app/hors-ligne.ts';
 import { APP_CSS, APP_JS, ICON_SVG, INDEX_HTML, MANIFEST, swJs } from '../app/fichiers.ts';
 
 export const AGENT_APP_PATH = '/app';
 /** Version de la coquille : changer ce nom remplace le cache de l'appareil. */
-export const AGENT_APP_CACHE = 'aimmo-app-v1';
-/** Les seuls fichiers que l'appareil garde : la coquille, rien d'autre. */
-export const AGENT_APP_SHELL: readonly string[] = Object.freeze(['/app/', '/app/app.css', '/app/app.js', '/app/manifest.webmanifest', '/app/icon.svg']);
+export const AGENT_APP_CACHE = 'aimmo-app-v2';
+/**
+ * Les seuls fichiers que l'appareil garde : la coquille, rien d'autre. La visite sans réseau (AU018) en fait partie : elle
+ * doit s'ouvrir en mode avion. Ses données (le paquet du jour, sans client, et la boîte d'envoi) sont dans IndexedDB,
+ * jamais dans le cache [R276, R278].
+ */
+export const AGENT_APP_SHELL: readonly string[] = Object.freeze(['/app/', '/app/app.css', '/app/app.js', HORS_LIGNE_PATH, '/app/manifest.webmanifest', '/app/icon.svg']);
 
 /** Politique de contenu : rien d'extérieur, aucun script en ligne, aucun appel hors de ce Worker. */
 export const AGENT_APP_CSP =
@@ -140,6 +148,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/': { body: INDEX_HTML, type: 'text/html; charset=utf-8' },
   '/app/app.css': { body: APP_CSS, type: 'text/css; charset=utf-8' },
   '/app/app.js': { body: trimIndent(stripCommentLines(APP_JS)), type: 'text/javascript; charset=utf-8' },
+  // La visite sans réseau (AU018), gardée par l'appareil avec la coquille [R276, R277, R278].
+  [HORS_LIGNE_PATH]: { body: trimIndent(stripCommentLines(HORS_LIGNE_SCRIPT)), type: 'text/javascript; charset=utf-8' },
   // Les alertes de l'agent (C09c), chargées seulement s'il en a, jamais gardées sur l'appareil [R201].
   '/app/alertes.js': { body: ALERTES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les étapes du jour des séquences (BR32), chargées seulement s'il y en a au plan, jamais gardées sur l'appareil [R201].
@@ -164,6 +174,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/sequence-fiche.js': { body: SEQUENCE_FICHE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // La recherche en langage courant d'un acquéreur (BR40), chargée au geste depuis la fiche, jamais gardée [R201].
   '/app/recherche.js': { body: RECHERCHE_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // AU073b · la carte où l'agent dessine le secteur d'une recherche, chargée au geste.
+  '/app/secteur-carte.js': { body: SECTEUR_CARTE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Le dépôt des fichiers de la reprise (I05), chargé au premier geste de la direction [R201].
   '/app/reprise.js': { body: REPRISE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran du responsable de la conformité (L10), chargé à la demande pour sa seule clé, jamais gardé sur l'appareil.
@@ -186,6 +198,7 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/mandat-modeles.js': { body: MANDAT_MODELES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/louer-dossier.js': { body: LOUER_DOSSIER_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/louer-edl.js': { body: LOUER_EDL_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  '/app/louer-faits.js': { body: LOUER_FAITS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   '/app/louer-remise.js': { body: LOUER_REMISE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // L'écran « Studio » (X11), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
   // L'écran « Avis de valeur » (E10), chargé à sa première ouverture, jamais gardé sur l'appareil [R201].
@@ -279,6 +292,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/coffre.js': { body: COFFRE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les visites réservées en ligne à rattacher (BR64), chargées au premier geste, jamais gardées sur l'appareil [R201].
   '/app/visites-en-ligne.js': { body: VISITES_EN_LIGNE_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // Le bon de visite signé sans papier (AU075), chargé au premier geste depuis la visite, jamais gardé [R201].
+  '/app/bon-visite.js': { body: BON_VISITE_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Recommander un proche depuis la fiche (X22), chargé au premier geste, jamais gardé sur l'appareil [R201].
   '/app/recommandation.js': { body: RECOMMANDATION_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les finances (K10), chargées au premier geste, jamais gardées sur l'appareil [R201].

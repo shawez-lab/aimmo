@@ -10,7 +10,8 @@
  * - fonds, `ebitda_multiple` : base = moyenne des excédents bruts d'exploitation, saisis pour chaque exercice ; elle
  *   doit être positive ; basse = base × borne basse (centièmes) / 100 ; haute = base × borne haute / 100 ;
  * - murs ou local, `rent_yield` : base = loyer annuel du bail ; basse = base × 10 000 / taux haut (points de base) ;
- *   haute = base × 10 000 / taux bas.
+ *   haute = base × 10 000 / taux bas. Un local ou des murs libres, sans bail (AU102) : base = la valeur locative de
+ *   marché saisie avec ce qui la fonde (comparables, source), jamais un loyer inventé ; le bail, s'il existe, l'emporte.
  *
  * Chaque ligne du résultat porte sa valeur, sa source et son hypothèse [R111]. Sans fiche, activité, barème, exercice
  * ou loyer, la réponse est « incomplet » avec ce qui manque, jamais un chiffre [R10]. L'estimation est rangée, liée à
@@ -100,7 +101,8 @@ export function computeBusinessValuation(
   if (!scale) missing.push('bareme');
   const years = sheet?.sheet.fiscalYears ?? [];
   if (method !== 'rent_yield' && sheet && years.length === 0) missing.push('exercices');
-  if (method === 'rent_yield' && sheet && sheet.sheet.leaseAnnualRentCents === null) missing.push('loyer');
+  const market = sheet && sheet.sheet.leaseAnnualRentCents === null && sheet.sheet.marketAnnualRentCents !== null && sheet.sheet.marketRentBasis !== null;
+  if (method === 'rent_yield' && sheet && sheet.sheet.leaseAnnualRentCents === null && !market) missing.push('loyer');
   if (missing.length > 0 || !sheet || !scale) return { status: 'incomplet', formulaVersion: VALUATION_FORMULA_VERSION, missing };
 
   const from = `fiche du commerce, version ${sheet.version}`;
@@ -109,14 +111,16 @@ export function computeBusinessValuation(
   let low: number;
   let high: number;
   if (method === 'rent_yield') {
-    const rent = sheet.sheet.leaseAnnualRentCents!;
-    lines.push({ label: 'loyer_annuel', value: rent, source: from, hypothesis: 'loyer annuel du bail commercial saisi par l’agent' });
+    const rent = market ? sheet.sheet.marketAnnualRentCents! : sheet.sheet.leaseAnnualRentCents!;
+    if (market) lines.push({ label: 'valeur_locative', value: rent, source: from, hypothesis: `local libre, sans bail : valeur locative de marché saisie par l’agent, fondée sur ${sheet.sheet.marketRentBasis}` });
+    else lines.push({ label: 'loyer_annuel', value: rent, source: from, hypothesis: 'loyer annuel du bail commercial saisi par l’agent' });
     lines.push({ label: 'taux_bas_pb', value: scale.low, source: scaleSource, hypothesis: METHOD_WORDS[method] });
     lines.push({ label: 'taux_haut_pb', value: scale.high, source: scaleSource, hypothesis: METHOD_WORDS[method] });
     low = mulDiv(rent, 10_000, scale.high);
     high = mulDiv(rent, 10_000, scale.low);
-    lines.push({ label: 'fourchette_basse', value: low, source: 'calcul', hypothesis: 'loyer annuel × 10 000 / taux haut' });
-    lines.push({ label: 'fourchette_haute', value: high, source: 'calcul', hypothesis: 'loyer annuel × 10 000 / taux bas' });
+    const base = market ? 'valeur locative' : 'loyer annuel';
+    lines.push({ label: 'fourchette_basse', value: low, source: 'calcul', hypothesis: `${base} × 10 000 / taux haut` });
+    lines.push({ label: 'fourchette_haute', value: high, source: 'calcul', hypothesis: `${base} × 10 000 / taux bas` });
   } else {
     const revenue = method === 'revenue_pct';
     // Chaque exercice doit porter l'excédent brut : un exercice sans lui ne compte pas pour zéro [R10].

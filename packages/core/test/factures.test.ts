@@ -125,7 +125,8 @@ describeWithSqlite('K02 · factures d’honoraires et de reversement, en mode es
     ).rejects.toThrow();
     // Rien n'est parti ailleurs qu'à la plateforme d'essai [R26].
     expect(t.plateforme.received).toEqual(['F-2027-00001', `RV-${code(t.alexId)}-2027-00001`, 'AV-2027-00002', 'F-2027-00003']);
-    expect(() => new Factures(t.db, t.acces, t.journal, { plateforme: { mode: 'reel' } as never })).toThrow();
+    // Une plateforme qui n'est ni d'essai ni réelle est refusée ; la réelle est acceptée depuis AU013.
+    expect(() => new Factures(t.db, t.acces, t.journal, { plateforme: { mode: 'autre' } as never })).toThrow();
     // Au journal : numéros et sortes, jamais un montant ni un nom [R13].
     const logged = JSON.stringify((await t.journal.all()).filter((e) => e.type.startsWith('facture.')));
     expect(logged).not.toMatch(/1000000|700000|Acheteur|833333/);
@@ -143,9 +144,9 @@ describeWithSqlite('K02 · factures d’honoraires et de reversement, en mode es
     const csv = await t.f.exportCsv(t.direction, '2027-06-01', '2027-06-30');
     if (!csv.ok) throw new Error('csv');
     const lines = csv.value.trim().split('\r\n');
-    expect(lines[0]).toBe('numero;date;sorte;emetteur;destinataire;designation;ht;tva;ttc;facture_corrigee');
+    expect(lines[0]).toBe('numero;date;sorte;emetteur;destinataire;designation;ht;tva;ttc;facture_corrigee;mode');
     expect(lines.slice(1, -1).map((l) => l.split(';')[0])).toEqual(['F-2027-00001', 'AV-2027-00002', `RV-${code(t.alexId)}-2027-00001`]);
-    expect(lines.at(-1)).toBe('total;;;;;;7000,00;0,00;7000,00;');
+    expect(lines.at(-1)).toBe('total;;;;;;7000,00;0,00;7000,00;;');
     const sum = lines.slice(1, -1).reduce((a, l) => a + Math.round(Number(l.split(';')[8]!.replace(',', '.')) * 100), 0);
     expect(sum).toBe(700_000);
     expect(await t.f.exportCsv(t.direction, '2027-07-01', '2027-06-01')).toMatchObject({ code: 'bad_day' });

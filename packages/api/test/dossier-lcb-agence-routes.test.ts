@@ -42,9 +42,9 @@ async function setup() {
     if (!r.ok) throw new Error(r.code);
   }
   const base = [
-    { sha256: await sha256Hex(KEYS.direction), networkId: network.id, role: 'direction', userId: 'direction-1' },
-    { sha256: await sha256Hex(KEYS.agent), networkId: network.id, role: 'agent', userId: agentId },
-    { sha256: await sha256Hex(KEYS.conformiteReseau), networkId: network.id, role: 'compliance', userId: 'conformite-reseau' },
+    { sha256: await sha256Hex(KEYS.direction), expiresOn: "2099-12-31", networkId: network.id, role: 'direction', userId: 'direction-1' },
+    { sha256: await sha256Hex(KEYS.agent), expiresOn: "2099-12-31", networkId: network.id, role: 'agent', userId: agentId },
+    { sha256: await sha256Hex(KEYS.conformiteReseau), expiresOn: "2099-12-31", networkId: network.id, role: 'compliance', userId: 'conformite-reseau' },
   ];
   const config: ApiConfig = { db, apiKeys: JSON.stringify(base), mode: 'essai', now, cles: { rpId: RP, origins: [ORIGIN] } };
   const http = async (who: Who, method: string, path: string, body?: unknown, rawBody?: string): Promise<{ status: number; body: Body }> => {
@@ -62,12 +62,16 @@ async function setup() {
   await store.createAgent({ networkId: pres.licenseeNetworkId, firstName: 'Pia', lastName: 'Prés' });
   config.apiKeys = JSON.stringify([
     ...base,
-    { sha256: await sha256Hex(KEYS.agence), networkId: lac.licenseeNetworkId, role: 'direction', userId: 'direction-lac' },
-    { sha256: await sha256Hex(KEYS.agenceAgent), networkId: lac.licenseeNetworkId, role: 'agent', userId: lacAgent },
-    { sha256: await sha256Hex(KEYS.autre), networkId: pres.licenseeNetworkId, role: 'direction', userId: 'direction-pres' },
-    { sha256: await sha256Hex(KEYS.conformite), networkId: lac.licenseeNetworkId, role: 'compliance', userId: 'conformite-lac' },
-    { sha256: await sha256Hex(KEYS.conformiteAutre), networkId: pres.licenseeNetworkId, role: 'compliance', userId: 'conformite-pres' },
+    { sha256: await sha256Hex(KEYS.agence), expiresOn: "2099-12-31", networkId: lac.licenseeNetworkId, role: 'direction', userId: 'direction-lac' },
+    { sha256: await sha256Hex(KEYS.agenceAgent), expiresOn: "2099-12-31", networkId: lac.licenseeNetworkId, role: 'agent', userId: lacAgent },
+    { sha256: await sha256Hex(KEYS.autre), expiresOn: "2099-12-31", networkId: pres.licenseeNetworkId, role: 'direction', userId: 'direction-pres' },
+    { sha256: await sha256Hex(KEYS.conformite), expiresOn: "2099-12-31", networkId: lac.licenseeNetworkId, role: 'compliance', userId: 'conformite-lac' },
+    { sha256: await sha256Hex(KEYS.conformiteAutre), expiresOn: "2099-12-31", networkId: pres.licenseeNetworkId, role: 'compliance', userId: 'conformite-pres' },
   ]);
+  // AU089 : dans chaque agence, la direction a nommé son responsable ; lui seul tire le dossier [R94].
+  for (const [net, officer] of [[lac.licenseeNetworkId, 'conformite-lac'], [pres.licenseeNetworkId, 'conformite-pres']] as const) {
+    await db.run('INSERT INTO lcb_officers (network_id, seq, officer_user_id, designated_by, designated_at) VALUES (?, 1, ?, ?, ?)', [net, officer, 'direction:essai', '2028-01-01T08:00:00.000Z']);
+  }
   // Dans chaque réseau, une pièce au coffre et un signalement : rien d'un autre réseau ne doit sortir.
   const at = '2028-01-09T08:00:00.000Z';
   for (const [net, tag] of [[lac.licenseeNetworkId, 'lac'], [pres.licenseeNetworkId, 'pres'], [network.id, 'reseau']] as const) {
@@ -189,7 +193,7 @@ describeWithSqlite('BR113 · routes du dossier de la lutte contre le blanchiment
 
   it('[R600] sans site WebAuthn réglé, le dossier est fermé : 503', async () => {
     const t = await setup();
-    const keys = JSON.stringify([{ sha256: await sha256Hex(KEYS.conformite), networkId: t.lac.licenseeNetworkId, role: 'compliance', userId: 'conformite-lac' }]);
+    const keys = JSON.stringify([{ sha256: await sha256Hex(KEYS.conformite), expiresOn: "2099-12-31", networkId: t.lac.licenseeNetworkId, role: 'compliance', userId: 'conformite-lac' }]);
     for (const path of ['/v1/export/agence/lcb', '/v1/export/agence/lcb/verification']) {
       const res = await handleRequest(
         new Request(`https://aimmo-api.example.test${path}`, { method: 'POST', headers: { authorization: `Bearer ${KEYS.conformite}`, 'content-type': 'application/json' }, body: '{}' }),
@@ -217,7 +221,7 @@ describeWithSqlite('BR113 · routes du dossier de la lutte contre le blanchiment
     // Lire la licence ne tire rien et ne range rien.
     expect(await t.count('licence_lcb_exports')).toBe(0);
     expect(await t.events('conformite.dossier_lcb_remis')).toHaveLength(0);
-    const keys = JSON.stringify([{ sha256: await sha256Hex(KEYS.conformite), networkId: t.lac.licenseeNetworkId, role: 'compliance', userId: 'conformite-lac' }]);
+    const keys = JSON.stringify([{ sha256: await sha256Hex(KEYS.conformite), expiresOn: "2099-12-31", networkId: t.lac.licenseeNetworkId, role: 'compliance', userId: 'conformite-lac' }]);
     const closed = await handleRequest(new Request('https://aimmo-api.example.test/v1/export/agence/lcb', { headers: { authorization: `Bearer ${KEYS.conformite}` } }), {
       db: t.db,
       apiKeys: keys,

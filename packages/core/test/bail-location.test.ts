@@ -8,10 +8,12 @@ import {
   MisesEnLocation,
   REQUIRED_LEASE_FIELDS,
   leaseAnnexes,
+  leaseDuration,
   type RentalFacts,
 } from '../src/location/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { signRentalMandate } from './mandat-location-jeu.ts';
 
 // Réseau, agents, propriétaire, candidats, logement et adresse inventés. Le 12 juillet 2027 est un lundi.
 let clock = Date.parse('2027-07-12T08:00:00.000Z');
@@ -27,11 +29,15 @@ const FACTS: RentalFacts = {
   finalEnergyKwh: 210,
   buildYear: 1985,
   electricityOver15: false,
+  mainRoomHundredths: 1_800,
+  ceilingHeightCm: 250,
+  localRules: { reference: 'Règlement sanitaire départemental, art. 40', checkedOn: '2027-01-04', compliant: true },
+  firstLetting: true,
   gas: 'aucune',
   leaseStart: '2027-09-01',
   chargesMode: 'provision',
 };
-const INPUT = { address: '12 allée des Essais', ownerAddress: '3 chemin des Exemples, Ailleurs-Essai', habitat: 'collectif', equipment: 'Cuisine équipée, cave', professionalCard: 'CPI 2101 2027 000 000 001' };
+const INPUT = { address: '12 allée des Essais', ownerAddress: '3 chemin des Exemples, Ailleurs-Essai', habitat: 'collectif', landlord: 'physique', equipment: 'Cuisine équipée, cave', professionalCard: 'CPI 2101 2027 000 000 001' };
 const FEES = { tenantCents: 34_000, tenantInventoryCents: 12_750, landlordCents: 34_000, landlordInventoryCents: 12_750, depositCents: 65_000 };
 const BODY = [
   'Bail de {{bail.type}} entre {{bailleur.nom}}, domicilié {{bailleur.domicile}}, bailleur, et {{locataire.nom}}, locataire.',
@@ -85,6 +91,8 @@ async function setup() {
   const bea = await store.createAgent({ networkId: network.id, firstName: 'Béa', lastName: 'Essai' });
   const owner = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: 'Bailleur', lastName: 'Inventé' });
   const home = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'L-1', kind: 'home', postalCode: '21000', city: 'Villeneuve-Essai', rooms: 2 });
+  // AU014 : la location se fait sous un mandat de location signé et inscrit.
+  await signRentalMandate(db, { networkId: network.id, agentId: alex.id, personId: owner.id, propertyId: home.id });
   const agent = { role: 'agent' as const, userId: alex.id, networkId: network.id };
   const other = { role: 'agent' as const, userId: bea.id, networkId: network.id };
   const dir = { role: 'direction' as const, userId: 'dir-1', networkId: network.id };
@@ -119,10 +127,48 @@ async function setup() {
     return r.value;
   };
   const inp = (id: string) => ({ ...INPUT, noticeRef: put(`location/${id}/bail`) });
-  return { db, listings, fees, baux, agent, other, dir, compliance, ready, template, inp, put, owner, bea };
+  return { db, network, listings, fees, baux, agent, other, dir, compliance, ready, template, inp, put, owner, bea };
 }
 
 describeWithSqlite('W06 · bail depuis les modèles', () => {
+  it('AU015 · dans une commune encadrée, le bail dit les loyers de référence et le complément ; un modèle sans leur place laisse le bail à compléter', async () => {
+    const t = await setup();
+    await t.db.run(
+      "INSERT INTO commune_rental_rules (id, network_id, insee_code, rule, effective_from, effective_until, source, source_date, recorded_by, recorded_at) VALUES ('r1', ?, '21999', 'encadrement_loyers', '2027-01-01', NULL, 'Arrêté inventé', '2026-12-01', 'direction:d', '2027-01-02T00:00:00.000Z')",
+      [t.network.id],
+    );
+    const rentControl = { decree: 'n° 0000-00', readOn: '2027-07-01', referenceCentsPerM2: 2_000, majoredCentsPerM2: 2_400, complementCents: 5_000, complementReason: 'Terrasse de 40 m² avec vue dégagée, rare dans le quartier' };
+    await t.template();
+    const id = await t.ready({ rentControl });
+    const without = await t.baux.generate(t.agent, id, t.inp(id));
+    expect(without).toMatchObject({ ok: true, value: { status: 'incomplet', missing: ['loyer.encadrement'] } });
+    await t.template('bail_vide', `${BODY}\nEncadrement des loyers : {{loyer.encadrement}}.`);
+    const full = await t.baux.generate(t.agent, id, t.inp(id));
+    expect(full).toMatchObject({ ok: true, value: { status: 'complet', missing: [] } });
+    expect(full.ok && full.value.content).toContain(
+      'loyer de référence 20 € par m² et par mois, loyer de référence majoré 24 € par m² et par mois (1020 € par mois pour ce logement), arrêté n° 0000-00 ; loyer de base 600 € par mois ; complément de loyer 50 € par mois, justifié par : Terrasse de 40 m² avec vue dégagée, rare dans le quartier',
+    );
+    expect(await t.baux.current(t.network.id, id)).toMatchObject({ complete: true });
+  });
+
+  it('AU015 · un bail fait avant que la commune soit dite encadrée ne se signe plus : il en faut un nouveau, qui dit l’encadrement', async () => {
+    const t = await setup();
+    const rentControl = { decree: 'n° 0000-00', readOn: '2027-07-01', referenceCentsPerM2: 2_000, majoredCentsPerM2: 2_400, complementCents: 0, complementReason: null };
+    await t.template('bail_vide', `${BODY}\nEncadrement des loyers : {{loyer.encadrement}}.`);
+    const id = await t.ready({ rentControl });
+    const before = await t.baux.generate(t.agent, id, t.inp(id));
+    expect(before.ok && before.value.content).toContain('sans objet : la commune n’est pas soumise à l’encadrement des loyers');
+    expect(await t.baux.current(t.network.id, id)).toMatchObject({ complete: true });
+    await t.db.run(
+      "INSERT INTO commune_rental_rules (id, network_id, insee_code, rule, effective_from, effective_until, source, source_date, recorded_by, recorded_at) VALUES ('r1', ?, '21999', 'encadrement_loyers', '2027-01-01', NULL, 'Arrêté inventé', '2026-12-01', 'direction:d', '2027-01-02T00:00:00.000Z')",
+      [t.network.id],
+    );
+    expect(await t.baux.current(t.network.id, id)).toBeNull();
+    const again = await t.baux.generate(t.agent, id, t.inp(id));
+    expect(again.ok && again.value.content).toContain('loyer de base 650 € par mois');
+    expect(await t.baux.current(t.network.id, id)).toMatchObject({ complete: true });
+  });
+
   it('[R105] [R102] le bail se fait pour le candidat choisi, chaque montant venant des données contrôlées', async () => {
     const t = await setup();
     await t.template();
@@ -179,7 +225,7 @@ describeWithSqlite('W06 · bail depuis les modèles', () => {
     const r = await t.baux.generate(t.agent, id, { ...t.inp(id), address: undefined });
     expect(r).toMatchObject({ ok: true, value: { status: 'incomplet', missing: ['logement.adresse'] } });
     // Chaque mention exigée de la loi de 1989 sans valeur laisse le bail incomplet.
-    const bare = await t.baux.generate(t.agent, id);
+    const bare = await t.baux.generate(t.agent, id, { landlord: 'physique' });
     expect(bare.ok && bare.value.missing.sort()).toEqual(['annexe.notice_information', 'bailleur.domicile', 'logement.adresse', 'logement.equipements', 'logement.habitat', 'mandataire.carte']);
     expect(bare.ok && bare.value.content).toContain('[à compléter : carte professionnelle de l’agent immobilier]');
     expect(bare.ok && bare.value.content).not.toMatch(/\[à compléter : [^\]]*mandataire/);
@@ -263,5 +309,102 @@ describeWithSqlite('W06 · bail depuis les modèles', () => {
     const r = await t.baux.generate(t.agent, id, t.inp(id));
     expect(r).toMatchObject({ ok: false, rule: 'R16' });
     expect(JSON.stringify(r)).not.toContain('Bailleur');
+  });
+});
+
+describe('AU096 · la durée du bail par la loi, selon le bailleur et la sorte de location', () => {
+  it('[R40] vide : 3 ans pour une personne, 6 ans pour une société ; meublé : 1 an, 9 mois pour un étudiant ; mobilité : aucun', () => {
+    expect(leaseDuration(false, 'physique', 'standard')).toBe('trois ans');
+    expect(leaseDuration(false, 'morale', 'standard')).toBe('six ans');
+    expect(leaseDuration(true, 'morale', 'standard')).toBe('un an');
+    expect(leaseDuration(true, 'physique', 'etudiant')).toBe('neuf mois');
+    expect(leaseDuration(false, 'physique', 'etudiant')).toBeNull();
+    expect(leaseDuration(true, 'physique', 'mobilite')).toBeNull();
+  });
+});
+
+describeWithSqlite('AU096 · la qualité du bailleur dite, jamais supposée', () => {
+  it('[R40] sans bailleur dit, aucun bail ; une société fait un bail vide de six ans ; un logement vide n’a ni bail étudiant ni bail mobilité', async () => {
+    const t = await setup();
+    await t.template();
+    const id = await t.ready();
+    const { landlord: _l, ...noLandlord } = t.inp(id) as Record<string, unknown>;
+    expect(await t.baux.generate(t.agent, id, noLandlord)).toEqual({ ok: false, rule: null, code: 'missing_landlord' });
+    // AU096b : un bail étudiant ou mobilité est meublé ; sur un logement vide, refusé.
+    expect(await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'mobilite', mobilityMonths: 6, mobilityReason: 'stage' })).toEqual({ ok: false, rule: null, code: 'bad_variant' });
+    expect(await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'etudiant' })).toEqual({ ok: false, rule: null, code: 'bad_variant' });
+    expect(await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'autre' })).toEqual({ ok: false, rule: null, code: 'bad_variant' });
+    const r = await t.baux.generate(t.agent, id, { ...t.inp(id), landlord: 'morale' });
+    expect(r.ok && r.value.content).toContain('six ans');
+  });
+});
+
+describeWithSqlite('AU096b · le bail meublé étudiant et le bail mobilité, chacun sur son modèle', () => {
+  const STUDENT = BODY.replace('Bail de {{bail.type}}', 'Bail meublé étudiant de {{bail.type}}');
+  const MOBILITY = `${BODY.replace('Bail de {{bail.type}}', 'Bail mobilité de {{bail.type}}')}\n\nMotif de mobilité du locataire : {{bail.motif_mobilite}}.`;
+
+  it('[R40] un meublé étudiant se fait sur son modèle, neuf mois, jamais sur celui du meublé ordinaire ; sans lui, refus', async () => {
+    const t = await setup();
+    await t.template('bail_meuble');
+    const id = await t.ready({ furnished: true, chargesMode: 'forfait' });
+    // Seul le modèle du meublé ordinaire existe : le meublé étudiant est refusé, jamais fait avec lui.
+    expect(await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'etudiant' })).toEqual({ ok: false, rule: null, code: 'no_template' });
+    const tpl = await t.template('bail_meuble_etudiant', STUDENT);
+    expect(tpl).toMatchObject({ kind: 'bail_meuble_etudiant', version: 2 });
+    // Le modèle étudiant validé par la conformité fait un bail réel ; le meublé ordinaire reste d'essai.
+    expect(await t.baux.validateTemplate(t.compliance, tpl.id)).toEqual({ ok: true, value: true });
+    const r = await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'etudiant' });
+    expect(r).toMatchObject({ ok: true, value: { mode: 'reel', status: 'complet' } });
+    expect(r.ok && r.value.content).toContain('Bail meublé étudiant de location meublée');
+    expect(r.ok && r.value.content).toContain('pour neuf mois');
+    expect(r.ok && r.value.content).toContain('Bail de location meublée consenti à un étudiant');
+    // Le meublé ordinaire garde son modèle et sa durée d'un an.
+    const plain = await t.baux.generate(t.agent, id, t.inp(id));
+    expect(plain).toMatchObject({ ok: true, value: { mode: 'essai' } });
+    expect(plain.ok && plain.value.content).toContain('pour un an');
+    // Un meublé ordinaire validé ne sert jamais au meublé étudiant, et l'étudiant validé jamais au meublé ordinaire.
+    const ordinary = await t.template('bail_meuble');
+    expect(await t.baux.validateTemplate(t.compliance, ordinary.id)).toEqual({ ok: true, value: true });
+    const again = await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'etudiant' });
+    expect(again.ok && again.value.content).toContain('Bail meublé étudiant de location meublée');
+    const plain2 = await t.baux.generate(t.agent, id, t.inp(id));
+    expect(plain2).toMatchObject({ ok: true, value: { mode: 'reel' } });
+    expect(plain2.ok && plain2.value.content).not.toContain('étudiant');
+    expect(plain.ok && plain.value.content).not.toContain('étudiant');
+  });
+
+  it('[R102] un bail mobilité porte sa durée de un à dix mois et le motif du locataire, sans dépôt de garantie ; sans modèle, refus', async () => {
+    const t = await setup();
+    const id = await t.ready({ furnished: true, chargesMode: 'forfait' });
+    const go = (extra: Record<string, unknown>) => t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'mobilite', ...extra });
+    expect(await go({ mobilityMonths: 6, mobilityReason: 'stage' })).toMatchObject({ ok: false });
+    // Le modèle doit porter le motif ; le motif n'a pas de place dans un autre modèle.
+    expect(await t.baux.createTemplate(t.dir, 'bail_mobilite', BODY)).toEqual({ ok: false, rule: 'R40', code: 'missing_required_field', field: 'bail.motif_mobilite' });
+    expect(await t.baux.createTemplate(t.dir, 'bail_meuble', MOBILITY)).toEqual({ ok: false, rule: 'R40', code: 'unknown_field' });
+    await t.template('bail_mobilite', MOBILITY);
+    expect(await go({ mobilityMonths: 6, mobilityReason: 'stage' })).toEqual({ ok: false, rule: 'R102', code: 'depot_interdit_mobilite' });
+    // Le barème du logement passe sans dépôt de garantie.
+    expect((await t.fees.record(t.agent, id, { ...FEES, depositCents: 0 })).ok).toBe(true);
+    expect(await go({ mobilityMonths: 11, mobilityReason: 'stage' })).toEqual({ ok: false, rule: null, code: 'bad_mobility_months' });
+    expect(await go({ mobilityMonths: 0, mobilityReason: 'stage' })).toEqual({ ok: false, rule: null, code: 'bad_mobility_months' });
+    expect(await go({ mobilityMonths: 6, mobilityReason: 'vacances' })).toEqual({ ok: false, rule: null, code: 'bad_mobility_reason' });
+    expect(await t.baux.generate(t.agent, id, { ...t.inp(id), mobilityMonths: 6 })).toEqual({ ok: false, rule: null, code: 'bad_variant' });
+    // Les charges d’un bail mobilité sont forfaitaires : une provision est refusée.
+    const prov = await t.ready({ furnished: true, chargesMode: 'provision' });
+    expect((await t.fees.record(t.agent, prov, { ...FEES, depositCents: 0 })).ok).toBe(true);
+    expect(await t.baux.generate(t.agent, prov, { ...t.inp(prov), variant: 'mobilite', mobilityMonths: 6, mobilityReason: 'stage' })).toEqual({ ok: false, rule: 'R102', code: 'charges_forfait_mobilite' });
+    const r = await go({ mobilityMonths: 6, mobilityReason: 'stage' });
+    expect(r.ok && r.value.content).toContain('pour 6 mois, non renouvelable ni reconductible');
+    expect(r.ok && r.value.content).toContain('Motif de mobilité du locataire : stage.');
+    expect(r.ok && r.value.content).toContain('dépôt de garantie : aucun : un bail mobilité n’a pas de dépôt de garantie');
+  });
+
+  it('[R17] la variante d’un modèle ne change jamais ; un bail vide n’a pas de variante', async () => {
+    const t = await setup();
+    const tpl = await t.template('bail_mobilite', MOBILITY);
+    await expect(t.db.run("UPDATE rental_lease_templates SET variant = 'standard' WHERE id = ?", [tpl.id])).rejects.toThrow();
+    await expect(
+      t.db.run("INSERT INTO rental_lease_templates (id, network_id, kind, version, status, body, fields, hash, created_by, created_at, variant) VALUES ('x', ?, 'bail_vide', 9, 'essai', 'b', '[]', ?, 't', 'a', 'etudiant')", [t.network.id, 'a'.repeat(64)]),
+    ).rejects.toThrow();
   });
 });

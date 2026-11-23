@@ -43,6 +43,7 @@ const REFUSALS = {
   unknown_step: 'Choisissez l’étape dans la liste.',
   bad_input: 'Dites l’étape, le jour et qui la déclare.',
   no_loan_condition: 'L’offre n’a pas de condition de prêt : rien à suivre.',
+  bad_request: 'Dites le nom de la banque ou du courtier, sans numéro de compte ni de dossier.',
   compromis_missing: 'Saisissez d’abord la signature du compromis.',
   already_closed: 'L’acte est déjà rangé.',
   file_stopped: 'Ce dossier est arrêté : il ne reçoit plus rien.',
@@ -103,7 +104,7 @@ export const DOSSIER_JS = `
     session += 1;
     var mine = session;
     wipeDossier();
-    show('dossier');
+    show('dossier', [id, reference]);
     $('dossier-etat').textContent = 'Chargement…';
     return new Promise(function (resolve) {
       var s = document.createElement('script');
@@ -151,7 +152,7 @@ globalThis.AIMMO_DOSSIER = function (t) {
     wipe();
     cur = { id: id, reference: reference || 'ce bien' };
     $('dossier-titre').textContent = 'Dossier de vente · ' + cur.reference;
-    show('dossier');
+    show('dossier', [id, reference]);
     return load();
   }
   function base() { return '/v1/dossiers/' + encodeURIComponent(cur.id); }
@@ -397,19 +398,36 @@ globalThis.AIMMO_DOSSIER = function (t) {
     if (!steps.length) box.appendChild(el('p', 'Aucune étape déclarée.', 'doux'));
     else {
       var ul = el('ul');
-      steps.forEach(function (x) { ul.appendChild(el('li', (STEP[x.step] || 'Étape') + ' : ' + day(x.day) + ', dit par ' + (BY[x.declaredBy] || 'l’acquéreur'))); });
-      box.appendChild(ul);
+      // Chaque demande (banque ou courtier) a sa propre suite d'étapes (AU083) : elles se lisent par demande.
+      var groups = [];
+      steps.forEach(function (x) {
+        var key = typeof x.demande === 'string' ? x.demande.toLocaleLowerCase('fr') : '';
+        var g = groups.filter(function (y) { return y.key === key; })[0];
+        if (!g) { g = { key: key, name: typeof x.demande === 'string' ? x.demande : '', steps: [] }; groups.push(g); }
+        g.steps.push(x);
+      });
+      groups.forEach(function (g) {
+        if (groups.length > 1 || g.name) box.appendChild(el('h4', g.name ? 'Demande : ' + g.name : 'Demande sans banque dite'));
+        var ul = el('ul');
+        g.steps.forEach(function (x) { ul.appendChild(el('li', (STEP[x.step] || 'Étape') + ' : ' + day(x.day) + ', dit par ' + (BY[x.declaredBy] || 'l’acquéreur'))); });
+        box.appendChild(ul);
+      });
     }
     if (open) {
       var which = choice(box, 'dossier-pret-etape', 'Étape déclarée', STEPS, function (k) { return STEP[k]; });
       var when = dayField(box, 'dossier-pret-jour', 'Le jour');
       box.appendChild(el('p', 'Pour une offre de prêt, le jour où l’acquéreur l’a reçue : le délai de réflexion en part.', 'doux'));
       var who = choice(box, 'dossier-pret-qui', 'Qui la déclare', BYS, function (k) { var n = BY[k]; return n.charAt(0).toUpperCase() + n.slice(1); });
+      var bank = field(box, 'dossier-pret-demande', 'Banque ou courtier (facultatif)');
+      box.appendChild(el('p', 'Quand deux banques étudient le dossier, dites laquelle : un refus ne clôt que sa demande. Jamais de numéro de compte ni de dossier.', 'doux'));
       box.appendChild(button('Ranger l’étape', act(function () {
         if (!which.value) { state('Choisissez l’étape.'); return false; }
         if (!when.value) { state('Dites le jour.'); return false; }
         if (!who.value) { state('Dites qui la déclare.'); return false; }
-        return post('/financement', { step: which.value, day: when.value, declaredBy: who.value }, 'Étape rangée.', 'L’étape n’est pas rangée : réessayez.');
+        var sent = { step: which.value, day: when.value, declaredBy: who.value };
+        var named = String(bank.value || '').trim();
+        if (named) sent.demande = named;
+        return post('/financement', sent, 'Étape rangée.', 'L’étape n’est pas rangée : réessayez.');
       })));
     }
     body().appendChild(box);

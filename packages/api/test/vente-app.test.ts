@@ -89,7 +89,7 @@ describe('P10 · écran « Mettre en vente »', () => {
     const text = t.els['vente-corps']!.textContent;
     expect(text).toContain('Il manque des mentions : l’annonce ne peut pas partir.');
     expect(text).toContain('Prix et honoraires : présente');
-    expect(text).toContain('Performance énergétique : manque, diagnostic énergétique absent');
+    expect(text).toContain('Performance énergétique : manque, absent');
     expect(text).toContain('Copropriété : sans objet');
     expect(text).toContain('62 m² : surface, lu dans la fiche du bien');
     expect(text).toContain('À corriger : fait absent de la fiche (« gare »)');
@@ -247,11 +247,12 @@ describe('X18 · corriger le texte de l’annonce à l’écran', () => {
     expect(t.inside('vente-correction-texte').value).toBe('Mon texte.');
   });
 
-  it('[R47] sur une annonce validée, le retrait est dit avant d’enregistrer ; sur un brouillon, rien', async () => {
+  it('[R47] sur une annonce validée, AU066 : il est dit avant d’enregistrer que l’annonce en ligne y reste ; sur un brouillon, rien', async () => {
     const validated = await open({ 'GET /v1/annonces/b1/brouillon': ok({ ...FULL, validated: { at: '2027-02-12T11:00:00.000Z' } }) });
-    expect(validated.els['vente-corps']!.textContent).toContain('l’annonce est retirée de tous les canaux');
+    expect(validated.els['vente-corps']!.textContent).toContain('l’annonce en ligne y reste');
+    expect(validated.els['vente-corps']!.textContent).not.toContain('retirée');
     const draft = await open();
-    expect(draft.els['vente-corps']!.textContent).not.toContain('retirée de tous les canaux');
+    expect(draft.els['vente-corps']!.textContent).not.toContain('l’annonce en ligne y reste');
   });
 
   it('pendant l’envoi, ni valider, ni rédiger, ni rouvrir : le formulaire reste et le refus arrive bien', async () => {

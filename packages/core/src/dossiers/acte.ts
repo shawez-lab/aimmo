@@ -22,6 +22,7 @@ import type { Viewer } from '../acces/droits.ts';
 import { runBatch, type SqlDatabase } from '../db/sql.ts';
 import { Diffusion } from '../documents/retractation.ts';
 import type { DocumentFacts } from '../documents/modeles.ts';
+import { mandateTerms } from '../documents/conditions.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -115,9 +116,12 @@ export async function mandateFeeAt(
   } catch {
     facts = null;
   }
-  const fee = feeFrom(facts);
+  // Les honoraires en vigueur le jour du compromis : un avenant signé et en effet ce jour-là les a changés (AU057).
+  const terms = await mandateTerms(db, decision.mandateId, new Date(`${compromis}T11:00:00.000Z`));
+  const inForce = terms ? { feeEur: terms.feeEur, feeCharge: terms.feeCharge } : facts;
+  const fee = feeFrom(inForce);
   if (fee === null) return { ok: false, code: 'fee_unknown' };
-  return { ok: true, mandateId: decision.mandateId, feeEur: fee, feeCharge: facts?.feeCharge ?? null };
+  return { ok: true, mandateId: decision.mandateId, feeEur: fee, feeCharge: inForce?.feeCharge ?? null };
 }
 
 export interface Closing {
@@ -205,7 +209,8 @@ export class ActeVente {
     if (!compromis) return blocked({ ok: false, rule: null, code: 'compromis_missing' });
     if (signedOn < compromis) return blocked({ ok: false, rule: null, code: 'before_compromis' });
     // Le dossier complet au jour de l'acte : rien ne manque, identité vérifiée, aucune pièce périmée [R60].
-    const status = await this.pieces.status(viewer, fileId);
+    // L'âge des installations est jugé le jour de l'acte (AU084).
+    const status = await this.pieces.status(viewer, fileId, { deedDay: signedOn });
     if (!status.ok) return status as FileRefusal | FileUnknown;
     const expired = expiredPieces(status.value.lines, signedOn, this.validity);
     // L'identité de l'acquéreur vérifiée au jour de l'acte, pas seulement aujourd'hui : un contrôle fait après l'acte ne

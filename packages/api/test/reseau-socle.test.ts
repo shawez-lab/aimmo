@@ -156,7 +156,7 @@ describeWithSqlite('J13 · branchement de M14 dans le socle (API et Worker)', ()
     expect((await t.call('direction', 'GET', `/fiches/${t.samClient}`)).status).toBe(200);
   });
 
-  it('[R80] la page de candidature est servie par le socle, en mode essai seulement, et dit « bientôt » sans réseau', async () => {
+  it('[R80] la page de candidature est servie par le socle, en mode essai seulement, et s’ouvre sur le seul réseau sans variable (AU022)', async () => {
     const t = await setup();
     const page = async (extra: Partial<ApiConfig>) => {
       const r = await handleRequest(new Request(`${BASE}/rejoindre`), t.config(extra));
@@ -165,8 +165,9 @@ describeWithSqlite('J13 · branchement de M14 dans le socle (API et Worker)', ()
     const open = await page({ candidatureNetworkId: t.network });
     expect(open.status).toBe(200);
     expect(open.html).toContain('<form');
-    expect(await page({})).toMatchObject({ status: 503 });
-    expect((await page({})).html).toContain('pas encore ouvertes');
+    // Sans variable, le seul réseau de la base reçoit (AU022).
+    expect(await page({})).toMatchObject({ status: 200 });
+    expect((await page({})).html).toContain('<form');
     expect((await page({ candidatureNetworkId: t.network, mode: 'reel' })).status).toBe(503);
     // Une candidature déposée sur la page passe par le socle et se range, dans l'ordre d'arrivée.
     const posted = await handleRequest(

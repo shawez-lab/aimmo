@@ -96,37 +96,12 @@ export const PHASES_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-p
 /** Le chargeur posé dans le script de l'application : l'écran est servi à part, chargé une fois, jamais gardé. */
 export const PHASES_JS = `
   /* ---------- Les phases et les régions sur l'écran du réseau (BR13), chargées au premier geste [R16, R201, R647]. ---------- */
-  var phasesTools = null, phasesLoading = false;
   function wipePhases() {
     clear($('phases-corps'));
     $('phases-etat').textContent = '';
   }
   function withPhases(act) {
-    if (!currentKey) return Promise.resolve(false);
-    if (phasesTools) return act(phasesTools);
-    if (phasesLoading) return Promise.resolve(false);
-    phasesLoading = true;
-    var mine = session;
-    $('phases-etat').textContent = 'Chargement…';
-    return new Promise(function (resolve) {
-      var s = document.createElement('script');
-      s.setAttribute('src', '/app/phases.js');
-      s.addEventListener('load', function () {
-        phasesLoading = false;
-        var make = globalThis.AIMMO_PHASES;
-        try { delete globalThis.AIMMO_PHASES; } catch (e) { /* rien */ }
-        if (mine !== session) { resolve(false); return; }
-        if (typeof make !== 'function') { $('phases-etat').textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        phasesTools = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, date: date, session: function () { return session; } });
-        resolve(act(phasesTools));
-      });
-      s.addEventListener('error', function () {
-        phasesLoading = false;
-        if (mine === session) $('phases-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
-        resolve(false);
-      });
-      $('reseau').appendChild(s);
-    });
+    return withTool('phases', 'AIMMO_PHASES', 'phases-etat', 'reseau', act, function () { return { $: $, el: el, clear: clear, send: send, button: button, field: field, date: date, session: function () { return session; } }; });
   }
 `;
 

@@ -95,6 +95,7 @@ describeWithSqlite('N08 · routes de M10', () => {
       ['GET', `/dossiers/${t.fileId}/financement`, undefined], ['POST', `/dossiers/${t.fileId}/financement`, { step: 'demande_deposee', day: '2027-03-01', declaredBy: 'acquereur' }],
       ['GET', `/dossiers/${t.fileId}/acte`, undefined], ['POST', `/dossiers/${t.fileId}/acte`, { signedOn: '2027-03-01', proofRef: ACT_PROOF }],
       ['GET', `/dossiers/${t.fileId}/chemin`, undefined], ['GET', `/dossiers/${t.fileId}/relances`, undefined],
+      ['GET', `/dossiers/${t.fileId}/conditions`, undefined], ['POST', `/dossiers/${t.fileId}/conditions`, { kind: 'autre', responsible: 'acquereur', day: '2027-06-01', state: 'en_attente', proofRef: PROOF }],
     ] as const) {
       const count = async () => (await t.journal.bySubject(`sale_file:${t.fileId}`)).filter((e) => e.type === 'acces.refuse').length;
       const before = await count();
@@ -108,7 +109,7 @@ describeWithSqlite('N08 · routes de M10', () => {
     expect((await all()).filter((e) => e.data.kind === 'sale_file_tasks')).toHaveLength(1);
     expect((await t.call(t.direction, 'GET', '/dossiers/alertes')).status).toBe(403);
     expect((await all()).filter((e) => e.data.kind === 'sale_file_financing_alerts')).toHaveLength(1);
-    expect((await t.call(t.agent, 'GET', '/dossiers/alertes')).body).toMatchObject({ ok: true, data: { financement: [], fonds: [] } });
+    expect((await t.call(t.agent, 'GET', '/dossiers/alertes')).body).toMatchObject({ ok: true, data: { financement: [], fonds: [], conditions: [] } });
     expect((await t.call(t.agent, 'GET', '/dossiers/inconnu/pieces')).status).toBe(404);
     const route = dossierRoutes().find((r) => r.name === 'dossiers.date')!;
     const res = await route.handle(t.s, t.agent, [t.fileId], new Request('https://api.exemple.test/v1/x', { method: 'POST', body: 'pas du json' }));
@@ -129,19 +130,22 @@ describeWithSqlite('N08 · routes de M10', () => {
     await t.startCompromis();
     t.setClock(at9('2027-03-10'));
     await t.call(t.agent, 'POST', `/dossiers/${t.fileId}/dates`, { kind: 'compromis_signe', day: '2027-03-10', proofRef: PROOF });
+    // AU082 : une condition saisie par la route, lue par la route.
+    expect((await t.call(t.agent, 'POST', `/dossiers/${t.fileId}/conditions`, { kind: 'autre', responsible: 'notaire', day: '2027-06-01', state: 'en_attente', proofRef: PROOF })).status).toBe(200);
+    expect((await t.call(t.agent, 'GET', `/dossiers/${t.fileId}/conditions`)).body).toMatchObject({ ok: true, data: { lines: [{ kind: 'autre', source: 'compromis', status: 'en_attente', responsible: 'notaire', day: '2027-06-01' }] } });
     // Dimanche 14 mars : échéances oui, relances non.
     t.setClock(at9('2027-03-14'));
     const sunday = await syncDossiers(t.s, t.network.id);
     expect(sunday.deadlines).toBeGreaterThan(0);
     expect(sunday.reminders).toBe(0);
     expect((await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM sale_file_reminders'))?.n).toBe(0);
-    expect(await syncDossiers(t.s, t.network.id)).toEqual({ deadlines: 0, financing: 0, funds: 0, reminders: 0 });
+    expect(await syncDossiers(t.s, t.network.id)).toEqual({ deadlines: 0, financing: 0, funds: 0, reminders: 0, conditions: 0 });
     // La tâche planifiée : tous les jours de 9 h à 19 h.
     const job = dossiersJob(t.db, t.journal, t.storage, { now: t.now });
     expect(job).toMatchObject({ name: DOSSIERS_JOB, hours: [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19] });
     expect((job as { weekdays?: unknown }).weekdays).toBeUndefined();
     await job.run({} as never);
-    expect(await syncDossiers(t.s, t.network.id)).toEqual({ deadlines: 0, financing: 0, funds: 0, reminders: 0 });
+    expect(await syncDossiers(t.s, t.network.id)).toEqual({ deadlines: 0, financing: 0, funds: 0, reminders: 0, conditions: 0 });
   });
 });
 
@@ -158,5 +162,22 @@ describeWithSqlite('AU011 · routes des obligations locales', () => {
     expect(await t.call(t.agent, 'POST', `/dossiers/${t.fileId}/assainissement`, { mode: 'non_collectif' })).toMatchObject({ status: 200, body: { ok: true, data: 'non_collectif' } });
     const pieces = await t.call(t.agent, 'GET', `/dossiers/${t.fileId}/pieces`);
     expect(pieces.body.data.missing).toEqual(expect.arrayContaining(['etat_termites', 'controle_assainissement']));
+  });
+});
+
+describeWithSqlite('AU084 · route des installations du bien', () => {
+  it('[R16] [R60] l’agent déclare l’électricité rénovée et l’absence de gaz : les deux diagnostics ne sont plus demandés', async () => {
+    const t = await setup('maison');
+    const first = await t.call(t.agent, 'GET', `/dossiers/${t.fileId}/pieces`);
+    expect(first.body.data.missing).toEqual(expect.arrayContaining(['electricite', 'gaz']));
+    expect(await t.call(t.sam, 'POST', `/dossiers/${t.fileId}/installations`, { installation: 'gaz', present: false, proof: 'declaration_vendeur', proofRef: PROOF })).toMatchObject({ status: 403, body: { rule: 'R16' } });
+    expect(await t.call(t.agent, 'POST', '/dossiers/inconnu/installations', { installation: 'gaz', present: false, proof: 'declaration_vendeur', proofRef: PROOF })).toMatchObject({ status: 404, body: { code: 'unknown_file' } });
+    expect(await t.call(t.agent, 'POST', `/dossiers/${t.fileId}/installations`, { installation: 'electricite', present: true, since: 2016, proof: 'declaration_vendeur', proofRef: 'x.pdf' })).toMatchObject({ status: 400, body: { code: 'bad_proof' } });
+    expect(await t.call(t.agent, 'POST', `/dossiers/${t.fileId}/installations`, { installation: 'electricite', present: true, since: 2016, proof: 'certificat_conformite', proofRef: PROOF })).toMatchObject({ status: 200, body: { ok: true, data: { installation: 'electricite', version: 1 } } });
+    expect(await t.call(t.agent, 'POST', `/dossiers/${t.fileId}/installations`, { installation: 'gaz', present: false, proof: 'declaration_vendeur', proofRef: PROOF })).toMatchObject({ status: 200 });
+    const after = await t.call(t.agent, 'GET', `/dossiers/${t.fileId}/pieces`);
+    expect(after.body.data.missing).not.toEqual(expect.arrayContaining(['electricite']));
+    expect(after.body.data.missing).not.toEqual(expect.arrayContaining(['gaz']));
+    expect(after.body.data.installations.map((r: { verdict: string }) => r.verdict)).toEqual(['recente', 'absente']);
   });
 });

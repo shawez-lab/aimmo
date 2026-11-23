@@ -5,6 +5,7 @@ import { LEASE_FIELDS } from '../../core/src/location/index.ts';
 import { LOUER_SCRIPT } from '../app/louer.ts';
 import { LOUER_DOSSIER_SCRIPT } from '../app/louer-dossier.ts';
 import { LOUER_EDL_SCRIPT } from '../app/louer-edl.ts';
+import { LOUER_FAITS_SCRIPT } from '../app/louer-faits.ts';
 import { LOUER_REMISE_SCRIPT } from '../app/louer-remise.ts';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { AGENT_APP_FILES, handleAgentApp } from '../src/agent-app.ts';
@@ -148,7 +149,7 @@ async function run(answers: Record<string, Answer> = {}) {
     await click(byText('Compléter ce dossier', nth));
     await lazyLoad('/app/louer-dossier.js', LOUER_DOSSIER_SCRIPT);
   };
-  return { els, calls, table, byText, click, input, body, state, posts, openList, openL1, settle, scripts, openClosing, openInventory, openDossier };
+  return { els, calls, table, byText, click, input, body, state, posts, openList, openL1, settle, scripts, openClosing, openInventory, openDossier, lazyLoad };
 }
 
 describe('W11 · écran « Louer » de l’application', () => {
@@ -353,6 +354,12 @@ describe('W11 · écran « Louer » de l’application', () => {
       await t.click(t.byText('Préparer le bail'));
       expect(t.posts().map((c) => c.url)).toEqual(['/v1/location/l1/bail']);
       expect(JSON.parse(t.posts()[0]!.body!).noticeRef).toBeUndefined();
+      // AU096 · La qualité du bailleur part telle que l'agent l'a choisie (à choisir : vide, refusé par le serveur).
+      expect(JSON.parse(t.posts()[0]!.body!)).toMatchObject({ landlord: '' });
+      t.input('Le bailleur est').value = 'morale';
+      t.calls.length = 0;
+      await t.click(t.byText('Préparer le bail'));
+      expect(JSON.parse(t.posts()[0]!.body!)).toMatchObject({ landlord: 'morale' });
       t.calls.length = 0;
       const again = t.input('La notice d’information, en PDF') as unknown as FakeElement & { files: unknown[] };
       again.files = [pdfFile()];
@@ -455,18 +462,72 @@ describe('W11 · écran « Louer » de l’application', () => {
     expect(t.byText('Préparer l’annonce')).toBeUndefined();
     const rail = t.body().all().find((e) => e.className === 'parcours')!;
     expect(rail.children[0]!.textContent).toBe('Logement · bloqué');
-    // Les faits se corrigent : des euros et des m² saisis, rangés en centimes et centièmes.
+    // Les faits se corrigent : des euros et des m² saisis, rangés en centimes et centièmes ; le formulaire est chargé à part, au geste.
+    expect(t.scripts().filter((e) => e.attributes.src === '/app/louer-faits.js')).toHaveLength(0);
+    await t.click(t.byText('Corriger les faits du logement'));
+    await t.lazyLoad('/app/louer-faits.js', LOUER_FAITS_SCRIPT);
     t.input('Loyer hors charges, en euros par mois').value = '640,50';
     t.input('Surface habitable, en m²').value = '42,5';
     t.input('Classe énergie du DPE').value = 'E';
     t.table['POST /v1/location/l1/faits'] = ok({ version: 2 });
     await t.click(t.byText('Ranger les faits'));
     expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ ...Object.fromEntries(Object.entries(FACTS).filter(([k]) => k !== 'version')), rentCents: 64_050, livingAreaHundredths: 4_250, energyClass: 'E' });
+    // Rangés, les faits rouvrent l'écran : le formulaire se rouvre au geste.
+    await t.click(t.byText('Corriger les faits du logement'));
+    // AU016 · Le loyer du locataire précédent : « aucun » pour une première location, sinon des euros en centimes.
+    t.input('Loyer du locataire précédent, hors charges, en euros, ou « aucun »').value = 'Aucun';
+    await t.click(t.byText('Ranger les faits'));
+    expect(JSON.parse(t.posts()[1]!.body!)).toMatchObject({ firstLetting: true });
+    expect(JSON.parse(t.posts()[1]!.body!)).not.toHaveProperty('previousRentCents');
+    // Rangés, les faits rouvrent l'écran : le formulaire se rouvre au geste.
+    await t.click(t.byText('Corriger les faits du logement'));
+    t.input('Loyer du locataire précédent, hors charges, en euros, ou « aucun »').value = '600';
+    await t.click(t.byText('Ranger les faits'));
+    expect(JSON.parse(t.posts()[2]!.body!)).toMatchObject({ previousRentCents: 60_000 });
+    expect(JSON.parse(t.posts()[2]!.body!)).not.toHaveProperty('firstLetting');
+    // Rangés, les faits rouvrent l'écran : le formulaire se rouvre au geste.
+    await t.click(t.byText('Corriger les faits du logement'));
+    t.input('Loyer du locataire précédent, hors charges, en euros, ou « aucun »').value = 'cher';
+    await t.click(t.byText('Ranger les faits'));
+    expect(t.posts()).toHaveLength(3);
+    expect(t.state()).toBe('Loyer précédent : un nombre, ou « aucun ».');
+    t.input('Loyer du locataire précédent, hors charges, en euros, ou « aucun »').value = '';
     // Un montant illisible : dit, rien ne part.
     t.input('Loyer hors charges, en euros par mois').value = 'six cents';
     await t.click(t.byText('Ranger les faits'));
-    expect(t.posts()).toHaveLength(1);
+    expect(t.posts()).toHaveLength(3);
     expect(t.state()).toBe('Remplissez chaque champ : des nombres, et la date du bail.');
+    t.input('Loyer hors charges, en euros par mois').value = '640,50';
+    // AU015 · L'encadrement des loyers : ce que dit l'arrêté pour ce logement, en centimes.
+    t.input('Arrêté préfectoral lu (référence)').value = 'Arrêté inventé n° 0000-00';
+    t.input('Lu le').value = '2027-07-01';
+    t.input('Loyer de référence, en euros par m² et par mois').value = '20';
+    t.input('Loyer de référence majoré, en euros par m² et par mois').value = 'vingt-quatre';
+    await t.click(t.byText('Ranger les faits'));
+    expect(t.posts()).toHaveLength(3);
+    expect(t.state()).toBe('Encadrement : l’arrêté, le jour de lecture et des montants en euros.');
+    t.input('Loyer de référence majoré, en euros par m² et par mois').value = '24,50';
+    await t.click(t.byText('Ranger les faits'));
+    expect(JSON.parse(t.posts()[3]!.body!).rentControl).toEqual({ decree: 'Arrêté inventé n° 0000-00', readOn: '2027-07-01', referenceCentsPerM2: 2_000, majoredCentsPerM2: 2_450, complementCents: 0, complementReason: null });
+  });
+
+  it('AU015 · un logement bloqué par l’encadrement des loyers dit pourquoi, plafond compris', async () => {
+    const t = await run({
+      'GET /v1/location/l1': ok({
+        check: { checkId: 'k1', listingId: 'l1', factsVersion: 1, decision: 'bloque', reasons: [{ code: 'rent_control_missing' }, { code: 'rent_above_ceiling', baseRentCents: 105_000, ceilingCents: 102_000 }, { code: 'complement_forbidden', energyClass: 'F' }, { code: 'complement_unjustified' }], bannedFrom: null, checkedAt: '2027-07-12T08:00:00.000Z' },
+        stale: false,
+        required: ['dpe', 'erp', 'surface_habitable'],
+      }),
+      'GET /v1/location/l1/annonces': ok([]),
+      'GET /v1/location/l1/echeances': ok([]),
+    });
+    await t.openL1();
+    const text = t.body().textContent;
+    expect(text).toContain('Loyer encadré dans la commune : saisissez l’arrêté.');
+    expect(text).toContain('Loyer de base 1050 € : plafond 1020 €.');
+    expect(text).toContain('Pas de complément de loyer pour un F ou un G.');
+    expect(text).toContain('Complément de loyer sans justification.');
+    expect(text).not.toContain('Raison inconnue.');
   });
 
   it('[R102] [R107] les plafonds viennent du code ; les honoraires sont proposés au plafond et partent en centimes ; aucun champ d’argent pour AIMMO', async () => {
@@ -534,6 +595,25 @@ describe('W11 · écran « Louer » de l’application', () => {
     // Le parcours ne passe jamais le bail pour signé tant que les deux parties n'ont pas signé.
     const rail = t.body().all().find((e) => e.className === 'parcours')!;
     expect(rail.children[5]!.textContent).toBe('Bail');
+  });
+
+  it('AU097 · chaque colocataire signe le même bail en son nom ; le bail n’est signé qu’avec tous', async () => {
+    const lease = { ...LEASE, bailleur: '2027-07-12T09:00:00.000Z', locataire: '2027-07-12T09:05:00.000Z', colocataires: [{ personId: 'p-elise', signedAt: null }], cotenantCopiesSent: [] };
+    const t = await run({
+      'GET /v1/location/l1/suivi': ok({ facts: FACTS, fees: null, lease, inventoryClosed: false }),
+      'GET /v1/location/l1/presentation': ok({ presentation: PRES, chosenApplicationId: 'c1' }),
+      'POST /v1/location/l1/bail/signatures': ok({ sessionId: 's2', leaseId: 'bl1', contentSha256: 'c'.repeat(64), expiresAt: '2027-07-12T09:15:00.000Z', mode: 'essai' }),
+    });
+    await t.openL1();
+    expect(t.body().textContent).toContain('Signature du colocataire 1');
+    // Le bailleur et le locataire ont signé, pas la colocataire : pas d'exemplaire, le rail ne dit pas « essai ».
+    expect(t.byText('Préparer un exemplaire pour chacun')).toBeUndefined();
+    const rail = t.body().all().find((e) => e.className === 'parcours')!;
+    expect(rail.children[5]!.className).not.toContain('essai');
+    t.input('Comment le colocataire 1 a accepté de signer en ligne').value = 'Accord donné au rendez-vous.';
+    await t.click(t.byText('Envoyer le code de signature au colocataire 1'));
+    expect(t.posts()[0]).toMatchObject({ url: '/v1/location/l1/bail/signatures', body: JSON.stringify({ party: 'colocataire', personId: 'p-elise', consentProof: 'Accord donné au rendez-vous.' }) });
+    expect(t.state()).toContain('Code préparé pour le colocataire 1 (mode essai)');
   });
 
   it('[R106] l’état des lieux pièce par pièce : aucun état choisi d’avance, chaque élément constaté, puis signé des deux parties par une trace', async () => {
@@ -1104,6 +1184,20 @@ describe('W11 · écran « Louer » de l’application', () => {
       t.table['POST /v1/location/candidatures/c3/garants'] = no(403, { ok: false, rule: 'R16', code: 'not_assigned' });
       await t.click(t.byText('Garant Visale'));
       expect(t.state()).toBe('Ce geste n’est pas dans vos droits.');
+    });
+
+    it('AU097 · un colocataire s’ajoute parmi ses contacts ; il fournit ses pièces et se retire d’un geste', async () => {
+      const t = await run({
+        'POST /v1/location/candidatures/c3/colocataires': ok({ cotenants: ['p9'] }),
+        'GET /v1/location/l1/contacts': ok({ contacts: [{ personId: 'p9', firstName: 'Coloc', lastName: 'Inventé' }], more: false }),
+      });
+      await t.openL1();
+      await t.openDossier(0);
+      await t.click(t.byText('Ajouter un colocataire parmi mes contacts'));
+      t.input('Le colocataire').value = 'p9';
+      await t.click(t.byText('Ajouter ce colocataire'));
+      expect(t.posts()[0]).toMatchObject({ url: '/v1/location/candidatures/c3/colocataires', body: JSON.stringify({ personId: 'p9', action: 'ajout' }) });
+      expect(t.state()).toBe('Colocataire ajouté : le bail est à refaire.');
     });
   });
 });

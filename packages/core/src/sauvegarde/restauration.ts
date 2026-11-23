@@ -10,14 +10,18 @@
  * - le reçu ne porte que des instants, une durée, les comptes de la base entière et une empreinte de toute la base : une
  *   empreinte par table permettrait de deviner le contenu d'une petite table ;
  * - le dernier reçu du mois décide : un échec se rattrape par un test réussi, et une réussite ne cache pas un échec plus récent ;
+ * - depuis AU019b, le test restaure aussi chaque fichier de chaque stockage, relu contre son empreinte, et vérifie que
+ *   chaque fichier cité par la base est dans la copie : une copie sans ses fichiers est « non identique » ;
  * - le test passe le 2 du mois : jusqu'au 3 au soir, le mois attendu est encore le mois d'avant. Sans reçu, l'écran le dit.
  */
+import type { ScheduledJob } from '../bascule/planificateur.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { copyKeyFromSecret, restoreCopy, type CopyKey, type CopyStore } from './copie.ts';
+import { copyKeyFromSecret, type CopyKey, type CopyStore } from './copie.ts';
+import { fileReferences, OBJECT_STORAGES, restoreExercise, verifyingTarget, type ObjectStorage, type ObjectTarget } from './objets.ts';
 
 export const RESTORE_LIMIT_MS = 3_600_000;
 /** Une copie plus vieille ne prouve rien sur les données du mois : la copie de nuit est morte, le test le dit. */
@@ -54,6 +58,12 @@ export interface MonthlyRestoreInput {
 
 class StoreDown extends Error {}
 
+/** Une empreinte de la base et des fichiers ensemble : le reçu prouve les deux. */
+async function combinedDigest(base: string, objects: string): Promise<string> {
+  const bytes = new TextEncoder().encode(`${base}\n${objects}`);
+  return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
 /** Le test : rend le reçu, réussi ou non ; lève seulement si la base ne se lit pas, et il n'y a alors aucun reçu à ranger. */
 export async function runRestoreTest(input: MonthlyRestoreInput): Promise<RestoreReceipt> {
   const at = (input.now ?? (() => new Date()))();
@@ -81,12 +91,21 @@ export async function runRestoreTest(input: MonthlyRestoreInput): Promise<Restor
         }
       },
     };
-    const restored = await restoreCopy(input.fresh(), watched, key, last.copy_id, input.clock ? { clock: input.clock } : {});
-    if (!restored.ok) {
-      if (restored.code === 'not_identical') return no('non_identique', last.started_at, restored.durationMs);
-      const reason: Record<typeof restored.code, RestoreFailure> = { undecryptable: 'cle_invalide', manifest_missing: 'stockage_en_panne', part_missing: 'stockage_en_panne', part_corrupt: 'copie_abimee', bad_copy_id: 'copie_abimee', bad_format: 'copie_abimee', restore_failed: 'copie_abimee', target_not_empty: 'test_echoue' };
-      return no(reason[restored.code], last.started_at);
+    const targets = Object.fromEntries(OBJECT_STORAGES.map((name) => [name, verifyingTarget()])) as Record<ObjectStorage, ObjectTarget>;
+    const exercise = await restoreExercise({ target: input.fresh(), targets, store: watched, key, copyId: last.copy_id, references: fileReferences, ...(input.clock ? { clock: input.clock } : {}) });
+    if (!exercise.ok && exercise.part === 'base') {
+      const failed = exercise.base;
+      if (failed.code === 'not_identical') return no('non_identique', last.started_at, failed.durationMs);
+      const reason: Record<typeof failed.code, RestoreFailure> = { undecryptable: 'cle_invalide', manifest_missing: 'stockage_en_panne', part_missing: 'stockage_en_panne', part_corrupt: 'copie_abimee', bad_copy_id: 'copie_abimee', bad_format: 'copie_abimee', restore_failed: 'copie_abimee', target_not_empty: 'test_echoue' };
+      return no(reason[failed.code], last.started_at);
     }
+    if (!exercise.ok && exercise.part === 'objets') {
+      // Une copie sans ses fichiers, ou dont un fichier diffère ou manque, ne rend pas les dossiers : « non identique ».
+      const reason: Record<typeof exercise.objects.code, RestoreFailure> = { objects_missing: 'non_identique', not_identical: 'non_identique', undecryptable: 'cle_invalide', bad_copy_id: 'copie_abimee', bad_format: 'copie_abimee', storage_missing: 'test_echoue', target_not_empty: 'test_echoue', references_unchecked: 'test_echoue' };
+      return no(reason[exercise.objects.code], last.started_at);
+    }
+    if (!exercise.ok) return no('test_echoue', last.started_at);
+    const restored = { ...exercise.base, durationMs: exercise.durationMs, digest: await combinedDigest(exercise.base.digest, exercise.objects.digest) };
     if (restored.durationMs > RESTORE_LIMIT_MS) return no('trop_longue', last.started_at, restored.durationMs, restored.tables, restored.rows);
     if (at.getTime() - Date.parse(restored.takenAt) > RESTORE_COPY_MAX_AGE_MS) return no('copie_trop_ancienne', last.started_at, restored.durationMs, restored.tables, restored.rows);
     if (restored.tables === 0 || restored.rows === 0) return no('copie_abimee', last.started_at, restored.durationMs);
@@ -145,6 +164,23 @@ export class RecusRestauration {
     this.now = options.now ?? (() => new Date());
   }
 
+  /**
+   * AU109 · Un mois sans reçu réussi du test de restauration, une fois passé le jour attendu : une alerte, une seule,
+   * levée par le Worker, qui n'a pas besoin du travail GitHub pour cela. Rend vrai si elle vient d'être levée.
+   */
+  async watch(): Promise<boolean> {
+    const at = this.now();
+    const month = expectedRestoreMonth(at);
+    // Le dernier reçu décide : une réussite suivie d'un échec laisse l'alerte se lever [R232].
+    const latest = await this.db.first<{ outcome: string }>('SELECT outcome FROM base_restore_receipts WHERE month >= ? AND tested_at <= ? ORDER BY tested_at DESC, id DESC LIMIT 1', [month, at.toISOString()]);
+    if (latest?.outcome === 'reussie') return false;
+    const last = await this.db.first<{ at: string | null }>('SELECT MAX(tested_at) AS at FROM base_restore_receipts WHERE tested_at <= ?', [at.toISOString()]);
+    const { changes } = await this.db.run('INSERT INTO base_restore_alerts (month, last_receipt_at, created_at) VALUES (?, ?, ?) ON CONFLICT DO NOTHING', [month, last?.at ?? null, at.toISOString()]);
+    if (changes !== 1) return false;
+    await appendEvent(this.journal, { type: 'base.restauration_manquee', actor: 'system:sauvegarde', subject: `copy:mois-${month}`, data: { rule: 'R232', month } }, this.now);
+    return true;
+  }
+
   /** La direction seule [R16]. Sans reçu du mois attendu : « manquant », jamais vert par défaut. */
   async status(viewer: Viewer): Promise<{ ok: true; value: RestoreStatus } | { ok: false; rule: 'R16'; code: 'role' }> {
     const actor = `${String(viewer.role)}:${viewer.userId}`;
@@ -161,4 +197,17 @@ export class RecusRestauration {
     await appendEvent(this.journal, { type: 'pilotage.lecture', actor, subject, data: { kind: 'base_restore' } }, this.now);
     return { ok: true, value: { state, expectedMonth, receipt: latest ? toReceipt(latest) : null } };
   }
+}
+
+export const RESTORE_WATCH_JOB = 'sauvegarde.surveillance_restauration';
+
+/** AU109 · Le passage du planificateur : de 6 h à 8 h, chaque jour ; l'alerte d'un mois ne se lève qu'une fois. */
+export function restoreWatchJob(db: SqlDatabase, journal: JournalStore, options: { now?: () => Date } = {}): ScheduledJob {
+  return {
+    name: RESTORE_WATCH_JOB,
+    hours: [6, 7, 8],
+    run: async () => {
+      await new RecusRestauration(db, journal, options).watch();
+    },
+  };
 }

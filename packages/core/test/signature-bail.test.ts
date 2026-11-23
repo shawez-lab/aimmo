@@ -16,6 +16,7 @@ import {
 } from '../src/location/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
+import { signRentalMandate } from './mandat-location-jeu.ts';
 import { enClair } from './boite-essai.ts';
 
 // Réseau, agents, propriétaire, candidats, logement, adresses et mails inventés. Le 12 juillet 2027 est un lundi.
@@ -34,11 +35,15 @@ const FACTS: RentalFacts = {
   finalEnergyKwh: 210,
   buildYear: 1985,
   electricityOver15: false,
+  mainRoomHundredths: 1_800,
+  ceilingHeightCm: 250,
+  localRules: { reference: 'Règlement sanitaire départemental, art. 40', checkedOn: '2027-01-04', compliant: true },
+  firstLetting: true,
   gas: 'aucune',
   leaseStart: '2027-09-01',
   chargesMode: 'provision',
 };
-const INPUT = { address: '12 allée des Essais', ownerAddress: '3 chemin des Exemples, Ailleurs-Essai', habitat: 'collectif', equipment: 'Cuisine équipée, cave', professionalCard: 'CPI 2101 2027 000 000 001' };
+const INPUT = { address: '12 allée des Essais', ownerAddress: '3 chemin des Exemples, Ailleurs-Essai', habitat: 'collectif', landlord: 'physique', equipment: 'Cuisine équipée, cave', professionalCard: 'CPI 2101 2027 000 000 001' };
 const FEES = { tenantCents: 34_000, tenantInventoryCents: 12_750, landlordCents: 34_000, landlordInventoryCents: 12_750, depositCents: 65_000 };
 const BODY = [
   'Bail de {{bail.type}} entre {{bailleur.nom}}, domicilié {{bailleur.domicile}}, bailleur, et {{locataire.nom}}, locataire.',
@@ -86,6 +91,8 @@ async function setup() {
   const owner = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: 'Bailleur', lastName: 'Inventé' });
   await store.addIdentifier({ networkId: network.id, personId: owner.id, kind: 'email', value: 'bailleur.invente@example.test' });
   const home = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'L-1', kind: 'home', postalCode: '21000', city: 'Villeneuve-Essai', rooms: 2 });
+  // AU014 : la location se fait sous un mandat de location signé et inscrit.
+  await signRentalMandate(db, { networkId: network.id, agentId: alex.id, personId: owner.id, propertyId: home.id });
   const agent = { role: 'agent' as const, userId: alex.id, networkId: network.id };
   const other = { role: 'agent' as const, userId: bea.id, networkId: network.id };
   const dir = { role: 'direction' as const, userId: 'dir-1', networkId: network.id };
@@ -133,7 +140,7 @@ async function setup() {
     if (!s.ok) throw new Error(s.code);
     return signatures.sign(agent, s.value.sessionId, { code: await lastCode(), drawing });
   };
-  return { raw, db, journal, store, listings, fees, baux, edl, signatures, annuaire, relations, agent, other, dir, owner, leased, codes, lastCode, copies, signParty, tenant: () => tenantId, put, at: (ms: number) => (clock = ms) };
+  return { raw, db, journal, store, listings, fees, baux, edl, signatures, annuaire, relations, apps, choix, network, agent, other, dir, owner, leased, codes, lastCode, copies, signParty, tenant: () => tenantId, put, at: (ms: number) => (clock = ms) };
 }
 
 describeWithSqlite('W12 · signature en ligne du bail, en mode essai', () => {
@@ -339,5 +346,68 @@ describeWithSqlite('W12 · signature en ligne du bail, en mode essai', () => {
     await t.signatures.start(t.agent, id, { party: 'bailleur', ...CONSENT });
     expect(await lines()).toHaveLength(before + 1);
     expect(await unique.hasConsentInForce(t.owner.id, ONLINE_SIGNATURE_PURPOSE, 'email')).toBe(true);
+  });
+});
+
+describeWithSqlite('AU097 · un bail commun de colocation', () => {
+  it('deux colocataires restent deux personnes : chacun ses pièces, sa signature et son exemplaire du même bail', async () => {
+    const t = await setup();
+    const { id } = await t.leased();
+    const chosen = (await t.choix.chosen(t.network.id, id))!;
+    // Une colocataire de plus sur le dossier choisi : une personne de la fiche, avec son mail.
+    const elise = await t.store.createPerson({ networkId: t.network.id, agentId: t.agent.userId, firstName: 'Élise', lastName: 'Inventée' });
+    await t.store.addIdentifier({ networkId: t.network.id, personId: elise.id, kind: 'email', value: 'elise.inventee@example.test' });
+    expect(await t.apps.setCotenant(t.other, chosen.applicationId, { personId: elise.id, action: 'ajout' })).toMatchObject({ ok: false });
+    expect(await t.apps.setCotenant(t.agent, chosen.applicationId, { personId: t.owner.id, action: 'ajout' })).toMatchObject({ ok: false, code: 'unknown_person' });
+    expect(await t.apps.setCotenant(t.agent, chosen.applicationId, { personId: elise.id, action: 'ajout' })).toEqual({ ok: true, value: { cotenants: [elise.id] } });
+    expect(await t.apps.addGuarantor(t.agent, chosen.applicationId, { kind: 'personne', personId: elise.id })).toMatchObject({ ok: false, code: 'already_cotenant' });
+    // Le bail fait avant ne nomme pas Élise : il ne se signe plus.
+    expect(await t.baux.current(t.network.id, id)).toBeNull();
+    // Ses propres pièces, à son nom : le dossier n'est complet qu'avec elles, et sans elles aucun bail ne se fait.
+    const holder = `colocataire:${elise.id}`;
+    expect(await t.baux.generate(t.agent, id, { ...INPUT, noticeRef: t.put(`location/${id}/bail`) })).toMatchObject({ ok: false, code: 'dossier_incomplet' });
+    const before = await t.apps.read(t.agent, chosen.applicationId);
+    expect(before.ok && before.value.cotenants).toEqual([elise.id]);
+    expect(before.ok && before.value.missing.filter((m) => m.holder === holder).map((m) => m.what)).toEqual(['domicile', 'activite', 'ressources']);
+    expect(await t.apps.addPiece(t.agent, chosen.applicationId, { holder, sort: 'derniere_quittance', ref: t.put(`location/${id}/candidatures/${chosen.applicationId}`), sha256: SHA })).toMatchObject({ ok: false, code: 'not_for_holder' });
+    for (const sort of ['attestation_hebergement', 'certificat_scolarite', 'avis_bourse']) {
+      expect((await t.apps.addPiece(t.agent, chosen.applicationId, { holder, sort, ref: t.put(`location/${id}/candidatures/${chosen.applicationId}`), sha256: SHA })).ok).toBe(true);
+    }
+    const after = await t.apps.read(t.agent, chosen.applicationId);
+    expect(after.ok && after.value.missing.filter((m) => m.holder === holder)).toEqual([]);
+    // Un seul bail, qui nomme les deux locataires.
+    const lease = await t.baux.generate(t.agent, id, { ...INPUT, noticeRef: t.put(`location/${id}/bail`) });
+    if (!lease.ok) throw new Error(lease.code);
+    expect(lease.value.content).toContain('Dominique Inventé et Élise Inventée, colocataires');
+    // Le bailleur et le locataire signent : le bail n'est pas encore signé sans Élise.
+    expect((await t.signParty(id, 'bailleur')).ok).toBe(true);
+    expect(await t.signParty(id, 'locataire')).toMatchObject({ ok: true, value: { bothSigned: false } });
+    expect((await t.signatures.status(t.network.id, lease.value.leaseId))!.signedAt).toBeNull();
+    expect(await t.copies()).toEqual([]);
+    // Seule une colocataire nommée au bail signe en colocataire ; Élise signe en son nom.
+    expect(await t.signatures.start(t.agent, id, { party: 'colocataire', personId: t.owner.id, ...CONSENT })).toMatchObject({ ok: false, code: 'not_cotenant' });
+    const s = await t.signatures.start(t.agent, id, { party: 'colocataire', personId: elise.id, ...CONSENT });
+    if (!s.ok) throw new Error(s.code);
+    expect(await t.signatures.sign(t.agent, s.value.sessionId, { code: await t.lastCode() })).toMatchObject({ ok: true, value: { party: 'colocataire', bothSigned: true } });
+    expect(await t.signatures.start(t.agent, id, { party: 'colocataire', personId: elise.id, ...CONSENT })).toMatchObject({ ok: false, code: 'already_signed' });
+    const status = (await t.signatures.status(t.network.id, lease.value.leaseId))!;
+    expect(status.colocataires).toEqual([{ personId: elise.id, signedAt: expect.any(String) }]);
+    expect(status.signedAt).not.toBeNull();
+    // Un seul exemplaire, avec les trois preuves ; chacun en reçoit l'avis, Élise comprise.
+    expect(status.cotenantCopiesSent).toEqual([elise.id]);
+    // L'avis remis à Élise nomme sa session de signature : sa réponse d'accès le retrouve [R96].
+    expect((await t.journal.all()).filter((e) => e.type === 'location.bail_exemplaire' && (e.data as { party?: string }).party === 'colocataire').map((e) => (e.data as { session?: string }).session)).toEqual([s.value.sessionId]);
+    const sent = await t.copies();
+    expect(sent.map((c) => c.person_id).sort()).toEqual([t.owner.id, t.tenant(), elise.id].sort());
+    expect(new Set(sent.map((c) => /empreinte ([0-9a-f]{64})/.exec(c.body)![1])).size).toBe(1);
+    const copy = await t.signatures.copy(t.agent, id, lease.value.leaseId);
+    expect(copy.ok && (copy.value.content.match(/Signature en ligne d'essai/g) ?? []).length).toBe(3);
+    // Élise retirée : le bail signé ne nomme plus les bons locataires, il en faut un nouveau.
+    expect((await t.apps.setCotenant(t.agent, chosen.applicationId, { personId: elise.id, action: 'retrait' })).ok).toBe(true);
+    expect(await t.baux.current(t.network.id, id)).toBeNull();
+    // Revenue ensuite, Élise ne ranime pas l'ancien bail : la liste a changé depuis, il en faut un nouveau.
+    expect((await t.apps.setCotenant(t.agent, chosen.applicationId, { personId: elise.id, action: 'ajout' })).ok).toBe(true);
+    expect(await t.baux.current(t.network.id, id)).toBeNull();
+    expect(await t.db.all('SELECT action FROM rental_cotenant_changes ORDER BY seq')).toEqual([{ action: 'ajout' }, { action: 'retrait' }, { action: 'ajout' }]);
   });
 });

@@ -17,6 +17,15 @@ export interface OutboundMessage {
    * commentaire (réponse privée au commentaire). Assistant du site : `to` est la session du visiteur.
    */
   thread?: 'direct' | 'comment';
+  /** Les pièces jointes d'un mail, produites par le code (AU003). */
+  attachments?: readonly OutboundAttachment[];
+}
+
+/** Une pièce jointe : son nom, son type et son contenu en texte. */
+export interface OutboundAttachment {
+  name: string;
+  contentType: 'text/html';
+  content: string;
 }
 
 export interface DeliveryReceipt {

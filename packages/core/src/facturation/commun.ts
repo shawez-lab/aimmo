@@ -13,17 +13,23 @@ export type Refusal = { ok: false; rule: 'R16'; code: string };
  * Le numéro d'une facture d'honoraires du réseau, comme K02 l'écrit (`F-2027-00001`) : il n'est pas dans le contenu
  * figé, il se lit dans la ligne (année et numéro). Seules les factures d'honoraires du réseau sont rapprochées.
  */
+/**
+ * Le numéro d'une facture d'honoraires, comme `Factures` l'écrit : `FAC-` et son numéro officiel pour une facture
+ * réelle (AU013), `F-` et le numéro d'essai sinon.
+ */
 export const LABEL_SQL = (alias = ''): string => {
-  const a = alias ? `${alias}.` : '';
-  return `('F-' || ${a}year || '-' || substr('00000' || ${a}number, -5))`;
+  const a = alias ? `${alias}.` : 'invoices.';
+  return `COALESCE((SELECT 'FAC-' || rn.year || '-' || substr('00000' || rn.number, -5) FROM invoice_real_numbers rn WHERE rn.invoice_id = ${a}id), 'F-' || ${a}year || '-' || substr('00000' || ${a}number, -5))`;
 };
 
 export const actorOf = (viewer: Viewer): string => `${String(viewer.role)}:${viewer.userId}`;
 
 /** La direction seule lit et range les chiffres du réseau : factures, banque, relances [R16]. */
-export async function directionRefusal(journal: JournalStore, now: () => Date, viewer: Viewer, kind: string): Promise<Refusal | null> {
+export async function directionRefusal(journal: JournalStore, now: () => Date, viewer: Viewer, kind: string, options: { accountantReads?: boolean } = {}): Promise<Refusal | null> {
   let code: string | null = null;
-  if (viewer.role !== 'direction') code = 'role';
+  // AU107 · le comptable lit ce qu'on lui ouvre, en lecture seule, dans son réseau.
+  if (viewer.role === 'accountant' && options.accountantReads === true) code = null;
+  else if (viewer.role !== 'direction') code = 'role';
   else {
     const d = decideAccess(viewer, { kind: 'figures', networkId: viewer.networkId, agentId: viewer.userId });
     if (!d.allowed) code = d.code;

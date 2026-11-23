@@ -15,7 +15,18 @@
  * - un terrain n'a pas de diagnostic énergétique ; tout autre bien d'habitation en exige un [R45] ; les commerces et
  *   entreprises suivront M16 et ne passent pas encore ;
  * - « très énergivore » : classe F ou G, avec la mention « Logement à consommation énergétique excessive » ;
- * - le numéro de carte professionnelle est un réglage du réseau, réglé par la direction (H09 pour le vrai).
+ * - le numéro de carte professionnelle est un réglage du réseau, réglé par la direction (H09 pour le vrai) ;
+ * - un diagnostic énergétique n'est retenu que s'il est encore valable au jour de Paris du calcul (AU005, R45) :
+ *   fait avant le 1er janvier 2018, valable au plus tard jusqu'au 31 décembre 2022 ; fait du 1er janvier 2018 au
+ *   30 juin 2021, jusqu'au 31 décembre 2024 ; fait depuis le 1er juillet 2021, dix ans, jusqu'à la veille du même jour
+ *   dix ans plus tard (code de la construction et de l'habitation, art. D126-19 et décret n° 2020-1610, lus le
+ *   2026-11-19 sur service-public.gouv.fr F16096). Le jour est donné à chaque calcul : chaque passage de publication
+ *   le relit, une annonce dont le diagnostic expire est retirée au passage suivant ;
+ * - l'intervenant d'une annonce est l'agent du bien (AU007, R43, R152) : un agent d'AIMMO est un agent commercial habilité
+ *   par le titulaire de la carte du réseau, sans carte à son nom. Ses mentions suivent son statut réel, celui que la
+ *   direction a rangé pour lui (AT03) : statut, greffe et numéro d'immatriculation au RSAC, titulaire qui l'habilite.
+ *   Sans statut rangé, agent parti ou sans titulaire, la mention manque et l'annonce ne part pas ; elle est relue à
+ *   chaque passage de publication, et suit donc l'agent du bien quand il change.
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -26,9 +37,15 @@ import type { DocumentFacts } from '../documents/modeles.ts';
 import { Diffusion } from '../documents/retractation.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import type { PropertySheet } from './fiche-bien.ts';
+import { energyPriceText, type EnergyClass, type PropertySheet } from './fiche-bien.ts';
+import { latestCardHolder, latestLegalMention } from '../attirer/page-agent.ts';
 
-export const MENTION_IDS = ['prix', 'energie', 'copropriete', 'risques', 'carte'] as const;
+/** Le jour à Paris, `AAAA-MM-JJ`. */
+function parisDay(at: Date): string {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit' }).format(at);
+}
+
+export const MENTION_IDS = ['prix', 'energie', 'copropriete', 'risques', 'intervenant', 'carte'] as const;
 export type MentionId = (typeof MENTION_IDS)[number];
 
 export type MissingReason =
@@ -36,8 +53,11 @@ export type MissingReason =
   | 'prix_inconnu'
   | 'honoraires_inconnus'
   | 'pas_de_diagnostic'
+  | 'diagnostic_perime'
   | 'copropriete_inconnue'
   | 'risques_inconnus'
+  | 'statut_intervenant_inconnu'
+  | 'titulaire_inconnu'
   | 'carte_inconnue'
   | 'type_de_bien_non_pris_en_charge';
 
@@ -53,12 +73,27 @@ export interface PriceTerms {
   feeCharge: 'vendeur' | 'acquereur' | null;
 }
 
+/** L'agent du bien, avec le statut rangé par la direction (AT03). Seul statut connu : agent commercial [R152]. */
+export interface Intervenant {
+  firstName: string;
+  lastName: string;
+  status: 'agent_commercial';
+  rsacNumber: string;
+  rsacRegistry: string;
+  /** Le titulaire de la carte professionnelle qui l'habilite ; null tant que la direction ne l'a pas réglé. */
+  cardHolder: string | null;
+}
+
 export interface MentionsInput {
   kind: PropertyKind;
   /** null quand aucun mandat signé n'existe pour le bien. */
   terms: PriceTerms | null;
   sheet: PropertySheet | null;
   cardNumber: string | null;
+  /** L'agent du bien et son statut ; null s'il n'y en a pas, s'il est parti ou si son statut n'est pas rangé (AU007). */
+  intervenant: Intervenant | null;
+  /** Le jour de Paris du calcul, `AAAA-MM-JJ` : la validité du diagnostic énergétique se juge ce jour-là [R45]. */
+  today: string;
 }
 
 export interface Checklist {
@@ -90,8 +125,56 @@ export function feePercent(feeEur: number, netPriceEur: number): string {
   return `${whole}${decimals}${NBSP}%`;
 }
 
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+function realDay(v: unknown): v is string {
+  if (typeof v !== 'string' || !ISO_DAY.test(v)) return false;
+  const d = new Date(`${v}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v;
+}
+
+/**
+ * Le dernier jour de validité d'un diagnostic énergétique fait le jour donné, ou null si la date n'est pas un vrai jour
+ * [R45]. Dix ans au plus ; les diagnostics d'avant le 1er juillet 2021 ont une fin fixée par le décret n° 2020-1610.
+ */
+export function dpeValidUntil(diagnosedOn: string): string | null {
+  if (!realDay(diagnosedOn)) return null;
+  const d = new Date(`${diagnosedOn}T00:00:00Z`);
+  // Dix ans, jusqu'à la veille du même jour : un 29 février donne le 28 février, dix ans plus tard.
+  const tenYears = new Date(Date.UTC(d.getUTCFullYear() + 10, d.getUTCMonth(), d.getUTCDate()));
+  if (tenYears.getUTCMonth() !== d.getUTCMonth()) tenYears.setUTCDate(1);
+  tenYears.setUTCDate(tenYears.getUTCDate() - 1);
+  const decennial = tenYears.toISOString().slice(0, 10);
+  if (diagnosedOn >= '2021-07-01') return decennial;
+  const cap = diagnosedOn >= '2018-01-01' ? '2024-12-31' : '2022-12-31';
+  return decennial < cap ? decennial : cap;
+}
+
+/** Vrai seulement si le diagnostic fait ce jour-là est encore valable le jour donné, et n'est pas daté après lui. */
+export function dpeValidOn(diagnosedOn: string, today: string): boolean {
+  const until = dpeValidUntil(diagnosedOn);
+  if (until === null || !realDay(today)) return false;
+  return diagnosedOn <= today && today <= until;
+}
+
 const HOMES: readonly PropertyKind[] = ['home', 'building', 'land'];
 const GEORISQUES = 'Les informations sur les risques auxquels ce bien est exposé sont disponibles sur le site Géorisques : www.georisques.gouv.fr';
+
+/**
+ * Les deux classes lues dans les mentions publiées (AU006) : la phrase « Classe énergie X, classe climat Y. » est
+ * écrite par `computeMentions` seule, au début d'une ligne ; la page et la fiche en tirent les deux étiquettes, de la
+ * même version publiée que le texte [R43]. Toute autre forme ne rend rien.
+ */
+export function energyClassesOf(mentions: string | null): { energy: EnergyClass; climate: EnergyClass } | null {
+  const m = mentions ? /^Classe énergie ([A-G]), classe climat ([A-G])\./m.exec(mentions) : null;
+  return m ? { energy: m[1] as EnergyClass, climate: m[2] as EnergyClass } : null;
+}
+
+/** La phrase de l'intervenant, jamais « mandataire » [R07, R152]. */
+export function intervenantLine(who: Intervenant): string {
+  const name = `${who.firstName.trim()} ${who.lastName.trim()}`.trim();
+  return `Votre agent : ${name}, agent commercial, RSAC de ${who.rsacRegistry.trim()} n° ${who.rsacNumber.trim()}, habilité par ${who.cardHolder!.trim()}, titulaire de la carte.`;
+}
 
 /** Calcule chaque mention et la liste de contrôle. Fonction pure : mêmes données, même texte, au caractère près. */
 export function computeMentions(input: MentionsInput): Checklist {
@@ -122,6 +205,7 @@ export function computeMentions(input: MentionsInput): Checklist {
   if (!supported) items.push({ id: 'energie', status: 'manquante', reason: 'type_de_bien_non_pris_en_charge' });
   else if (input.kind === 'land') items.push({ id: 'energie', status: 'sans_objet' });
   else if (!sheet?.energy) items.push({ id: 'energie', status: 'manquante', reason: 'pas_de_diagnostic' });
+  else if (!dpeValidOn(sheet.energy.diagnosedOn, input.today)) items.push({ id: 'energie', status: 'manquante', reason: 'diagnostic_perime' });
   else {
     const e = sheet.energy;
     const excessive = e.energyClass === 'F' || e.energyClass === 'G' ? ' Logement à consommation énergétique excessive.' : '';
@@ -131,7 +215,7 @@ export function computeMentions(input: MentionsInput): Checklist {
       text:
         `Classe énergie ${e.energyClass}, classe climat ${e.climateClass}.${excessive} ` +
         `Montant estimé des dépenses annuelles d'énergie pour un usage standard : entre ${euros(e.annualCostMinEur)} et ${euros(e.annualCostMaxEur)} par an. ` +
-        `Prix moyens des énergies indexés au 1er janvier ${e.costReferenceYear} (abonnements compris).`,
+        energyPriceText(e),
     });
   }
 
@@ -153,6 +237,13 @@ export function computeMentions(input: MentionsInput): Checklist {
   else if (!sheet?.risks) items.push({ id: 'risques', status: 'manquante', reason: 'risques_inconnus' });
   else if (!sheet.risks.inRiskZone) items.push({ id: 'risques', status: 'sans_objet' });
   else items.push({ id: 'risques', status: 'presente', text: `${GEORISQUES}.` });
+
+  // L'intervenant : son statut réel, son immatriculation, le titulaire qui l'habilite (AU007) [R43, R152].
+  const who = input.intervenant;
+  if (who === null || who.status !== 'agent_commercial' || !who.rsacNumber.trim() || !who.rsacRegistry.trim() || !`${who.firstName}${who.lastName}`.trim()) {
+    items.push({ id: 'intervenant', status: 'manquante', reason: 'statut_intervenant_inconnu' });
+  } else if (who.cardHolder === null || who.cardHolder.trim() === '') items.push({ id: 'intervenant', status: 'manquante', reason: 'titulaire_inconnu' });
+  else items.push({ id: 'intervenant', status: 'presente', text: intervenantLine(who) });
 
   // Carte professionnelle.
   if (input.cardNumber === null || input.cardNumber.trim() === '') items.push({ id: 'carte', status: 'manquante', reason: 'carte_inconnue' });
@@ -214,7 +305,8 @@ export class MentionsAnnonce {
     // rétractation. Un mandat rétracté, annulé, échu, sans durée ou pas encore numéroté n'en donne aucun [R44].
     const inForceReasons = ['allowed', 'allowed_early_start', 'withdrawal_period'];
     if (decision.mandateId !== null && inForceReasons.includes(decision.reason)) {
-      const inForce = await mandateTerms(this.db, decision.mandateId);
+      // Les conditions de ce jour : un avenant signé dont la date d'effet n'est pas venue ne compte pas encore (AU057).
+      const inForce = await mandateTerms(this.db, decision.mandateId, this.now());
       const base = await this.db.first<{ facts: string | null }>(
         'SELECT d.facts FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = ? AND s.copy_content IS NOT NULL',
         [decision.mandateId],
@@ -225,11 +317,26 @@ export class MentionsAnnonce {
       } catch {
         facts = null;
       }
-      if (inForce) terms = { priceEur: inForce.priceEur, feeEur: facts?.feeEur ?? null, feeCharge: facts?.feeCharge ?? null };
+      // Les honoraires et leur charge en vigueur, avenants compris (AU057).
+      if (inForce) terms = { priceEur: inForce.priceEur, feeEur: inForce.feeEur ?? facts?.feeEur ?? null, feeCharge: inForce.feeCharge ?? facts?.feeCharge ?? null };
     }
     const sheetRow = await this.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [propertyId]);
     const card = await this.db.first<{ card_number: string }>('SELECT card_number FROM listing_settings WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
-    return { kind: property.kind, terms, sheet: sheetRow ? (JSON.parse(sheetRow.data) as PropertySheet) : null, cardNumber: card?.card_number ?? null };
+    return { kind: property.kind, terms, sheet: sheetRow ? (JSON.parse(sheetRow.data) as PropertySheet) : null, cardNumber: card?.card_number ?? null, intervenant: await this.intervenantOf(networkId, propertyId), today: parisDay(this.now()) };
+  }
+
+  /** L'agent du bien et son dernier statut rangé, s'il est en activité dans le réseau ; sinon null (AU007) [R152]. */
+  private async intervenantOf(networkId: string, propertyId: string): Promise<Intervenant | null> {
+    const a = await this.db.first<{ id: string; first_name: string; last_name: string; status: string; network_id: string }>(
+      'SELECT a.id, a.first_name, a.last_name, a.status, a.network_id FROM properties p JOIN agents a ON a.id = p.agent_id WHERE p.id = ?',
+      [propertyId],
+    );
+    if (!a || a.network_id !== networkId || a.status !== 'active') return null;
+    // Les mêmes lectures que la page de l'agent : statut et titulaire y sont toujours les mêmes [R152].
+    const legal = await latestLegalMention(this.db, networkId, a.id);
+    if (!legal || legal.legal_status !== 'agent_commercial') return null;
+    const holder = await latestCardHolder(this.db, networkId);
+    return { firstName: a.first_name, lastName: a.last_name, status: 'agent_commercial', rsacNumber: legal.rsac_number, rsacRegistry: legal.rsac_registry, cardHolder: holder?.holder_name ?? null };
   }
 
   /** La liste de contrôle d'un bien, pour qui voit le bien en entier : l'agent du bien, la direction, la conformité [R16]. */

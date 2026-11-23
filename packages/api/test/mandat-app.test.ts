@@ -104,7 +104,7 @@ describe('D12 · écran « Mandat »', () => {
   });
 
   it('[R40] AU002 : la désignation du bien et le domicile du mandant se saisissent en champs, l’écran envoie ce qui est saisi', async () => {
-    const t = await run({ 'POST /v1/biens/b1/designation': ok({}), 'POST /v1/fiches/p1/domicile': ok({}) });
+    const t = await run({ 'POST /v1/biens/b1/designation': ok({}), 'POST /v1/biens/b1/position': ok({ lat: 47.3, lon: 5.04 }), 'POST /v1/fiches/p1/domicile': ok({}) });
     await t.open();
     expect(t.body().textContent).toContain('Adresse du bien : à saisir.');
     expect(t.body().textContent).toContain('Domicile de Léa Exemple : à saisir.');
@@ -119,11 +119,14 @@ describe('D12 · écran « Mandat »', () => {
     await t.press('Enregistrer la désignation');
     expect(t.posts()[0]).toEqual({ method: 'POST', url: '/v1/biens/b1/designation', body: { address: { street: '12 rue des Essais', postalCode: '21000', city: 'Dijon' }, parcels: [{ section: 'AB', number: '123' }, { prefix: '012', section: 'C', number: '45' }] } });
     expect(t.state()).toContain('Désignation enregistrée');
+    expect(t.state()).not.toContain('non situé');
     t.input('domicile-p1-voie').value = '3 place du Test';
     t.input('domicile-p1-cp').value = '21121';
     t.input('domicile-p1-commune').value = 'Fontaine-lès-Dijon';
     await t.press('Enregistrer le domicile de Léa Exemple');
-    expect(t.posts()[1]).toEqual({ method: 'POST', url: '/v1/fiches/p1/domicile', body: { street: '3 place du Test', postalCode: '21121', city: 'Fontaine-lès-Dijon' } });
+    // AU073 · la désignation rangée, le bien est situé.
+    expect(t.posts()[1]).toEqual({ method: 'POST', url: '/v1/biens/b1/position', body: {} });
+    expect(t.posts()[2]).toEqual({ method: 'POST', url: '/v1/fiches/p1/domicile', body: { street: '3 place du Test', postalCode: '21121', city: 'Fontaine-lès-Dijon' } });
     expect(t.state()).toContain('Domicile enregistré');
     // Un domicile à l'étranger : le pays s'envoie avec lui.
     t.input('domicile-p1-voie').value = '1 Test Street';
@@ -131,7 +134,19 @@ describe('D12 · écran « Mandat »', () => {
     t.input('domicile-p1-commune').value = 'London';
     t.input('domicile-p1-pays').value = 'Royaume-Uni';
     await t.press('Enregistrer le domicile de Léa Exemple');
-    expect(t.posts()[2]!.body).toEqual({ street: '1 Test Street', postalCode: 'SW1A 1AA', city: 'London', country: 'Royaume-Uni' });
+    expect(t.posts()[3]!.body).toEqual({ street: '1 Test Street', postalCode: 'SW1A 1AA', city: 'London', country: 'Royaume-Uni' });
+  });
+
+  it('AU073 : un bien que l’adresse ne permet pas de situer est dit à l’agent', async () => {
+    const t = await run({ 'POST /v1/biens/b1/designation': ok({}), 'POST /v1/biens/b1/position': no(422, 'lieu_introuvable') });
+    await t.open();
+    t.input('bien-adresse-voie').value = '12 rue des Essais';
+    t.input('bien-adresse-cp').value = '21000';
+    t.input('bien-adresse-commune').value = 'Dijon';
+    t.input('bien-parcelles').value = 'AB 123';
+    await t.press('Enregistrer la désignation');
+    expect(t.state()).toContain('Désignation enregistrée');
+    expect(t.state()).toContain('Bien non situé : il n’entre dans aucun secteur d’acquéreur.');
   });
 
   it('[R40] AU002 : ce qui est déjà saisi est montré et prérempli ; un refus du serveur est dit en français', async () => {
@@ -330,8 +345,79 @@ describe('D12 · écran « Mandat »', () => {
     expect(t.state()).toBe('Un mandat est déjà en cours sur ce bien : ce document ne se signe pas.');
   });
 
-  it('[R41] la signature en ligne n’existe pas sur cet écran tant que l’avocat ne l’a pas validée (H24)', () => {
-    expect(MANDAT_SCRIPT).not.toContain('signature-en-ligne');
+  it('[R41] après un contrôle réussi, l’écran dit si la signature en ligne est réelle ou seulement d’essai, d’après le serveur (AU003)', async () => {
+    const essai = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC] }), 'GET /v1/signature-en-ligne/mode': ok({ mode: 'essai', missing: ['mail_reel', 'validation_avocat'], proofFormat: 'aimmo-preuve-1' }) });
+    await essai.open();
+    await essai.press('Contrôler avant signature');
+    expect(essai.body().textContent).toContain('Signature en ligne : essai seulement, sans valeur juridique (validation de l’avocat attendue).');
+    const reel = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC] }), 'GET /v1/signature-en-ligne/mode': ok({ mode: 'reel', missing: [], proofFormat: 'aimmo-preuve-1' }) });
+    await reel.open();
+    await reel.press('Contrôler avant signature');
+    expect(reel.body().textContent).toContain('Signature en ligne : réelle, avec dossier de preuve remis à chaque mandant.');
+    expect(reel.body().textContent).not.toContain('essai seulement');
+    // Le serveur ne répond pas : rien n'est affirmé.
+    const rien = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC] }) });
+    await rien.open();
+    await rien.press('Contrôler avant signature');
+    expect(rien.body().textContent).not.toContain('Signature en ligne');
+  });
+
+  it('X17 · la signature en ligne d’essai à l’écran : accord, code d’essai montré, signature dite sans valeur juridique', async () => {
+    const MODE = { 'GET /v1/signature-en-ligne/mode': ok({ mode: 'essai', missing: ['mail_reel', 'validation_avocat'], proofFormat: 'aimmo-preuve-1' }) };
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC] }), ...MODE });
+    await t.open();
+    await t.press('Contrôler avant signature');
+    // Sans accord noté, rien ne part.
+    await t.press('Envoyer le code de signature');
+    expect(t.state()).toBe('Notez comment le mandant a accepté de signer en ligne.');
+    expect(t.posts().filter((c) => c.url.includes('signature-en-ligne'))).toEqual([]);
+    t.input('mandat-accord-d1').value = 'Accord donné au rendez-vous du 10 février.';
+    t.table['POST /v1/documents/d1/signature-en-ligne'] = ok({ sessionId: 's1', expiresAt: '2027-02-10T09:10:00.000Z', mode: 'essai', trialCode: '482913' });
+    await t.press('Envoyer le code de signature');
+    expect(t.posts().at(-1)).toMatchObject({ url: '/v1/documents/d1/signature-en-ligne', body: { consentProof: 'Accord donné au rendez-vous du 10 février.' } });
+    expect(t.state()).toBe('Code préparé pour le mandant (essai, rien n’est parti).');
+    expect(t.body().textContent).toContain('Code d’essai : 482913.');
+    // Un code faux est dit en français, sans code interne.
+    t.input('mandat-code-d1').value = '111111';
+    t.table['POST /v1/signatures/s1'] = no(400, 'wrong_code');
+    await t.press('Signer en ligne');
+    expect(t.state()).toBe('Code faux : vérifiez-le avec le mandant.');
+    t.input('mandat-code-d1').value = ' 482913 ';
+    t.table['POST /v1/signatures/s1'] = ok({ mode: 'essai', realSignature: false, allSigned: true });
+    await t.press('Signer en ligne');
+    expect(t.posts().at(-1)).toMatchObject({ url: '/v1/signatures/s1', body: { code: '482913' } });
+    expect(t.state()).toBe('Signé en essai, sans valeur juridique : aucun mandat n’est inscrit.');
+  });
+
+  it('X17 · en réel, aucun code n’est montré ; signé par tous, le mandat est relu inscrit ; une réponse perdue est dite telle', async () => {
+    const MODE = { 'GET /v1/signature-en-ligne/mode': ok({ mode: 'reel', missing: [], proofFormat: 'aimmo-preuve-1' }) };
+    const two = { ...READ, documents: [DOC], owners: [OWNER, { personId: 'p2', firstName: 'Sam', lastName: 'Exemple' }] };
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok(two), ...MODE });
+    await t.open();
+    await t.press('Contrôler avant signature');
+    t.input('mandat-accord-d1').value = 'Accord écrit du 10 février.';
+    t.input('mandat-signataire-d1').value = 'p2';
+    // La réponse se perd : rien n'est affirmé.
+    await t.press('Envoyer le code de signature');
+    expect(t.state()).toBe('Pas de réponse : le code est peut-être parti. Attendez dix minutes avant de le renvoyer.');
+    t.table['POST /v1/documents/d1/signature-en-ligne'] = ok({ sessionId: 's2', expiresAt: 'x', mode: 'reel' });
+    await t.press('Envoyer le code de signature');
+    expect(t.posts().at(-1)).toMatchObject({ body: { consentProof: 'Accord écrit du 10 février.', signerId: 'p2' } });
+    expect(t.state()).toBe('Code envoyé au mandant par mail : il vaut dix minutes.');
+    expect(t.body().textContent).not.toContain('Code d’essai');
+    t.input('mandat-code-d1').value = '123456';
+    t.table['POST /v1/signatures/s2'] = ok({ mode: 'reel', realSignature: true, allSigned: true, finished: { ok: true } });
+    await t.press('Signer en ligne');
+    expect(t.state()).toBe('Mandat signé en ligne : il est inscrit au registre.');
+  });
+
+  it('X17 [R16] un envoi refusé par les droits est dit tel', async () => {
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC] }), 'GET /v1/signature-en-ligne/mode': ok({ mode: 'essai', missing: ['validation_avocat'], proofFormat: 'aimmo-preuve-1' }), 'POST /v1/documents/d1/signature-en-ligne': no(403, 'not_assigned') });
+    await t.open();
+    await t.press('Contrôler avant signature');
+    t.input('mandat-accord-d1').value = 'Accord.';
+    await t.press('Envoyer le code de signature');
+    expect(t.state()).toBe('Ce mandat n’est pas dans vos droits.');
   });
 
   it('[R16] une lecture refusée n’est pas montrée comme un bien sans mandat ; quitter l’écran n’y laisse rien', async () => {
@@ -583,6 +669,26 @@ describe('D12 · écran « Mandat »', () => {
       expect(t.posts()).toEqual([{ method: 'POST', url: '/v1/documents', body: { kind: 'avenant_mandat', personId: 'p1', propertyId: 'b1', mandateId: 'm1', inputs: { 'avenant.prix': 190000 } } }]);
       expect(t.state()).toContain('Avenant préparé');
       expect(t.body().textContent).toContain('Avenant, préparé le');
+    });
+
+    it('AU057 · les honoraires, leur charge, le type du mandat et la date d’effet partent avec l’avenant', async () => {
+      const t = await opened({ 'POST /v1/documents': ok({ id: 'd2' }) });
+      t.input('avenant-honoraires').value = '8000';
+      t.input('avenant-charge').value = 'acquereur';
+      t.input('avenant-type').value = 'exclusif';
+      t.input('avenant-effet').value = '2027-04-01';
+      await t.press(GO);
+      expect(t.posts()).toEqual([{ method: 'POST', url: '/v1/documents', body: { kind: 'avenant_mandat', personId: 'p1', propertyId: 'b1', mandateId: 'm1', inputs: { 'avenant.honoraires': 8000, 'avenant.honoraires_charge': 'acquereur', 'avenant.type': 'exclusif', 'avenant.date_effet': '2027-04-01' } } }]);
+      // Une date d'effet seule ne change rien : rien ne part.
+      const alone = await opened();
+      alone.input('avenant-effet').value = '2027-04-01';
+      await alone.press(GO);
+      expect(alone.state()).toContain('Dites ce qui change');
+      expect(alone.posts()).toEqual([]);
+      const refused = await opened({ 'POST /v1/documents': no(400, 'no_evidence') });
+      refused.input('avenant-type').value = 'exclusif';
+      await refused.press(GO);
+      expect(refused.state()).toContain('clause d’exclusivité');
     });
 
     it('plusieurs propriétaires : le mandant se choisit ; sans propriétaire, rien ne se prépare', async () => {

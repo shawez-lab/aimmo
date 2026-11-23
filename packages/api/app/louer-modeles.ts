@@ -6,7 +6,7 @@ import { LEASE_FIELDS } from '../../core/src/location/index.ts';
  * le code ne valide jamais seul, et la direction non plus [H08]. Un modèle non validé est dit d'essai, comme le bail qu'il
  * ferait. Tout texte reçu est posé en texte ; rien n'est gardé sur l'appareil.
  */
-const KINDS = { bail_vide: 'Location vide', bail_meuble: 'Location meublée' };
+const KINDS = { bail_vide: 'Location vide', bail_meuble: 'Location meublée', bail_meuble_etudiant: 'Meublé étudiant (neuf mois)', bail_mobilite: 'Bail mobilité' };
 // Sans la clé dont le nom porte le mot que l'écran n'emploie jamais [R07] : ce champ se dit alors par le seul nom rendu par le serveur.
 const LABELS = Object.fromEntries(Object.entries(LEASE_FIELDS).filter(([k]) => !/mandataire/i.test(k)).map(([k, v]) => [k, v.label]));
 const REFUSALS = {

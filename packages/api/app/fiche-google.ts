@@ -1,4 +1,4 @@
-import type { GbpDraftState, GbpProblem } from '../../core/src/attirer/fiche-google.ts';
+import type { GbpAction, GbpDraftState, GbpErrorCode, GbpLink, GbpProblem } from '../../core/src/attirer/fiche-google.ts';
 
 /**
  * L'écran « Fiche Google » (AT14), en morceaux posés dans `fichiers.ts` : son entrée sur l'accueil de l'agent, sa section
@@ -26,10 +26,40 @@ const REFUSALS: Record<string, string> = {
   deja_publie: 'Ce bien est déjà publié sur la fiche.',
   trop_tot: 'Une publication est déjà partie ces derniers jours : celle-ci attend la période suivante.',
   sans_fiche: 'Aucune fiche Google n’est réglée pour cet agent : la direction doit la régler.',
-  invalide: 'Vérifiez les champs : un nom de 2 à 100 caractères, une référence qui commence par locations/, et une adresse en https.',
+  invalide: 'Vérifiez les champs : un nom de 2 à 100 caractères, une référence accounts/…/locations/…, et une adresse en https.',
   occupe: 'Cet envoi a commencé il y a moins d’une heure : attendez avant de le clore.',
   echec: 'Google n’a pas répondu : rien n’est enregistré comme parti. Réessayez dans un moment.',
+  a_verifier: 'La réponse de Google s’est perdue : la publication a pu partir. Rien ne repart tant que la direction n’a pas regardé la fiche Google.',
   sans_service: 'Google n’est pas encore branché : rien à lire ni à envoyer pour le moment.',
+};
+
+/** Pourquoi Google a refusé un envoi réel (AU037), en mots : jamais le texte de Google. */
+const ERRORS: Record<GbpErrorCode, string> = {
+  connexion: 'Google refuse la connexion du compte qui gère les fiches.',
+  droits: 'Ce compte Google ne gère pas cette fiche.',
+  fiche_introuvable: 'Google ne trouve pas cette fiche à cette référence.',
+  refuse_google: 'Google a refusé ce texte ou son lien.',
+  limite: 'La limite d’envois de Google est atteinte pour le moment.',
+  panne: 'Google n’a pas répondu.',
+  accuse_absent: 'Google a répondu sans confirmer l’envoi.',
+};
+
+/** Le geste qui règle chaque échec. */
+const ACTIONS: Record<GbpAction, string> = {
+  reconnecter: 'À faire : reconnecter le compte Google du réseau (la direction).',
+  relier: 'À faire : vérifier la référence de la fiche et donner l’accès de la fiche au compte du réseau (la direction).',
+  corriger: 'À faire : corriger le texte, puis le valider de nouveau.',
+  reessayer: 'Rien n’est parti : réessayez dans un moment.',
+  verifier: 'À faire : regarder la fiche Google avant de réessayer.',
+};
+
+/** La liaison avec Google, dite par le serveur. */
+const LINKS: Record<GbpLink['state'], string> = {
+  essai: 'En essai, rien ne part vers Google, même validé : l’envoi est seulement noté.',
+  sans_service: 'Google n’est pas encore branché : aucun avis ne peut arriver, et rien ne peut partir. Vous pouvez déjà préparer et relire.',
+  pret: 'Reliée à Google : ce qui part est confirmé par Google.',
+  a_reconnecter: 'Google refuse la connexion : rien ne peut partir tant que le compte n’est pas reconnecté.',
+  a_relier: 'Google refuse l’accès à cette fiche : rien ne peut partir tant qu’elle n’est pas reliée au compte du réseau.',
 };
 
 /** Ce qu'un texte refusé porte encore [R154, R46, R64, R07, R06]. */
@@ -125,6 +155,9 @@ globalThis.AIMMO_FICHE_GOOGLE = function (t) {
   var PROBLEMS = ${JSON.stringify(PROBLEMS)};
   var ORIGINS = ${JSON.stringify(ORIGINS)};
   var STATES = ${JSON.stringify(STATES)};
+  var ERRORS = ${JSON.stringify(ERRORS)};
+  var ACTIONS = ${JSON.stringify(ACTIONS)};
+  var LINKS = ${JSON.stringify(LINKS)};
   /* Après ces refus, ce qui est à l'écran n'est plus vrai : il est relu. */
   var STALE = ['texte_change', 'deja_valide', 'deja_parti', 'bien_retire', 'inconnu', 'non_valide'];
   var P = '/v1/attirer/google/';
@@ -137,7 +170,17 @@ globalThis.AIMMO_FICHE_GOOGLE = function (t) {
       var found = (Array.isArray(b.problems) ? b.problems : []).map(function (p) { return PROBLEMS[p] || 'un mot à retirer'; });
       return 'Ce texte ne passe pas le contrôle' + (found.length ? ' : il porte ' + found.join(', ') : '') + '. Rien n’est enregistré.';
     }
+    if (b && b.code === 'echec' && ERRORS[b.error]) return ERRORS[b.error] + ' ' + (ACTIONS[b.action] || '');
     return (b && REFUSALS[b.code]) || fallback;
+  }
+  /* Un lien rendu par Google, seulement en https. */
+  function googleLink(url) {
+    if (typeof url !== 'string' || url.indexOf('https://') !== 0) return null;
+    var a = el('a', 'Voir sur Google');
+    a.setAttribute('href', url);
+    a.setAttribute('rel', 'noopener noreferrer');
+    a.setAttribute('target', '_blank');
+    return a;
   }
   function wipe() {
     clear($('fiche-google-corps'));
@@ -199,9 +242,18 @@ globalThis.AIMMO_FICHE_GOOGLE = function (t) {
 
   function renderLocation(d) {
     var box = part('La fiche');
-    if (!d.connected) box.appendChild(el('p', 'Google n’est pas encore branché : aucun avis ne peut arriver, et rien ne peut partir. Vous pouvez déjà préparer et relire.', 'etat'));
-    if (d.mode !== 'reel') box.appendChild(el('p', 'En essai, rien ne part vers Google, même validé : l’envoi est seulement noté.', 'doux'));
+    var link = d.link || { state: d.mode === 'reel' ? 'pret' : 'essai', action: null, info: null };
+    if (!d.connected) box.appendChild(el('p', LINKS.sans_service, 'etat'));
+    else box.appendChild(el('p', LINKS[link.state] || '', link.action ? 'etat' : 'doux'));
+    if (link.action) box.appendChild(el('p', ACTIONS[link.action] || '', 'etat'));
     var loc = d.location;
+    if (link.info) {
+      var when = 'Informations envoyées le ' + date(link.info.at);
+      box.appendChild(el('p', link.info.ackRef ? when + ' : confirmées par Google.' : when + ' : ' + (ERRORS[link.info.error] || 'échec.') + ' ' + (ACTIONS[link.info.action] || ''), 'doux'));
+    }
+    if (d.canConfigure && d.mode === 'reel' && d.connected && loc) box.appendChild(button('Mettre à jour la fiche sur Google', function () {
+      write(P + 'agents/' + encodeURIComponent(d.agentId) + '/informations', undefined, function (r) { return r && r.changed ? 'Fiche mise à jour : Google l’a confirmé.' : 'Rien n’a changé depuis le dernier envoi.'; }, 'La fiche n’est pas mise à jour.');
+    }));
     if (loc) {
       box.appendChild(el('strong', loc.title));
       box.appendChild(el('p', loc.websiteUri, 'doux'));
@@ -210,7 +262,7 @@ globalThis.AIMMO_FICHE_GOOGLE = function (t) {
       var form = details(box, loc ? 'Changer le réglage de la fiche' : 'Régler la fiche');
       var title = field(form, 'fg-nom', 'Nom affiché sur la fiche');
       title.value = loc ? loc.title : '';
-      var ref = field(form, 'fg-ref', 'Référence de la fiche chez Google (locations/…)');
+      var ref = field(form, 'fg-ref', 'Référence de la fiche chez Google (accounts/…/locations/…)');
       ref.value = loc ? loc.locationRef : '';
       var site = field(form, 'fg-site', 'Adresse du site');
       site.setAttribute('type', 'url');
@@ -287,6 +339,12 @@ globalThis.AIMMO_FICHE_GOOGLE = function (t) {
     if (x.linkUri) box.appendChild(el('p', 'Lien : ' + x.linkUri, 'doux'));
     if (x.validatedAt) box.appendChild(el('p', 'Validé le ' + date(x.validatedAt) + '.', 'doux'));
     box.appendChild(el('p', STATES[x.state] || '', 'etat'));
+    if (x.state === 'envoye' && x.ackRef) {
+      box.appendChild(el('p', 'Confirmé par Google.', 'doux'));
+      var seen = googleLink(x.url);
+      if (seen) box.appendChild(seen);
+    }
+    if (x.state === 'echec' && x.error) box.appendChild(el('p', (ERRORS[x.error] || '') + ' ' + (ACTIONS[x.action] || ''), 'etat'));
     var path = P + 'textes/' + encodeURIComponent(x.draftId);
     if (x.state === 'a_valider') box.appendChild(button('Je l’ai relu : valider', function () {
       write(path + '/valider', undefined, 'Texte validé.', 'Le texte n’est pas validé.');

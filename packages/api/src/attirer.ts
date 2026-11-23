@@ -4,7 +4,8 @@
  * Routes de l'application, sous `/v1/attirer` (le préfixe `/v1` est retiré par `app.ts`) :
  *   prix regroupés (AT01) : versions, zones, recalcul ; page de l'agent (AT03) : mentions, titulaire, aperçu ;
  *   référencement (AT04) : sites et plans ; origine des contacts (AT05) : mesure du mois ; fiche Google (AT06) :
- *   avis, réponses, validations, publications ; pages de quartier (AT07) : données, textes, validations.
+ *   avis, réponses, validations, publications ; pages de quartier (AT07) : données, textes, validations ; tableau de
+ *   mise en service (AU088) : les preuves déclarées par la direction et les fonctions qu'elles ferment [R675].
  * Chaque route dit les rôles qu'elle admet : un autre rôle est refusé avant que le corps soit lu, et le refus est écrit
  * au journal [R16]. La couche métier refait ses propres contrôles. Rien ne part réellement : fiche Google et IndexNow
  * restent en mode essai [R26].
@@ -27,7 +28,7 @@
  * chantier est en mode essai, les pages ne sont pas indexées (`x-robots-tag`, `robots.txt`).
  */
 import { FicheClient, FicheUnique, Rapprochement, appendEvent, pilotage, renderPublicPage, type JournalStore, type Role, type SqlDatabase, type Viewer } from '@aimmo/core';
-import { MentionsSite, renderLegalNotice, renderPrivacyPage, withLegalLinks, OrigineContacts, PageAgent, PagesQuartier, PrixRegroupes, Referencement, HOME_LISTINGS, latestListings, parseListingsQuery, parseDirectoryPage, renderAgentsList, renderListingsPage, renderPricesList, renderSiteHome, renderNeighbourhoodPage, renderPricePage, selectListings, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
+import { MentionsSite, siteReady, renderLegalNotice, renderPrivacyPage, withLegalLinks, OrigineContacts, PageAgent, QualiteAgent, PagesQuartier, PrixRegroupes, Referencement, HOME_LISTINGS, latestListings, parseListingsQuery, parseDirectoryPage, renderAgentsList, renderListingsPage, renderPricesList, renderSiteHome, renderNeighbourhoodPage, renderPricePage, selectListings, type IndexNowClient, type NeighbourhoodWriter, type PriceSalesSource } from '../../core/src/attirer/index.ts';
 import { FicheGoogle, type GbpClient, type ReviewReplyWriter } from '../../core/src/attirer/fiche-google.ts';
 import { loanSimulatorHeaders, renderLoanSimulatorPage } from '../../core/src/attirer/simulateur-pret.ts';
 import type { DiffusionGate } from '../../core/src/acquereurs/rapprochement.ts';
@@ -35,6 +36,7 @@ import { handleEstimationPage, type EstimationPageConfig } from './estimation.ts
 import { countPublicView, type CountedKind } from './statistiques-site.ts';
 import { RechercheLangage } from '../../core/src/recherche/langage-courant.ts';
 import { keepPublished, parsePublicSearchQuery, publicSearchSteps, renderPublicSearchPage, type PublicSearchPageInput } from '../../core/src/recherche/page-publique.ts';
+import { MiseEnService } from '../../core/src/conformite/mise-en-service.ts';
 import { isRobotVisit } from '../../core/src/statistiques-site/robots.ts';
 import { ProgrammesNeufs, renderNewBuildGrid } from '../../core/src/neuf-viager/index.ts';
 
@@ -58,6 +60,11 @@ export interface AttirerServices {
   /** IndexNow, Google Business Profile, rédactions par l'IA : absents, rien ne part et le texte de secours sert. */
   indexNow?: IndexNowClient | null;
   gbp?: GbpClient | null;
+  /**
+   * AU037 : la fiche Google seule passe en `reel` quand le Worker a rangé son vrai client (H07) ; les pages, IndexNow
+   * et le reste de M01 gardent `mode`. Absent : celui de `mode`.
+   */
+  gbpMode?: 'essai' | 'reel';
   gbpWriter?: ReviewReplyWriter | null;
   neighbourhoodWriter?: NeighbourhoodWriter | null;
   diffusion?: DiffusionGate | null;
@@ -126,13 +133,15 @@ const services = (s: AttirerServices) => {
     prices,
     readPrices,
     pageAgent: new PageAgent(s.db, s.journal, { now: s.now }),
+    qualite: new QualiteAgent(s.db, s.journal, { now: s.now }),
     origine: new OrigineContacts(s.db, s.journal, { now: s.now }),
     quartiers: new PagesQuartier(s.db, s.journal, { now: s.now, writer: s.neighbourhoodWriter ?? undefined, prices: readPrices, listings: referencement }),
     google: new FicheGoogle(s.db, s.journal, {
       now: s.now,
       client: s.gbp ?? undefined,
       writer: s.gbpWriter ?? undefined,
-      mode: s.mode ?? 'essai',
+      // Le mode réel exige le vrai client : sans lui, rien ne part [R26].
+      mode: s.gbp ? (s.gbpMode ?? s.mode ?? 'essai') : 'essai',
       ...(s.diffusion ? { diffusion: s.diffusion } : {}),
     }),
   };
@@ -199,6 +208,9 @@ export function attirerRoutes(): AttirerRoute[] {
       },
     },
     { method: 'POST', pattern: new RegExp(`${P}/agents/${ID}/mentions$`), name: 'attirer.agent_mentions', roles: DIRECTION, handle: withBody(async (s, v, [id], b) => reply(await services(s).pageAgent.setLegalMentions(v, id!, { rsacNumber: b.rsacNumber, rsacRegistry: b.rsacRegistry }))) },
+    // Le titre écrit à côté du nom des agents, dans une liste fermée (AU012) [R07].
+    { method: 'GET', pattern: new RegExp(`${P}/titre-agent$`), name: 'attirer.titre_agent_lu', roles: DIRECTION, handle: async (s, v) => reply(await services(s).qualite.title(v)) },
+    { method: 'POST', pattern: new RegExp(`${P}/titre-agent$`), name: 'attirer.titre_agent', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).qualite.setTitle(v, b.title))) },
     { method: 'POST', pattern: new RegExp(`${P}/titulaire$`), name: 'attirer.titulaire', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).pageAgent.setCardHolder(v, b.holder))) },
     {
       method: 'GET',
@@ -220,6 +232,9 @@ export function attirerRoutes(): AttirerRoute[] {
     // RS05 · mentions légales du site
     { method: 'GET', pattern: new RegExp(`${P}/mentions-site$`), name: 'attirer.site_mentions', roles: DIRECTION, handle: async (s, v) => reply(value(await new MentionsSite(s.db, s.journal, { now: s.now }).read(v.networkId))) },
     { method: 'POST', pattern: new RegExp(`${P}/mentions-site$`), name: 'attirer.site_mention', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await new MentionsSite(s.db, s.journal, { now: s.now }).set(v, b))) },
+    // AU088 · le tableau de mise en service : preuves déclarées par la direction, et les fonctions qu'elles ferment [R675]
+    { method: 'GET', pattern: new RegExp(`${P}/mise-en-service$`), name: 'attirer.mise_en_service', roles: DIRECTION, handle: async (s, v) => reply(value(await new MiseEnService(s.db, s.journal, { now: s.now }).board(v.networkId))) },
+    { method: 'POST', pattern: new RegExp(`${P}/mise-en-service$`), name: 'attirer.mise_en_service_preuve', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await new MiseEnService(s.db, s.journal, { now: s.now }).declare(v, b))) },
     // AT04 · référencement
     { method: 'GET', pattern: new RegExp(`${P}/sites$`), name: 'attirer.sites', roles: DIRECTION, handle: async (s, v) => reply(value(await services(s).referencement.sites(v.networkId))) },
     { method: 'POST', pattern: new RegExp(`${P}/sites$`), name: 'attirer.site', roles: DIRECTION, handle: withBody(async (s, v, _p, b) => reply(await services(s).referencement.setSite(v, b))) },
@@ -240,6 +255,8 @@ export function attirerRoutes(): AttirerRoute[] {
     } },
     // AT06 · fiche Google
     { method: 'POST', pattern: new RegExp(`${P}/google/agents/${ID}/fiche$`), name: 'attirer.google_fiche', roles: DIRECTION, handle: withBody(async (s, v, [id], b) => reply(await services(s).google.setLocation(v, id!, { locationRef: b.locationRef, title: b.title, websiteUri: b.websiteUri }))) },
+    // AU037 · la mise à jour des informations de la fiche : l'accusé de Google, ou l'échec et son geste.
+    { method: 'POST', pattern: new RegExp(`${P}/google/agents/${ID}/informations$`), name: 'attirer.google_informations', roles: DIRECTION, handle: async (s, v, [id]) => reply(await services(s).google.sendInfo(v, id!)) },
     { method: 'GET', pattern: new RegExp(`${P}/google/agents/${ID}/avis$`), name: 'attirer.google_avis', roles: STAFF, handle: async (s, v, [id]) => reply(await services(s).google.reviews(v, id!)) },
     // AT14 · l'écran de la fiche : l'agent ouvre la sienne sans connaître son identifiant, la direction choisit un agent.
     { method: 'GET', pattern: new RegExp(`${P}/google/moi$`), name: 'attirer.google_moi', roles: ['agent'], handle: async (s, v) => reply(await services(s).google.screen(v, v.userId)) },
@@ -391,8 +408,8 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
   if (!found) return notFound();
   const { networkId, site } = found;
   const legal = new MentionsSite(s.db, s.journal, { now: s.now });
-  // Une mention légale manque : le site reste en essai, non indexé [R221].
-  const mode: 'essai' | 'reel' = s.mode === 'reel' && (await legal.read(networkId)).missing.length === 0 ? 'reel' : 'essai';
+  // Une mention légale manque, ou une preuve de mise en service n'est pas valide : le site reste en essai, non indexé [R221, R675].
+  const mode: 'essai' | 'reel' = s.mode === 'reel' && siteReady(await legal.read(networkId)) ? 'reel' : 'essai';
   const html = (body: string): Response => new Response(request.method === 'HEAD' ? null : withLegalLinks(body), { status: 200, headers: pageHeaders('text/html; charset=utf-8', mode) });
   const m = PUBLIC_PATHS[kind].exec(path)!;
   // La page servie compte une vue de son contenu (BR41) ; rien du visiteur, et compter ne change jamais la page [R285].
@@ -411,7 +428,7 @@ export async function handleAttirerPublic(s: AttirerServices, request: Request):
       const listings = await latestListings(site.kind === 'agent' ? all.filter((l) => l.agentId === site.agentId) : all, s.diffusion, networkId, checkedAt, HOME_LISTINGS);
       // Le nom de l'agent ne va jamais sans ses mentions [R152].
       const own = site.kind === 'agent' ? await svc.pageAgent.inputFor(networkId, site.agentId!) : null;
-      const agent = own?.ok ? { agentId: own.input.agentId, name: `${own.input.firstName} ${own.input.lastName}`, mentions: own.input.mentions } : null;
+      const agent = own?.ok ? { agentId: own.input.agentId, name: `${own.input.firstName} ${own.input.lastName}`, mentions: own.input.mentions, title: own.input.title } : null;
       return liveHtml(renderSiteHome({ kind: site.kind, recruiting: s.recruitingNetworkId === networkId, agent, listings, checkedAt }));
     }
     case 'liste': {

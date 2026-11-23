@@ -616,6 +616,8 @@ globalThis.AIMMO_FINANCES = function (t) {
       var ul = el('ul', null, 'liste');
       if (v.lastFailure) ul.appendChild(el('li', 'Dernier essai, le ' + copyDay(v.lastFailure.at) + ' : ' + (COPY_WHY[v.lastFailure.reason] || 'il a échoué') + '.'));
       if (v.missedNights.length) ul.appendChild(el('li', 'Nuits sans copie : ' + v.missedNights.map(day).join(', ') + '.'));
+      // AU109 · la preuve que la copie tourne : une copie à jour et un test de restauration réussi ce mois-ci.
+      ul.appendChild(el('li', v.activation === 'prouvee' ? 'Copie prouvée : copie à jour et restauration réussie le ' + copyDay(v.exerciseAt) + '.' : 'Copie non prouvée : il faut une copie à jour et une restauration réussie ce mois-ci.'));
       if (ul.children.length) body.appendChild(ul);
       if (v.state === 'jamais') return 'Non sauvegardé : aucune copie réussie à ce jour.';
       var last = 'Dernière copie réussie : le ' + copyDay(v.lastSuccessAt) + '.';
@@ -763,6 +765,12 @@ globalThis.AIMMO_FINANCES = function (t) {
     box.appendChild(state);
     return box;
   }
+  /* AU092 · le palier de la grille retenu pour la vente : le cumul de l'année déjà compté, le palier, son taux. */
+  function tierText(c) {
+    var p = c.tier;
+    if (!p || typeof p.rateBp !== 'number') return null;
+    return 'Grille à paliers : palier ' + p.tierSeq + ' (à partir de ' + euros(p.fromCents) + '), soit ' + String(p.rateBp / 100).replace('.', ',') + ' % ; chiffre d’affaires ' + p.year + ' déjà compté avant cette vente : ' + euros(p.cumulCents) + '.';
+  }
   function line(c, group, task) {
     var li = el('li');
     li.appendChild(el('strong', 'Dossier ' + c.fileId));
@@ -777,6 +785,8 @@ globalThis.AIMMO_FINANCES = function (t) {
       parts.appendChild(el('li', (SHARE_NAMES[s.kind] || 'Autre part') + who + why + ' : ' + euros(s.amountCents)));
     });
     li.appendChild(parts);
+    var tierLine = tierText(c);
+    if (tierLine) li.appendChild(el('p', tierLine, 'doux'));
     var gap = sum !== Number(c.feeCents);
     if (gap) li.appendChild(el('p', 'Écart de ' + euros(Math.abs(sum - Number(c.feeCents))) + ' entre les parts et les honoraires : ne versez rien, et vérifiez ce dossier.', 'retard'));
     li.appendChild(el('p', (c.steps || []).map(function (s) { return (STEP_NAMES[s.status] || s.status) + ' le ' + date(s.at); }).join(' · '), 'doux'));
@@ -851,6 +861,8 @@ globalThis.AIMMO_FINANCES = function (t) {
   function pathLine(c, mine) {
     var li = el('li');
     li.appendChild(el('strong', 'Dossier ' + c.fileId + ' : ma part ' + euros(mine)));
+    var myTier = tierText(c);
+    if (myTier) li.appendChild(el('p', myTier, 'doux'));
     if (c.shares.length > 1) {
       var parts = el('ul', null, 'liste');
       c.shares.forEach(function (s) { parts.appendChild(el('li', (SHARE_NAMES[s.kind] || 'Autre part') + ' : ' + euros(s.amountCents))); });
@@ -1107,7 +1119,7 @@ globalThis.AIMMO_FINANCES = function (t) {
         var li = el('li');
         li.appendChild(el('strong', (KIND_NAMES[c.kind] || 'Facture') + ' ' + c.label));
         li.appendChild(el('p', 'De ' + c.issuer + ' à ' + c.recipient + ', le ' + date(c.issuedOn + 'T12:00:00Z') + ' : ' + euros(c.ttcCents) + ' TTC.'));
-        li.appendChild(el('p', 'Dossier ' + i.fileId + (i.transmitted ? ', en mode essai.' : ', pas encore transmise.'), 'doux'));
+        li.appendChild(el('p', 'Dossier ' + i.fileId + (i.transmitted ? (i.transmitted.mode === 'reel' ? ', déposée à la plateforme agréée' + (i.status ? ' : ' + i.status.name.toLowerCase() : '') + '.' : ', en mode essai.') : ', pas encore transmise.'), 'doux'));
         if (c.corrects) li.appendChild(el('p', 'Corrige la facture ' + c.corrects + '.', 'doux'));
         if (corrected[c.label]) li.appendChild(el('p', 'Corrigée par un avoir.', 'doux'));
         else if (c.kind !== 'avoir') li.appendChild(creditForm(i));

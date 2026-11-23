@@ -70,12 +70,14 @@ export const INDEX_HTML = `<!doctype html>
 <main>
 <section id="connexion" hidden>
 <h2>Connexion</h2>
-<p>Saisissez votre clé personnelle. Elle reste sur cet appareil.</p>
+<button id="entrer-appareil" type="button" hidden>Entrer avec la clé de cet appareil</button>
+<p>Nouveau téléphone, ou téléphone perdu : demandez à la direction votre lien d’accès. Il ouvre AIMMO d’un appui, rien à taper.</p>
+<details><summary>J’ai une clé personnelle</summary>
 <form id="form-connexion" autocomplete="off">
 <label for="cle">Clé personnelle</label>
 <input id="cle" name="cle" type="password" minlength="32" required autocomplete="off" spellcheck="false">
 <button type="submit">Entrer</button>
-</form>
+</form></details>
 <p id="erreur" role="alert" hidden></p>
 </section>
 <section id="invitation" hidden>
@@ -141,6 +143,7 @@ ${clesEntryHtml('accueil')}</section>
 <p id="fiche-etat" class="etat" role="status"></p>
 <div id="fiche-corps"></div>
 </section>
+<section id="hors-ligne" hidden></section>
 <section id="visite" hidden>
 <button id="visite-retour" type="button" class="retour">Retour à ma journée</button>
 <button id="alerte" type="button" class="danger">Alerte sécurité</button>
@@ -316,6 +319,9 @@ export const APP_JS = `'use strict';
   function writeDirectionKey(v) { try { localStorage.setItem(KEY_DIRECTION, v); return true; } catch (e) { return false; } }
   // Sans argument : la sortie efface les deux clés. Avec une clé refusée : seule celle-ci est effacée, l'autre reste.
   function forgetKey(refused) {
+    // AU104 : le mode privé de la clé oubliée s'efface [R676].
+    var k = refused || readKey();
+    if (k) offline(function (H) { H.oublier(k); });
     [KEY, KEY_DIRECTION].forEach(function (slot) {
       try { if (refused === undefined || localStorage.getItem(slot) === refused) localStorage.removeItem(slot); } catch (e) { /* rien à effacer */ }
     });
@@ -346,7 +352,7 @@ export const APP_JS = `'use strict';
       var li = el('li');
       li.appendChild(el('strong', String(item.rank) + '. ' + (item.firstName || 'Prénom inconnu')));
       li.appendChild(el('p', item.reason));
-      li.appendChild(el('p', 'Place : ' + item.order, 'doux'));
+      if (item.priority) li.appendChild(el('p', item.priority, 'doux'));
       li.appendChild(ficheButton(item.personId));
       list.appendChild(li);
     });
@@ -560,7 +566,11 @@ export const APP_JS = `'use strict';
     body.appendChild(block('Rappels', callbacks));
     body.appendChild(block('Projets', (f.projects || []).map(function (p) {
       var budget = p.budgetMaxEur ? ', budget jusqu’à ' + p.budgetMaxEur + ' €' : '';
-      return line((PROJECTS[p.kind] || 'Autre projet') + ' (étape : ' + stage(p.stage) + ')' + budget, p.deadline ? 'Échéance le ' + date(p.deadline) : null);
+      var li = line((PROJECTS[p.kind] || 'Autre projet') + ' (étape : ' + stage(p.stage) + ')' + budget, p.deadline ? 'Échéance le ' + date(p.deadline) : null);
+      if (p.kind === 'buy' && ID.test(p.id)) var still = li.appendChild(button('Recherche toujours d’actualité', function () {
+        send('/v1/acquereurs/projets/' + p.id + '/recherche/confirmation', 'POST').then(function (r) { if (!r.gone) still.textContent = r.ok ? 'Confirmée' : 'Échec, réessayez'; });
+      }));
+      return li;
     })));
     body.appendChild(block('Origines', (f.sources || []).map(function (s) { return line(channel(s.channel) + (s.detail ? ' (' + s.detail + ')' : ''), 'Le ' + date(s.occurredAt)); })));
     if (f.qualification) classementBlock(personId, body, f.qualification);
@@ -598,7 +608,7 @@ export const APP_JS = `'use strict';
     var key = currentKey;
     wipeFiche();
     $('fiche-etat').textContent = 'Chargement…';
-    show('fiche');
+    show('fiche', [personId]);
     return api('/v1/fiches/' + encodeURIComponent(personId) + '/resume', key).then(ficheAnswer).then(function (res) {
       if (mine !== session) return false;
       if (res.refused) { forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return false; }
@@ -708,6 +718,8 @@ export const APP_JS = `'use strict';
     });
   }
   function wipe() {
+    // AU018 : la session finie, la visite sans réseau oublie la clé et l'agent.
+    if (OFF) OFF.stop();
     ['reprendre', 'a-tenir', 'plan', 'chauds', 'rdv', 'semaine', 'biens', 'apres-jour'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
     clear($('dictee-accueil'));
     clear($('remises-accueil'));
@@ -791,7 +803,7 @@ export const APP_JS = `'use strict';
     send_refused: 'Le SMS n’est pas parti : le contrôle des envois l’a bloqué.',
     buyer_named: 'Le compte rendu nomme le visiteur : retirez son nom avant l’envoi au vendeur.',
     contact: 'Le compte rendu contient une coordonnée : retirez-la avant l’envoi au vendeur.',
-    shape: 'Compte rendu incomplet : un avis de 300 caractères au plus, l’intérêt, et des listes courtes.',
+    shape: 'Compte rendu incomplet : avis de 300 caractères au plus, intérêt, listes courtes.',
     invented_figure: 'Un chiffre n’est pas dans la dictée : retirez-le.',
     invented_offer: 'La dictée ne dit pas que le visiteur veut faire une offre.',
     no_report: 'Écrivez d’abord le compte rendu.',
@@ -827,7 +839,7 @@ export const APP_JS = `'use strict';
     clear($('visite-corps'));
     $('visite-titre').textContent = '';
     $('visite-etat').textContent = 'Chargement…';
-    show('visite');
+    show('visite', [id]);
     return send('/v1/visites/' + encodeURIComponent(id), 'GET').then(function (res) {
       if (res.gone) return false;
       if (res.offline) { $('visite-etat').textContent = 'Pas de réseau. Réessayez dans un moment.'; return false; }
@@ -899,7 +911,7 @@ export const APP_JS = `'use strict';
   var DELIVERY = {
     sent: 'Envoyé au vendeur, sans le nom du visiteur.',
     waiting: 'Validé : il part au vendeur au prochain créneau d’envoi permis.',
-    refused: 'Validé, mais le vendeur ne reçoit pas de message : accord retiré ou exclusion. Dites-le-lui de vive voix.',
+    refused: 'Validé. Vendeur non prévenu (accord retiré ou exclusion) : dites-le-lui.',
     failed: 'Validé ; l’envoi a échoué, il sera repris.',
   };
   function reportLines(box, r) {
@@ -954,7 +966,7 @@ export const APP_JS = `'use strict';
       return box;
     }
     if (r) {
-      box.appendChild(el('p', 'Votre dictée est gardée. Le compte rendu n’a pas pu être rédigé pour vous : écrivez-le ici, le nom du visiteur ne doit pas y figurer.', 'doux'));
+      box.appendChild(el('p', 'Dictée gardée, compte rendu non rédigé : écrivez-le ici, sans le nom du visiteur.', 'doux'));
       reportForm(box, base, null);
     }
     var dictation = field(box, 'v-dictee', r ? 'Dicter de nouveau' : 'Ce que le visiteur a dit', 'textarea');
@@ -972,6 +984,8 @@ export const APP_JS = `'use strict';
     if (!slip) { box.appendChild(el('p', 'Le bon de visite n’est pas prêt.', 'alerte')); return box; }
     var state = slip.signed ? 'signé et rangé' : slip.status === 'complet' ? 'prêt à signer' : 'incomplet : complétez la fiche avant la visite';
     box.appendChild(el('p', 'Bon de visite ' + state + (slip.mode === 'essai' ? ' (modèle d’essai, en attente de validation juridique).' : '.'), slip.signed ? 'fait' : 'doux'));
+    if (!slip.signed && slip.status === 'complet') box.appendChild(lazyBlock('Faire signer, sans papier', '/app/bon-visite.js', 'AIMMO_BON_VISITE', visitId));
+    else if (slip.online && slip.online.status === 'signee') box.appendChild(lazyBlock('Montrer l’exemplaire signé', '/app/bon-visite.js', 'AIMMO_BON_VISITE', visitId));
     return box;
   }
   // L'alerte en un geste : un seul appui, sans confirmation. Le même identifiant sert jusqu'à ce qu'elle soit rangée.
@@ -1020,7 +1034,7 @@ export const APP_JS = `'use strict';
     clear($('bien-corps'));
     $('bien-titre').textContent = 'Acquéreurs pour ' + reference;
     $('bien-etat').textContent = 'Chargement…';
-    show('bien');
+    show('bien', [propertyId, reference]);
     var path = '/v1/acquereurs/biens/' + encodeURIComponent(propertyId);
     return Promise.all([send(path, 'GET'), send(path + '/carte', 'GET')]).then(function (both) {
       var buyers = both[0];
@@ -1028,7 +1042,7 @@ export const APP_JS = `'use strict';
       if (buyers.gone || map.gone) return false;
       if (buyers.offline) { $('bien-etat').textContent = 'Pas de réseau. Réessayez dans un moment.'; return false; }
       if (buyers.status === 403 || buyers.status === 404) { $('bien-etat').textContent = 'Ce bien n’est pas dans vos droits.'; return false; }
-      if (buyers.body && buyers.body.rule === 'R42') { $('bien-etat').textContent = 'Ce bien ne peut pas encore être proposé : le mandat n’est pas en vigueur ou le délai de rétractation court.'; return false; }
+      if (buyers.body && buyers.body.rule === 'R42') { $('bien-etat').textContent = 'Bien pas encore proposable : mandat pas en vigueur ou rétractation en cours.'; return false; }
       if (!buyers.ok) { $('bien-etat').textContent = 'Indisponible pour le moment. Réessayez plus tard.'; return false; }
       $('bien-etat').textContent = '';
       renderBien(propertyId, buyers.body.data, map.ok ? map.body.data : null);
@@ -1114,10 +1128,10 @@ export const APP_JS = `'use strict';
     });
     return items.length === 0 ? 'Aucun bien à mettre en vente.' : null;
   }
-  var MENTIONS = { prix: 'Prix et honoraires', energie: 'Performance énergétique', copropriete: 'Copropriété', risques: 'Risques du terrain', carte: 'Carte professionnelle' };
+  var MENTIONS = { prix: 'Prix et honoraires', energie: 'Performance énergétique', copropriete: 'Copropriété', risques: 'Risques du terrain', intervenant: 'Statut de l’agent', carte: 'Carte professionnelle' };
   var MISSING_MENTION = {
-    pas_de_mandat: 'aucun mandat signé', prix_inconnu: 'prix du mandat inconnu', honoraires_inconnus: 'honoraires inconnus', pas_de_diagnostic: 'diagnostic énergétique absent',
-    copropriete_inconnue: 'copropriété non renseignée', risques_inconnus: 'état des risques absent', carte_inconnue: 'numéro de carte du réseau non réglé', type_de_bien_non_pris_en_charge: 'type de bien pas encore pris en charge',
+    pas_de_mandat: 'aucun mandat signé', prix_inconnu: 'prix du mandat inconnu', honoraires_inconnus: 'honoraires inconnus', pas_de_diagnostic: 'absent', diagnostic_perime: 'périmé',
+    copropriete_inconnue: 'copropriété non renseignée', risques_inconnus: 'état des risques absent', statut_intervenant_inconnu: 'statut et RSAC de l’agent non rangés', titulaire_inconnu: 'titulaire de la carte non réglé', carte_inconnue: 'numéro de carte du réseau non réglé', type_de_bien_non_pris_en_charge: 'type de bien pas encore pris en charge',
   };
   var FIELDS = {
     kind: 'type de bien', city: 'commune', postalCode: 'code postal', surfaceM2: 'surface', rooms: 'pièces', bedrooms: 'chambres', floor: 'étage', floorsTotal: 'étages de l’immeuble', buildYear: 'année de construction',
@@ -1147,7 +1161,7 @@ export const APP_JS = `'use strict';
     clear($('vente-corps'));
     $('vente-titre').textContent = 'Mettre en vente · ' + reference;
     $('vente-etat').textContent = 'Chargement…';
-    show('vente');
+    show('vente', [propertyId, reference]);
     var base = '/v1/annonces/' + encodeURIComponent(propertyId);
     return Promise.all([send(base + '/controle', 'GET'), send(base + '/brouillon', 'GET'), send(base + '/publication', 'GET')]).then(function (all) {
       if (all[0].gone || all[1].gone || all[2].gone) return false;
@@ -1265,7 +1279,7 @@ export const APP_JS = `'use strict';
       var text = field(zone, 'vente-correction-texte', 'Texte de l’annonce', 'textarea');
       text.setAttribute('maxlength', '3000');
       text.value = draft.body || (draft.sentences || []).map(function (s) { return s.text; }).join(' ');
-      if (draft.validated && !draft.stale) zone.appendChild(el('p', 'Cette annonce est validée. Une correction enregistrée annule cette validation : au passage suivant, l’annonce est retirée de tous les canaux jusqu’à ce que l’agent du bien valide le nouveau texte.', 'retard'));
+      if (draft.validated && !draft.stale) zone.appendChild(el('p', 'Annonce validée. Une correction reste en préparation : l’annonce en ligne y reste jusqu’à ce que l’agent du bien valide la nouvelle.', 'retard'));
       var said = el('ul', null, 'liste');
       var state = el('p', null, 'doux');
       state.setAttribute('role', 'status');
@@ -1492,7 +1506,7 @@ export const APP_JS = `'use strict';
   var DESTINATIONS = { property: 'rangée dans le bien', sale_file: 'rangée dans le dossier de vente', financing: 'rangée au financement', referral: 'gardée avec la demande', agent_queue: 'à ranger par vous' };
   var PARTNER_REFUSALS = {
     no_partner: 'Aucun professionnel de ce métier n’est disponible dans cette zone aujourd’hui.',
-    partner_unavailable: 'Ce professionnel n’est plus disponible : un justificatif a expiré. Proposez de nouveau.',
+    partner_unavailable: 'Professionnel indisponible : un justificatif a expiré. Proposez de nouveau.',
     fees_not_disclosed: 'Montrez d’abord au client le texte des rémunérations, puis notez son accord.',
     not_shown: 'Le client choisit parmi les professionnels tirés au sort, et seulement eux.',
     bad_postcode: 'Indiquez le code postal du lieu, en 5 chiffres.',
@@ -2070,6 +2084,35 @@ export const APP_JS = `'use strict';
       return false;
     });
   }
+  // Les écrans chargés au premier geste : un seul chargeur, une seule fois chacun, jamais pour une session finie [R201].
+  var toolCache = {}, toolBusy = {};
+  function withTool(src, name, state, host, act, tools) {
+    if (!currentKey) return Promise.resolve(false);
+    if (toolCache[src]) return act(toolCache[src]);
+    if (toolBusy[src]) return Promise.resolve(false);
+    toolBusy[src] = true;
+    var mine = session;
+    $(state).textContent = 'Chargement…';
+    return new Promise(function (resolve) {
+      var s = document.createElement('script');
+      s.setAttribute('src', '/app/' + src + '.js');
+      s.addEventListener('load', function () {
+        toolBusy[src] = false;
+        var make = globalThis[name];
+        try { delete globalThis[name]; } catch (e) { /* rien */ }
+        if (mine !== session) { resolve(false); return; }
+        if (typeof make !== 'function') { $(state).textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
+        toolCache[src] = make(tools());
+        resolve(act(toolCache[src]));
+      });
+      s.addEventListener('error', function () {
+        toolBusy[src] = false;
+        if (mine === session) $(state).textContent = 'Pas de réseau. Réessayez dans un moment.';
+        resolve(false);
+      });
+      $(host).appendChild(s);
+    });
+  }
 ${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${A_TENIR_JS}${ACTUALITES_JS}${CLES_A_RENDRE_JS}${NOTIFICATIONS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${MANDAT_MODELES_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${PHASES_JS}${LICENCES_JS}${CLES_JS}${GUIDES_PHOTO_JS}${FIN_DE_BAIL_JS}${CHARGEUR_JS}${APPELS_RECUS_JS}${NOTES_VOCALES_JS}${RECLAMATIONS_JS}${RECOMMANDATION_JS}${FINANCES_JS}
 ${LOUER_JS}
   function wipeM08() {
@@ -2086,9 +2129,17 @@ ${LOUER_JS}
     $('fiche-nom').textContent = '';
     $('fiche-etat').textContent = '';
   }
-  function show(id) {
-    ['connexion', 'invitation', 'accueil', 'attente', 'fiche', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
-    $('sortir').hidden = id === 'connexion' || id === 'attente' || id === 'invitation';
+  // AU117 · chaque écran ouvert entre dans l'historique du navigateur : Retour et Avancer le rouvrent tel qu'il était.
+  var shownId = null, shownArgs = 'null', fromHistory = false;
+  function show(id, args) {
+    ['connexion', 'invitation', 'accueil', 'attente', 'fiche', 'hors-ligne', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
+    var out = id === 'connexion' || id === 'attente' || id === 'invitation';
+    if (id === 'connexion') try { $('entrer-appareil').hidden = !localStorage.getItem('aimmo.appareil'); } catch (e) { /* sans mémoire */ }
+    $('sortir').hidden = out;
+    var a = JSON.stringify(args || null);
+    if (!out && !fromHistory && (id !== shownId || a !== shownArgs)) try { history[shownId ? 'pushState' : 'replaceState']({ s: id, a: args || null }, ''); } catch (e) { /* sans historique */ }
+    shownId = out ? null : id;
+    shownArgs = a;
   }
   function api(path, key, method, body, extra) {
     var headers = { authorization: 'Bearer ' + key };
@@ -2148,6 +2199,18 @@ ${LOUER_JS}
       return refuse('Pas de réseau. Rouvrez votre lien d’accès quand le réseau revient ; s’il a déjà servi, demandez-en un nouveau.');
     });
   }
+  /* AU018 : la visite sans réseau, chargée seulement quand elle sert (après la journée, ou sans réseau au démarrage) ; gardée par l'appareil avec la coquille [R201]. */
+  var OFF = null;
+  function offline(f) {
+    if (OFF) return Promise.resolve(f(OFF));
+    return new Promise(function (ok) {
+      var s = document.createElement('script');
+      s.setAttribute('src', '/app/hors-ligne.js');
+      s.addEventListener('load', function () { OFF = globalThis.AimmoHorsLigne || null; ok(OFF && f(OFF)); });
+      s.addEventListener('error', function () { ok(false); });
+      $('hors-ligne').appendChild(s);
+    });
+  }
   function enter(key) {
     session += 1;
     var mine = session;
@@ -2192,13 +2255,34 @@ ${LOUER_JS}
       $('erreur').hidden = true;
       currentKey = key;
       show('accueil');
-      return day(key, mine).then(function () { if (mine === session) notifLink(); return true; });
+      return day(key, mine).then(function () { if (mine === session) { notifLink(); offline(function (H) { if (mine === session) H.preparer(key, show, enter); }); } return true; });
     }, function () {
       if (mine !== session) return false;
-      return refuse('Pas de réseau. Réessayez dans un moment.');
+      // AU018 : sans réseau, la visite préparée s'ouvre ; sans paquet du jour, le message d'avant.
+      var no = function () { return mine === session && refuse('Pas de réseau. Réessayez dans un moment.'); };
+      return offline(function (H) { return H.start(key, show, enter, function () { return mine === session; }, no); }).then(function (r) { return r === false ? no() : !!r; });
     });
   }
+  try {
+    addEventListener('popstate', function (e) {
+      var s = e.state && e.state.s, a = e.state && e.state.a;
+      if (!currentKey || !s || !$(s)) return;
+      // Une fiche, un bien, une visite ou une mise en vente se rouvrent, relus ; les autres écrans gardent ce qu'ils montraient.
+      var again = { fiche: openFiche, bien: openBien, visite: openVisit, vente: openVente, mandat: openMandat, dossier: openDossier, offres: openOffres, avis: openAvis, studio: openStudio }[s];
+      // Une lecture encore en route pour l'écran quitté ne s'affiche plus.
+      session += 1;
+      fromHistory = true;
+      if (again && Array.isArray(a)) again.apply(null, a); else show(s);
+      fromHistory = false;
+    });
+  } catch (e) { /* sans historique */ }
   document.addEventListener('DOMContentLoaded', function () {
+    // AU023 · la clé de l'appareil connecte, sans clé à taper ; le script des clés la porte.
+    $('entrer-appareil').addEventListener('click', function () {
+      withCles(0, function (c) { return c.login(); }).then(function (r) {
+        if (r && r.token && writeKey(r.token)) enter(r.token); else { $('erreur').textContent = (r && r.text) || 'Pas de réseau. Réessayez dans un moment.'; $('erreur').hidden = false; }
+      });
+    });
     $('form-connexion').addEventListener('submit', function (event) {
       event.preventDefault();
       var key = $('cle').value.trim();
@@ -2310,6 +2394,7 @@ ${LOUER_JS}
       session += 1;
       currentKey = null;
       forgetKey();
+      try { localStorage.removeItem('aimmo.brouillons'); } catch (e) { /* rien */ }
       $('bonjour').textContent = '';
       wipe();
       show('connexion');

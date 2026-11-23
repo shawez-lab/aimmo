@@ -8,6 +8,7 @@ import {
   SqlJournalStore,
   applyMigrations,
   fromSyncSqlite,
+  matchBuyer,
   verifyChain,
   type BuyerFeature,
   type DiffusionGate,
@@ -238,6 +239,8 @@ async function setup() {
       agentId: alex.id,
       reference: ref,
       kind: p.kind ?? 'home',
+      // Les logements de ce jeu sont des maisons, dites à la création (AU070).
+      dwelling: (p.kind ?? 'home') === 'home' ? 'house' : null,
       city: p.city,
       priceEur: p.price,
       surfaceM2: p.surface,
@@ -261,7 +264,7 @@ async function setup() {
     );
     return id;
   };
-  return { db, journal, acces, acquereurs, recherche, network, alex, sam, as, property, buyer, consent, blocked };
+  return { db, journal, acces, acquereurs, recherche, network, alex, sam, as, property, buyer, consent, blocked, now };
 }
 
 const PHRASE = 'Maison 4 pièces à Dijon, 100 m² mini, budget 350 000 €, si possible un garage';
@@ -381,6 +384,9 @@ describeWithSqlite('HX28 · rangement dans la fiche acquéreur', () => {
       surfaceMinM2: 100,
       roomsMin: 4,
       budgetMaxEur: 350_000,
+      // Le garage n'est qu'un souhait : il classe, il n'écarte pas (AU071) ; le budget garde sa tolérance (AU115).
+      requiredFeatures: [],
+      budgetStrict: false,
     });
     const rows = await t.db.all<{ consent_id: string; criteria: string; buyer_search_id: string }>('SELECT * FROM phrase_searches');
     expect(rows).toHaveLength(1);
@@ -443,5 +449,174 @@ describeWithSqlite('HX28 · rangement dans la fiche acquéreur', () => {
     const again = await t.recherche.save(t.acces, t.as('direction', 'd1'), t.acquereurs, project.id, PHRASE);
     expect(again.ok && again.value.buyerSearchId).toBeNull();
     expect(await t.db.all('SELECT id FROM buyer_searches')).toHaveLength(1);
+  });
+});
+
+describeWithSqlite('AU071 · AU115 · l’indispensable et le budget ferme de la phrase', () => {
+  it('[R420] « avec ascenseur » devient un impératif, « si possible une cave » un souhait ; « budget ferme » ôte la tolérance', async () => {
+    const t = await setup();
+    const { person, project } = await t.buyer(t.alex.id);
+    await t.consent(person.id, 'buyer_search');
+    const saved = await t.recherche.save(t.acces, t.as('agent', t.alex.id), t.acquereurs, project.id, 'Appartement à Dijon avec ascenseur, si possible une cave, budget ferme 250 000 euros');
+    expect(saved.ok).toBe(true);
+    const current = await t.acquereurs.current(project.id);
+    expect(current?.search.requiredFeatures).toEqual(['elevator']);
+    expect(current?.search.features?.sort()).toEqual(['cellar', 'elevator']);
+    expect(current?.search.budgetStrict).toBe(true);
+    expect(current?.search.budgetMaxEur).toBe(250_000);
+  });
+});
+
+describe('AU115 · le budget ferme dans la recherche en direct', () => {
+  const base = (phrase: string): PhraseSearch => ({ ...parsePhrase(phrase), excludedCommunes: [], excludedKinds: [], refusedPropertyIds: [] });
+  const prop = (priceEur: number) => ({ kind: 'home' as PropertyKind, dwelling: 'apartment' as const, city: 'Dijon', priceEur, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerFeature[] });
+  it('[R51] un bien à 260 000 € n’est pas proposé pour « budget ferme 250 000 euros », il l’est, toléré, sans « ferme »', () => {
+    expect(judge(base('Appartement à Dijon, budget ferme 250 000 euros'), prop(260_000))).toBeNull();
+    expect(judge(base('Appartement à Dijon, budget 250 000 euros'), prop(260_000))).toMatchObject({ status: 'tolerated' });
+    expect(judge(base('Appartement à Dijon, budget ferme 250 000 euros'), prop(250_000))).toMatchObject({ status: 'match' });
+    // Après un refus « trop petit », le budget reste ferme.
+    const refused = applyRefusal(base('Appartement à Dijon, budget ferme 250 000 euros'), { id: 'p-30', match: { ...prop(240_000), surfaceM2: 30 } }, 'trop_petit', undefined);
+    expect(refused.budgetStrict).toBe(true);
+    expect(judge(refused, prop(260_000))).toBeNull();
+  });
+  it('[R51] « budget ferme 250 000 » sans unité et « si possible un jardin et budget ferme » gardent le plafond strict', () => {
+    for (const phrase of ['Appartement à Dijon, budget ferme 250 000', 'Appartement à Dijon, si possible un jardin et budget ferme 250 000 euros', 'Appartement à Dijon, sans dépasser 250 000']) {
+      const s = base(phrase);
+      expect(s.criteria.find((c) => c.field === 'budgetMaxEur')).toMatchObject({ value: 250_000, strength: 'must' });
+      expect(judge(s, prop(260_000))).toBeNull();
+    }
+  });
+});
+
+describe('AU072 · étage, classe énergie et terrain dans la recherche', () => {
+  const base = (phrase: string): PhraseSearch => ({ ...parsePhrase(phrase), excludedCommunes: [], excludedKinds: [], refusedPropertyIds: [] });
+  const flat = (p: { floor?: number | null; energyClass?: string | null; landM2?: number | null } = {}) => ({ kind: 'home' as PropertyKind, dwelling: 'apartment' as const, city: 'Dijon', priceEur: 200_000, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerFeature[], floor: 2, energyClass: 'C', landM2: null, ...p });
+  it('[R420] la phrase dit l’étage, la classe la moins bonne acceptée et le terrain, chacun avec ses mots', () => {
+    const fields = (phrase: string) => parsePhrase(phrase).criteria.map((c) => [c.field, c.value, c.strength]);
+    expect(fields('Appartement à Dijon, pas de rez-de-chaussée, DPE D minimum')).toEqual([
+      ['propertyKinds', 'apartment', 'must'], ['communes', 'Dijon', 'must'], ['floorMin', 1, 'must'], ['energyClassMax', 'D', 'must'],
+    ]);
+    expect(fields('Maison à Dijon avec un terrain de 500 m², 90 m²')).toContainEqual(['landMinM2', 500, 'must']);
+    expect(fields('Maison à Dijon avec un terrain de 500 m², 90 m²')).toContainEqual(['surfaceMinM2', 90, 'must']);
+    expect(fields('Maison, 1 200 m² de terrain')).toContainEqual(['landMinM2', 1200, 'must']);
+    expect(fields('Appartement à Dijon, 3e étage maximum, si possible classe C au moins')).toEqual([
+      ['propertyKinds', 'apartment', 'must'], ['communes', 'Dijon', 'must'], ['floorMax', 3, 'must'], ['energyClassMax', 'C', 'nice'],
+    ]);
+    expect(fields('Appartement à partir du 2e étage')).toContainEqual(['floorMin', 2, 'must']);
+    expect(fields('Appartement en rez-de-chaussée')).toEqual(expect.arrayContaining([['floorMin', 0, 'must'], ['floorMax', 0, 'must']]));
+    // Le rez-de-chaussée, c'est l'étage 0 : jamais un sous-sol.
+    const ground = base('Appartement à Dijon en rez-de-chaussée');
+    expect(judge(ground, flat({ floor: 0 }))).toMatchObject({ status: 'match' });
+    expect(judge(ground, flat({ floor: -1 }))).toBeNull();
+    expect(judge(ground, flat({ floor: 1 }))).toBeNull();
+  });
+  it('[R51] impératifs, ils écartent ; souhaits, ils classent seulement', () => {
+    const noGround = base('Appartement à Dijon, pas de rez-de-chaussée, DPE D minimum');
+    expect(judge(noGround, flat())).toMatchObject({ status: 'match' });
+    expect(judge(noGround, flat({ floor: 0 }))).toBeNull();
+    expect(judge(noGround, flat({ energyClass: 'E' }))).toBeNull();
+    // Une valeur inconnue ne remplit pas un impératif.
+    expect(judge(noGround, flat({ floor: null }))).toBeNull();
+    const land = base('Maison à Dijon, terrain de 500 m²');
+    expect(judge(land, { ...flat({ landM2: 500 }), dwelling: 'house' as const })).toMatchObject({ status: 'match' });
+    expect(judge(land, { ...flat({ landM2: 499 }), dwelling: 'house' as const })).toBeNull();
+    const wish = base('Appartement à Dijon, si possible classe C au moins');
+    expect(judge(wish, flat({ energyClass: 'E' }))).toMatchObject({ status: 'match', preferencesMet: 0 });
+    expect(judge(wish, flat({ energyClass: 'B' }))).toMatchObject({ status: 'match', preferencesMet: 1 });
+  });
+});
+
+describeWithSqlite('AU072 · étage, classe et terrain rangés dans la fiche de l’acquéreur', () => {
+  it('[R420] la phrase rangée garde l’impératif et le souhait ; le rapprochement les suit', async () => {
+    const t = await setup();
+    const { person, project } = await t.buyer(t.alex.id);
+    await t.consent(person.id, 'buyer_search');
+    const saved = await t.recherche.save(t.acces, t.as('agent', t.alex.id), t.acquereurs, project.id, 'Appartement à Dijon, pas de rez-de-chaussée, si possible DPE C minimum, terrain de 200 m²');
+    expect(saved.ok).toBe(true);
+    const current = await t.acquereurs.current(project.id);
+    expect(current!.search).toMatchObject({ floorMin: 1, floorMax: null, energyClassMax: 'C', landMinM2: 200, softCriteria: ['energy'] });
+    const property = (p: Partial<{ floor: number | null; energyClass: string | null; landM2: number | null }>) => ({ kind: 'home' as PropertyKind, dwelling: 'apartment' as const, city: 'Dijon', priceEur: 200_000, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerFeature[], floor: 1, energyClass: 'E', landM2: 250, ...p });
+    expect(matchBuyer(property({}), current!.search)).toMatchObject({ status: 'match' });
+    expect(matchBuyer(property({ floor: 0 }), current!.search)).toMatchObject({ status: 'miss', unmet: ['floor'] });
+    expect(matchBuyer(property({ landM2: 100 }), current!.search)).toMatchObject({ status: 'miss', unmet: ['land'] });
+  });
+
+  it('[R420] une phrase suivante qui ne dit rien de l’étage garde l’étage souhaité comme souhait', async () => {
+    const t = await setup();
+    const { person, project } = await t.buyer(t.alex.id);
+    await t.consent(person.id, 'buyer_search');
+    const agent = t.as('agent', t.alex.id);
+    expect((await t.recherche.save(t.acces, agent, t.acquereurs, project.id, 'Appartement à Dijon, si possible pas de rez-de-chaussée')).ok).toBe(true);
+    expect((await t.acquereurs.current(project.id))!.search).toMatchObject({ floorMin: 1, softCriteria: ['floorMin'] });
+    expect((await t.recherche.save(t.acces, agent, t.acquereurs, project.id, 'Appartement à Dijon, DPE D minimum')).ok).toBe(true);
+    expect((await t.acquereurs.current(project.id))!.search).toMatchObject({ floorMin: 1, energyClassMax: 'D', softCriteria: ['floorMin'] });
+    // Chaque borne garde sa force : le minimum impératif, le maximum souhaité.
+    expect((await t.recherche.save(t.acces, agent, t.acquereurs, project.id, 'Appartement à Dijon, pas de rez-de-chaussée, si possible 3e étage maximum')).ok).toBe(true);
+    expect((await t.acquereurs.current(project.id))!.search).toMatchObject({ floorMin: 1, floorMax: 3, softCriteria: ['floorMax'] });
+    // Les bornes se contrôlent sur la recherche qui en résulte : le maximum n'est qu'un souhait, un minimum plus haut passe.
+    const direction = t.as('direction', 'd1');
+    expect(await t.acquereurs.update(t.acces, direction, project.id, { floorMin: 4 })).toMatchObject({ ok: true });
+    // Deux bornes impératives inversées ne laissent aucun bien : refusé.
+    expect(await t.acquereurs.update(t.acces, direction, project.id, { softCriteria: [] })).toMatchObject({ ok: false, field: 'floorMin' });
+  });
+});
+
+describe('AU072 · les forces et les sources de chaque borne', () => {
+  const base = (phrase: string): PhraseSearch => ({ ...parsePhrase(phrase), excludedCommunes: [], excludedKinds: [], refusedPropertyIds: [] });
+  const flat = (floor: number | null) => ({ kind: 'home' as PropertyKind, dwelling: 'apartment' as const, city: 'Dijon', priceEur: 200_000, surfaceM2: 60, rooms: 3, bedrooms: 2, features: [] as BuyerFeature[], floor, energyClass: 'C', landM2: null });
+  it('[R420] « terrain de 500 m² à Dijon » cherche un terrain ; la raison de l’étage cite la borne dite', () => {
+    expect(parsePhrase('Terrain de 500 m² à Dijon').criteria.map((c) => [c.field, c.value])).toEqual(expect.arrayContaining([['propertyKinds', 'land'], ['landMinM2', 500], ['communes', 'Dijon']]));
+    expect(judge(base('Terrain de 500 m² à Dijon'), { ...flat(null), landM2: 600 })).toBeNull();
+    const r = judge(base('Appartement à Dijon, 3e étage maximum'), flat(2));
+    expect(r!.reasons.find((x) => x.text.includes('étage'))!.from).toContain('3e étage maximum');
+    // Deux bornes de même force : chaque raison cite sa propre borne.
+    const two = judge(base('Appartement à Dijon, à partir du 1er étage, 3e étage maximum'), flat(2))!;
+    expect(two.reasons.find((x) => x.text.includes('au-dessus du minimum'))!.from).toContain('1er étage');
+    expect(two.reasons.find((x) => x.text.includes('sous le maximum'))!.from).toContain('3e étage maximum');
+  });
+  it('[R51] « pas de rez-de-chaussée, si possible 3e étage maximum » : le minimum écarte, le maximum ne fait que classer', () => {
+    const s = base('Appartement à Dijon, pas de rez-de-chaussée, si possible 3e étage maximum');
+    expect(judge(s, flat(4))).toMatchObject({ status: 'match', preferencesMet: 0 });
+    expect(judge(s, flat(0))).toBeNull();
+  });
+});
+
+describeWithSqlite('AU106 · une recherche lit tous les biens en quelques requêtes, et ne demande la diffusion que pour ceux qu’elle montre', () => {
+  it('[R42] même résultat qu’en lisant bien par bien ; la diffusion n’est demandée qu’aux biens montrés, dans l’ordre', async () => {
+    const t = await setup();
+    const ids: string[] = [];
+    for (let i = 0; i < 60; i++) ids.push((await t.property(`AU106-${String(i).padStart(2, '0')}`, { city: 'Dijon', price: 150_000 + i * 1_000, surface: 60 + i, rooms: 3 })).id);
+    // Une fiche plus récente, un prix publié : la lecture groupée les voit comme la lecture d'un bien.
+    await t.db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES ('ps-1', ?, ?, 1, ?, 'agent', '2027-01-01'), ('ps-2', ?, ?, 2, ?, 'agent', '2027-01-02')", [
+      ids[0]!, t.network.id, JSON.stringify({ characteristics: { bedrooms: 1 } }), ids[0]!, t.network.id, JSON.stringify({ characteristics: { bedrooms: 2, elevator: true } }),
+    ]);
+    await t.db.run('PRAGMA foreign_keys = OFF');
+    await t.db.run("INSERT INTO listing_versions (id, property_id, network_id, seq, state, draft_id, price_eur, payload, payload_hash, reason, created_at) VALUES ('lv-1', ?, ?, 1, 'en_vente', 'd-1', 149000, '{}', 'h', 'test', '2027-01-03')", [ids[1]!, t.network.id]);
+    await t.db.run('PRAGMA foreign_keys = ON');
+    const rapprochement = new Rapprochement(t.db, new FicheUnique(t.db, new FicheClient(t.db), {}), { canDiffuse: async () => ({ allowed: true, reason: 'allowed' }) }, t.journal, {});
+    const rows = await t.db.all<Parameters<Rapprochement['propertyForMatch']>[0]>("SELECT * FROM properties WHERE network_id = ? AND status = 'available' ORDER BY reference, id", [t.network.id]);
+    const grouped = await rapprochement.propertiesForMatch(t.network.id, rows);
+    for (const p of rows) expect(grouped.get(p.id), p.reference).toEqual(await rapprochement.propertyForMatch(p));
+    expect(grouped.get(ids[0]!)).toMatchObject({ bedrooms: 2, features: ['elevator'] });
+    expect(grouped.get(ids[1]!)?.priceEur).toBe(149000);
+
+    // Tous diffusables sauf deux : la liste montrée est la même, la diffusion demandée seulement jusqu'à la remplir.
+    const closed = new Set([ids[0]!, ids[3]!]);
+    let asked = 0;
+    const gate = (withCandidates: boolean): DiffusionGate => ({
+      canDiffuse: async (_n, id) => { asked += 1; return closed.has(id) ? { allowed: false, reason: 'no_mandate' } : { allowed: true, reason: 'allowed' }; },
+      ...(withCandidates ? { diffusableProperties: async () => new Set(ids.filter((id) => !closed.has(id))) } : {}),
+    });
+    const old = new RechercheLangage(t.db, { propertyForMatch: (p) => rapprochement.propertyForMatch(p) }, gate(false), t.journal, { now: t.now });
+    const fast = new RechercheLangage(t.db, rapprochement, gate(true), t.journal, { now: t.now });
+    const phrase = 'maison à Dijon moins de 300 000 euros';
+    const before = (await old.search(t.network.id, phrase)).results;
+    asked = 0;
+    const after = (await fast.search(t.network.id, phrase)).results;
+    expect(after).toEqual(before);
+    expect(after).toHaveLength(20);
+    expect(after.map((r) => r.propertyId)).not.toContain(ids[3]);
+    // La porte est lue d'un coup pour tout le réseau : aucune demande bien par bien.
+    expect(asked).toBe(0);
   });
 });

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '../src/index.ts';
-import { FicheBien, parseSheet } from '../src/annonces/index.ts';
+import { FicheBien, SURFACE_DISPLAY, energyPriceText, parseSheet, surfacesFor } from '../src/annonces/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -45,6 +45,32 @@ async function setup() {
   return { db, journal, fiches, propertyId: b.id, full: forProperty(FULL, b.id), agent: as('agent', alex.id), sam: as('agent', sam.id), direction: as('direction', 'd-1'), compliance: as('compliance', 'c-1'), partner: as('partner', 'p-1'), stranger: as('direction', 'd-2', other.id), setClock: (d: Date) => (clock = d) };
 }
 
+it('[R51] AU070 · la fiche dit maison ou appartement, ou rien ; une autre valeur est refusée et nommée', () => {
+  const r = parseSheet({ characteristics: { dwelling: 'apartment' } }, TODAY, PID);
+  expect(r.ok && r.value.characteristics.dwelling).toBe('apartment');
+  const none = parseSheet({}, TODAY, PID);
+  expect(none.ok && 'dwelling' in none.value.characteristics).toBe(false);
+  expect(parseSheet({ characteristics: { dwelling: 'villa' } }, TODAY, PID)).toEqual({ ok: false, field: 'characteristics.dwelling' });
+});
+
+it('[R47] AU063 · surfaces habitable, Carrez et utile, au centième, chacune avec sa source ; chaque support dit la sienne', () => {
+  const r = parseSheet({ characteristics: { carrezM2: 61.35, usableM2: 70, surfaceSources: { carrez: 'mesurage', habitable: 'acte' } } }, TODAY, PID);
+  expect(r.ok && r.value.characteristics).toMatchObject({ carrezM2: 61.35, usableM2: 70, surfaceSources: { habitable: 'acte', carrez: 'mesurage' } });
+  // Avant : rien ne les distinguait, la clé était refusée.
+  for (const bad of [{ carrezM2: 61.355 }, { carrezM2: 0 }, { usableM2: -3 }, { surfaceSources: { carrez: 'oui' } }, { surfaceSources: { pieces: 'acte' } }, { surfaceSources: { carrez: 'acte' } }]) {
+    expect(parseSheet({ characteristics: bad }, TODAY, PID).ok).toBe(false);
+  }
+  const flat = { kind: 'home', surfaceM2: 64, carrezM2: 61.35, usableM2: null, surfaceSources: { carrez: 'mesurage' as const } };
+  expect(surfacesFor('annonce', flat)).toEqual([
+    { kind: 'habitable', m2: 64, label: 'surface habitable', source: null },
+    { kind: 'carrez', m2: 61.35, label: 'surface Carrez', source: 'mesurage' },
+  ]);
+  // Un local se dit d'abord par sa surface utile ; une surface absente n'est jamais affichée.
+  expect(surfacesFor('annonce', { kind: 'commercial', surfaceM2: 90, usableM2: 82 }).map((x) => x.kind)).toEqual(['utile', 'habitable']);
+  expect(surfacesFor('site', { kind: 'home', surfaceM2: null, carrezM2: 40 }).map((x) => x.kind)).toEqual(['carrez']);
+  expect(Object.keys(SURFACE_DISPLAY).sort()).toEqual(['annonce', 'fiche_commerciale', 'portails', 'site']);
+});
+
 it('P01 · une fiche complète est acceptée et rangée dans un ordre fixe', () => {
   const r = parseSheet(FULL, TODAY, PID);
   expect(r.ok).toBe(true);
@@ -57,6 +83,15 @@ it('P01 · une fiche complète est acceptée et rangée dans un ordre fixe', () 
 });
 
 it('P01 · chaque champ est contrôlé et le premier champ fautif est nommé', () => {
+  // AU061 · équipements et état : liste fermée, sans doublon ; absents, rien n'est rangé.
+  const withC = (patch: Record<string, unknown>) => parseSheet({ ...FULL, characteristics: { ...FULL.characteristics, ...patch } }, TODAY, PID);
+  const eq = withC({ amenities: ['cheminee', 'piscine'], condition: 'bon_etat' });
+  expect(eq.ok && eq.value.characteristics).toMatchObject({ amenities: ['piscine', 'cheminee'], condition: 'bon_etat' });
+  expect(withC({ amenities: ['jacuzzi'] })).toEqual({ ok: false, field: 'characteristics.amenities' });
+  expect(withC({ amenities: ['cave', 'cave'] })).toEqual({ ok: false, field: 'characteristics.amenities' });
+  expect(withC({ condition: 'parfait' })).toEqual({ ok: false, field: 'characteristics.condition' });
+  const none = withC({});
+  expect(none.ok && 'amenities' in none.value.characteristics).toBe(false);
   const withEnergy = (patch: Record<string, unknown>) => parseSheet({ ...FULL, energy: { ...FULL.energy, ...patch } }, TODAY, PID);
   expect(withEnergy({ energyClass: 'H' })).toEqual({ ok: false, field: 'energy.energyClass' });
   expect(withEnergy({ climateClass: 'b' })).toEqual({ ok: false, field: 'energy.climateClass' });
@@ -65,6 +100,23 @@ it('P01 · chaque champ est contrôlé et le premier champ fautif est nommé', (
   expect(withEnergy({ annualCostMinEur: 2000 })).toEqual({ ok: false, field: 'energy.annualCostMinEur' });
   expect(withEnergy({ annualCostMaxEur: 1550.5 })).toEqual({ ok: false, field: 'energy.annualCostMaxEur' });
   expect(withEnergy({ costReferenceYear: 2028 })).toEqual({ ok: false, field: 'energy.costReferenceYear' });
+  // AU065 · les années des prix que le diagnostic cite : qui se suivent, la dernière étant l'année des prix.
+  const span = withEnergy({ costReferenceYear: 2023, costReferenceYears: [2021, 2022, 2023] });
+  expect(span.ok && span.value.energy).toMatchObject({ costReferenceYear: 2023, costReferenceYears: [2021, 2022, 2023] });
+  for (const years of [[2021, 2023], [2023], [2021, 2022], [2022, 2021, 2023], [2019, 2020, 2021, 2022, 2023, 2024]]) {
+    expect(withEnergy({ costReferenceYear: 2023, costReferenceYears: years })).toEqual({ ok: false, field: 'energy.costReferenceYears' });
+  }
+  // AU064 · numéro ADEME, valeurs et document du diagnostic : gardés, contrôlés, jamais devinés.
+  const full = withEnergy({ ademeNumber: '2321E0123456J', primaryEnergyKwhM2: 212, ghgKgM2: 41, documentRef: `biens/${PID}/0b6f1d2e-1111-4a2b-8c3d-0000000000dd.pdf` });
+  expect(full.ok && full.value.energy).toMatchObject({ ademeNumber: '2321E0123456J', primaryEnergyKwhM2: 212, ghgKgM2: 41 });
+  expect(withEnergy({ ademeNumber: '2321e0123456j' })).toEqual({ ok: false, field: 'energy.ademeNumber' });
+  expect(withEnergy({ ademeNumber: '2321E012345' })).toEqual({ ok: false, field: 'energy.ademeNumber' });
+  expect(withEnergy({ primaryEnergyKwhM2: 212.5 })).toEqual({ ok: false, field: 'energy.primaryEnergyKwhM2' });
+  expect(withEnergy({ ghgKgM2: -1 })).toEqual({ ok: false, field: 'energy.ghgKgM2' });
+  expect(withEnergy({ documentRef: 'biens/autre/0b6f1d2e-1111-4a2b-8c3d-0000000000dd.pdf' })).toEqual({ ok: false, field: 'energy.documentRef' });
+  expect(withEnergy({ documentRef: `biens/${PID}/0b6f1d2e-1111-4a2b-8c3d-0000000000dd.jpg` })).toEqual({ ok: false, field: 'energy.documentRef' });
+  expect(energyPriceText({ costReferenceYear: 2021 })).toBe('Prix moyens des énergies indexés au 1er janvier 2021 (abonnements compris).');
+  expect(energyPriceText({ costReferenceYear: 2023, costReferenceYears: [2021, 2022, 2023] })).toBe('Prix moyens des énergies indexés sur les années 2021, 2022 et 2023 (abonnements compris).');
   // Date du diagnostic : jamais dans le futur, à l'heure de Paris ; jamais une date impossible.
   expect(withEnergy({ diagnosedOn: '2027-03-11' })).toEqual({ ok: false, field: 'energy.diagnosedOn' });
   expect(withEnergy({ diagnosedOn: '2027-02-30' })).toEqual({ ok: false, field: 'energy.diagnosedOn' });

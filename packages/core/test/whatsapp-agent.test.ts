@@ -54,7 +54,7 @@ async function setup() {
     return { person, project };
   };
   const property = (ref = 'B1') =>
-    store.createProperty({ networkId: network.id, agentId: alex.id, reference: ref, kind: 'home', city: 'Talant', priceEur: 280_000, surfaceM2: 95, rooms: 4, status: 'available' });
+    store.createProperty({ networkId: network.id, agentId: alex.id, reference: ref, kind: 'home', dwelling: 'house', city: 'Talant', priceEur: 280_000, surfaceM2: 95, rooms: 4, status: 'available' });
   const as = (role: 'agent' | 'direction' | 'compliance', userId: string) => ({ role, userId, networkId: network.id });
   const messages = (personId: string) => db.all<{ id: string; author_kind: string; channel: string; body: string }>("SELECT id, author_kind, channel, body FROM messages WHERE person_id = ? AND direction = 'out'", [personId]);
   return { db, store, journal, whatsapp, network, alex, sam, buyer, property, as, blocked, messages, diffusion, setClock: (t: number) => (clock = t) };
@@ -166,6 +166,11 @@ describeWithSqlite('T09 · alerte WhatsApp en un geste, par le téléphone de l�
     const old = await t.buyer('Ancienne');
     t.setClock(TUESDAY_10H + 181 * DAY);
     expect(await t.whatsapp.prepare(t.as('agent', t.alex.id), p.id, old.project.id)).toMatchObject({ ok: false, rule: 'R51', code: 'inactive' });
+    // AU074 · la même recherche, dite toujours d'actualité il y a dix jours, compte de nouveau.
+    await t.db.run('INSERT INTO buyer_search_confirmations (project_id, network_id, confirmed_at, confirmed_by) VALUES (?, ?, ?, ?)', [
+      old.project.id, t.as('agent', t.alex.id).networkId, new Date(TUESDAY_10H + 171 * DAY).toISOString(), `agent:${t.alex.id}`,
+    ]);
+    expect((await t.whatsapp.prepare(t.as('agent', t.alex.id), p.id, old.project.id)).ok).toBe(true);
     const refused = (await t.journal.all()).filter((e) => e.type === 'alerte.whatsapp.refusee');
     expect(refused.map((e) => e.data.rule)).toEqual(['R42', 'R51', 'R51']);
     expect(JSON.stringify(refused)).not.toMatch(/Inès|Ancienne|33600000001/);

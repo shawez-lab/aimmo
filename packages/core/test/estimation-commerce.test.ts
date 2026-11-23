@@ -6,11 +6,12 @@ import {
   FicheCommerce,
   checkScale,
   computeBusinessValuation,
+  mulDiv,
   type BusinessSheetVersion,
   type ValuationMethod,
   type ValuationScale,
 } from '../src/commerces/index.ts';
-import { EMPTY_SHEET, type BusinessSheet } from '../src/commerces/fiche.ts';
+import { EMPTY_SHEET, checkSheetChanges, type BusinessSheet } from '../src/commerces/fiche.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -278,4 +279,23 @@ describeWithSqlite('CE02 · estimation d’un commerce', () => {
     const home = await t.property('home');
     expect(await t.estimations.estimate(t.acces, t.as('agent', t.alex.id), home.id, 'revenue_pct')).toMatchObject({ ok: false, code: 'sorte' });
   });
+});
+
+it('[R111] AU102 · un local libre s’estime sur sa valeur locative de marché et ce qui la fonde, jamais sur un bail inventé', () => {
+  const scale = scaleOf('bureaux', 'rent_yield', 700, 900);
+  // Une valeur locative sans ce qui la fonde ne suffit pas.
+  expect(computeBusinessValuation('commercial', sheetOf({ activity: 'bureaux', marketAnnualRentCents: 1_800_000 }), 'rent_yield', scale)).toMatchObject({ status: 'incomplet', missing: ['loyer'] });
+  const free = sheetOf({ activity: 'bureaux', marketAnnualRentCents: 1_800_000, marketRentBasis: 'trois locaux comparables loués en 2026 dans la rue, relevés par l’agent' });
+  const r = computeBusinessValuation('commercial', free, 'rent_yield', scale);
+  // 18 000 € / 9 % = 200 000 € ; / 7 % = 257 142,86 €.
+  expect(r).toMatchObject({ status: 'ok', lowCents: 20_000_000, highCents: 25_714_286 });
+  if (r.status !== 'ok') throw new Error('incomplet');
+  expect(r.lines[0]).toMatchObject({ label: 'valeur_locative', value: 1_800_000, hypothesis: expect.stringContaining('local libre, sans bail') });
+  expect(r.lines.some((l) => l.label === 'loyer_annuel')).toBe(false);
+  // Le bail, s'il existe, l'emporte sur la valeur locative.
+  const leased = computeBusinessValuation('commercial', sheetOf({ ...free.sheet, leaseAnnualRentCents: 1_400_000 }), 'rent_yield', scale);
+  expect(leased).toMatchObject({ status: 'ok', lowCents: mulDiv(1_400_000, 10_000, 900) });
+  // La base d'une valeur locative se saisit en 5 à 300 caractères.
+  expect(checkSheetChanges({ marketRentBasis: 'abc' })).toMatchObject({ ok: false, field: 'marketRentBasis' });
+  expect(checkSheetChanges({ marketAnnualRentCents: 0 })).toMatchObject({ ok: false, field: 'marketAnnualRentCents' });
 });

@@ -266,7 +266,7 @@ describeWithSqlite('HX23 · notes vocales transcrites et traitées', () => {
     const raw = waText('wamid.N1', SELL);
     const prepared = await t.notes.prepare(t.network.id, 'whatsapp', raw);
     expect(prepared.raw).toBe(raw);
-    expect(await t.notes.prepare(t.network.id, 'email', { text: 'x' })).toEqual({ raw: { text: 'x' }, unreadable: [], inProgress: 0 });
+    expect(await t.notes.prepare(t.network.id, 'email', { text: 'x' })).toEqual({ raw: { text: 'x' }, unreadable: [], failed: [], inProgress: 0 });
     expect(transcriber.calls).toHaveLength(0);
   });
 });

@@ -2,8 +2,10 @@
  * La fourchette de prix d'un bien, calculée par le code (M04, E01). L'IA n'y touche pas.
  *
  * Méthode reprise du site (`functions/_lib/estimation.js` de shawez-immo), qui tourne déjà :
- *   1. comparables : même type, surface proche, les plus proches du bien ; le rayon s'élargit tant qu'il y a moins
- *      de 12 ventes ;
+ *   1. comparables : même type, surface proche, vendus dans la fenêtre de temps (36 mois avant l'estimation, réglage),
+ *      les plus proches du bien ; le rayon s'élargit tant qu'il y a moins de 12 ventes. Une vente plus ancienne n'est
+ *      jamais retenue, ni corrigée : la fenêtre, sa raison et le nombre de ventes écartées sont rendus (audit A048,
+ *      R691) ;
  *   2. prix au m² de référence : la médiane des comparables (40 au plus, les plus proches) ;
  *   3. ajustements écrits et bornés : état, époque, étage et ascenseur, extérieur, stationnement, et le diagnostic
  *      énergétique, que le cahier demande en plus ;
@@ -82,7 +84,56 @@ export interface Adjustment {
   label: string;
   /** En pour cent, arrondi. */
   pct: number;
+  /** Un coefficient retenu par l'agent, avec son motif ; sans `source`, celui du barème du réseau [R693]. */
+  source?: 'agent';
+  motive?: AgentAdjustmentMotive;
 }
+
+/** Les caractéristiques qu'un ajustement peut viser : celles du barème, et rien d'autre [R693]. */
+export const ADJUSTMENT_LABELS = [
+  'État général',
+  'Époque de construction',
+  'Rez-de-chaussée',
+  'Étage élevé sans ascenseur',
+  'Étage élevé avec ascenseur',
+  'Dernier étage',
+  'Terrasse',
+  'Balcon',
+  'Garage ou box',
+  'Place de parking',
+  'Cave',
+  'Gardien',
+  'Piscine',
+  'Garage',
+  'Plain-pied',
+  'Grand terrain',
+  'Petit terrain',
+  'Diagnostic énergétique',
+] as const;
+
+/** Pourquoi l'agent retient un autre coefficient que le barème : une liste fermée [R693]. */
+export const AGENT_ADJUSTMENT_MOTIVES = {
+  visite: 'constaté à la visite',
+  devis: 'travaux chiffrés par devis',
+  marche_local: 'ventes du secteur connues de l’agent',
+  diagnostic: 'diagnostic reçu',
+} as const;
+export type AgentAdjustmentMotive = keyof typeof AGENT_ADJUSTMENT_MOTIVES;
+
+/** Un ajustement retenu par l'agent : il remplace celui du barème pour la même caractéristique, ou s'y ajoute. */
+export interface AgentAdjustment {
+  label: (typeof ADJUSTMENT_LABELS)[number];
+  /** En pour cent entier, de -15 à +15. */
+  pct: number;
+  motive: AgentAdjustmentMotive;
+}
+
+/**
+ * La méthode des coefficients du barème et son périmètre, dits avec chaque ajustement [R693]. Les ventes publiées ne
+ * disent ni l'état, ni l'étage, ni les annexes des biens vendus : aucun coefficient ne peut être calibré sur elles.
+ */
+export const ADJUSTMENT_METHOD =
+  'Les ajustements suivent le barème écrit du réseau, le même pour tous les logements : les ventes publiées ne disent ni l’état, ni l’étage, ni les annexes des biens vendus, ce qui empêche de le calibrer sur votre secteur.';
 
 export interface DataInfo {
   /** Dernière vente publiée dans les données, toutes ventes confondues ; celle des comparables est `latestUsedSale`. */
@@ -121,10 +172,28 @@ export type RangeResult =
       radius: number;
       adjustments: Adjustment[];
       data: DataInfo;
+      /** La fenêtre de temps des ventes retenues, et pourquoi [R691]. */
+      window: SalesWindow;
     }
   | { ok: false; reason: NoRangeReason; comparablesFound: number; data: DataInfo };
 
+/** La fenêtre de temps des comparables : rien d'avant `from` n'est retenu [R691]. */
+export interface SalesWindow {
+  months: number;
+  /** Premier mois retenu, `AAAA-MM`. */
+  from: string;
+  /** Ventes de même sorte et de surface proche, dans le rayon retenu, écartées parce que trop anciennes. */
+  excludedOld: number;
+  justification: string;
+}
+
+/** Pourquoi une vente trop ancienne n'est pas retenue : écrit une fois, rendu avec chaque fourchette [R691]. */
+export const WINDOW_JUSTIFICATION =
+  'Au-delà de cette fenêtre, les prix ont trop changé pour comparer une vente sans la corriger ; elle n’est donc pas retenue.';
+
 export interface RangeSettings {
+  /** Une vente plus ancienne que ce nombre de mois, avant le mois de l'estimation, n'est pas retenue [R691]. */
+  maxSaleAgeMonths: number;
   radii: Record<EstimatedKind, readonly number[]>;
   /** Nombre de ventes visé avant d'arrêter d'élargir. */
   target: number;
@@ -142,6 +211,7 @@ export interface RangeSettings {
 }
 
 export const DEFAULT_RANGE_SETTINGS: RangeSettings = Object.freeze<RangeSettings>({
+  maxSaleAgeMonths: 36,
   radii: { apartment: [300, 500, 800, 1200, 2000, 3000, 5000], house: [500, 1000, 2000, 3000, 5000, 8000, 12000] },
   target: 12,
   minimum: 5,
@@ -227,7 +297,9 @@ export class Fourchette {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  async estimate(p: EstimatedProperty): Promise<RangeResult> {
+  /** `exclude` : les ventes que l'agent a écartées, avec un motif, d'une version précédente de l'avis [R692]. */
+  /** `agent` : les ajustements que l'agent retient à la place du barème, chacun avec son motif [R693]. */
+  async estimate(p: EstimatedProperty, exclude: ReadonlySet<string> = new Set(), agent: readonly AgentAdjustment[] = []): Promise<RangeResult> {
     const coverage = await this.source.coverage();
     const department = p.postalCode ? departmentOf(p.postalCode) : null;
     const dvfNotCovered = department !== null && this.settings.dvfNotCovered.includes(department);
@@ -249,6 +321,10 @@ export class Fourchette {
     if (department !== coverage.department) return none('hors_zone');
 
     const kind = p.kind;
+    const now = this.now();
+    const start = now.getUTCFullYear() * 12 + now.getUTCMonth() - this.settings.maxSaleAgeMonths;
+    const from = `${String(Math.floor(start / 12)).padStart(4, '0')}-${String((start % 12) + 1).padStart(2, '0')}`;
+    let excludedOld = 0;
     const [minRatio, maxRatio] = this.settings.surfaceRatio[kind];
     const radii = this.settings.radii[kind];
     let found: Comparable[] = [];
@@ -257,12 +333,16 @@ export class Fourchette {
       searched = radius;
       const sales = await this.source.within(kind, p.lat, p.lon, radius);
       found = [];
+      excludedOld = 0;
       for (const s of sales) {
-        if (s.kind !== kind) continue;
+        if (s.kind !== kind || exclude.has(s.id)) continue;
         const ratio = s.surface / p.surface;
         if (ratio < minRatio || ratio > maxRatio) continue;
         const d = distance(p.lat, p.lon, s.lat, s.lon);
-        if (d <= radius) found.push({ ...s, distance: d });
+        if (d > radius) continue;
+        // Trop ancienne : écartée, et comptée [R691].
+        if (s.month < from) excludedOld += 1;
+        else found.push({ ...s, distance: d });
       }
       if (found.length >= this.settings.target) break;
     }
@@ -278,7 +358,13 @@ export class Fourchette {
     let margin = Math.max(0.05, Math.min(0.1, iqr / 2 / median));
     const far = searched >= (radii[4] ?? Infinity);
     if (comparables.length < 10 || far) margin = Math.min(0.12, margin + 0.02);
-    const adj = adjustmentsFor(p, this.settings);
+    const bareme = adjustmentsFor(p, this.settings);
+    // L'ajustement de l'agent remplace celui du barème pour la même caractéristique ; le total reste borné.
+    const lines: { label: string; v: number; source: 'bareme' | 'agent'; motive?: AgentAdjustmentMotive }[] = [
+      ...bareme.lines.filter(([label]) => !agent.some((a) => a.label === label)).map(([label, v]) => ({ label, v, source: 'bareme' as const })),
+      ...agent.map((a) => ({ label: a.label, v: a.pct / 100, source: 'agent' as const, motive: a.motive })),
+    ];
+    const adj = { total: Math.max(-0.25, Math.min(0.18, lines.reduce((sum, l) => sum + l.v, 0))), lines };
     const m2 = median * (1 + adj.total);
     const centre = m2 * p.surface;
     return {
@@ -291,8 +377,9 @@ export class Fourchette {
       latestUsedSale: comparables.reduce((latest, c) => (c.month > latest ? c.month : latest), comparables[0]!.month),
       comparables,
       radius,
-      adjustments: adj.lines.map(([label, v]) => ({ label, pct: Math.round(v * 100) })),
+      adjustments: adj.lines.filter((l) => l.v !== 0 || l.source === 'agent').map((l) => ({ label: l.label, pct: Math.round(l.v * 100), ...(l.source === 'agent' ? { source: 'agent' as const, ...(l.motive ? { motive: l.motive } : {}) } : {}) })),
       data,
+      window: { months: this.settings.maxSaleAgeMonths, from, excludedOld, justification: WINDOW_JUSTIFICATION },
     };
   }
 }

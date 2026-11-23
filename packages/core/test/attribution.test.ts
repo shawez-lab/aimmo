@@ -274,10 +274,11 @@ describeWithSqlite('Q03 · attribution à l’agent de la commune', () => {
     });
     t.setClock(TUESDAY_10H + 20 * HOUR);
     await t.attribution.attribute(await t.contact('zoe', 'Une question de plus sur ma maison.'));
-    // Le premier délai est clos par l'appel : 24 heures comptent depuis le nouveau message.
-    t.setClock(TUESDAY_10H + 30 * HOUR);
+    // Le premier délai est clos par l'appel : 24 heures comptent depuis le nouveau message, arrivé le mercredi à 6 h,
+    // donc à partir de l'ouverture de 8 h [R682].
+    t.setClock(TUESDAY_10H + 45 * HOUR);
     expect(await t.attribution.reassignOverdue(t.network.id)).toEqual([]);
-    t.setClock(TUESDAY_10H + 44 * HOUR);
+    t.setClock(TUESDAY_10H + 46 * HOUR);
     expect(await t.attribution.reassignOverdue(t.network.id)).toHaveLength(1);
   });
 
@@ -431,5 +432,331 @@ describeWithSqlite('Q03 · attribution à l’agent de la commune', () => {
     expect((await t.store.getPerson(ancienne.id))!.agent_id).toBe(next!.agent_id);
     const acces = new Acces(t.db, t.store, t.fiche, t.journal, { now: () => new Date(TUESDAY_10H + 24 * HOUR) });
     expect(await acces.readFiche({ role: 'agent', userId: next!.agent_id!, networkId: t.network.id }, fresh)).toMatchObject({ ok: true, view: 'full' });
+  });
+});
+
+describe('AU041 · file de secours fixe', () => {
+  it('[R681] un agent plein est passé, le suivant dans l’ordre fixe à partir du tiré ; tous pleins : la direction', () => {
+    const agents = ['a', 'b', 'c', 'd'];
+    for (const person of ['p1', 'p2', 'p3', 'p4', 'p5']) {
+      const chosen = chooseAgent(person, agents)!;
+      const next = agents[(agents.indexOf(chosen) + 1) % agents.length];
+      expect(chooseAgent(person, agents, new Set(), new Set([chosen]))).toBe(next);
+      expect(chooseAgent(person, [...agents].reverse(), new Set(), new Set([chosen]))).toBe(next);
+      expect(chooseAgent(person, agents, new Set(), new Set(agents))).toBeNull();
+    }
+  });
+
+  it('[R681] la règle de capacité est publiée avec les autres', () => {
+    expect(ATTRIBUTION_RULES.join(' ')).toMatch(/capacité déclarée/);
+  });
+});
+
+describeWithSqlite('AU041 · capacité déclarée des agents', () => {
+  const direction = (networkId: string) => ({ role: 'direction' as const, networkId, userId: 'dir-1' });
+  const agentViewer = (networkId: string, id: string) => ({ role: 'agent' as const, networkId, userId: id });
+
+  it('[R681] constat : un agent à capacité nulle ne reçoit plus de nouveau contact ; seul de sa commune, la direction', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    const r = await t.attribution.declareCapacity(agentViewer(t.network.id, t.alex.id), { capacity: 0, reason: 'Congés de fin d’année' });
+    expect(r).toMatchObject({ ok: true, value: { agentId: t.alex.id, capacity: 0, version: 1 } });
+    const a = await t.attribution.attribute(await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.'));
+    expect(a).toMatchObject({ agent_id: null, reason: 'no_zone' });
+    expect(await t.db.all('SELECT full_agents FROM attribution_capacity WHERE attribution_id = ?', [a!.id])).toEqual([{ full_agents: 1 }]);
+    const entry = (await t.journal.all()).find((e) => e.type === 'attribution');
+    expect(entry?.data).toMatchObject({ toDirection: true, fullAgents: 1 });
+  });
+
+  it('[R681] le contact qui serait allé à l’agent plein va au suivant de la file, toujours le même', async () => {
+    const t = await setup();
+    for (const agent of [t.alex, t.sam, t.lou]) await t.attribution.addZone(t.network.id, agent.id, 'Talant');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    const person = await t.personOf(q);
+    const ids = [t.alex.id, t.sam.id, t.lou.id];
+    const drawn = chooseAgent(person, ids)!;
+    await t.attribution.declareCapacity(direction(t.network.id), { agentId: drawn, capacity: 0, reason: 'Arrêt de travail' });
+    const a = await t.attribution.attribute(q);
+    expect(a!.agent_id).toBe(chooseAgent(person, ids, new Set(), new Set([drawn])));
+    expect(a!.agent_id).not.toBe(drawn);
+    expect(a!.reason).toBe('zone');
+    expect(await t.db.all('SELECT full_agents FROM attribution_capacity')).toEqual([{ full_agents: 1 }]);
+  });
+
+  it('[R681] la capacité compte les contacts en attente de rappel ; un rappel libère une place', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.declareCapacity(direction(t.network.id), { agentId: t.alex.id, capacity: 1, reason: 'Agent à mi-temps' });
+    const q1 = await t.contact('a', 'Je souhaite vendre ma maison à Talant.');
+    expect(await t.attribution.attribute(q1)).toMatchObject({ agent_id: t.alex.id });
+    expect(await t.attribution.waiting(t.network.id, t.alex.id)).toBe(1);
+    expect(await t.attribution.attribute(await t.contact('b', 'Je souhaite vendre ma maison à Talant.'))).toMatchObject({ agent_id: null });
+    await t.store.recordMessage({
+      networkId: t.network.id,
+      agentId: t.alex.id,
+      personId: await t.personOf(q1),
+      channel: 'phone',
+      direction: 'out',
+      authorKind: 'agent',
+      body: 'Appel passé.',
+      occurredAt: new Date(TUESDAY_10H + HOUR),
+    });
+    t.setClock(TUESDAY_10H + 2 * HOUR);
+    expect(await t.attribution.waiting(t.network.id, t.alex.id)).toBe(0);
+    expect(await t.attribution.attribute(await t.contact('c', 'Je souhaite vendre ma maison à Talant.'))).toMatchObject({ agent_id: t.alex.id });
+  });
+
+  it('[R681] deux contacts en même temps ne dépassent jamais la capacité : la base revérifie à l’écriture', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.declareCapacity(direction(t.network.id), { agentId: t.alex.id, capacity: 1, reason: 'Agent à mi-temps' });
+    const q1 = await t.contact('a', 'Je souhaite vendre ma maison à Talant.');
+    const q2 = await t.contact('b', 'Je souhaite vendre ma maison à Talant.');
+    const rows = await Promise.all([t.attribution.attribute(q1), t.attribution.attribute(q2)]);
+    expect(rows.map((r) => r!.agent_id).sort()).toEqual([null, t.alex.id].sort());
+    expect(await t.attribution.waiting(t.network.id, t.alex.id)).toBe(1);
+    const persons = await t.db.all<{ agent_id: string | null }>('SELECT agent_id FROM persons WHERE id IN (?, ?)', [await t.personOf(q1), await t.personOf(q2)]);
+    expect(persons.filter((p) => p.agent_id === t.alex.id)).toHaveLength(1);
+  });
+
+  it('[R681] la file de secours va jusqu’au bout même quand plusieurs contacts se disputent les mêmes agents', async () => {
+    const t = await setup();
+    const extra = [];
+    for (const name of ['Noa', 'Eli']) extra.push(await t.store.createAgent({ networkId: t.network.id, firstName: name, lastName: 'Agent' }));
+    const agents = [t.alex, t.sam, t.lou, ...extra];
+    for (const agent of agents) {
+      await t.attribution.addZone(t.network.id, agent.id, 'Talant');
+      await t.attribution.declareCapacity(direction(t.network.id), { agentId: agent.id, capacity: 1, reason: 'Une place chacun' });
+    }
+    const qs = [];
+    for (const who of ['a', 'b', 'c', 'd', 'e']) qs.push(await t.contact(who, 'Je souhaite vendre ma maison à Talant.'));
+    const rows = await Promise.all(qs.map((q) => t.attribution.attribute(q)));
+    expect(rows.map((r) => r!.agent_id).sort()).toEqual(agents.map((a) => a.id).sort());
+    for (const agent of agents) expect(await t.attribution.waiting(t.network.id, agent.id)).toBe(1);
+  });
+
+  it('[R681] des fiches réunies comptent une fois, et un rappel sur l’une d’elles libère la place', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    const q1 = await t.contact('a', 'Je souhaite vendre ma maison à Talant.');
+    const q2 = await t.contact('b', 'Je souhaite vendre ma maison à Talant.');
+    await t.attribution.attribute(q1);
+    await t.attribution.attribute(q2);
+    expect(await t.attribution.waiting(t.network.id, t.alex.id)).toBe(2);
+    const p1 = await t.personOf(q1);
+    const p2 = await t.personOf(q2);
+    await t.fiche.merge({ survivorId: p1, mergedId: p2, reason: 'même personne' });
+    expect(await t.attribution.waiting(t.network.id, t.alex.id)).toBe(1);
+    await t.store.recordMessage({
+      networkId: t.network.id,
+      agentId: t.alex.id,
+      personId: p2,
+      channel: 'phone',
+      direction: 'out',
+      authorKind: 'agent',
+      body: 'Appel passé.',
+      occurredAt: new Date(TUESDAY_10H + HOUR),
+    });
+    t.setClock(TUESDAY_10H + 2 * HOUR);
+    expect(await t.attribution.waiting(t.network.id, t.alex.id)).toBe(0);
+  });
+
+  it('[R681] deux attributions d’une fiche à la même heure : la capacité n’est jamais dépassée', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    const q1 = await t.contact('a', 'Je souhaite vendre ma maison à Beaune.');
+    const q2 = await t.contact('b', 'Je souhaite vendre ma maison à Talant.');
+    expect(await t.attribution.attribute(q1)).toMatchObject({ agent_id: null });
+    expect(await t.attribution.attribute(q2)).toMatchObject({ agent_id: t.alex.id });
+    await t.fiche.merge({ survivorId: await t.personOf(q1), mergedId: await t.personOf(q2), reason: 'même personne' });
+    expect((await t.attribution.current(await t.personOf(q1)))!.agent_id).toBe(t.alex.id);
+    expect(await t.attribution.waiting(t.network.id, t.alex.id)).toBe(1);
+  });
+
+  it('[R681] un client déjà suivi reste à son agent même plein ; la réattribution passe aussi l’agent plein', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
+    const q1 = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    const first = (await t.attribution.attribute(q1))!;
+    const other = first.agent_id === t.alex.id ? t.sam.id : t.alex.id;
+    await t.attribution.declareCapacity(direction(t.network.id), { agentId: first.agent_id, capacity: 0, reason: 'Plus de place' });
+    await t.attribution.declareCapacity(direction(t.network.id), { agentId: other, capacity: 0, reason: 'Plus de place' });
+    // La personne réécrit : elle reste à son agent.
+    expect(await t.attribution.attribute(await t.contact('zoe', 'Je relance ma demande.'))).toMatchObject({ agent_id: first.agent_id, reason: 'already_followed' });
+    // Non rappelée : l'autre agent est plein, elle va à la direction.
+    t.setClock(TUESDAY_10H + 30 * HOUR);
+    const made = await t.attribution.reassignOverdue(t.network.id);
+    expect(made).toHaveLength(1);
+    expect(made[0]).toMatchObject({ agent_id: null, reason: 'reassigned' });
+    expect(await t.db.all('SELECT full_agents FROM attribution_capacity WHERE attribution_id = ?', [made[0]!.id])).toEqual([{ full_agents: 1 }]);
+  });
+
+  it('[R681] [R16] [R17] déclarer : l’agent pour lui, la direction pour tous ; versions en ajout seul ; lecture cloisonnée', async () => {
+    const t = await setup();
+    const dir = direction(t.network.id);
+    expect(await t.attribution.declareCapacity(agentViewer(t.network.id, t.alex.id), { agentId: t.sam.id, capacity: 3, reason: 'Pour Sam' })).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.attribution.declareCapacity({ role: 'assistant', networkId: t.network.id, userId: 'x' }, { capacity: 3, reason: 'Essai' })).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await t.attribution.declareCapacity(dir, { agentId: t.alex.id, capacity: -1, reason: 'Essai' })).toMatchObject({ ok: false, code: 'bad_capacity' });
+    expect(await t.attribution.declareCapacity(dir, { agentId: t.alex.id, capacity: 2.5, reason: 'Essai' })).toMatchObject({ ok: false, code: 'bad_capacity' });
+    expect(await t.attribution.declareCapacity(dir, { agentId: t.alex.id, capacity: 201, reason: 'Essai' })).toMatchObject({ ok: false, code: 'bad_capacity' });
+    expect(await t.attribution.declareCapacity(dir, { agentId: t.alex.id, capacity: 3 })).toMatchObject({ ok: false, code: 'bad_reason' });
+    expect(await t.attribution.declareCapacity(dir, { agentId: t.alex.id, capacity: 3, reason: 'Essai', autre: 1 })).toMatchObject({ ok: false, code: 'unknown_field' });
+    expect(await t.attribution.declareCapacity(dir, { agentId: 'inconnu', capacity: 3, reason: 'Essai' })).toMatchObject({ ok: false, code: 'agent_inconnu' });
+    expect(await t.attribution.declareCapacity(dir, { agentId: t.alex.id, capacity: 3, reason: 'Rythme normal' })).toMatchObject({ ok: true, value: { version: 1 } });
+    expect(await t.attribution.declareCapacity(dir, { agentId: t.alex.id, capacity: 3, reason: 'Rythme normal' })).toMatchObject({ ok: false, code: 'inchangee' });
+    expect(await t.attribution.declareCapacity(dir, { agentId: t.alex.id, capacity: null, reason: 'Sans plafond' })).toMatchObject({ ok: true, value: { version: 2, capacity: null } });
+    await expect(t.db.run('UPDATE agent_capacities SET capacity = 9')).rejects.toThrow();
+    await expect(t.db.run('DELETE FROM agent_capacities')).rejects.toThrow();
+    await expect(
+      t.db.run("INSERT INTO agent_capacities (network_id, agent_id, version, capacity, reason, decided_by, decided_at) VALUES (?, ?, 3, 1, 'Pour un autre', ?, '2026-12-08')", [
+        t.network.id,
+        t.alex.id,
+        `agent:${t.sam.id}`,
+      ]),
+    ).rejects.toThrow();
+    const mine = await t.attribution.capacities(agentViewer(t.network.id, t.sam.id));
+    expect(mine).toMatchObject({ ok: true, value: [{ agentId: t.sam.id, capacity: null, waiting: 0, full: false, version: 0 }] });
+    const all = await t.attribution.capacities(dir);
+    expect(all.ok && all.value.map((c) => c.agentId).sort()).toEqual([t.alex.id, t.sam.id, t.lou.id].sort());
+    expect(await t.attribution.capacities({ role: 'partner', networkId: t.network.id, userId: 'p' })).toMatchObject({ ok: false, rule: 'R16' });
+    expect(JSON.stringify((await t.journal.all()).filter((e) => e.type.startsWith('attribution.capacite')))).not.toMatch(/Rythme|plafond de|Essai/);
+  });
+});
+
+describeWithSqlite('AU040 · un agent absent n’est jamais candidat', () => {
+  /** Une absence inventée de `absentId`, reprise par `coverId`, du jour `from` au jour `until` inclus (J09). */
+  async function absence(t: Awaited<ReturnType<typeof setup>>, absentId: string, coverId: string, from: string, until: string): Promise<void> {
+    const [a, b] = absentId < coverId ? [absentId, coverId] : [coverId, absentId];
+    const pairId = `pair-${absentId}-${from}`;
+    await t.db.run('INSERT INTO agent_pairs (id, network_id, agent_a, agent_b, cover_share_pct, written_by, created_at) VALUES (?, ?, ?, ?, 30, ?, ?)', [
+      pairId,
+      t.network.id,
+      a,
+      b,
+      'direction:dir-1',
+      new Date(TUESDAY_10H - 48 * HOUR).toISOString(),
+    ]);
+    await t.db.run(
+      'INSERT INTO agent_absences (id, network_id, agent_id, pair_id, cover_agent_id, from_day, until_day, declared_by, declared_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [`abs-${absentId}-${from}`, t.network.id, absentId, pairId, coverId, from, until, 'direction:dir-1', new Date(TUESDAY_10H - 24 * HOUR).toISOString()],
+    );
+  }
+
+  it('[R680] constat : seul agent de la commune, absent ce jour : le contact va à la direction, au journal sans nom', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await absence(t, t.alex.id, t.sam.id, '2026-12-07', '2026-12-11');
+    const a = await t.attribution.attribute(await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.'));
+    expect(a).toMatchObject({ agent_id: null, reason: 'no_zone' });
+    const entry = (await t.journal.all()).find((e) => e.type === 'attribution');
+    expect(entry?.data).toMatchObject({ toDirection: true, absentAgents: 1 });
+    expect(JSON.stringify(entry)).not.toContain(t.alex.id);
+    // Aucune place de capacité n'est comptée pour une absence [R681].
+    expect(await t.db.all('SELECT * FROM attribution_capacity')).toEqual([]);
+  });
+
+  it('[R680] avant et après l’absence, l’agent reçoit de nouveau ses contacts', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await absence(t, t.alex.id, t.sam.id, '2026-12-09', '2026-12-10');
+    expect(await t.attribution.attribute(await t.contact('a', 'Je souhaite vendre ma maison à Talant.'))).toMatchObject({ agent_id: t.alex.id });
+    t.setClock(TUESDAY_10H + 24 * HOUR);
+    expect(await t.attribution.attribute(await t.contact('b', 'Je souhaite vendre ma maison à Talant.'))).toMatchObject({ agent_id: null });
+    t.setClock(TUESDAY_10H + 72 * HOUR);
+    expect(await t.attribution.attribute(await t.contact('c', 'Je souhaite vendre ma maison à Talant.'))).toMatchObject({ agent_id: t.alex.id });
+  });
+
+  it('[R680] le jour d’absence est celui de Paris : 0 h 30 à Paris est déjà le premier jour', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await absence(t, t.alex.id, t.sam.id, '2026-12-09', '2026-12-09');
+    // 2026-12-08 à 23 h 30 en temps universel : 0 h 30 le 9 décembre à Paris.
+    t.setClock(Date.parse('2026-12-08T23:30:00.000Z'));
+    expect(await t.attribution.attribute(await t.contact('a', 'Je souhaite vendre ma maison à Talant.'))).toMatchObject({ agent_id: null });
+  });
+
+  it('[R680] le contact tiré pour l’absent va au suivant de la file, toujours le même ; le tirage des autres ne bouge pas', async () => {
+    const t = await setup();
+    for (const agent of [t.alex, t.sam, t.lou]) await t.attribution.addZone(t.network.id, agent.id, 'Talant');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    const person = await t.personOf(q);
+    const ids = [t.alex.id, t.sam.id, t.lou.id];
+    const drawn = chooseAgent(person, ids)!;
+    const cover = ids.find((id) => id !== drawn)!;
+    await absence(t, drawn, cover, '2026-12-08', '2026-12-08');
+    const a = await t.attribution.attribute(q);
+    expect(a).toMatchObject({ reason: 'zone', agent_id: chooseAgent(person, ids, new Set(), new Set([drawn])) });
+    expect(a!.agent_id).not.toBe(drawn);
+    expect((await t.journal.all()).find((e) => e.type === 'attribution')?.data).toMatchObject({ absentAgents: 1 });
+  });
+
+  it('[R680] un client déjà suivi par l’absent lui reste : rien n’est réattribué pour l’absence', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
+    const followed = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Zoé' });
+    await absence(t, t.alex.id, t.sam.id, '2026-12-08', '2026-12-12');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    await t.fiche.merge({ survivorId: await t.personOf(q), mergedId: followed.id, reason: 'même personne' });
+    expect(await t.attribution.attribute(q)).toMatchObject({ agent_id: t.alex.id, reason: 'already_followed' });
+    expect((await t.store.getPerson(followed.id))!.agent_id).toBe(t.alex.id);
+  });
+
+  it('[R680] le binôme ouvre la fiche gardée par l’absent pendant l’absence, ni avant ni après ; un autre agent jamais', async () => {
+    const t = await setup();
+    const followed = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Zoé' });
+    await absence(t, t.alex.id, t.sam.id, '2026-12-09', '2026-12-10');
+    let clock = TUESDAY_10H;
+    const acces = new Acces(t.db, t.store, t.fiche, t.journal, { now: () => new Date(clock) });
+    const sam = { role: 'agent' as const, userId: t.sam.id, networkId: t.network.id };
+    expect(await acces.readFiche(sam, followed.id)).toMatchObject({ ok: false, code: 'not_assigned' });
+    clock = TUESDAY_10H + 24 * HOUR;
+    expect(await acces.readFiche(sam, followed.id)).toMatchObject({ ok: true, view: 'full' });
+    expect(await acces.readFiche({ role: 'agent', userId: t.lou.id, networkId: t.network.id }, followed.id)).toMatchObject({ ok: false, code: 'not_assigned' });
+    const read = (await t.journal.all()).filter((e) => e.type === 'fiche.lue');
+    expect(read.at(-1)?.data).toMatchObject({ cover: `agent_absence:abs-${t.alex.id}-2026-12-09` });
+    expect(JSON.stringify(read)).not.toMatch(/Zoé/);
+    clock = TUESDAY_10H + 72 * HOUR;
+    expect(await acces.readFiche(sam, followed.id)).toMatchObject({ ok: false, code: 'not_assigned' });
+    // L'absent garde sa fiche pendant son absence.
+    clock = TUESDAY_10H + 24 * HOUR;
+    expect(await acces.readFiche({ role: 'agent', userId: t.alex.id, networkId: t.network.id }, followed.id)).toMatchObject({ ok: true, view: 'full' });
+  });
+
+  it('[R680] la réattribution d’un contact en retard ne va jamais à un agent absent', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    await t.attribution.addZone(t.network.id, t.sam.id, 'Talant');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    const first = (await t.attribution.attribute(q))!;
+    const other = first.agent_id === t.alex.id ? t.sam.id : t.alex.id;
+    await absence(t, other, first.agent_id!, '2026-12-08', '2026-12-31');
+    t.setClock(TUESDAY_10H + 30 * HOUR);
+    const [next] = await t.attribution.reassignOverdue(t.network.id);
+    expect(next).toMatchObject({ agent_id: null, reason: 'reassigned' });
+    expect((await t.journal.all()).find((e) => e.type === 'attribution.reattribuee')?.data).toMatchObject({ toDirection: true, absentAgents: 1 });
+  });
+
+  it('[R680] une absence déclarée entre le choix et l’écriture : la base refuse l’absent et le choix est refait', async () => {
+    const t = await setup();
+    await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
+    const q = await t.contact('zoe', 'Je souhaite vendre ma maison à Talant.');
+    // La base revérifie l'absence dans le lot qui attribue : une écriture directe à l'absent n'aboutit pas.
+    await absence(t, t.alex.id, t.sam.id, '2026-12-08', '2026-12-08');
+    const pick = (t.attribution as unknown as { pick: (...a: unknown[]) => Promise<unknown> }).pick.bind(t.attribution);
+    let first = true;
+    (t.attribution as unknown as { pick: (...a: unknown[]) => Promise<unknown> }).pick = async (...args: unknown[]) => {
+      if (first) {
+        first = false;
+        return { agentId: t.alex.id, fullAgents: 0, absentAgents: 0 };
+      }
+      return pick(...args);
+    };
+    expect(await t.attribution.attribute(q)).toMatchObject({ agent_id: null, reason: 'no_zone' });
+  });
+
+  it('[R680] la règle d’absence est publiée avec les autres', () => {
+    expect(ATTRIBUTION_RULES.join(' ')).toMatch(/absent/);
   });
 });

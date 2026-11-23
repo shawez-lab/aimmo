@@ -36,7 +36,7 @@ const modelesEntry = (p: string, about: string): string => `<section class="bloc
 <div id="${p}-corps"></div>
 </section>
 `;
-export const LOUER_MODELES_ENTRY_HTML = modelesEntry('louer-modeles', 'La direction range les versions, la conformité les valide. Une nouvelle version s’ajoute, l’ancienne reste.');
+export const LOUER_MODELES_ENTRY_HTML = modelesEntry('louer-modeles', 'La direction range les versions, la conformité les valide.');
 export const LOUER_MODELES_CONFORMITE_HTML = modelesEntry('louer-modeles-c', 'Valider seulement un texte relu par l’avocat.');
 
 export const LOUER_HTML = `<section id="louer" hidden>
@@ -179,8 +179,6 @@ globalThis.AIMMO_LOUER = function (t) {
   var LEASE_LABELS = ${JSON.stringify(LEASE_LABELS)};
   var HABITATS = ${JSON.stringify(HABITATS)};
   var CHOICE_CHANNELS = ${JSON.stringify(CHANNEL_LABELS)};
-  var CLASSES = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
-  var GAS = { aucune: 'Pas d’installation de gaz', moins_de_15_ans: 'Gaz, installation de moins de 15 ans', plus_de_15_ans: 'Gaz, installation de plus de 15 ans' };
   var PIECES_MISSING = { identite: 'pièce d’identité vérifiée', domicile: 'justificatif de domicile', activite: 'justificatif d’activité', ressources: 'justificatif de ressources', visa_visale: 'visa Visale' };
   var PARTY_NAMES = { bailleur: 'le bailleur', locataire: 'le locataire' };
   var PARTY_TO = { bailleur: 'au bailleur', locataire: 'au locataire' };
@@ -214,6 +212,8 @@ globalThis.AIMMO_LOUER = function (t) {
     bad_channel: 'Dites comment le propriétaire a fait son choix.',
     incomplete: 'Ce dossier n’est plus complet.',
     no_choice: 'Le propriétaire n’a pas encore choisi.',
+    dossier_incomplet: 'Le dossier choisi n’est plus complet : chaque colocataire fournit ses pièces.',
+    not_cotenant: 'Cette personne n’est pas colocataire de ce bail.',
     missing_charges_mode: 'Dites dans les faits si les charges sont une provision ou un forfait.',
     lease_start_passed: 'La date de début du bail est passée : rangez de nouveaux faits.',
     bad_address: 'L’adresse n’est pas valable.',
@@ -223,6 +223,7 @@ globalThis.AIMMO_LOUER = function (t) {
     type_refuse: 'Ce fichier n’est pas accepté : un PDF, une photo JPEG ou PNG.',
     trop_lourd: 'Ce fichier dépasse 20 Mo.',
     bad_habitat: 'Choisissez le type d’habitat.',
+    missing_landlord: 'Dites qui est le bailleur.',
     no_template: 'Aucun modèle de bail validé dans le réseau.',
     bad_party: 'Partie inconnue.',
     bad_consent: 'Notez comment la partie a accepté de signer en ligne.',
@@ -424,7 +425,7 @@ globalThis.AIMMO_LOUER = function (t) {
       ['Annonce', ads.some(function (a) { return a.validatedAt; }) ? 'fait' : ''],
       ['Dossiers', pres ? 'fait' : ''],
       ['Choix', chosen ? 'fait' : ''],
-      ['Bail', lease && lease.bailleur && lease.locataire ? (lease.mode === 'essai' ? 'essai' : 'fait') : ''],
+      ['Bail', lease && allSigned(lease) ? (lease.mode === 'essai' ? 'essai' : 'fait') : ''],
       ['État des lieux', p.inventoryClosed ? 'fait' : ''],
       ['Remise des clés', p.handedOn ? 'fait' : ''],
     ];
@@ -462,7 +463,7 @@ globalThis.AIMMO_LOUER = function (t) {
       var make = globalThis[global];
       try { delete globalThis[global]; } catch (e) { /* rien à retirer */ }
       if (typeof make !== 'function') { if (mine === t.session()) louerState('Pas de réseau. Réessayez dans un moment.'); return; }
-      lazyTools[name] = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, select: select, whole: whole, ID: ID, session: t.session, say: louerState, date: date, euros: euros, act: louerAct, openLocation: openLocation, piece: piece, upload: louerUpload, refusals: LOUER_REFUSALS, reload: function (said) { return openLocation(louerId, $('louer-titre').textContent, said); } });
+      lazyTools[name] = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, select: select, whole: whole, checkbox: checkbox, toCents: toCents, centsText: centsText, details: details, ID: ID, session: t.session, say: louerState, date: date, euros: euros, act: louerAct, openLocation: openLocation, piece: piece, upload: louerUpload, refusals: LOUER_REFUSALS, reload: function (said) { return openLocation(louerId, $('louer-titre').textContent, said); } });
       if (mine === t.session()) { louerState(''); act(lazyTools[name]); }
     });
     s.addEventListener('error', function () {
@@ -499,7 +500,10 @@ globalThis.AIMMO_LOUER = function (t) {
     var a = ANNEXES[r.kind] || 'Annexe';
     if (r.code === 'energy_class') return 'Classe énergie ' + r.energyClass + ' : interdite à la location depuis le ' + date(r.bannedFrom + 'T12:00:00Z') + '.';
     if (r.code === 'final_energy') return r.finalEnergyKwh + ' kWh/m²/an en énergie finale : au-delà de 450, interdit depuis le ' + date(r.bannedFrom + 'T12:00:00Z') + '.';
-    if (r.code === 'living_area') return 'Surface habitable sous 9 m².';
+    var said = { living_area: 'Trop petit pour être décent.', local_rules_unchecked: 'Règle locale non vérifiée.', previous_rent_missing: 'Classé F ou G : dites le loyer du locataire précédent, ou « aucun ».', local_rules_failed: 'Règle locale non respectée.', dimensions_missing: 'Dimensions manquantes.', rent_control_missing: 'Loyer encadré dans la commune : saisissez l’arrêté.', complement_forbidden: 'Pas de complément de loyer pour un F ou un G.', complement_unjustified: 'Complément de loyer sans justification.' }[r.code];
+    if (said) return said;
+    if (r.code === 'rent_freeze') return 'Classé F ou G : le loyer ne peut dépasser celui du locataire précédent, ' + centsText(r.previousRentCents) + ' €.';
+    if (r.code === 'rent_above_ceiling') return 'Loyer de base ' + centsText(r.baseRentCents) + ' € : plafond ' + centsText(r.ceilingCents) + ' €.';
     if (r.code === 'annex_missing') return a + ' : manquant.';
     if (r.code === 'annex_expired') return a + ' : échu le ' + date(r.validUntil + 'T12:00:00Z') + '.';
     if (r.code === 'annex_future') return a + ' : daté dans le futur.';
@@ -509,7 +513,7 @@ globalThis.AIMMO_LOUER = function (t) {
     var box = section('Le logement');
     var c = status.check;
     if (!c) box.appendChild(el('p', 'Pas encore contrôlé : saisissez les faits et les annexes, puis contrôlez.', 'doux'));
-    else if (status.stale) box.appendChild(el('p', 'Les faits ou les annexes ont changé depuis le dernier contrôle, ou le temps l’a rendu caduc : contrôlez de nouveau.', 'alerte'));
+    else if (status.stale) box.appendChild(el('p', 'Contrôle caduc (faits, annexes, règle ou date) : contrôlez de nouveau.', 'alerte'));
     else if (c.decision === 'louable') box.appendChild(el('p', 'Louable : contrôlé le ' + date(c.checkedAt) + '.', 'fait'));
     else {
       box.appendChild(el('p', 'Bloqué avant toute annonce : ce logement ne peut pas être proposé.', 'alerte'));
@@ -521,7 +525,9 @@ globalThis.AIMMO_LOUER = function (t) {
     if (facts) {
       box.appendChild(el('p', (facts.furnished ? 'Meublé' : 'Vide') + ' · ' + centsText(facts.rentCents) + ' € hors charges · ' + String(facts.livingAreaHundredths / 100).replace('.', ',') + ' m² · classe ' + facts.energyClass + ' · bail au ' + date(facts.leaseStart + 'T12:00:00Z'), 'doux'));
     }
-    box.appendChild(factsForm(base, facts));
+    var held = el('div');
+    box.appendChild(button(facts ? 'Corriger les faits du logement' : 'Saisir les faits du logement', function () { lazy('louer-faits', 'AIMMO_LOUER_FAITS', function (x) { clear(held); x.form(held, base, facts); }); }));
+    box.appendChild(held);
     var need = (status.required || []).map(function (k) { return ANNEXES[k] || k; });
     if (need.length) box.appendChild(el('p', 'Annexes exigées : ' + need.join(', ') + '.', 'doux'));
     box.appendChild(annexForm(base, status.required || []));
@@ -532,39 +538,6 @@ globalThis.AIMMO_LOUER = function (t) {
       box.appendChild(el('p', n.text, 'brouillon'));
     });
     return box;
-  }
-  function factsForm(base, f) {
-    var n = ++louerSeq;
-    var d = details(el('div'), f ? 'Corriger les faits du logement' : 'Saisir les faits du logement');
-    var furnished = select(d, 'meuble-' + n, 'Location', { vide: 'Vide', meuble: 'Meublée' }, f && f.furnished ? 'meuble' : 'vide');
-    var rent = field(d, 'loyer-' + n, 'Loyer hors charges, en euros par mois');
-    var charges = field(d, 'charges-' + n, 'Charges, en euros par mois');
-    var mode = select(d, 'mode-' + n, 'Les charges sont', { provision: 'Une provision, régularisée chaque année', forfait: 'Un forfait (meublé seulement)' }, (f && f.chargesMode) || 'provision');
-    var area = field(d, 'surface-' + n, 'Surface habitable, en m²');
-    var cls = select(d, 'classe-' + n, 'Classe énergie du DPE', CLASSES.reduce(function (o, k) { o[k] = k; return o; }, {}), (f && f.energyClass) || 'D');
-    var kwh = field(d, 'kwh-' + n, 'Consommation en énergie finale, kWh/m²/an');
-    var year = field(d, 'annee-' + n, 'Année de construction');
-    var elec = checkbox(d, 'elec-' + n, 'Installation électrique de plus de 15 ans');
-    var gas = select(d, 'gaz-' + n, 'Gaz', GAS, (f && f.gas) || 'aucune');
-    var start = field(d, 'debut-' + n, 'Début du bail envisagé');
-    start.setAttribute('type', 'date');
-    [rent, charges, area, kwh, year].forEach(function (x) { x.setAttribute('inputmode', 'decimal'); x.setAttribute('autocomplete', 'off'); });
-    if (f) {
-      rent.value = centsText(f.rentCents);
-      charges.value = centsText(f.chargesCents);
-      area.value = String(f.livingAreaHundredths / 100).replace('.', ',');
-      kwh.value = String(f.finalEnergyKwh);
-      year.value = String(f.buildYear);
-      elec.checked = !!f.electricityOver15;
-      start.value = f.leaseStart;
-    }
-    d.appendChild(button('Ranger les faits', function () {
-      var a = toCents(area.value);
-      var b = { furnished: furnished.value === 'meuble', rentCents: toCents(rent.value), chargesCents: toCents(charges.value), livingAreaHundredths: a, energyClass: cls.value, finalEnergyKwh: whole(kwh.value, 10000), buildYear: whole(year.value, 2100), electricityOver15: !!elec.checked, gas: gas.value, leaseStart: start.value, chargesMode: mode.value };
-      if (b.rentCents === null || b.chargesCents === null || a === null || b.finalEnergyKwh === null || b.buildYear === null || !start.value) { louerState('Remplissez chaque champ : des nombres, et la date du bail.'); return; }
-      louerAct(base + '/faits', b, 'Les faits ne sont pas rangés.', 'Faits rangés : contrôlez de nouveau le logement.');
-    }));
-    return d;
   }
   function annexForm(base, required) {
     var n = ++louerSeq;
@@ -587,7 +560,7 @@ globalThis.AIMMO_LOUER = function (t) {
   }
   function feesBlock(base, c, ceilingsBody, fees) {
     var box = section('Honoraires et dépôt de garantie');
-    box.appendChild(el('p', 'Plafonds calculés par le code, depuis la surface et la zone de la commune. AIMMO ne reçoit jamais ni loyer ni dépôt.', 'doux'));
+    box.appendChild(el('p', 'Plafonds selon la surface et la zone. AIMMO ne reçoit jamais ni loyer ni dépôt.', 'doux'));
     if (!c) {
       var code = ceilingsBody && ceilingsBody.code;
       box.appendChild(el('p', code === 'no_commune' ? 'Indiquez la commune du logement pour connaître les plafonds.' : louerRefusal(ceilingsBody, 'Plafonds indisponibles pour le moment.'), 'doux'));
@@ -681,7 +654,7 @@ globalThis.AIMMO_LOUER = function (t) {
   }
   function applicationsBlock(base, apps, pres, chosen) {
     var box = section('Les candidatures');
-    box.appendChild(el('p', 'Dans leur ordre d’arrivée, et lui seul. Seules les pièces de la liste officielle sont demandées ; l’IA ne regarde que la complétude.', 'doux'));
+    box.appendChild(el('p', 'Dans leur ordre d’arrivée. Seules les pièces de la liste officielle sont demandées.', 'doux'));
     if (!chosen) box.appendChild(applyBlock(base));
     if (!apps.length) { box.appendChild(el('p', 'Aucune candidature pour le moment.', 'doux')); return box; }
     var ol = el('ol', null, 'dossiers');
@@ -757,7 +730,7 @@ globalThis.AIMMO_LOUER = function (t) {
   function leaseBlock(base, lease) {
     var box = section('Le bail');
     if (lease) {
-      box.appendChild(el('p', (lease.complete ? 'Bail en vigueur, complet' : 'Bail en vigueur, incomplet : complétez-le') + (lease.mode === 'essai' ? ' · document d’essai, sans valeur tant que les modèles ne sont pas validés.' : '.'), lease.complete ? 'fait' : 'alerte'));
+      box.appendChild(el('p', (lease.complete ? 'Bail en vigueur, complet' : 'Bail en vigueur, incomplet : complétez-le') + (lease.mode === 'essai' ? ' · document d’essai, sans valeur avant validation des modèles.' : '.'), lease.complete ? 'fait' : 'alerte'));
       var reading = el('div');
       box.appendChild(reading);
       var showLease = function (text) {
@@ -776,16 +749,18 @@ globalThis.AIMMO_LOUER = function (t) {
         });
       })));
       ['bailleur', 'locataire'].forEach(function (party) { box.appendChild(signBlock(base, lease, party)); });
-      if (lease.bailleur && lease.locataire) {
-        if (lease.copiesSent && lease.copiesSent.length === 2) box.appendChild(el('p', 'Un exemplaire préparé pour chacun (mode essai).', 'fait'));
+      (lease.colocataires || []).forEach(function (c, i) { if (ID.test(String(c.personId))) box.appendChild(signBlock(base, lease, 'colocataire', { personId: c.personId, signedAt: c.signedAt, n: i + 1 })); });
+      if (allSigned(lease)) {
+        if (lease.copiesSent && lease.copiesSent.length === 2 && (lease.cotenantCopiesSent || []).length === (lease.colocataires || []).length) box.appendChild(el('p', 'Un exemplaire préparé pour chacun (mode essai).', 'fait'));
         else box.appendChild(button('Préparer un exemplaire pour chacun', function () { louerAct(base + '/bail/exemplaires', undefined, 'Les exemplaires ne sont pas préparés.', 'Exemplaires préparés : ils partiront par le contrôle central, en mode essai.'); }));
       }
-    } else box.appendChild(el('p', 'Le bail se fait depuis le modèle validé du réseau, avec les faits, les honoraires et le dossier choisi.', 'doux'));
+    } else box.appendChild(el('p', 'Bail fait du modèle validé, des faits, des honoraires et du dossier choisi.', 'doux'));
     var n = ++louerSeq;
     var d = details(box, lease ? 'Refaire le bail (les signatures seront à refaire)' : 'Préparer le bail');
     var address = field(d, 'bail-adresse-' + n, 'Adresse du logement');
     var owner = field(d, 'bail-domicile-' + n, 'Domicile du bailleur');
     var habitat = select(d, 'bail-habitat-' + n, 'Type d’habitat', HABITATS, 'collectif');
+    var owner2 = select(d, 'bail-qualite-' + n, 'Le bailleur est', { '': 'À choisir', physique: 'Une personne', morale: 'Une société' }, '');
     var equipment = field(d, 'bail-equipements-' + n, 'Équipements du logement', 'textarea');
     equipment.setAttribute('rows', '3');
     equipment.setAttribute('maxlength', '400');
@@ -793,7 +768,7 @@ globalThis.AIMMO_LOUER = function (t) {
     var notice = piece(d, 'bail-notice-' + n, 'La notice d’information, en PDF', 'notice');
     [address, owner, card].forEach(function (x) { x.setAttribute('autocomplete', 'off'); });
     d.appendChild(button('Préparer le bail', once(function () {
-      var b = { habitat: habitat.value };
+      var b = { habitat: habitat.value, landlord: owner2.value };
       [['address', address], ['ownerAddress', owner], ['equipment', equipment], ['professionalCard', card]].forEach(function (x) { var v = String(x[1].value || '').trim(); if (v) b[x[0]] = v; });
       var joined = notice.picked() ? notice.ref(base) : Promise.resolve(undefined);
       return joined.then(function (ref) {
@@ -810,37 +785,41 @@ globalThis.AIMMO_LOUER = function (t) {
     return box;
   }
   // La signature d'une partie : son accord pour signer en ligne, le code reçu, et une trace facultative du doigt.
-  function signBlock(base, lease, party) {
+  // Le bail est signé quand le bailleur, le locataire et chaque colocataire l'ont signé (AU097).
+  function allSigned(l) { return !!(l.bailleur && l.locataire) && (l.colocataires || []).every(function (c) { return c.signedAt; }); }
+  function signBlock(base, lease, party, co) {
+    // AU097 · un colocataire signe le même bail, en son nom.
+    var name = co ? 'le colocataire ' + co.n : PARTY_NAMES[party], to = co ? 'au colocataire ' + co.n : PARTY_TO[party], of = co ? 'du colocataire ' + co.n : PARTY_OF[party], at = co ? co.signedAt : lease[party];
     var box = el('div', null, 'client');
-    box.appendChild(el('h4', party === 'bailleur' ? 'Signature du bailleur' : 'Signature du locataire'));
-    if (lease[party]) { box.appendChild(el('p', 'Signé le ' + date(lease[party]) + ' à ' + hour(lease[party]) + ' (essai).', 'fait')); return box; }
+    box.appendChild(el('h4', 'Signature ' + of));
+    if (at) { box.appendChild(el('p', 'Signé le ' + date(at) + ' à ' + hour(at) + ' (essai).', 'fait')); return box; }
     if (!lease.complete) { box.appendChild(el('p', 'À signer une fois le bail complet.', 'doux')); return box; }
     var n = ++louerSeq;
-    var key = lease.leaseId + ':' + party;
+    var key = lease.leaseId + ':' + party + (co ? ':' + co.personId : '');
     var s = signing[key];
     if (!s) {
-      var consent = field(box, 'accord-' + n, 'Comment ' + PARTY_NAMES[party] + ' a accepté de signer en ligne', 'textarea');
+      var consent = field(box, 'accord-' + n, 'Comment ' + name + ' a accepté de signer en ligne', 'textarea');
       consent.setAttribute('rows', '2');
       consent.setAttribute('maxlength', '300');
-      box.appendChild(button('Envoyer le code de signature ' + PARTY_TO[party], function () {
+      box.appendChild(button('Envoyer le code de signature ' + to, function () {
         var text = String(consent.value || '').trim();
         if (!text) { louerState(LOUER_REFUSALS.bad_consent); return; }
-        louerAct(base + '/bail/signatures', { party: party, consentProof: text }, 'Le code n’est pas envoyé.', '', true).then(function (r) {
+        louerAct(base + '/bail/signatures', co ? { party: party, personId: co.personId, consentProof: text } : { party: party, consentProof: text }, 'Le code n’est pas envoyé.', '', true).then(function (r) {
           if (!r || !ID.test(r.sessionId)) return;
           signing[key] = r.sessionId;
-          openLocation(louerId, $('louer-titre').textContent, 'Code préparé pour ' + PARTY_NAMES[party] + ' (mode essai) : saisissez-le quand il vous le dit.');
+          openLocation(louerId, $('louer-titre').textContent, 'Code préparé pour ' + name + ' (mode essai) : saisissez-le quand il vous le dit.');
         });
       }));
       return box;
     }
-    var code = field(box, 'code-' + n, 'Code reçu par ' + PARTY_NAMES[party]);
+    var code = field(box, 'code-' + n, 'Code reçu par ' + name);
     code.setAttribute('inputmode', 'numeric');
     code.setAttribute('maxlength', '6');
     code.setAttribute('autocomplete', 'one-time-code');
     var trace = pad(box, 'Trace de la signature, facultative');
     var resend = button('Renvoyer un code', function () { delete signing[key]; openLocation(louerId, $('louer-titre').textContent, 'Notez de nouveau l’accord, puis envoyez un nouveau code.'); });
     resend.className = 'secondaire';
-    box.appendChild(button('Signer pour ' + PARTY_NAMES[party], function () {
+    box.appendChild(button('Signer pour ' + name, function () {
       var b = { code: String(code.value || '').trim() };
       if (trace.value()) b.drawing = trace.value();
       louerAct('/v1/location/signatures-bail/' + encodeURIComponent(s), b, 'La signature n’est pas rangée.', 'Signature rangée (essai).', true).then(function (r) {
@@ -853,7 +832,7 @@ globalThis.AIMMO_LOUER = function (t) {
         }
         if (!r) return;
         delete signing[key];
-        openLocation(louerId, $('louer-titre').textContent, 'Signature ' + PARTY_OF[party] + ' rangée (essai).');
+        openLocation(louerId, $('louer-titre').textContent, 'Signature ' + of + ' rangée (essai).');
       });
     }));
     box.appendChild(resend);
@@ -956,4 +935,6 @@ globalThis.AIMMO_LOUER = function (t) {
   }
   return { open: openLouer, wipe: wipeLouer, forget: forgetLouer };
 };
-`.replace(/^[ \t]*(?:\/\/.*|\/\*.*\*\/)[ \t]*\n/gm, '');
+`.replace(/^[ \t]*(?:\/\/.*|\/\*.*\*\/)[ \t]*\n/gm, '')
+  // L'indentation ne sert qu'à lire la source : elle ne part pas au téléphone (R201). Aucune chaîne du script ne court sur deux lignes.
+  .replace(/^[ \t]+/gm, '');

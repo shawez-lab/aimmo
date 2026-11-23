@@ -12,3 +12,6 @@ export * from './demandes-personnes.ts';
 export * from './durees-prospects.ts';
 export * from './fuites.ts';
 export * from './dossier-lcb-agence.ts';
+export * from './effacement-reel.ts';
+export * from './dispositif-lcb.ts';
+export * from './mise-en-service.ts';

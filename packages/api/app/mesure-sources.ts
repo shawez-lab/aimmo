@@ -41,38 +41,13 @@ export const MESURE_SOURCES_ENTRY_HTML = `<section class="bloc" aria-labelledby=
 /** Le chargeur posé dans le script de l'application : l'écran est servi à part, chargé une fois, jamais gardé. */
 export const MESURE_SOURCES_JS = `
   /* ---------- La mesure des sources sur l'écran du réseau (G14), chargée au premier geste [R16, R144, R201]. ---------- */
-  var mesureTools = null, mesureLoading = false;
   function wipeMesureSources() {
     clear($('mesure-corps'));
     $('mesure-etat').textContent = '';
     $('mesure-mois').value = '';
   }
   function withMesureSources(act) {
-    if (!currentKey) return Promise.resolve(false);
-    if (mesureTools) return act(mesureTools);
-    if (mesureLoading) return Promise.resolve(false);
-    mesureLoading = true;
-    var mine = session;
-    $('mesure-etat').textContent = 'Chargement…';
-    return new Promise(function (resolve) {
-      var s = document.createElement('script');
-      s.setAttribute('src', '/app/mesure-sources.js');
-      s.addEventListener('load', function () {
-        mesureLoading = false;
-        var make = globalThis.AIMMO_MESURE_SOURCES;
-        try { delete globalThis.AIMMO_MESURE_SOURCES; } catch (e) { /* rien */ }
-        if (mine !== session) { resolve(false); return; }
-        if (typeof make !== 'function') { $('mesure-etat').textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        mesureTools = make({ $: $, el: el, clear: clear, send: send, button: button, field: field, details: details, date: date, key: function () { return currentKey; }, session: function () { return session; } });
-        resolve(act(mesureTools));
-      });
-      s.addEventListener('error', function () {
-        mesureLoading = false;
-        if (mine === session) $('mesure-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
-        resolve(false);
-      });
-      $('reseau').appendChild(s);
-    });
+    return withTool('mesure-sources', 'AIMMO_MESURE_SOURCES', 'mesure-etat', 'reseau', act, function () { return { $: $, el: el, clear: clear, send: send, button: button, field: field, details: details, date: date, key: function () { return currentKey; }, session: function () { return session; } }; });
   }
 `;
 

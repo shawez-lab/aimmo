@@ -215,7 +215,7 @@ describeWithSqlite('BR100 · la création à la voix par l’API', () => {
     expect(doc).toContain('`POST /lecture`');
     expect(doc).toContain('`POST /validation`');
     const app = readFileSync(new URL('../src/app.ts', import.meta.url), 'utf8');
-    expect(app).toContain('...dicteeRoutesDef(config.reportWriter ?? null),');
+    expect(app).toContain('...dicteeRoutesDef(config.reportWriter ?? null, config.agendas ?? null),');
     expect(dicteeRoutes().map((r) => r.name)).toEqual(['dictee.lecture', 'dictee.validation']);
   });
 });
@@ -292,7 +292,7 @@ describeWithSqlite('BR103 · la dictée en sortant d’une visite, par les route
 
   it('[R16] l’IA du compte rendu de la configuration passe à la dictée comme à l’écran de la visite', () => {
     const app = readFileSync(new URL('../src/app.ts', import.meta.url), 'utf8');
-    expect(app).toContain('...dicteeRoutesDef(config.reportWriter ?? null),');
+    expect(app).toContain('...dicteeRoutesDef(config.reportWriter ?? null, config.agendas ?? null),');
     expect(app).toContain('...(config.reportWriter ? { reportWriter: config.reportWriter } : {})');
   });
 });

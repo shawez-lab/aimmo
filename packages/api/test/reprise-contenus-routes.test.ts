@@ -71,8 +71,8 @@ async function setup(withFiles = true) {
     if (!r.ok) throw new Error(r.code);
   }
   const base = [
-    { sha256: await sha256Hex(KEYS.direction), networkId: network.id, role: 'direction', userId: 'direction-1' },
-    { sha256: await sha256Hex(KEYS.agent), networkId: network.id, role: 'agent', userId: agentId },
+    { sha256: await sha256Hex(KEYS.direction), expiresOn: "2099-12-31", networkId: network.id, role: 'direction', userId: 'direction-1' },
+    { sha256: await sha256Hex(KEYS.agent), expiresOn: "2099-12-31", networkId: network.id, role: 'agent', userId: agentId },
   ];
   const media = new FakeBucket();
   const pieces = new FakeBucket();
@@ -92,9 +92,9 @@ async function setup(withFiles = true) {
   await store.createAgent({ networkId: pres.licenseeNetworkId, firstName: 'Pia', lastName: 'Prés' });
   config.apiKeys = JSON.stringify([
     ...base,
-    { sha256: await sha256Hex(KEYS.agence), networkId: lac.licenseeNetworkId, role: 'direction', userId: 'direction-lac' },
-    { sha256: await sha256Hex(KEYS.agenceAgent), networkId: lac.licenseeNetworkId, role: 'agent', userId: lacAgent },
-    { sha256: await sha256Hex(KEYS.autre), networkId: pres.licenseeNetworkId, role: 'direction', userId: 'direction-pres' },
+    { sha256: await sha256Hex(KEYS.agence), expiresOn: "2099-12-31", networkId: lac.licenseeNetworkId, role: 'direction', userId: 'direction-lac' },
+    { sha256: await sha256Hex(KEYS.agenceAgent), expiresOn: "2099-12-31", networkId: lac.licenseeNetworkId, role: 'agent', userId: lacAgent },
+    { sha256: await sha256Hex(KEYS.autre), expiresOn: "2099-12-31", networkId: pres.licenseeNetworkId, role: 'direction', userId: 'direction-pres' },
   ]);
   const enroll = async (who: Who, seed: number) => {
     const device = await FakeAuthenticator.create(seed);

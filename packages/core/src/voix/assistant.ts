@@ -44,7 +44,11 @@ import type { ReservationEnLigne } from '../rendezvous/en-ligne.ts';
 import { appointmentWhen } from '../rendezvous/reservation.ts';
 import type { Appels, CallView } from './appels.ts';
 
-export const FORWARD_REASONS = ['no_answer', 'busy', 'unreachable'] as const;
+/**
+ * Le motif du renvoi. `conditional` (AU045) : un renvoi conditionnel réglé chez l'opérateur de l'agent (non-réponse,
+ * occupation, absence de réseau), dont le service téléphonique ne transmet pas le motif précis [R246, R710].
+ */
+export const FORWARD_REASONS = ['no_answer', 'busy', 'unreachable', 'conditional'] as const;
 export type ForwardReason = (typeof FORWARD_REASONS)[number];
 
 /** Un appel renvoyé vers l'assistant, tel que le service téléphonique le décrit en le décrochant. */
@@ -190,7 +194,7 @@ export function propertyFacts(p: Pick<Property, 'city' | 'surface_m2' | 'rooms' 
   }
   const e = sheet?.energy;
   if (e) {
-    f.energie = `La classe énergie est ${e.energyClass} et la classe climat ${e.climateClass}. Les dépenses d’énergie sont estimées entre ${spoken(e.annualCostMinEur)} et ${spoken(e.annualCostMaxEur)} € par an, aux prix de ${e.costReferenceYear}.`;
+    f.energie = `La classe énergie est ${e.energyClass} et la classe climat ${e.climateClass}. Les dépenses d’énergie sont estimées entre ${spoken(e.annualCostMinEur)} et ${spoken(e.annualCostMaxEur)} € par an, aux prix ${e.costReferenceYears && e.costReferenceYears.length > 1 ? `des années ${e.costReferenceYears[0]} à ${e.costReferenceYears.at(-1)}` : `de ${e.costReferenceYear}`}.`;
   }
   const co = sheet?.coownership;
   if (co) {
@@ -501,25 +505,25 @@ export class AssistantVocal {
       [state.networkId, state.provider, state.callId],
     );
     if (existing) {
+      let call = existing.call_row_id ? await this.appels.get(state.networkId, existing.call_row_id) : null;
+      // Un passage de main rangé alors que HX21 n'avait pas fini l'appel : HX21 est repris, jamais laissé en plan [R18].
+      if (existing.call_row_id && call === null) {
+        const again = await this.appels.receive(state.networkId, this.callOf(state, end));
+        if (!again.ok || again.status === 'en_cours') throw new Error('Appel encore en cours de rangement : passage de main à refaire.');
+        call = await this.appels.get(state.networkId, existing.call_row_id);
+      }
       return {
-        call: existing.call_row_id ? await this.appels.get(state.networkId, existing.call_row_id) : null,
+        call,
         appointment: existing.appointment_kind && existing.appointment_start ? { kind: existing.appointment_kind, start: existing.appointment_start } : null,
         unanswered: existing.unanswered ? (JSON.parse(existing.unanswered) as Topic[]) : [],
         stop: stopWanted,
         already: true,
       };
     }
-    const received = await this.appels.receive(state.networkId, {
-      provider: state.provider,
-      callId: state.callId,
-      from: state.from,
-      startedAt: new Date(state.startedAt),
-      endedAt: end.endedAt,
-      announcedAt: new Date(state.announcedAt),
-      consentAt: state.consentAt ? new Date(state.consentAt) : null,
-      recordingRef: state.consentAt ? end.recordingRef : null,
-      originCode: state.originCode,
-    });
+    const received = await this.appels.receive(state.networkId, this.callOf(state, end));
+    // Une autre livraison range encore l'appel (HX21) : aucun passage de main n'est rangé avant lui, tout reste à
+    // refaire, pour que HX21 soit repris à la livraison suivante [R18].
+    if (received.ok && received.status === 'en_cours') throw new Error('Appel encore en cours de rangement : passage de main à refaire.');
     const callRowId = received.ok ? received.callId : null;
     // L'arrêt est rangé avant le passage de main : une coupure entre les deux, la livraison suivante le refait sans le
     // doubler [R04, R18]. Tant qu'une autre livraison range encore l'appel, rien n'est rangé ici : à refaire.
@@ -550,6 +554,21 @@ export class AssistantVocal {
       unanswered,
       stop: stopWanted,
       already: false,
+    };
+  }
+
+  /** L'appel tel que HX21 le range. */
+  private callOf(state: AssistantState, end: { endedAt: Date; recordingRef: string | null }) {
+    return {
+      provider: state.provider,
+      callId: state.callId,
+      from: state.from,
+      startedAt: new Date(state.startedAt),
+      endedAt: end.endedAt,
+      announcedAt: new Date(state.announcedAt),
+      consentAt: state.consentAt ? new Date(state.consentAt) : null,
+      recordingRef: state.consentAt ? end.recordingRef : null,
+      originCode: state.originCode,
     };
   }
 
@@ -604,7 +623,7 @@ export class AssistantVocal {
       source: 'assistant',
       phone: state.from,
       propertyId: state.propertyId,
-      consentProof: `rendez-vous demandé de vive voix à l'assistant vocal, appel ${state.provider}/${state.callId}`,
+      consentProof: bookingProofOf(state.provider, state.callId),
     });
     if (result.ok) {
       state.booked = { kind: state.kind, start };
@@ -666,6 +685,14 @@ export interface HandoffView {
 }
 
 const MAX_MOVES = 50;
+/**
+ * La preuve de l'accord écrite avec le rendez-vous pris pendant un appel : elle finit par la référence propre à cet
+ * appel, ce qui permet de retrouver le rendez-vous de cet appel-là, et d'aucun autre [R248, R03].
+ */
+export function bookingProofOf(provider: string, callId: string): string {
+  return `rendez-vous demandé de vive voix à l'assistant vocal, appel ${provider}/${callId}`;
+}
+
 const APPOINTMENT_STATES: Record<string, HandoffAppointmentState> = { booked: 'prevu', cancelled: 'annule', honored: 'tenu', absent: 'absent' };
 
 /**

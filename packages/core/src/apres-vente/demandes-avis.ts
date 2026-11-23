@@ -19,7 +19,7 @@
  *   et l'agent reçoit une tâche « demande d'avis non partie » par dossier, pour la faire lui-même ;
  * - les dossiers les plus anciens passent d'abord, pour que le plafond du jour [R11] ne laisse personne derrière ;
  * - une demande refusée pour l'heure attend le passage suivant [R01, R11] ; refusée pour le plafond du jour, elle attend
- *   le lendemain [R11] ; toute autre règle, un proche de l'agent compris, la refuse pour de bon, avec sa raison ;
+ *   le lendemain [R11], et le délai ne la close jamais : elle part à son tour, même après 7 jours (AU087) ; toute autre règle, un proche de l'agent compris, la refuse pour de bon, avec sa raison ;
  * - deux fiches réunies d'un même client ne reçoivent qu'une demande par dossier.
  */
 import type { Viewer } from '../acces/droits.ts';
@@ -225,7 +225,12 @@ export class DemandesAvis {
     // Les dossiers les plus anciens d'abord : le plafond du jour ne laisse jamais un client derrière les suivants [R11, R64].
     // Trois jours de plus que le délai : un dossier qui vient d'en sortir est clos avec ses clients sous les yeux, même
     // après un dimanche sans passage.
-    const sales = [...(await this.dossiers.closedBetween(networkId, addDays(today, -REVIEW_WINDOW_DAYS - 3), addDays(today, -1)))].sort(
+    // AU087 · une demande retenue par le seul plafond du jour [R11] n'expire pas : son dossier reste lu jusqu'à ce qu'elle
+    // parte (ou soit refusée pour une autre règle).
+    const capped = await this.db.first<{ d: string | null }>("SELECT MIN(due_day) AS d FROM review_requests WHERE network_id = ? AND status = 'waiting' AND next_try_day IS NOT NULL", [networkId]);
+    const usual = addDays(today, -REVIEW_WINDOW_DAYS - 3);
+    const from = capped?.d && addDays(capped.d, -1) < usual ? addDays(capped.d, -1) : usual;
+    const sales = [...(await this.dossiers.closedBetween(networkId, from, addDays(today, -1)))].sort(
       (a, b) => a.closedOn.localeCompare(b.closedOn) || a.fileId.localeCompare(b.fileId),
     );
     let sent = 0;
@@ -243,7 +248,8 @@ export class DemandesAvis {
       }
       if (dueDay < deadline) {
         await this.expire(networkId, sale.fileId, seen);
-        continue;
+        // Seules restent les demandes retenues par le plafond du jour : elles partent à leur tour.
+        if (!(await this.db.first("SELECT 1 FROM review_requests WHERE file_id = ? AND status = 'waiting' AND next_try_day IS NOT NULL", [sale.fileId]))) continue;
       }
       // Une demande en attente d'une fiche réunie depuis à une autre reste en attente, sans partir : la demande part sous
       // la fiche gardée ; si la réunion est défaite dans le délai, elle repart d'elle-même.
@@ -297,9 +303,12 @@ export class DemandesAvis {
           status = 'waiting';
         } else status = 'refused';
         const rule = result.status === 'sent' ? null : result.rule;
+        // Une demande déjà retenue par le plafond le reste pour le délai : `next_try_day` ne redevient jamais nul tant
+        // qu'elle attend, pour qu'aucun délai ne la close à cause du seul plafond (AU087).
+        const keepCapped = status === 'waiting' && nextTry === null && row.next_try_day !== null ? today : nextTry;
         await this.db.run(
           "UPDATE review_requests SET status = ?, rule = ?, next_try_day = ?, message_id = COALESCE(?, message_id), updated_at = ? WHERE file_id = ? AND person_id = ? AND status IN ('waiting', 'failed')",
-          [status, rule, nextTry, result.messageId, this.now().toISOString(), sale.fileId, c.personId],
+          [status, rule, keepCapped, result.messageId, this.now().toISOString(), sale.fileId, c.personId],
         );
         await appendEvent(this.journal, { type: 'apres_vente.demande_avis', actor: 'system:apres-vente', subject: `sale_file:${sale.fileId}`, data: { mode: 'essai', side: c.side, client: `person:${c.personId}`, status, rule } }, this.now);
         if (status === 'sent') sent += 1;
@@ -321,14 +330,16 @@ export class DemandesAvis {
    */
   private async expire(networkId: string, fileId: string, clients: ReadonlySet<string> | null): Promise<void> {
     const at = this.now().toISOString();
-    const rows = await this.db.all<{ person_id: string; agent_id: string; side: string }>(
-      "SELECT person_id, agent_id, side FROM review_requests WHERE file_id = ? AND status IN ('waiting', 'failed') ORDER BY person_id",
+    const rows = await this.db.all<{ person_id: string; agent_id: string; side: string; capped: number }>(
+      "SELECT person_id, agent_id, side, CASE WHEN status = 'waiting' AND next_try_day IS NOT NULL THEN 1 ELSE 0 END AS capped FROM review_requests WHERE file_id = ? AND status IN ('waiting', 'failed') ORDER BY person_id",
       [fileId],
     );
     for (const r of rows) {
       const root = await this.unique.rootOf(r.person_id);
       const merged = root !== r.person_id && !!(await this.db.first("SELECT 1 AS x FROM review_requests WHERE file_id = ? AND person_id = ? AND status = 'sent'", [fileId, root]));
       const reason = merged ? 'fiche_reunie' : clients && !clients.has(root) ? 'plus_client' : 'delai_depasse';
+      // Jamais close pour le seul délai une demande retenue par le plafond du jour : elle partira à son tour (AU087).
+      if (reason === 'delai_depasse' && Number(r.capped) === 1) continue;
       const { changes } = await this.db.run("UPDATE review_requests SET status = 'closed', rule = ?, updated_at = ? WHERE file_id = ? AND person_id = ? AND status IN ('waiting', 'failed')", [reason, at, fileId, r.person_id]);
       if (changes !== 1) continue;
       await appendEvent(this.journal, { type: 'apres_vente.demande_avis', actor: 'system:apres-vente', subject: `sale_file:${fileId}`, data: { mode: 'essai', side: r.side, client: `person:${r.person_id}`, status: 'closed', rule: reason } }, this.now);

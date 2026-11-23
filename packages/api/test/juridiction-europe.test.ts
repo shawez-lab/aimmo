@@ -2,14 +2,15 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 // @ts-expect-error script du dépôt, sans déclaration de types
-import { checkConfig, checkD1, D1_PLACEHOLDER } from '../../../scripts/juridiction-europe.mjs';
+import { checkConfig, checkD1, D1_PLACEHOLDER, SANDBOX_D1_PLACEHOLDER } from '../../../scripts/juridiction-europe.mjs';
 // @ts-expect-error script du dépôt, sans déclaration de types
 import { withBindings } from '../../../scripts/liaisons-r2.mjs';
 
 const REPO_TOML = readFileSync(fileURLToPath(new URL('../wrangler.toml', import.meta.url)), 'utf8');
 const ID = 'ea390265-0000-4000-8000-000000000001';
-const filled = REPO_TOML.replace(D1_PLACEHOLDER, ID);
-const list = (over: Record<string, unknown> = {}) => JSON.stringify([{ uuid: ID, name: 'aimmo', jurisdiction: 'eu', ...over }]);
+const SANDBOX_ID = 'ea390265-0000-4000-8000-0000000000b5';
+const filled = REPO_TOML.replace(D1_PLACEHOLDER, ID).replace(SANDBOX_D1_PLACEHOLDER, SANDBOX_ID);
+const list = (over: Record<string, unknown> = {}) => JSON.stringify([{ uuid: ID, name: 'aimmo', jurisdiction: 'eu', ...over }, { uuid: SANDBOX_ID, name: 'aimmo-bac-a-sable', jurisdiction: 'eu' }]);
 
 describe('HX56 · données en Europe', () => {
   it('[R602] la configuration du dépôt ne sort pas d’Europe', () => {
@@ -21,7 +22,17 @@ describe('HX56 · données en Europe', () => {
     expect(checkD1(filled, list({ jurisdiction: null }))).toEqual(['base D1 aimmo hors de la juridiction Europe (juridiction : aucune) [R602]']);
     expect(checkD1(filled, list({ jurisdiction: 'fedramp' }))[0]).toContain('hors de la juridiction Europe');
     // Champ absent : rien ne passe dans le doute.
-    expect(checkD1(filled, JSON.stringify([{ uuid: ID, name: 'aimmo' }]))).toHaveLength(1);
+    expect(checkD1(filled, JSON.stringify([{ uuid: ID, name: 'aimmo' }, { uuid: SANDBOX_ID, name: 'aimmo-bac-a-sable', jurisdiction: 'eu' }]))).toHaveLength(1);
+  });
+
+  it('[R602] [R82] AU025 : la base des bacs à sable est en Europe, remplie, et jamais la base du réseau', () => {
+    expect(checkD1(filled, JSON.stringify([{ uuid: ID, name: 'aimmo', jurisdiction: 'eu' }, { uuid: SANDBOX_ID, name: 'aimmo-bac-a-sable', jurisdiction: null }]))).toEqual(['base D1 aimmo-bac-a-sable hors de la juridiction Europe (juridiction : aucune) [R602]']);
+    expect(checkD1(REPO_TOML.replace(D1_PLACEHOLDER, ID), list())).toEqual(['base D1 aimmo-bac-a-sable sans identifiant rempli [R602]']);
+    // Le gabarit de la base du réseau ne remplit jamais celui du bac à sable.
+    expect(REPO_TOML.replace(D1_PLACEHOLDER, ID)).toContain(SANDBOX_D1_PLACEHOLDER);
+    // Les deux liaisons sur la même base : refusé.
+    const same = REPO_TOML.replace(D1_PLACEHOLDER, ID).replace(SANDBOX_D1_PLACEHOLDER, ID);
+    expect(checkD1(same, list())).toEqual(['base D1 aimmo-bac-a-sable liée deux fois (ea390265-0000-4000-8000-000000000001) [R602]']);
   });
 
   it('[R602] une base introuvable, renommée, sans identifiant ou une liste illisible échouent aussi', () => {

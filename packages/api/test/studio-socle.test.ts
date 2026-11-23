@@ -10,6 +10,7 @@ import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 import { identiteAuCoffre } from '../../core/test/identite-coffre.ts';
 import { designerTout } from '../../core/test/designation-jeu.ts';
+import { rangerStatut } from '../../core/test/statut-agent-jeu.ts';
 
 // Réseau, agents, biens, photos, empreintes et clés inventés.
 const BASE = 'https://aimmo-api.example.test';
@@ -41,11 +42,12 @@ async function setup(opts: { files?: boolean; extra?: Record<string, unknown> } 
   await new RegistreMandats(db, journal, { now }).configure(direction, { prefix: 'T-', firstNumber: 1, width: 3 });
   // La carte professionnelle du réseau, inventée : les mentions obligatoires sont complètes [R43].
   await new MentionsAnnonce(db, acces, journal, { now }).setCardNumber(direction, 'CPI 0000 2027 000 000 001');
+  await rangerStatut(db, journal, now, direction as Viewer, [alex]);
   const property = async (i: number, withMandate = true) => {
     const p = (await store.createProperty({ networkId: network, agentId: alex, reference: `STU-${i}`, kind: 'home', city: 'Villebrune', priceEur: 150_000 + i * 1000, surfaceM2: 45, rooms: 2, status: 'available' })).id;
     const photos = VIEWS.map((_, k) => `biens/${p}/${uuid(i * 10 + k)}.jpg`);
     for (const [k, ref] of photos.entries()) stored.add(ref).add(`biens/${p}/originaux/${uuid(i * 10 + k, '00000000000a')}.jpg`);
-    const sheet = { characteristics: { bedrooms: 1, floor: null, floorsTotal: null, buildYear: null, heating: null, outdoor: [], landM2: null, parkingSpaces: 0, elevator: null }, energy: { energyClass: 'C', climateClass: 'C', annualCostMinEur: 800, annualCostMaxEur: 1100, costReferenceYear: 2025 }, coownership: { isCoownership: false }, risks: { inRiskZone: false }, media: photos.map((ref) => ({ ref, kind: 'photo', edit: 'lumiere_cadrage' })) };
+    const sheet = { characteristics: { bedrooms: 1, floor: null, floorsTotal: null, buildYear: null, heating: null, outdoor: [], landM2: null, parkingSpaces: 0, elevator: null }, energy: { energyClass: 'C', climateClass: 'C', annualCostMinEur: 800, annualCostMaxEur: 1100, costReferenceYear: 2025, diagnosedOn: '2027-01-15' }, coownership: { isCoownership: false }, risks: { inRiskZone: false }, media: photos.map((ref) => ({ ref, kind: 'photo', edit: 'lumiere_cadrage' })) };
     await db.run("INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, 1, ?, 'agent:a', '2027-10-01')", [`s-${i}`, p, network, JSON.stringify(sheet)]);
     if (withMandate) {
       const seller = (await store.createPerson({ networkId: network, agentId: alex, firstName: 'Léa', lastName: `Vendeuse${i}` })).id;

@@ -18,10 +18,10 @@ const no = (status: number, body: unknown): Answer => async () => Response.json(
 const BASE = '/v1/marketing/publicite/campagnes';
 
 // Des chiffres impossibles à retrouver par un calcul : l'écran montre ceux du serveur, tels quels.
-const C_RUN = { id: 'cmp-1', platform: 'meta', name: 'Vendeurs du centre', state: 'en_cours', stopReason: null, spendCents: 123456, contacts: 7, mandates: 2, sales: 1, costPerContactCents: 11111, costPerMandateCents: 22222, costPerSaleCents: 33333, maxCostPerContactCents: 4000 };
-const C_NEW = { id: 'cmp-2', platform: 'google_ads', name: INJECTED, state: 'a_valider', stopReason: null, spendCents: 0, contacts: 0, mandates: 0, sales: 0, costPerContactCents: null, costPerMandateCents: null, costPerSaleCents: null, maxCostPerContactCents: null };
+const C_RUN = { id: 'cmp-1', platform: 'meta', name: 'Vendeurs du centre', state: 'en_cours', stopReason: null, spendCents: 123456, contacts: 7, mandates: 2, sales: 1, costPerContactCents: 11111, costPerMandateCents: 22222, costPerSaleCents: 33333, maxCostPerContactCents: 4000, mode: 'reel', failure: { step: 'depense', code: 'reconnecter', action: 'reconnecter' }, pendingArrivals: 3 };
+const C_NEW = { id: 'cmp-2', platform: 'google_ads', name: INJECTED, state: 'a_valider', stopReason: null, spendCents: 0, contacts: 0, mandates: 0, sales: 0, costPerContactCents: null, costPerMandateCents: null, costPerSaleCents: null, maxCostPerContactCents: null, mode: null, failure: null, pendingArrivals: 0 };
 const C_OK = { ...C_NEW, id: 'cmp-3', name: 'Maisons de l’est', state: 'validee', maxCostPerContactCents: 2500 };
-const C_STOP = { ...C_RUN, id: 'cmp-4', name: 'Appartements', state: 'arretee', stopReason: 'seuil' };
+const C_STOP = { ...C_RUN, id: 'cmp-4', name: 'Appartements', state: 'arretee', stopReason: 'seuil', mode: 'essai', failure: null, pendingArrivals: 0 };
 const C_BAD = { ...C_OK, id: '../x', name: 'Identifiant tordu' };
 const LIST = [C_RUN, C_NEW, C_OK, C_STOP, C_BAD];
 
@@ -161,7 +161,13 @@ describe('BR110 · la publicité payante à l’écran de la direction', () => {
     expect(x).toContain('Coût par mandat222,22 €');
     expect(x).toContain('Coût par acte333,33 €');
     expect(x).toContain('Seuil par contact40,00 €');
-    expect(x).toContain('En cours, en mode essai : rien n’est payé.');
+    expect(x).toContain('En cours.');
+    // AU038 : le mode lu dans l'accusé, le dernier échec en mots avec son geste, les demandes à rattacher.
+    expect(x).toContain('Mode réel : la plateforme dépense, dans les budgets validés et sous le plafond.');
+    expect(x).toContain('Mode essai : rien n’est payé.');
+    expect(x).toContain('À la lecture de la dépense : La connexion au compte publicitaire a expiré : reconnectez le compte du réseau.');
+    expect(x).toContain('Demandes pas encore rattachées à une fiche3');
+    expect(x.split(/[^a-z_]+/i)).not.toContain('reconnecter');
     expect(x).toContain('À valider : rien ne se dépense avant la validation de ses budgets.');
     expect(x).toContain('Validée, pas encore lancée.');
     expect(x).toContain('Arrêtée au seuil de coût par contact.');
@@ -265,7 +271,7 @@ describe('BR110 · la publicité payante à l’écran de la direction', () => {
     await t.click(t.button('Lancer'));
     await t.click(t.button('Confirmer : lancer'));
     expect(t.posts()).toEqual([{ method: 'POST', url: `${BASE}/cmp-3/lancement`, body: null, auth: `Bearer ${KEY}` }]);
-    expect(t.status()).toBe('Campagne lancée, en mode essai : rien n’est payé.');
+    expect(t.status()).toBe('Campagne lancée : son mode et l’accusé de la plateforme se lisent dans la liste.');
     await t.click(t.button('Arrêter'));
     await t.click(t.button('Confirmer : arrêter'));
     expect(t.posts()[1]).toEqual({ method: 'POST', url: `${BASE}/cmp-1/arret`, body: null, auth: `Bearer ${KEY}` });

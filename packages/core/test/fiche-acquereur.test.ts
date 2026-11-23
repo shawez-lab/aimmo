@@ -57,7 +57,7 @@ describeWithSqlite('T01 · fiche acquéreur', () => {
     // Rien que le message ne dit : ni surface, ni chambres.
     expect(fiche!.search.surfaceMinM2).toBeNull();
     expect(fiche!.search.bedroomsMin).toBeNull();
-    const filled = Object.entries(fiche!.search).filter(([, v]) => v !== null && !(Array.isArray(v) && v.length === 0)).map(([k]) => k);
+    const filled = Object.entries(fiche!.search).filter(([, v]) => v !== null && v !== false && !(Array.isArray(v) && v.length === 0)).map(([k]) => k);
     expect(Object.keys(fiche!.sources).sort()).toEqual(filled.sort());
     for (const source of Object.values(fiche!.sources)) expect(source).toBe(`message:${q.inbound_id}`);
     expect(fiche!.origin).toBe(`qualification:${q.id}`);

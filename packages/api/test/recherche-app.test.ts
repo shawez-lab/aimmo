@@ -6,6 +6,7 @@ import { REFUSAL_REASONS } from '../../core/src/recherche/langage-courant.ts';
 import { BIENS_FICHE_SCRIPT } from '../app/biens-fiche.ts';
 import { RECHERCHE_FEATURE_LABELS, RECHERCHE_LOST, RECHERCHE_REFUSAL_LABELS, RECHERCHE_REFUSALS, RECHERCHE_SCRIPT } from '../app/recherche.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
+import { SECTEUR_CARTE_SCRIPT } from '../app/secteur-carte.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
 
 // Tout est inventé : fiche, projets, biens, phrase, clé de test.
@@ -128,7 +129,7 @@ async function opened(options: { projects?: unknown[]; answers?: Record<string, 
     const d = section()!.all().find((e) => e.tagName === 'details' && e.children.includes(b))!;
     return d.children.filter((e) => e.tagName === 'select');
   };
-  return { calls, callsBefore, table, body, section, scripts, open, click, phrase, search, status, posts, selectsOf, named };
+  return { calls, callsBefore, table, body, section, scripts, open, click, phrase, search, status, posts, selectsOf, named, context };
 }
 
 describe('BR40 · la recherche en langage courant depuis la fiche de l’acquéreur', () => {
@@ -311,5 +312,270 @@ describe('BR40 · la recherche en langage courant depuis la fiche de l’acquér
     const text = t.section()!.textContent;
     expect(text).toContain('Réf. R-009');
     expect(text).not.toContain('Réf. R-002');
+  });
+});
+
+describe('AU073 · le secteur de la recherche depuis la fiche de l’acquéreur', () => {
+  it('un rayon autour d’un lieu dit part au serveur, qui le géocode ; « aucun » le retire ; un refus est dit', async () => {
+    const base = `/v1/acquereurs/projets/${BUY.id}/secteur`;
+    const t = await opened({
+      answers: {
+        [`GET ${base}`]: ok(null),
+        [`POST ${base}`]: async () => Response.json({ ok: true, mode: 'essai', data: { shape: 'cercle', center: { lat: 47.3, lon: 5.0 }, radiusM: 1500, label: 'Autour de la gare' } }),
+      },
+    });
+    const area = () => t.body.all().find((e) => e.tagName === 'section' && e.children[0]?.textContent === 'Secteur de la recherche')!;
+    expect(area().textContent).toContain('Aucun secteur : les communes de la recherche suffisent.');
+    const input = (label: string) => {
+      const l = area().all().find((e) => e.tagName === 'label' && e.textContent === label)!;
+      return area().all().find((e) => (e.tagName === 'input') && e.attributes.id === l.attributes.for)!;
+    };
+    input('Lieu précis (adresse, gare, école…)').value = 'Gare de Dijon';
+    input('Rayon, en km').value = '1,5';
+    input('Nom du secteur, pour vous').value = 'Autour de la gare';
+    t.named(area(), 'Ranger le secteur')[0]!.listeners.click!({});
+    await tick();
+    expect(t.posts().at(-1)).toMatchObject({ url: base, body: { shape: 'cercle', place: 'Gare de Dijon', radiusM: 1500, label: 'Autour de la gare' } });
+    expect(area().textContent).toContain('Secteur « Autour de la gare » : 1,5 km autour du lieu dit.');
+    input('Rayon, en km').value = '80';
+    t.named(area(), 'Ranger le secteur')[0]!.listeners.click!({});
+    await tick();
+    expect(area().textContent).toContain('Le rayon : de 0,1 à 50 km.');
+    t.table[`POST ${base}`] = ok(null);
+    t.named(area(), 'Retirer le secteur')[0]!.listeners.click!({});
+    await tick();
+    expect(t.posts().at(-1)).toMatchObject({ url: base, body: { shape: 'aucun' } });
+    expect(area().textContent).toContain('Aucun secteur');
+  });
+
+  it('deux projets d’achat : le secteur lu, rangé et retiré est celui du projet choisi', async () => {
+    const other = { ...BUY, id: 'projet-achat-2' };
+    const first = `/v1/acquereurs/projets/${BUY.id}/secteur`;
+    const second = `/v1/acquereurs/projets/${other.id}/secteur`;
+    const t = await opened({
+      projects: [BUY, other],
+      answers: { [`GET ${first}`]: ok(null), [`GET ${second}`]: ok({ shape: 'polygone', points: [], label: 'Le plateau' }), [`POST ${second}`]: ok(null) },
+    });
+    const area = () => t.body.all().find((e) => e.tagName === 'section' && e.children[0]?.textContent === 'Secteur de la recherche')!;
+    expect(area().textContent).toContain('Aucun secteur');
+    const pick = area().all().find((e) => e.tagName === 'select' && (e.attributes.id ?? '').endsWith('-projet'))!;
+    pick.value = other.id;
+    pick.listeners.change!({});
+    await tick();
+    expect(area().textContent).toContain('Secteur « Le plateau » dessiné.');
+    t.named(area(), 'Retirer le secteur')[0]!.listeners.click!({});
+    await tick();
+    expect(t.posts().at(-1)).toMatchObject({ url: second, body: { shape: 'aucun' } });
+    expect(t.posts().some((x) => x.url === first)).toBe(false);
+  });
+
+  it('une réponse du projet quitté ne s’affiche pas sous le projet choisi ensuite', async () => {
+    const other = { ...BUY, id: 'projet-achat-2' };
+    const first = `/v1/acquereurs/projets/${BUY.id}/secteur`;
+    const second = `/v1/acquereurs/projets/${other.id}/secteur`;
+    let release: (r: Response) => void = () => {};
+    const t = await opened({
+      projects: [BUY, other],
+      answers: { [`GET ${first}`]: ok({ shape: 'polygone', points: [], label: 'Le centre' }), [`GET ${second}`]: ok({ shape: 'polygone', points: [], label: 'Le plateau' }), [`POST ${first}`]: () => new Promise<Response>((r) => { release = r; }) },
+    });
+    const area = () => t.body.all().find((e) => e.tagName === 'section' && e.children[0]?.textContent === 'Secteur de la recherche')!;
+    t.named(area(), 'Retirer le secteur')[0]!.listeners.click!({});
+    const pick = area().all().find((e) => e.tagName === 'select' && (e.attributes.id ?? '').endsWith('-projet'))!;
+    pick.value = other.id;
+    pick.listeners.change!({});
+    await tick();
+    release(Response.json({ ok: true, mode: 'essai', data: null }));
+    await tick();
+    expect(area().textContent).toContain('Secteur « Le plateau » dessiné.');
+    expect(area().textContent).not.toContain('Secteur rangé.');
+  });
+
+  it('le secteur en place non lu est dit, avec Réessayer ; rien ne se range sans l’avoir lu', async () => {
+    const base = `/v1/acquereurs/projets/${BUY.id}/secteur`;
+    const t = await opened({ answers: { [`GET ${base}`]: no(500, { ok: false }) } });
+    const area = () => t.body.all().find((e) => e.tagName === 'section' && e.children[0]?.textContent === 'Secteur de la recherche')!;
+    expect(area().textContent).toContain('Le secteur en place n’a pas pu être lu.');
+    t.named(area(), 'Ranger le secteur')[0]!.listeners.click!({});
+    await tick();
+    expect(area().textContent).toContain('Le secteur en place n’est pas lu : réessayez de le lire d’abord.');
+    expect(t.posts().filter((x) => x.url === base)).toEqual([]);
+    t.table[`GET ${base}`] = ok({ shape: 'polygone', points: [], label: 'Le plateau' });
+    t.named(area(), 'Réessayer de lire le secteur')[0]!.listeners.click!({});
+    await tick();
+    expect(area().textContent).toContain('Secteur « Le plateau » dessiné.');
+    expect(t.named(area(), 'Réessayer de lire le secteur')).toEqual([]);
+  });
+});
+
+describe('AU073b · dessiner le secteur au doigt, sur une carte', () => {
+  const base = `/v1/acquereurs/projets/${BUY.id}/secteur`;
+  const CENTER = { lat: 47.3233, lon: 5.0272 };
+  async function drawn(answers: Record<string, Answer> = {}) {
+    const t = await opened({ answers: { [`GET ${base}`]: ok(null), [`GET ${base}/lieu?q=Gare%20de%20Dijon`]: ok(CENTER), ...answers } });
+    const area = () => t.body.all().find((e) => e.tagName === 'section' && e.children[0]?.textContent === 'Secteur de la recherche')!;
+    const carte = () => area().all().filter((e) => e.tagName === 'script' && e.attributes.src === '/app/secteur-carte.js');
+    expect(carte()).toEqual([]);
+    const before = t.calls.length;
+    t.named(area(), 'Dessiner sur la carte')[0]!.listeners.click!({});
+    await tick();
+    runInNewContext(SECTEUR_CARTE_SCRIPT, t.context);
+    for (const s of carte()) s.listeners.load!({});
+    await tick();
+    const input = (label: string) => {
+      const l = area().all().find((e) => e.tagName === 'label' && e.textContent === label)!;
+      return area().all().find((e) => e.tagName === 'input' && e.attributes.id === l.attributes.for)!;
+    };
+    const canvas = () => area().all().find((e) => e.tagName === 'canvas')!;
+    const trace = async (points: [number, number][]) => {
+      const c = canvas();
+      c.listeners.pointerdown!({ offsetX: points[0]![0], offsetY: points[0]![1] });
+      for (const [x, y] of points.slice(1)) c.listeners.pointermove!({ offsetX: x, offsetY: y });
+      c.listeners.pointerup!({});
+      await tick();
+    };
+    const press = async (text: string) => {
+      t.named(area(), text)[0]!.listeners.click!({});
+      await tick();
+    };
+    return { ...t, area, carte, before, input, canvas, trace, press };
+  }
+
+  it('[R201] servi à part, chargé seulement au geste ; budget d’une page, hors du cœur de l’application', async () => {
+    expect(AGENT_APP_FILES['/app/secteur-carte.js']).toBe(SECTEUR_CARTE_SCRIPT);
+    expect(AGENT_APP_SHELL).not.toContain('/app/secteur-carte.js');
+    expect(JS).not.toContain('secteur-carte.js');
+    expect(budgetProblems({ html: '', js: SECTEUR_CARTE_SCRIPT }, BUDGETS.page)).toEqual([]);
+    expect(budgetProblems({ html: '', js: BIENS_FICHE_SCRIPT }, BUDGETS.page)).toEqual([]);
+    // Aucune adresse extérieure : les tuiles passent par le Worker.
+    expect(SECTEUR_CARTE_SCRIPT).not.toMatch(/https?:\/\//);
+  });
+
+  it('[R16] l’agent centre la carte sur un lieu dit, trace le contour au doigt, et le polygone part au serveur', async () => {
+    const t = await drawn({ [`POST ${base}`]: async () => Response.json({ ok: true, mode: 'essai', data: { shape: 'polygone', points: [], label: 'Le plateau' } }) });
+    t.input('Lieu où centrer la carte (adresse, gare, école…)').value = 'Gare de Dijon';
+    await t.press('Centrer la carte');
+    expect(t.area().textContent).toContain('Carte centrée.');
+    await t.trace([[100, 100], [200, 100], [200, 200], [100, 200]]);
+    expect(t.area().textContent).toContain('Contour tracé : 4 points.');
+    t.input('Nom du secteur, pour vous').value = 'Le plateau';
+    await t.press('Ranger ce secteur dessiné');
+    const sent = t.posts().at(-1)!;
+    expect(sent).toMatchObject({ url: base, body: { shape: 'polygone', label: 'Le plateau' } });
+    const pts = sent.body.points as { lat: number; lon: number }[];
+    expect(pts).toHaveLength(4);
+    // Le premier point est au nord-ouest du centre, le troisième au sud-est ; à 150 px du centre au niveau 15.
+    expect(pts[0]!.lat).toBeGreaterThan(CENTER.lat);
+    expect(pts[0]!.lon).toBeLessThan(CENTER.lon);
+    expect(pts[2]!.lat).toBeLessThan(CENTER.lat);
+    expect(pts[2]!.lon).toBeGreaterThan(CENTER.lon);
+    expect(Math.abs(pts[0]!.lon - pts[2]!.lon)).toBeCloseTo((100 / (256 * 2 ** 15)) * 360, 5);
+    expect(t.area().textContent).toContain('Secteur « Le plateau » dessiné.');
+  });
+
+  it('[R16] un long tracé part en 40 points au plus ; moins de trois points ne part pas ; sans lieu, la carte ne s’ouvre pas', async () => {
+    const t = await drawn({ [`POST ${base}`]: ok({ shape: 'polygone', points: [], label: 'Long' }) });
+    await t.trace([[10, 10], [20, 20]]);
+    expect(t.posts()).toEqual([]);
+    t.table[`GET ${base}/lieu?q=Nulle%20part`] = no(400, { ok: false, rule: null, code: 'lieu_introuvable' });
+    t.input('Lieu où centrer la carte (adresse, gare, école…)').value = 'Nulle part';
+    await t.press('Centrer la carte');
+    expect(t.area().textContent).toContain('Ce lieu n’a pas été trouvé : précisez la commune.');
+    t.input('Lieu où centrer la carte (adresse, gare, école…)').value = 'Gare de Dijon';
+    await t.press('Centrer la carte');
+    await t.trace([[10, 10], [20, 20]]);
+    await t.press('Ranger ce secteur dessiné');
+    expect(t.posts()).toEqual([]);
+    expect(t.area().textContent).toContain('Tracez un contour d’au moins trois points.');
+    const long: [number, number][] = Array.from({ length: 120 }, (_, i) => [150 + 100 * Math.cos(i / 19), 150 + 100 * Math.sin(i / 19)]);
+    await t.trace(long);
+    t.input('Nom du secteur, pour vous').value = 'Long';
+    await t.press('Ranger ce secteur dessiné');
+    expect((t.posts().at(-1)!.body.points as unknown[]).length).toBe(40);
+  });
+  it('[R16] deux projets : changer de projet referme la carte ; un rangement parti avant le changement ne s’affiche pas sous l’autre', async () => {
+    const other = { ...BUY, id: 'projet-achat-2' };
+    const second = `/v1/acquereurs/projets/${other.id}/secteur`;
+    let release!: () => void;
+    const slow = new Promise<void>((r) => (release = r));
+    const t = await opened({
+      projects: [BUY, other],
+      answers: {
+        [`GET ${base}`]: ok(null),
+        [`GET ${second}`]: ok({ shape: 'cercle', center: CENTER, radiusM: 800, label: 'Autre' }),
+        [`GET ${base}/lieu?q=Gare%20de%20Dijon`]: ok(CENTER),
+        [`POST ${base}`]: async () => (await slow, Response.json({ ok: true, mode: 'essai', data: { shape: 'polygone', points: [], label: 'Premier' } })),
+      },
+    });
+    const area = () => t.body.all().find((e) => e.tagName === 'section' && e.children[0]?.textContent === 'Secteur de la recherche')!;
+    t.named(area(), 'Dessiner sur la carte')[0]!.listeners.click!({});
+    await tick();
+    runInNewContext(SECTEUR_CARTE_SCRIPT, t.context);
+    for (const s of area().all().filter((e) => e.tagName === 'script' && e.attributes.src === '/app/secteur-carte.js')) s.listeners.load!({});
+    await tick();
+    const input = (label: string) => {
+      const l = area().all().find((e) => e.tagName === 'label' && e.textContent === label)!;
+      return area().all().find((e) => e.tagName === 'input' && e.attributes.id === l.attributes.for)!;
+    };
+    input('Lieu où centrer la carte (adresse, gare, école…)').value = 'Gare de Dijon';
+    t.named(area(), 'Centrer la carte')[0]!.listeners.click!({});
+    await tick();
+    const c = area().all().find((e) => e.tagName === 'canvas')!;
+    c.listeners.pointerdown!({ offsetX: 100, offsetY: 100 });
+    for (const [x, y] of [[200, 100], [200, 200], [100, 200]]) c.listeners.pointermove!({ offsetX: x, offsetY: y });
+    c.listeners.pointerup!({});
+    input('Nom du secteur, pour vous').value = 'Premier';
+    t.named(area(), 'Ranger ce secteur dessiné')[0]!.listeners.click!({});
+    await tick();
+    // Le rangement part pour le premier projet ; l'agent passe au second avant la réponse.
+    expect(t.posts().at(-1)!.url).toBe(base);
+    const select = area().all().find((e) => e.tagName === 'select')!;
+    select.value = other.id;
+    select.listeners.change!({});
+    await tick();
+    expect(area().all().some((e) => e.tagName === 'canvas')).toBe(false);
+    expect(t.named(area(), 'Dessiner sur la carte')).toHaveLength(1);
+    release();
+    await tick();
+    expect(area().textContent).toContain('Secteur « Autre » : 0,8 km autour du lieu dit.');
+    expect(area().textContent).not.toContain('Premier');
+  });
+  it('une tuile qui n’arrive pas est dite, le tracé reste possible, et « Recharger la carte » la redemande', async () => {
+    const proto = FakeElement.prototype as unknown as { getContext?: () => unknown };
+    const ops: string[] = [];
+    proto.getContext = () => new Proxy({}, { get: (_t, k) => (typeof k === 'string' && !['lineWidth', 'strokeStyle'].includes(k) ? () => ops.push(k) : undefined), set: () => true });
+    try {
+      const t = await drawn();
+      t.input('Lieu où centrer la carte (adresse, gare, école…)').value = 'Gare de Dijon';
+      await t.press('Centrer la carte');
+      const asked = () => t.calls.filter((c) => c.url.startsWith('/v1/carte/tuiles/15/')).length;
+      // Quatre tuiles au plus pour un canevas de 300 px ; toutes en échec (pas de réseau).
+      expect(asked()).toBeGreaterThan(0);
+      expect(t.calls.filter((c) => c.url.startsWith('/v1/carte/tuiles/')).every((c) => /^\/v1\/carte\/tuiles\/15\/\d+\/\d+$/.test(c.url))).toBe(true);
+      expect(t.area().textContent).toContain('Une partie de la carte n’a pas pu être lue : le tracé reste possible ; « Recharger la carte » réessaie.');
+      const first = asked();
+      await t.trace([[100, 100], [200, 100], [200, 200]]);
+      expect(t.area().textContent).toContain('Contour tracé : 3 points.');
+      expect(asked()).toBe(first);
+      await t.press('Recharger la carte');
+      expect(asked()).toBe(2 * first);
+      expect(ops).toContain('stroke');
+    } finally {
+      delete proto.getContext;
+    }
+  });
+  it('le secteur en place relu après un échec : la carte ouverte entre-temps range quand même', async () => {
+    const t = await drawn({ [`GET ${base}`]: no(500, { ok: false }), [`POST ${base}`]: ok({ shape: 'polygone', points: [], label: 'Relu' }) });
+    t.input('Lieu où centrer la carte (adresse, gare, école…)').value = 'Gare de Dijon';
+    await t.press('Centrer la carte');
+    await t.trace([[100, 100], [200, 100], [200, 200]]);
+    t.input('Nom du secteur, pour vous').value = 'Relu';
+    await t.press('Ranger ce secteur dessiné');
+    expect(t.posts()).toEqual([]);
+    expect(t.area().textContent).toContain('Le secteur en place n’est pas lu');
+    t.table[`GET ${base}`] = ok(null);
+    await t.press('Réessayer de lire le secteur');
+    await t.press('Ranger ce secteur dessiné');
+    expect(t.posts().at(-1)).toMatchObject({ url: base, body: { shape: 'polygone', label: 'Relu' } });
+    expect(t.area().textContent).toContain('Secteur « Relu » dessiné.');
   });
 });

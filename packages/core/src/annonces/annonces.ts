@@ -17,7 +17,7 @@ import type { SqlDatabase } from '../db/sql.ts';
 import type { PropertyKind } from '../db/types.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { fallbackListing, traceListing, type ListingFacts, type SourcedSentence } from './annonce-sourcee.ts';
+import { bindingHolds, fallbackListing, traceListing, type ListingFacts, type SourcedSentence } from './annonce-sourcee.ts';
 import type { PropertySheet } from './fiche-bien.ts';
 import { computeMentions, MentionsAnnonce, type MentionItem } from './mentions.ts';
 
@@ -47,6 +47,7 @@ type Problem =
   | { ok: false; rule: null; code: 'unknown_property' | 'unknown_draft' | 'no_draft' | 'bad_text' | 'busy' }
   | { ok: false; rule: 'R46' | 'R47'; code: 'refused_text'; sentences: SourcedSentence[] }
   | { ok: false; rule: 'R47'; code: 'not_latest_draft' | 'stale_sheet' | 'already_validated' }
+  | { ok: false; rule: 'R17'; code: 'erased_draft' }
   | { ok: false; rule: 'R43'; code: 'mentions_incomplete'; missing: MentionItem[] };
 
 const MAX_TITLE = 120;
@@ -67,6 +68,9 @@ interface DraftRow {
   validated_by: string | null;
   validated_at: string | null;
 }
+
+/** Un brouillon vidé par l'effacement réel du vendeur (AU020b) : ni validé, ni publié, ni repris [R17, R47]. */
+const WIPED = "EXISTS (SELECT 1 FROM erasure_text_wipes w WHERE w.wiped_table = 'listing_drafts' AND w.row_id = d.id)";
 
 const DRAFT_SELECT = `SELECT d.id, d.property_id, d.seq, d.title, d.body, d.origin, d.sheet_version, d.trace, d.created_by, d.created_at,
   v.validated_by, v.validated_at FROM listing_drafts d LEFT JOIN listing_validations v ON v.draft_id = d.id`;
@@ -155,6 +159,10 @@ export class Annonces {
       elevator: c?.elevator ?? null,
       energyClass: sheet?.energy?.energyClass ?? null,
       climateClass: sheet?.energy?.climateClass ?? null,
+      amenities: c?.amenities ?? [],
+      condition: c?.condition ?? null,
+      carrezM2: c?.carrezM2 ?? null,
+      usableM2: c?.usableM2 ?? null,
     };
     return { facts, sheetVersion: row ? Number(row.version) : null };
   }
@@ -273,6 +281,7 @@ export class Annonces {
     }
     const g = await this.gate(viewer, row.property_id, 'validate');
     if (!g.ok) return g;
+    if (await this.db.first(`SELECT 1 AS x FROM listing_drafts d WHERE d.id = ? AND ${WIPED}`, [draftId])) return { ok: false, rule: 'R17', code: 'erased_draft' };
     const draft = toDraft(row);
     if (draft.validated) return { ok: false, rule: 'R47', code: 'already_validated' };
     const latest = await this.db.first<{ id: string }>('SELECT id FROM listing_drafts WHERE property_id = ? ORDER BY seq DESC LIMIT 1', [row.property_id]);
@@ -297,16 +306,29 @@ export class Annonces {
   }
 
   /**
-   * Pour le système qui publie (P04) : le texte validé à publier, ou null. Seul le dernier brouillon compte, validé,
-   * sur la dernière version de la fiche ; sinon il n'y a rien à publier.
+   * Pour le système qui publie (P04) : le texte validé à publier, ou null. Le dernier brouillon validé compte : une
+   * correction en cours, pas encore validée, ne retire pas la version conforme déjà en ligne (AU066). Il reste publié
+   * tant que chacune de ses phrases est encore vraie pour la fiche du jour ; un fait changé qui le rend faux ou obsolète
+   * le retire [R47].
    */
   async publishable(networkId: string, propertyId: string): Promise<ListingDraft | null> {
-    const row = await this.db.first<DraftRow & { network_id: string }>(`${DRAFT_SELECT.replace('SELECT d.id,', 'SELECT d.network_id, d.id,')} WHERE d.property_id = ? ORDER BY d.seq DESC LIMIT 1`, [propertyId]);
+    const row = await this.db.first<DraftRow & { network_id: string }>(
+      `${DRAFT_SELECT.replace('SELECT d.id,', 'SELECT d.network_id, d.id,')} WHERE d.property_id = ? AND EXISTS (SELECT 1 FROM listing_validations v WHERE v.draft_id = d.id) ORDER BY d.seq DESC LIMIT 1`,
+      [propertyId],
+    );
     if (!row || row.network_id !== networkId) return null;
+    // Vidé par l'effacement du vendeur : l'annonce est retirée, jamais publiée avec la marque « [effacé] » (AU020b).
+    if (await this.db.first(`SELECT 1 AS x FROM listing_drafts d WHERE d.id = ? AND ${WIPED}`, [row.id])) return null;
     const draft = toDraft(row);
     if (!draft.validated) return null;
     const f = await this.factsFor(propertyId);
-    if (!f || f.sheetVersion !== draft.sheetVersion) return null;
-    return traceListing(draft.title, draft.body, f.facts).ok ? draft : null;
+    if (!f) return null;
+    const fresh = traceListing(draft.title, draft.body, f.facts);
+    if (!fresh.ok) return null;
+    if (f.sheetVersion === draft.sheetVersion) return draft;
+    // La fiche a changé depuis la validation : chaque source rangée doit encore être vraie, dans son champ. Un étage
+    // corrigé que le nombre d'étages de l'immeuble « explique » encore rend la phrase fausse ; un autre champ devenu
+    // égal ne la rend pas fausse [R47].
+    return draft.sentences.every((s) => s.sources.every((x) => bindingHolds(x, f.facts))) ? draft : null;
   }
 }

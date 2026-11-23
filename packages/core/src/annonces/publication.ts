@@ -26,6 +26,7 @@ import type { JournalStore } from '../journal/types.ts';
 import { Annonces } from './annonces.ts';
 import { MediasBien, type PublishedMedia } from './medias.ts';
 import { computeMentions, MentionsAnnonce } from './mentions.ts';
+import { surfacesFor, type SurfaceKind, type SurfaceSource } from './fiche-bien.ts';
 
 export const CHANNELS = ['site', 'reseaux', 'google', 'portails'] as const;
 export type Channel = (typeof CHANNELS)[number];
@@ -44,6 +45,25 @@ export interface ListingPayload {
   priceEur: number | null;
   /** Photos et vidéos publiables, la mention « Aménagement virtuel » à poser sur l'image quand il le faut [R48]. */
   media: PublishedMedia[];
+  /**
+   * AU064 · le diagnostic tel qu'il est rangé, pour que chaque portail le reprenne sans ressaisie : présent seulement
+   * quand la fiche porte son numéro ADEME ou ses valeurs (une annonce sans eux garde le même contenu qu'avant).
+   */
+  dpe?: ListingDpe;
+  /**
+   * AU063 · les surfaces que les portails reçoivent, chacune nommée, avec sa source : présentes seulement quand la fiche
+   * porte une surface Carrez ou utile (une annonce sans elles garde le même contenu qu'avant).
+   */
+  surfaces?: { kind: SurfaceKind; m2: number; source: SurfaceSource | null }[];
+}
+
+export interface ListingDpe {
+  ademeNumber: string | null;
+  primaryEnergyKwhM2: number | null;
+  ghgKgM2: number | null;
+  energyClass: string;
+  climateClass: string;
+  diagnosedOn: string;
 }
 
 /**
@@ -129,7 +149,7 @@ export class Publication {
   }
 
   /** Ce qui doit être publié maintenant, ou la raison du retrait. Toute publication passe par la porte de D05 [R42]. */
-  private async desired(networkId: string, propertyId: string, reference: string, status: PropertyStatus): Promise<{ publish: Omit<ListingPayload, 'version'>; draftId: string } | { retract: RetractReason }> {
+  private async desired(networkId: string, propertyId: string, reference: string, status: PropertyStatus): Promise<{ publish: Omit<ListingPayload, 'version'>; draftId: string; mediaSheet: number | null; draftSheet: number | null } | { retract: RetractReason }> {
     const state = STATE_OF[status];
     if (state === null) return { retract: 'bien_retire' };
     const gate = await this.diffusion.canDiffuse(networkId, propertyId, this.now());
@@ -139,9 +159,25 @@ export class Publication {
     const input = await this.mentions.inputFor(networkId, propertyId);
     const checklist = input ? computeMentions(input) : null;
     if (!checklist?.complete || checklist.publishedPriceEur === null) return { retract: 'mentions_incompletes' };
+    const e = input?.sheet?.energy ?? null;
+    const known = e && (e.ademeNumber !== undefined || e.primaryEnergyKwhM2 !== undefined || e.ghgKgM2 !== undefined);
+    const dpe: ListingDpe | null = known
+      ? { ademeNumber: e.ademeNumber ?? null, primaryEnergyKwhM2: e.primaryEnergyKwhM2 ?? null, ghgKgM2: e.ghgKgM2 ?? null, energyClass: e.energyClass, climateClass: e.climateClass, diagnosedOn: e.diagnosedOn }
+      : null;
+    // Les photos et vidéos de la fiche du jour : une photo retirée depuis la validation du texte ne part plus, et ses
+    // légendes se lisent sur cette même fiche (AU066).
+    const current = await this.annonces.factsFor(propertyId);
+    const mediaSheet = current?.sheetVersion ?? draft.sheetVersion;
+    const c = input?.sheet?.characteristics;
+    const surfaces =
+      current && (c?.carrezM2 !== undefined || c?.usableM2 !== undefined)
+        ? surfacesFor('portails', { kind: current.facts.kind, surfaceM2: current.facts.surfaceM2, carrezM2: c?.carrezM2 ?? null, usableM2: c?.usableM2 ?? null, ...(c?.surfaceSources ? { surfaceSources: c.surfaceSources } : {}) }).map((x) => ({ kind: x.kind, m2: x.m2, source: x.source }))
+        : null;
     return {
       draftId: draft.id,
-      publish: { reference, state, title: draft.title, body: draft.body, mentions: checklist.text, priceEur: checklist.publishedPriceEur, media: await this.medias.publishable(propertyId, draft.sheetVersion) },
+      mediaSheet,
+      draftSheet: draft.sheetVersion,
+      publish: { reference, state, title: draft.title, body: draft.body, mentions: checklist.text, priceEur: checklist.publishedPriceEur, media: await this.medias.publishable(propertyId, mediaSheet), ...(dpe ? { dpe } : {}), ...(surfaces && surfaces.length > 0 ? { surfaces } : {}) },
     };
   }
 
@@ -156,7 +192,28 @@ export class Publication {
     const lease = await this.acquire(propertyId);
     if (!lease) return { version: null, state: null, created: false, pushed: [], failed: [], busy: true };
     try {
-      return await this.syncHeld(networkId, propertyId, property, lease);
+      // AU067 : une rétractation ou une annulation peut tomber pendant les envois. Après un passage qui a écrit ou
+      // poussé quelque chose, ce qui doit être montré est relu sous le même bail : un retrait arrivé entre-temps part
+      // dans ce passage, au lieu d'attendre le suivant [R42]. Trois tours au plus.
+      let r = await this.syncHeld(networkId, propertyId, property, lease);
+      const pushed = new Set(r.pushed);
+      let failed = new Set(r.failed);
+      let created = r.created;
+      for (let round = 1; round < 3 && (r.created || r.pushed.length > 0 || r.failed.length > 0); round++) {
+        const again = await this.db.first<{ network_id: string; reference: string; status: PropertyStatus }>('SELECT network_id, reference, status FROM properties WHERE id = ?', [propertyId]);
+        if (!again || again.network_id !== networkId || !(await this.holds(propertyId, lease))) break;
+        const before = r;
+        r = await this.syncHeld(networkId, propertyId, again, lease, true);
+        if (!r.created) {
+          r = { ...before, version: r.version, state: r.state };
+          break;
+        }
+        created ||= r.created;
+        for (const c of r.pushed) pushed.add(c);
+        // Une nouvelle version : seuls ses échecs restent dus.
+        failed = new Set(r.failed);
+      }
+      return { version: r.version, state: r.state, created, pushed: [...pushed], failed: [...failed] };
     } finally {
       await this.db.run('UPDATE listing_sync_leases SET expires_at = ? WHERE property_id = ? AND token = ?', [new Date(0).toISOString(), propertyId, lease]);
     }
@@ -192,14 +249,17 @@ export class Publication {
     return held?.token === token && held.expires_at > this.now().toISOString();
   }
 
-  private async syncHeld(networkId: string, propertyId: string, property: { reference: string; status: PropertyStatus }, lease: string): Promise<SyncResult> {
+  private async syncHeld(networkId: string, propertyId: string, property: { reference: string; status: PropertyStatus }, lease: string, onlyIfNew = false): Promise<SyncResult> {
     const want = await this.desired(networkId, propertyId, property.reference, property.status);
     const before = await this.latest(propertyId);
     let created = false;
     if ('publish' in want || (before && before.state !== 'retiree')) {
       const content: Omit<ListingPayload, 'version'> =
         'publish' in want ? want.publish : { reference: property.reference, state: 'retiree', title: null, body: null, mentions: null, priceEur: null, media: [] };
-      const hash = await sha256(JSON.stringify(content));
+      // Une fiche changée depuis la validation du texte (une photo dite retouchée, par exemple) fait une version de plus,
+      // même au contenu identique : ses légendes se lisent sur la fiche de cette version (AU066). Sinon, l'empreinte
+      // reste celle du seul contenu.
+      const hash = await sha256(JSON.stringify(content) + ('publish' in want && want.mediaSheet !== want.draftSheet ? `|fiche:${want.mediaSheet}` : ''));
       const reason = 'publish' in want ? 'publication' : want.retract;
       // La version n'est créée que si son contenu diffère de la dernière, dans la même instruction : deux passages
       // simultanés ne créent jamais deux fois la même version.
@@ -220,6 +280,16 @@ export class Publication {
         if (/UNIQUE/i.test(String(error))) return { changes: 0 };
         throw error;
       });
+      // La fiche des médias de la dernière version de même contenu, rangée ou réparée : une coupure entre la version et
+      // ce lien ne laisse jamais une version publiée sans la fiche de ses légendes (AU066).
+      if ('publish' in want && want.mediaSheet !== null) {
+        await this.db.run(
+          `INSERT INTO listing_version_media_sheets (version_id, sheet_version)
+           SELECT v.id, ? FROM listing_versions v WHERE v.property_id = ? AND v.payload_hash = ? AND v.seq = (SELECT MAX(seq) FROM listing_versions WHERE property_id = ?)
+           ON CONFLICT (version_id) DO NOTHING`,
+          [want.mediaSheet, propertyId, hash, propertyId],
+        );
+      }
       if (changes === 1) {
         created = true;
         const v = await this.latest(propertyId);
@@ -232,6 +302,8 @@ export class Publication {
     }
     const current = await this.latest(propertyId);
     if (!current) return { version: null, state: null, created, pushed: [], failed: [] };
+    // La relecture d'après envoi ne pousse que ce qui a changé : un canal en panne attend le passage suivant.
+    if (onlyIfNew && !created) return { version: Number(current.seq), state: current.state, created, pushed: [], failed: [] };
     await this.followListing(propertyId, current.state);
     const { pushed, failed } = await this.pushAll(propertyId, current, lease);
     return { version: Number(current.seq), state: current.state, created, pushed, failed };

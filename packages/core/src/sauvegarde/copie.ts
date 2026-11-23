@@ -23,9 +23,10 @@ import type { JournalStore } from '../journal/types.ts';
 export const COPY_FORMAT = 1;
 const PAGE_ROWS = 500;
 const ROWID = '__copie_rang__';
+export const ROWID_COLUMN = ROWID;
 const KEY_BYTES = 32;
 const IV_BYTES = 12;
-const COPY_ID = /^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}$/;
+export const COPY_ID = /^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}$/;
 
 /** Le stockage des copies, à part de la base ; un morceau ne se réécrit pas. */
 export interface CopyStore {
@@ -96,29 +97,35 @@ export async function copyKeyFromSecret(secret: string): Promise<CopyKey> {
   return crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
 }
 
-/** Chiffre un texte, lié à sa place. */
-export async function sealAt(key: CopyKey, place: string, text: string): Promise<Uint8Array> {
+/** Chiffre des octets, liés à leur place. */
+export async function sealBytesAt(key: CopyKey, place: string, bytes: Uint8Array): Promise<Uint8Array> {
   const iv = crypto.getRandomValues(new Uint8Array(IV_BYTES));
-  const body = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: bytesOf(place) }, key, bytesOf(text)));
+  const body = new Uint8Array(await crypto.subtle.encrypt({ name: 'AES-GCM', iv, additionalData: bytesOf(place) }, key, Uint8Array.from(bytes)));
   const out = new Uint8Array(IV_BYTES + body.length);
   out.set(iv);
   out.set(body, IV_BYTES);
   return out;
 }
 
-/** Déchiffre un texte à sa place ; `null` s'il a changé ou bougé, ou avec une autre clé. */
-export async function openAt(key: CopyKey, place: string, bytes: Uint8Array): Promise<string | null> {
+/** Déchiffre des octets à leur place ; `null` s'ils ont changé ou bougé, ou avec une autre clé. */
+export async function openBytesAt(key: CopyKey, place: string, bytes: Uint8Array): Promise<Uint8Array | null> {
   if (bytes.length <= IV_BYTES) return null;
   try {
-    const plain = await crypto.subtle.decrypt(
-      { name: 'AES-GCM', iv: bytes.slice(0, IV_BYTES), additionalData: bytesOf(place) },
-      key,
-      bytes.slice(IV_BYTES),
-    );
-    return decoder.decode(plain);
+    return new Uint8Array(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes.slice(0, IV_BYTES), additionalData: bytesOf(place) }, key, bytes.slice(IV_BYTES)));
   } catch {
     return null;
   }
+}
+
+/** Chiffre un texte, lié à sa place. */
+export async function sealAt(key: CopyKey, place: string, text: string): Promise<Uint8Array> {
+  return sealBytesAt(key, place, bytesOf(text));
+}
+
+/** Déchiffre un texte à sa place ; `null` s'il a changé ou bougé, ou avec une autre clé. */
+export async function openAt(key: CopyKey, place: string, bytes: Uint8Array): Promise<string | null> {
+  const plain = await openBytesAt(key, place, bytes);
+  return plain === null ? null : decoder.decode(plain);
 }
 
 /** La place du sommaire : sans lui, la copie n'existe pas. */
@@ -132,8 +139,8 @@ async function readSchema(db: SqlDatabase): Promise<SchemaObject[]> {
   );
 }
 
-/** Une table, page après page, dans l'ordre de ses rangs. */
-async function* pagesOf(db: SqlDatabase, table: string): AsyncGenerator<Row[]> {
+/** Une table, page après page, dans l'ordre de ses rangs ; la colonne `ROWID_COLUMN` porte le rang. */
+export async function* pagesOf(db: SqlDatabase, table: string): AsyncGenerator<Row[]> {
   let after = -9_007_199_254_740_991;
   for (;;) {
     const rows = await db.all<Row>(`SELECT rowid AS ${ROWID}, * FROM ${q(table)} WHERE rowid > ? ORDER BY rowid LIMIT ?`, [after, PAGE_ROWS]);

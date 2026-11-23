@@ -5,12 +5,17 @@ import {
   AIMMO_VERSION,
   AlertesAgent,
   ATTRIBUTION_RULES,
+  Attribution,
   ControleBaseLegale,
   AUTOMATION_NAMES,
   Acces,
   Automatisations,
   OUTBOUND_CHANNELS,
   PaliersBascule,
+  mailIntakeState,
+  metaIntakeState,
+  type MailIntakeSettings,
+  type MetaIntakeSettings,
   ROLLOUT_INCIDENTS,
   captationAutomation,
   type OutboundChannelName,
@@ -39,6 +44,7 @@ import {
   Modeles,
   Designations,
   FicheUnique,
+  GeographieReseau,
   JourneeRendezVous,
   Qualification,
   ROUTES as NEXT_MODULES,
@@ -67,30 +73,35 @@ import {
   type Fetcher,
   type ValuationReport,
 } from '@aimmo/core';
-import { bearerKey, fromMcpKey, intakeFromRequest, markMcpKey, parseApiKeys, parseIntakeKeys, sha256Hex, viewerFromRequest } from './auth.ts';
+import { bearerKey, fromMcpKey, intakeFromRequest, invitationKeyOf, markMcpKey, parseApiKeys, parseIntakeKeys, sha256Hex, viewerFromRequest } from './auth.ts';
 import { assistantKeyViewer } from '../../core/src/securite/index.ts';
-import { INVITATION_PATH, handleInvitation, invitedKeys, mergeKeys } from './acces.ts';
+import { LIMITED_ROLE_ROUTES } from '../../core/src/acces/droits.ts';
+import { DEVICE_KEY_ROLES, INVITATION_PATH, handleInvitation, invitedKeys, mergeKeys, retireApplicationKey, retireApplicationKeysOf } from './acces.ts';
+import { localTime as parisLocalTime } from '../../core/src/envoi/horaires.ts';
 import { ASSISTANT_PATH, handleAssistant, type AssistantLimits } from './assistant.ts';
 import type { ReplyWriter, ReportWriter } from '@aimmo/core';
 import { META_PATH, handleMeta, type MetaConfig } from './meta.ts';
+import { TELEPHONIE_PATHS, handleTelephonie, type TelephonieSettings } from './telephonie.ts';
 import { handleAgentApp } from './agent-app.ts';
 import { ESTIMATION_PATH, handleEstimation, type EstimationLimits } from './estimation.ts';
 import { BOOKING_PATH, BOOKING_SLOTS_PATH, handleBooking, type BookingLimits } from './rendezvous.ts';
 import type { DetailedSales, Geocoder } from '@aimmo/core';
 import { m08Routes } from './acquereurs.ts';
-import { annonceRoutes } from './annonces.ts';
+import type { TileSource } from './carte.ts';
+import { annonceRoutes, type AnnonceOptions } from './annonces.ts';
 import { offreRoutes } from './offres.ts';
 import { dossierRoutes, type DossierRoute, type PieceStore } from './dossiers.ts';
 import { pilotageRoutes } from './pilotage.ts';
 import { repriseRoutes } from './reprise.ts';
+import { BON_VISITE_PUBLIC_PATH, bonVisiteLinkBase, handleBonVisitePublic } from './bon-visite-public.ts';
 import { APRES_VENTE_PATH, apresVentePublicError, apresVenteRoutes, handleApresVentePublic } from './apres-vente.ts';
 import { handleVitrine, type MediaStore } from './vitrine.ts';
-import { reseauRoutes, type ReseauOptions } from './reseau.ts';
+import { handleSortiePublic, reseauRoutes, type ReseauOptions } from './reseau.ts';
 import { locationRoutes, type LocationRoute, type LocationServices } from './location.ts';
 import { coproprieteRoutes, type CoproprieteRoute, type CoproprieteServices } from './copropriete.ts';
 import { avantContratRoutes, type AvantContratRoute, type AvantContratServices } from './avant-contrat.ts';
 import { commercesRoutes, dossierReaderRoutes, type CommercesRoute, type CommercesServices } from './commerces.ts';
-import { GpuUrbanism, conformite } from '@aimmo/core';
+import { GpuUrbanism, annonces as m07, conformite } from '@aimmo/core';
 import { CANDIDATURE_PATH, handleCandidature } from './candidature.ts';
 import { accessCut, conformiteRoutes, type ConformiteRoute, type VaultFiles } from './conformite.ts';
 import { securiteRoutes, type RegistreGelsSource, type SecuriteRoute } from './securite.ts';
@@ -102,10 +113,16 @@ import { veilleDpeRoutes, type VeilleDpeRoute } from './veille-dpe.ts';
 import { questionnaireRoutes, type QuestionnaireRoute } from './mandat-questionnaire.ts';
 import { scoreAdresseRoutes, type ScoreAdresseRoute } from './score-adresse.ts';
 import { tourneeRoutes, type TourneeRoute } from './tournee.ts';
+import { boiteRoutes, type BoiteRoute, type MailboxDirectory } from './boite.ts';
+import { agendaBusyOf, type AgendaDirectory } from './agenda-reel.ts';
+import { RendezVous as RendezVousAgenda } from '../../core/src/rendezvous/reservation.ts';
+import { reprisesVocalesRoutes, type ReprisesRoute } from './reprises-vocales.ts';
+import type { AudioSource } from '../../core/src/voix/transcripteur-reel.ts';
+import type { DossierFileStore } from '../../core/src/automatismes/boite-mail.ts';
 import { rechercheRoutes, type RechercheRoute } from './recherche.ts';
 import { statistiquesSiteRoutes, type StatistiquesSiteRoute } from './statistiques-site.ts';
 import { pigeRoutes, type PigeRoute } from './pige.ts';
-import type { PigeSource } from '../../core/src/pige/index.ts';
+import type { PigeProviderSettings, PigeSource } from '../../core/src/pige/index.ts';
 import { adressePigeRoutes, type AdressePigeRoute } from './adresse-pige.ts';
 import { sequencesOf, sequencesRoutes, type SequencesRoute } from './sequences.ts';
 import { AdemeDiagnosisSearch, type AdressePigeServices } from '../../core/src/adresse-pige/index.ts';
@@ -119,6 +136,7 @@ import { handleLicencesPublic, licencesRoutes, type LicencesRoute } from './lice
 import type { StockageFichiersPlages } from '../../core/src/licences/index.ts';
 import { recrutementRoutes, type RecrutementRoute } from './recrutement.ts';
 import { marketingRoutes, type MarketingRoute } from './marketing.ts';
+import type { AdsSettings } from './publicite-reelle.ts';
 import { financesRoutes, type FinancesRoute } from './finances.ts';
 import { handleMcpPublic, mcpRoutes, MCP_PUBLIC_PREFIX, type McpPublicLimits, type McpRoute } from './mcp.ts';
 import { formationRoutes, handleAttestationPublic, type FormationRoute } from './formation.ts';
@@ -138,10 +156,12 @@ import {
 import type { FeeSettings } from '../../core/src/partenaires/index.ts';
 import { Annuaire, MiseEnRelation } from '../../core/src/partenaires/index.ts';
 import { investirRoutes, type InvestirRoute, type InvestirServices } from './investir.ts';
+import { withdrawLiveNow } from './reseaux-reels.ts';
 import { readCapped, studioRoutes, type StudioRoute, type StudioServices } from './studio.ts';
 import { accordsRoutes, type AccordsRoute } from './accords.ts';
 import { biensFicheRoutes, type BiensFicheRoute } from './biens-fiche.ts';
 import { dicteeRoutes, type DicteeRoute } from './dictee.ts';
+import { horsLigneRoutes, type HorsLigneRoute, type HorsLigneServices } from './hors-ligne.ts';
 import { appelsRoutes, type AppelsRoute } from './appels.ts';
 import { notificationsRoutes, type NotificationsRoute } from './notifications.ts';
 import { gagnerRoutes, type GagnerRoute, type GagnerServices } from './gagner.ts';
@@ -163,6 +183,8 @@ export const TRIAL_MODE = 'essai';
 
 export interface ApiConfig {
   db: SqlDatabase;
+  /** AU067 · les canaux et les connecteurs réels des portails (H10) ; absents, chacun est en essai. */
+  listing?: AnnonceOptions;
   /** Secret `API_KEYS` : empreintes des clés et identité de chacune (voir auth.ts). */
   apiKeys: string | undefined;
   /** Variable `MODE` : doit valoir « essai ». */
@@ -178,6 +200,10 @@ export interface ApiConfig {
   captationRollout?: { open: boolean; connected: readonly OutboundChannelName[] };
   /** Notifications de Meta (C07) : secrets et variables `META_*`, voir meta.ts. */
   meta?: Omit<MetaConfig, 'db' | 'now'>;
+  /** AU045 : le vrai raccordement téléphonique de l'assistant vocal (`TELEPHONIE_MODE`, `TWILIO_*`), voir telephonie.ts. */
+  telephonie?: TelephonieSettings;
+  /** AU032 : les réglages de la réception des mails (`MAIL_*`), dont l'état se lit sur `/captation/mail`. */
+  mail?: Omit<MailIntakeSettings, 'mode'>;
   /** Limites d'appels de l'assistant du site (C08) ; absentes : les réglages par défaut. */
   assistantLimits?: AssistantLimits;
   /** L'IA qui rédige les réponses de l'assistant du site, une fois branchée (H13). */
@@ -189,20 +215,34 @@ export interface ApiConfig {
   reportWriter?: ReportWriter;
   /** Estimation en ligne du site (E05) : Base adresse nationale et ventes DVF ; absents, le service est fermé. */
   estimation?: { geocoder: Geocoder; sales: DetailedSales };
+  /** AU073 : la Base adresse nationale pour les secteurs des recherches et la position des biens, sans lien avec DVF. */
+  secteursGeocoder?: Geocoder;
+  /** AU073b : le fournisseur des tuiles de la carte des secteurs ; absent, la carte n'est pas branchée. */
+  mapTiles?: TileSource | null;
   /** Les données publiques d'un bien (E09), en lecture seule ; absentes, aucun avis ne se prépare. */
   fetchPublicData?: Fetcher;
   /** Les sources du score par adresse (BR27) ; absentes, celles de `estimation` et de `fetchPublicData`, sinon aucune. */
   scoreSources?: ScoreServices | null;
   /** La source des annonces de particuliers de la pige (BR29) ; absente, aucune relève, rien n'est rangé. */
   pigeSource?: PigeSource | null;
+  /** AU043 : les vraies boîtes Gmail et Outlook reliées par les agents (H55) et le rangement des pièces ; absentes, rien n'est lu [R683]. */
+  boite?: { mailboxes: MailboxDirectory | null; files: DossierFileStore | null };
+  /** AU044 : la lecture de l'audio d'origine chez Meta, pour écouter une note vocale en reprise ; absente, l'écoute est fermée [R696]. */
+  voiceAudio?: AudioSource | null;
+  /** AU034 : les réglages du vrai fournisseur de la pige, pour l'état de la relève ; avec eux, seul son réseau relève. */
+  pigeProvider?: PigeProviderSettings | null;
   /** La base de l'ADEME et le cadastre de l'adresse de pige (BR30) ; absents, ceux de `fetchPublicData`, sinon seuls les diagnostics de la veille. */
   adressePigeSources?: AdressePigeServices;
   estimationLimits?: EstimationLimits;
   /** Réservation des rendez-vous (V08) : limites d'appels, et début du lien pour décaler ou annuler (`RDV_LINK_BASE`). */
   bookingLimits?: BookingLimits;
   appointmentLinkBase?: string | undefined;
+  /** AU053 · les vrais agendas des agents (H21, H53), lus à la réservation ; absents, seuls les rendez-vous d'AIMMO comptent. */
+  agendas?: AgendaDirectory | null;
   /** Début du lien de désinscription des alertes (`ALERT_UNSUBSCRIBE_BASE`) : sans lui, aucune alerte WhatsApp de l'agent [R49]. */
   alertUnsubscribeBase?: string | undefined;
+  /** AU075b · le début des liens du bon de visite (`BON_VISITE_BASE`, `https://…/`) : sans lui, ni page ni signature à distance. */
+  bonVisiteBase?: string | null;
   /** Les médias des biens (R2, `MEDIA`) ; absent, aucune photo n'est servie. */
   media?: MediaStore;
   /** Les pièces des dossiers de vente (R2, `PIECES`) ; absent, les routes de M10 sont fermées. */
@@ -216,7 +256,7 @@ export interface ApiConfig {
    * la présentation (absente, le secours sans IA [R12]) et le début des liens du dossier (`DOSSIER_LINK_BASE`).
    */
   commerces?: Partial<Pick<CommercesServices, 'storage' | 'presentationWriter' | 'baseUrl'>>;
-  /** Variable `CANDIDATURE_NETWORK_ID` : le réseau qui reçoit les candidatures de `/rejoindre` ; absente, page « bientôt ». */
+  /** Variable `CANDIDATURE_NETWORK_ID` : le réseau qui reçoit les candidatures de `/rejoindre` ; absente, le seul réseau de la base s'il n'y en a qu'un (AU022), sinon page « bientôt ». */
   candidatureNetworkId?: string | undefined;
   /** M12 (L09) : le stockage du coffre de la conformité (R2, `COFFRE`) ; absent, le dépôt et l'ouverture d'une pièce sont fermés. */
   coffre?: VaultFiles | null;
@@ -232,6 +272,8 @@ export interface ApiConfig {
    * Aucun réseau réel n'est accepté ici : les publications partent vers les canaux du mode essai seulement [R26, R134].
    */
   studio?: StudioOptions;
+  /** AU103b : le rangement des images entières des visites ; absent, l'image reste sur le téléphone [R677]. */
+  horsLigne?: HorsLigneOptions;
   /**
    * M20 complet (G12) : le stockage des preuves de coût (sans lui, aucun coût ne se saisit [R144]), le géocodeur des
    * adresses des lettres (sans lui, aucune campagne ne vérifie son rayon [R140]) et les IA de rédaction (absentes, les
@@ -240,10 +282,13 @@ export interface ApiConfig {
   gagner?: Pick<GagnerServices, 'proofs' | 'uploads' | 'geocoder' | 'drafter' | 'letterDrafter' | 'dossierDrafter'>;
   /**
    * M01 (AT11) : les IA des réponses aux avis et des pages de quartier (absentes, les textes de secours contrôlés). Les
-   * ventes DVF du recalcul des prix sont celles de l'estimation en ligne ; IndexNow et la fiche Google réelle ne sont
-   * jamais passés d'ici : rien ne part, aucune page n'est indexée en mode essai [R26].
+   * ventes DVF du recalcul des prix sont celles de l'estimation en ligne ; IndexNow n'est jamais passé d'ici : aucune
+   * page n'est indexée en mode essai [R26]. AU037 : `gbp` est le vrai client de la fiche Google, rangé par le Worker
+   * seulement quand tout est réglé (H07) ; il met la fiche seule en mode réel.
    */
-  attirer?: Pick<AttirerServices, 'gbpWriter' | 'neighbourhoodWriter'>;
+  attirer?: Pick<AttirerServices, 'gbpWriter' | 'neighbourhoodWriter' | 'gbp'>;
+  /** AU038 : les plateformes de la publicité payante, réelles seulement quand le Worker les a mises en service (H63). */
+  ads?: AdsSettings | null;
   /**
    * La copropriété et l'urbanisme résumés (RC52, BR87) : la Base adresse nationale, le Géoportail de l'urbanisme et le
    * lecteur IA de la prélecture. Absents, le géocodeur de l'estimation et le Géoportail lu par `fetchPublicData` ; sans
@@ -286,11 +331,20 @@ export interface EspacesOptions {
   releveKeys?: string | undefined;
 }
 
+/** AU103b : la visite sans réseau ; `images` range les images entières des visites (R2, `MEDIA`), absent : 503 [R677]. */
+export interface HorsLigneOptions {
+  images: HorsLigneServices['images'];
+}
+
 export interface StudioOptions {
   files: StudioServices['files'] | null;
   writer?: StudioServices['writer'];
   /** X12 : le stockage où les fichiers finis sont rangés tels quels (R2, `MEDIA`) ; absent, le dépôt est fermé. */
   uploads?: StudioServices['uploads'];
+  /** AU036 : les vrais réseaux, faits par `liveSocialChannels` ; absents, tous les réseaux restent d'essai [R26, R134]. */
+  social?: { channels: NonNullable<StudioServices['channels']>; live: true } | null;
+  /** AU036 : les canaux qui retirent les vraies publications, rangés tant que le compte l'est, même envois coupés [R42]. */
+  withdrawals?: { channels: NonNullable<StudioServices['channels']>; live: true } | null;
 }
 
 export interface PartenairesOptions {
@@ -317,6 +371,8 @@ export const OPEN_WITHOUT_AGENT_FILE: ReadonlySet<string> = new Set([
   'reseau.formation',
   'reseau.bac_a_sable',
   'reseau.mon_bac_a_sable',
+  'reseau.mon_bac_a_sable_ouvrir',
+  'reseau.mon_bac_a_sable_etape',
   'reseau.mon_referent',
   'reseau.entrainement_cas',
   'reseau.entrainement',
@@ -687,8 +743,12 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer, _params, request) => {
       const body = await readJson(request);
       if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
-      if (Object.keys(body).some((k) => !['kind', 'personId', 'propertyId', 'inputs', 'mandateId', 'coMandantIds'].includes(k))) return failure(400, 'unexpected_field', 'Seuls kind, personId, propertyId, inputs, mandateId, coMandantIds sont admis.');
-      const { kind, personId, propertyId, inputs, mandateId, coMandantIds } = body;
+      if (Object.keys(body).some((k) => !['kind', 'personId', 'propertyId', 'inputs', 'mandateId', 'coMandantIds', 'proxies', 'rights'].includes(k))) return failure(400, 'unexpected_field', 'Seuls kind, personId, propertyId, inputs, mandateId, coMandantIds, proxies, rights sont admis.');
+      const { kind, personId, propertyId, inputs, mandateId, coMandantIds, proxies, rights } = body;
+      // AU060 : les droits des mandants, contrôlés par la couche métier ; ici, seulement une liste courte d'objets.
+      if (rights !== undefined && (!Array.isArray(rights) || rights.length > MAX_CO_MANDANTS + 1 || rights.some((r) => r === null || typeof r !== 'object' || Array.isArray(r)))) return failure(400, 'invalid_rights', 'rights : une liste de droits.');
+      // AU059 : les procurations, chacune contrôlée par la couche métier ; ici, seulement une liste courte d'objets.
+      if (proxies !== undefined && (!Array.isArray(proxies) || proxies.length > MAX_CO_MANDANTS + 1 || proxies.some((p) => p === null || typeof p !== 'object' || Array.isArray(p)))) return failure(400, 'invalid_proxies', 'proxies : une liste de procurations.');
       // Les autres mandants (couple, indivision) : une liste d'identifiants de fiches (AU001).
       if (coMandantIds !== undefined && (!Array.isArray(coMandantIds) || coMandantIds.length > MAX_CO_MANDANTS || coMandantIds.some((c) => typeof c !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(c)))) return failure(400, 'invalid_ids', 'coMandantIds : une liste d’identifiants.');
       if (mandateId !== undefined && (typeof mandateId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(mandateId))) return failure(400, 'invalid_ids', 'mandateId mal formé.');
@@ -696,7 +756,7 @@ const ROUTES: RouteDef[] = [
         return failure(400, 'invalid_ids', 'personId et propertyId attendus.');
       }
       if (inputs !== undefined && (inputs === null || typeof inputs !== 'object' || Array.isArray(inputs))) return failure(400, 'invalid_inputs', 'inputs : un objet.');
-      const r = await modeles(s).generate(viewer, { kind: kind as never, personId, propertyId, ...(inputs ? { inputs: inputs as never } : {}), ...(mandateId ? { mandateId } : {}), ...(coMandantIds !== undefined ? { coMandantIds: coMandantIds as string[] } : {}) });
+      const r = await modeles(s).generate(viewer, { kind: kind as never, personId, propertyId, ...(inputs ? { inputs: inputs as never } : {}), ...(mandateId ? { mandateId } : {}), ...(coMandantIds !== undefined ? { coMandantIds: coMandantIds as string[] } : {}), ...(proxies !== undefined ? { proxies: proxies as never } : {}), ...(rights !== undefined ? { rights: rights as never } : {}) });
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.document });
       return r.rule === 'R16' ? refusal(r) : json(r.code === 'no_template' ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
     },
@@ -756,8 +816,9 @@ const ROUTES: RouteDef[] = [
     handle: async (s, viewer, _params, request) => {
       const body = await readJson(request);
       if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
-      if (Object.keys(body).some((k) => !['maxRatePercent', 'minEur'].includes(k))) return failure(400, 'unexpected_field', 'Seuls maxRatePercent et minEur sont admis.');
-      const r = await controles(s).setFeeSchedule(viewer, { maxRatePercent: body.maxRatePercent as number, minEur: body.minEur as number });
+      if (Object.keys(body).some((k) => !['maxRatePercent', 'minEur', 'tiers'].includes(k))) return failure(400, 'unexpected_field', 'Seuls maxRatePercent, minEur et tiers sont admis.');
+      // AU058 · les tranches, chacune un plafond en taux ou en forfait, contrôlées par le socle.
+      const r = await controles(s).setFeeSchedule(viewer, { maxRatePercent: body.maxRatePercent as number, minEur: body.minEur as number, tiers: body.tiers });
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE });
       return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, code: r.code });
     },
@@ -774,17 +835,6 @@ const ROUTES: RouteDef[] = [
       if (typeof body.seenAt !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{3})?)?Z$/.test(body.seenAt)) return failure(400, 'invalid_date', 'seenAt : un instant ISO en UTC.');
       const r = await controles(s).recordIdentity(viewer, id!, { piece: String(body.piece), seenAt: new Date(body.seenAt) });
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: { id: r.id } });
-      return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, code: r.code });
-    },
-  },
-  {
-    method: 'POST',
-    pattern: new RegExp(`^/documents/${ID}/controle$`),
-    name: 'document.controle',
-    // Le contrôle avant signature, ligne par ligne ; un seul échec et le document ne se signe pas [R41].
-    handle: async (s, viewer, [id]) => {
-      const r = await controles(s).check(viewer, id!);
-      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
       return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, code: r.code });
     },
   },
@@ -909,27 +959,6 @@ const ROUTES: RouteDef[] = [
     },
   },
   {
-    method: 'POST',
-    pattern: new RegExp(`^/documents/${ID}/signature-en-ligne$`),
-    name: 'document.signature_en_ligne',
-    // Ouvre une session de signature en ligne, en essai : le code passe par le contrôle central et reste dans la boîte
-    // d'essai tant que H05 n'est pas fait ; la signature ne rend jamais un mandat réel tant que H24 n'est pas fait [R41].
-    handle: async (s, viewer, [id], request) => {
-      const body = await readJson(request);
-      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
-      if (Object.keys(body).some((k) => k !== 'consentProof' && k !== 'signerId')) return failure(400, 'unexpected_field', 'Seuls consentProof et signerId sont admis.');
-      // Le mandant qui signe, pour un mandat à plusieurs mandants ; le premier par défaut (AU001).
-      if (body.signerId !== undefined && (typeof body.signerId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(body.signerId))) return failure(400, 'invalid_ids', 'signerId mal formé.');
-      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).start(viewer, id!, {
-        consentProof: typeof body.consentProof === 'string' ? body.consentProof : '',
-        ...(typeof body.signerId === 'string' ? { signerId: body.signerId } : {}),
-      });
-      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
-      if (r.code !== 'send_refused' && r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
-      return json(400, { ok: false, rule: r.rule, code: r.code, ...('check' in r ? { check: r.check } : {}) });
-    },
-  },
-  {
     method: 'GET',
     pattern: new RegExp(`^/documents/${ID}/signature-en-ligne$`),
     name: 'document.signature_en_ligne_etat',
@@ -939,24 +968,6 @@ const ROUTES: RouteDef[] = [
       const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).progress(viewer, id!);
       if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
       return r.rule === 'R16' ? refusal(r) : json(404, { ok: false, code: r.code });
-    },
-  },
-  {
-    method: 'POST',
-    pattern: new RegExp(`^/signatures/${ID}$`),
-    name: 'signature.code',
-    // La signature par le code reçu, et le tracé à l'écran s'il y en a un : toujours une signature d'essai.
-    handle: async (s, viewer, [id], request) => {
-      const body = await readJson(request, 220_000);
-      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
-      if (Object.keys(body).some((k) => !['code', 'drawing'].includes(k))) return failure(400, 'unexpected_field', 'Seuls code et drawing sont admis.');
-      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).sign(viewer, id!, {
-        code: typeof body.code === 'string' ? body.code : '',
-        drawing: typeof body.drawing === 'string' ? body.drawing : null,
-      });
-      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
-      if (r.code !== 'send_refused' && r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
-      return json(r.code === 'unknown_session' ? 404 : r.code === 'already_signed' || r.code === 'blocked' ? 409 : 400, { ok: false, code: r.code });
     },
   },
   {
@@ -982,19 +993,106 @@ const ROUTES: RouteDef[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/signature-en-ligne\/mode$/,
+    name: 'signature.mode',
+    // Essai ou réel pour une signature ouverte maintenant, et ce qui manque : le mail réel (H05), la validation de
+    // l'avocat (H24). Agent ou direction [R16] (AU003).
+    handle: async (s, viewer) => {
+      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).mode(viewer);
+      return r.ok ? json(200, { ok: true, mode: r.value.mode, data: r.value }) : refusal(r);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/signature-en-ligne\/validation$/,
+    name: 'signature.validation',
+    // La direction enregistre la validation, par l'avocat du réseau, du format du dossier de preuve (H24) : la référence
+    // de son avis écrit et sa date [R16, R17] (AU003).
+    handle: async (s, viewer, _params, request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      if (Object.keys(body).some((k) => k !== 'reference' && k !== 'validatedOn')) return failure(400, 'unexpected_field', 'Seuls reference et validatedOn sont admis.');
+      if (typeof body.validatedOn !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.validatedOn)) return failure(400, 'invalid_date', 'validatedOn : une date AAAA-MM-JJ.');
+      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).recordValidation(viewer, {
+        reference: typeof body.reference === 'string' ? body.reference : '',
+        validatedOn: new Date(`${body.validatedOn}T00:00:00.000Z`),
+      });
+      if (r.ok) return json(201, { ok: true, mode: TRIAL_MODE, data: { id: r.id } });
+      return r.rule === 'R16' ? refusal({ rule: 'R16', code: r.code }) : json(400, { ok: false, code: r.code });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: new RegExp(`^/documents/${ID}/dossier-preuve$`),
+    name: 'document.dossier_preuve',
+    // L'exemplaire remis et le dossier de preuve d'un document signé réellement par tous [R16] (AU003).
+    handle: async (s, viewer, [id]) => {
+      const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now }).dossier(viewer, id!);
+      if (r.ok) return json(200, { ok: true, mode: 'reel', data: r.value });
+      return r.rule === 'R16' ? refusal(r) : json(404, { ok: false, code: r.code });
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/attribution\/regles$/,
     name: 'attribution.regles',
     // Les règles d'attribution, publiées, les mêmes pour tous [R25] : rien de personnel.
-    handle: async () =>
+    // Les communes sont celles du paramétrage géographique du réseau [R679].
+    handle: async (s, viewer) =>
       json(200, {
         ok: true,
         mode: TRIAL_MODE,
         data: {
           rules: ATTRIBUTION_RULES,
           callbackHours: { hot: DEFAULT_ATTRIBUTION_SETTINGS.hotCallbackHours, other: DEFAULT_ATTRIBUTION_SETTINGS.otherCallbackHours },
-          communes: DEFAULT_ATTRIBUTION_SETTINGS.communes,
+          communes: await new GeographieReseau(s.db, s.journal, { now: s.now }).names(viewer.networkId),
         },
       }),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/attribution\/capacites$/,
+    name: 'attribution.capacites',
+    // La capacité déclarée et les contacts en attente de rappel : la direction pour chaque agent, l'agent pour lui [R681, R16].
+    handle: async (s, viewer) => {
+      const r = await new Attribution(s.db, new FicheUnique(s.db, new FicheClient(s.db, { now: s.now }), { now: s.now }), s.journal, { now: s.now }).capacities(viewer);
+      return r.ok ? json(200, { ok: true, mode: TRIAL_MODE, data: r.value }) : refusal(r);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/attribution\/capacites$/,
+    name: 'attribution.capacites.declaration',
+    // L'agent déclare sa capacité, la direction celle d'un agent, avec une raison ; une version s'ajoute [R681, R16, R17].
+    handle: async (s, viewer, _p, request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      const r = await new Attribution(s.db, new FicheUnique(s.db, new FicheClient(s.db, { now: s.now }), { now: s.now }), s.journal, { now: s.now }).declareCapacity(viewer, body);
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      if (r.rule === 'R16') return refusal(r);
+      return json(r.rule ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/geographie\/communes$/,
+    name: 'geographie.communes',
+    // Le paramétrage géographique du réseau (AU039) : des noms de communes et leurs codes INSEE, rien de personnel [R679].
+    handle: async (s, viewer) => json(200, { ok: true, mode: TRIAL_MODE, data: await new GeographieReseau(s.db, s.journal, { now: s.now }).geography(viewer.networkId) }),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/geographie\/communes$/,
+    name: 'geographie.communes.decision',
+    // La direction seule inscrit ou retire une commune, par une nouvelle version [R679, R16].
+    handle: async (s, viewer, _p, request) => {
+      const body = await readJson(request);
+      if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+      const r = await new GeographieReseau(s.db, s.journal, { now: s.now }).decide(viewer, body);
+      if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      if (r.rule === 'R16') return refusal(r);
+      return json(r.rule ? 409 : 400, { ok: false, rule: r.rule, code: r.code });
+    },
   },
   {
     method: 'GET',
@@ -1284,6 +1382,38 @@ function captationRolloutRoutes(rollout: ApiConfig['captationRollout']): RouteDe
   ];
 }
 
+/** AU032 : ce qui manque à la réception des mails, et chaque portail vérifié ou non par un vrai mail reçu [R669]. */
+function mailIntakeRoutes(settings: MailIntakeSettings): RouteDef[] {
+  return [
+    {
+      method: 'GET',
+      pattern: /^\/captation\/mail$/,
+      name: 'captation.mail',
+      handle: async (s, viewer) => {
+        const r = await mailIntakeState(s.db, s.journal, viewer, settings, s.now);
+        if (!r.ok) return refusal({ rule: r.rule, code: r.code });
+        return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      },
+    },
+  ];
+}
+
+/** AU033 : ce qui manque à la captation Meta, et chaque canal vérifié ou non par un vrai message traité [R670]. */
+function metaIntakeRoutes(settings: MetaIntakeSettings): RouteDef[] {
+  return [
+    {
+      method: 'GET',
+      pattern: /^\/captation\/meta$/,
+      name: 'captation.meta',
+      handle: async (s, viewer) => {
+        const r = await metaIntakeState(s.db, s.journal, viewer, settings, s.now);
+        if (!r.ok) return refusal({ rule: r.rule, code: r.code });
+        return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+      },
+    },
+  ];
+}
+
 function m15Routes(pieces: PieceStore | null, options: Pick<LocationServices, 'adWriter' | 'inventoryFormatter'>): RouteDef[] {
   return locationRoutes().map((r: LocationRoute) => ({
     method: r.method,
@@ -1465,13 +1595,33 @@ function tourneeRoutesDef(geocoder: Geocoder | null): RouteDef[] {
   }));
 }
 
+/** Les routes de la boîte mail de l'agent (AU043) : l'agent en activité seul [R16], rien ne part [R409, R683]. */
+function boiteRoutesDef(boite: ApiConfig['boite']): RouteDef[] {
+  return boiteRoutes().map((r: BoiteRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, mailboxes: boite?.mailboxes ?? null, files: boite?.files ?? null }, viewer, params, request),
+  }));
+}
+
+/** Les reprises des notes vocales non transcrites (AU044) : agent en activité ou direction [R16], rien ne part [R696]. */
+function reprisesVocalesRoutesDef(audio: AudioSource | null): RouteDef[] {
+  return reprisesVocalesRoutes().map((r: ReprisesRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, audio }, viewer, params, request),
+  }));
+}
+
 /** Les routes de la pige (BR29) : rôles contrôlés avant le corps [R16], rien n'est envoyé [R275]. */
-function pigeRoutesDef(source: PigeSource | null): RouteDef[] {
+function pigeRoutesDef(source: PigeSource | null, provider: PigeProviderSettings | null): RouteDef[] {
   return pigeRoutes().map((r: PigeRoute) => ({
     method: r.method,
     pattern: r.pattern,
     name: r.name,
-    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, source }, viewer, params, request),
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, source, provider }, viewer, params, request),
   }));
 }
 
@@ -1602,12 +1752,12 @@ function formationRoutesDef(): RouteDef[] {
 }
 
 /** Les routes du marketing (BR03) : chaque rôle contrôlé avant le corps [R16] ; rien ne part ni ne se paie [R26, R587]. */
-function marketingRoutesDef(): RouteDef[] {
+function marketingRoutesDef(ads: AdsSettings | null): RouteDef[] {
   return marketingRoutes().map((r: MarketingRoute) => ({
     method: r.method,
     pattern: r.pattern,
     name: r.name,
-    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now }, viewer, params, request),
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, ads }, viewer, params, request),
   }));
 }
 
@@ -1703,8 +1853,8 @@ function m16Routes(options: ApiConfig['commerces']): RouteDef[] {
 
 /**
  * Les routes de M19 (X10) : chacune contrôle son rôle avant de lire le corps et écrit le refus au journal [R16] ; sans
- * stockage des fichiers, elles sont fermées. Les réseaux ne sont jamais passés d'ici : la couche métier ne reçoit que
- * ses canaux du mode essai, et la porte de diffusion de D05 [R26, R42, R134].
+ * stockage des fichiers, elles sont fermées. Les réseaux sont ceux du mode essai, sauf les vrais canaux mis en service
+ * par le Worker (AU036) ; la porte de diffusion de D05 est relue par la couche métier [R26, R42, R134].
  */
 function m19Routes(options: StudioOptions | null): RouteDef[] {
   return studioRoutes().map((r: StudioRoute) => ({
@@ -1713,7 +1863,8 @@ function m19Routes(options: StudioOptions | null): RouteDef[] {
     name: r.name,
     handle: (s, viewer, params, request) => {
       if (!options?.files) return Promise.resolve(failure(503, 'studio_files_not_configured', 'Studio fermé : aucun stockage des fichiers.'));
-      return r.handle({ db: s.db, journal: s.journal, now: s.now, files: options.files, writer: options.writer ?? null, uploads: options.uploads ?? null }, viewer, params, request);
+      const social = options.social ? { channels: options.social.channels, live: true as const } : {};
+      return r.handle({ db: s.db, journal: s.journal, now: s.now, files: options.files, writer: options.writer ?? null, uploads: options.uploads ?? null, ...social }, viewer, params, request);
     },
   }));
 }
@@ -1744,12 +1895,12 @@ function biensDeFicheRoutes(): RouteDef[] {
 }
 
 /** La création à la voix (BR100) : l'agent seul, le rôle contrôlé avant le corps [R16]. */
-function dicteeRoutesDef(reportWriter: ReportWriter | null): RouteDef[] {
+function dicteeRoutesDef(reportWriter: ReportWriter | null, agendas: AgendaDirectory | null): RouteDef[] {
   return dicteeRoutes().map((r: DicteeRoute) => ({
     method: r.method,
     pattern: r.pattern,
     name: r.name,
-    handle: (s, viewer, params, request) => r.handle({ db: s.db, acces: s.acces, journal: s.journal, now: s.now, reportWriter }, viewer, params, request),
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, acces: s.acces, journal: s.journal, now: s.now, reportWriter, agendas }, viewer, params, request),
   }));
 }
 
@@ -1760,6 +1911,18 @@ function appelsFicheRoutes(): RouteDef[] {
     pattern: r.pattern,
     name: r.name,
     handle: (s, viewer, params, request) => r.handle({ db: s.db, acces: s.acces, journal: s.journal, now: s.now }, viewer, params, request),
+  }));
+}
+
+/** La visite sans réseau (AU018) : l'agent en activité seul, le rôle contrôlé avant le corps [R16, R276, R278]. */
+function horsLigneRoutesDef(options: HorsLigneOptions | null): RouteDef[] {
+  // AU103b : sans rangement réglé, `images` reste `null` ; le dépôt répond 503 et l'image reste sur le téléphone [R677].
+  const images = options?.images ?? null;
+  return horsLigneRoutes().map((r: HorsLigneRoute) => ({
+    method: r.method,
+    pattern: r.pattern,
+    name: r.name,
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, journal: s.journal, now: s.now, images }, viewer, params, request),
   }));
 }
 
@@ -1782,7 +1945,7 @@ function m20Routes(options: ApiConfig['gagner']): RouteDef[] {
   }));
 }
 
-/** Les services de M01 sur ceux du socle, toujours en mode essai : ni IndexNow ni fiche Google réels [R26]. */
+/** Les services de M01 sur ceux du socle, en mode essai : IndexNow n'est jamais réel ; la fiche Google l'est avec son vrai client (AU037) [R26]. */
 function m01Services(db: SqlDatabase, journal: JournalStore, acces: Acces, now: () => Date, config: Pick<ApiConfig, 'estimation' | 'estimationLimits' | 'attirer' | 'candidatureNetworkId'>): AttirerServices {
   const diffusion = new Diffusion(db, acces, journal, { now });
   return {
@@ -1792,7 +1955,8 @@ function m01Services(db: SqlDatabase, journal: JournalStore, acces: Acces, now: 
     mode: 'essai',
     priceSales: config.estimation?.sales ?? null,
     indexNow: null,
-    gbp: null,
+    gbp: config.attirer?.gbp ?? null,
+    gbpMode: config.attirer?.gbp ? 'reel' : 'essai',
     gbpWriter: config.attirer?.gbpWriter ?? null,
     neighbourhoodWriter: config.attirer?.neighbourhoodWriter ?? null,
     diffusion: { canDiffuse: (networkId, propertyId, at) => diffusion.canDiffuse(networkId, propertyId, at) },
@@ -1815,20 +1979,53 @@ function m01Routes(config: Pick<ApiConfig, 'estimation' | 'attirer'>): RouteDef[
   }));
 }
 
-/** Ce que l'agent lit d'un avis : ni le détail brut du calcul, ni les chiffres permis. */
-const avisView = (r: ValuationReport) => ({
-  id: r.id,
-  propertyId: r.property_id,
-  status: r.status,
-  computedLow: r.computed_low,
-  computedHigh: r.computed_high,
-  low: r.agent_low ?? r.computed_low,
-  high: r.agent_high ?? r.computed_high,
-  text: r.text,
-  createdAt: r.created_at,
-  updatedAt: r.updated_at,
-  validatedAt: r.validated_at,
-});
+/** Une voie sans numéro : un numéro resté en tête ne sort jamais vers l'écran [R29]. */
+const streetOnly = (v: unknown): string | null => {
+  if (typeof v !== 'string') return null;
+  const s = v.replace(/^\s*\d+\s*(?:bis|ter|quater|[a-d])?\b[\s,]*/i, '').trim();
+  return s === '' || /\d/.test(s.slice(0, 1)) ? null : s.slice(0, 120);
+};
+const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+const str = (v: unknown, max = 100): string | null => (typeof v === 'string' && v.length <= max ? v : null);
+const listOf = (v: unknown): Record<string, unknown>[] => (Array.isArray(v) ? v.filter((x): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x)) : []);
+
+/**
+ * Ce que l'agent lit d'un avis : ni le détail brut du calcul, ni les chiffres permis. Les ventes citées (pour les
+ * écarter), les ventes déjà écartées, les ajustements et la version précédente (AU049b) sont relus champ par champ :
+ * rien d'autre ne sort du calcul, ni nom, ni numéro de voie [R29, R692, R693].
+ */
+const avisView = (r: ValuationReport) => {
+  let c: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = JSON.parse(r.computed);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) c = parsed as Record<string, unknown>;
+  } catch {
+    c = {};
+  }
+  const manual = c.method === 'manual';
+  return {
+    id: r.id,
+    propertyId: r.property_id,
+    status: r.status,
+    method: manual ? ('manual' as const) : ('computed' as const),
+    kind: c.kind === 'apartment' || c.kind === 'house' || c.kind === 'land' || c.kind === 'building' ? c.kind : null,
+    condition: str(c.condition, 20),
+    computedLow: r.computed_low,
+    computedHigh: r.computed_high,
+    low: r.agent_low ?? r.computed_low,
+    high: r.agent_high ?? r.computed_high,
+    text: r.text,
+    cited: manual
+      ? []
+      : listOf(c.cited).map((s) => ({ id: str(s.id), month: str(s.month, 10), surface: num(s.surface), pricePerM2: num(s.pricePerM2), distance: num(s.distance), street: streetOnly(s.street), town: str(s.town) })),
+    excluded: listOf(c.excluded).map((e) => ({ id: str(e.id), reason: str(e.reason, 40), month: str(e.month, 10), surface: num(e.surface), pricePerM2: num(e.pricePerM2), in: str(e.in) })),
+    adjustments: listOf(c.adjustments).map((a) => ({ label: str(a.label), pct: num(a.pct), source: a.source === 'agent' ? ('agent' as const) : ('bareme' as const), motive: a.source === 'agent' ? str(a.motive, 40) : null })),
+    previous: str(c.previous),
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    validatedAt: r.validated_at,
+  };
+};
 
 /** Un refus de l'avis : droit ou validation en 403, inconnu en 404, le reste en 409 ou 422 selon sa cause. */
 function avisRefusal(r: { rule: string | null; code: string; comparablesFound?: number }): Response {
@@ -1924,12 +2121,18 @@ export function espaceBase(raw: string | undefined): string | null {
 /** Sans stockage des pièces, aucune offre signée n'est reconnue : l'offre écrite depuis l'espace est refusée. */
 const NO_SIGNED_OFFERS = { has: async (): Promise<boolean> => false };
 
+/** AU053 : les événements occupés de l'agenda relié de l'agent, pour un rendez-vous pris hors de la réservation en ligne. */
+function agendaOption(db: SqlDatabase, journal: JournalStore, agendas: AgendaDirectory | null, now: () => Date) {
+  const agenda = agendaBusyOf(db, journal, agendas, now);
+  return agenda ? { agenda } : {};
+}
+
 /**
  * Les services des espaces sur ceux du socle (EC07) : les lecteurs SQL de EC08, EC09 et EC11, les gestes de EC10
  * passés aux modules qui les tiennent [R165], l'identité lue au coffre par son seul état, le rendement par la seule
  * porte des notes validées de M17 [R163]. `null` si l'espace n'est pas configuré.
  */
-function espacesServices(db: SqlDatabase, journal: JournalStore, acces: Acces, now: () => Date, config: Pick<ApiConfig, 'espaces' | 'estimation' | 'pieces'>): EspacesServices | null {
+function espacesServices(db: SqlDatabase, journal: JournalStore, acces: Acces, now: () => Date, config: Pick<ApiConfig, 'espaces' | 'estimation' | 'pieces' | 'agendas'>): EspacesServices | null {
   const networkId = config.espaces?.networkId?.trim();
   const baseUrl = espaceBase(config.espaces?.baseUrl);
   if (!networkId || !baseUrl) return null;
@@ -1955,7 +2158,8 @@ function espacesServices(db: SqlDatabase, journal: JournalStore, acces: Acces, n
         journal,
         fiche,
         consents: store,
-        visites: new Visites(db, journal, acces, { now }),
+        // AU053 : la visite demandée depuis l'espace se contrôle sur l'agenda relié de l'agent [R33, R702].
+        visites: new Visites(db, journal, acces, { now, rendezVous: new RendezVousAgenda(db, journal, { now, ...agendaOption(db, journal, config.agendas ?? null, now) }) }),
         offres: new m09core.RegistreOffres(db, acces, journal, { now }),
         financement: new m10core.FinancementDossier(db, acces, journal, { now }),
         signedOffers: config.pieces ?? NO_SIGNED_OFFERS,
@@ -1992,6 +2196,78 @@ function espacesAgentRoutes(config: Pick<ApiConfig, 'espaces' | 'estimation' | '
 function mandatRoutes(pieces: PieceStore | null): RouteDef[] {
   const mandats = (s: Services) => new MandatDuBien(s.db, s.acces, s.journal, { now: s.now });
   return [
+    // Le contrôle avant signature : la procuration d'un mandant représenté se vérifie dans le stockage des scans (AU059).
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/documents/${ID}/controle$`),
+      name: 'document.controle',
+      // Le contrôle avant signature, ligne par ligne ; un seul échec et le document ne se signe pas [R41].
+      handle: async (s, viewer, [id]) => {
+        const r = await new ControlesSignature(s.db, s.acces, s.journal, { now: s.now, scans: pieces }).check(viewer, id!);
+        if (r.ok) return json(200, { ok: true, mode: TRIAL_MODE, data: r.value });
+        return r.rule === 'R16' ? refusal(r) : json(400, { ok: false, code: r.code });
+      },
+    },
+    // La signature et la fin de la signature en ligne : la procuration s'y vérifie aussi (AU059).
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/signatures/${ID}$`),
+      name: 'signature.code',
+      // La signature par le code reçu, et le tracé à l'écran s'il y en a un : d'essai ou réelle selon la session (AU003).
+      handle: async (s, viewer, [id], request) => {
+        const body = await readJson(request, 220_000);
+        if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+        if (Object.keys(body).some((k) => !['code', 'drawing'].includes(k))) return failure(400, 'unexpected_field', 'Seuls code et drawing sont admis.');
+        const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now, scans: pieces }).sign(viewer, id!, {
+          code: typeof body.code === 'string' ? body.code : '',
+          drawing: typeof body.drawing === 'string' ? body.drawing : null,
+        });
+        if (r.ok) return json(200, { ok: true, mode: r.value.mode, data: r.value });
+        if (r.code !== 'send_refused' && r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
+        return json(r.code === 'unknown_session' ? 404 : r.code === 'already_signed' || r.code === 'blocked' ? 409 : 400, { ok: false, code: r.code });
+      },
+    },
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/documents/${ID}/signature-en-ligne/fin$`),
+      name: 'document.signature_en_ligne_fin',
+      // Finit un document signé réellement par chaque mandant : mandat inscrit, dossier de preuve figé, exemplaire et
+      // dossier remis à chacun ; la source du mandat, si la fiche ne la donne pas [R38, R39, R41] (AU003).
+      handle: async (s, viewer, [id], request) => {
+        const body = (await readJson(request)) ?? {};
+        if (Object.keys(body).some((k) => k !== 'source' && k !== 'sourceDetail')) return failure(400, 'unexpected_field', 'Seuls source et sourceDetail sont admis.');
+        const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now, scans: pieces }).finish(viewer, id!, {
+          source: typeof body.source === 'string' ? body.source : null,
+          sourceDetail: typeof body.sourceDetail === 'string' ? body.sourceDetail : null,
+        });
+        if (r.ok) return json(200, { ok: true, mode: 'reel', data: r.value });
+        if (r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
+        return json(r.code === 'unknown_document' ? 404 : 409, { ok: false, rule: r.rule, code: r.code });
+      },
+    },
+    // La signature en ligne : la procuration d'un mandant représenté se vérifie dans le stockage des scans (AU059).
+    {
+      method: 'POST',
+      pattern: new RegExp(`^/documents/${ID}/signature-en-ligne$`),
+      name: 'document.signature_en_ligne',
+      // Ouvre une session de signature en ligne, en essai : le code passe par le contrôle central et reste dans la boîte
+      // d'essai tant que H05 n'est pas fait ; la signature ne rend jamais un mandat réel tant que H24 n'est pas fait [R41].
+      handle: async (s, viewer, [id], request) => {
+        const body = await readJson(request);
+        if (body === null) return failure(400, 'invalid_body', 'Corps JSON attendu.');
+        if (Object.keys(body).some((k) => k !== 'consentProof' && k !== 'signerId')) return failure(400, 'unexpected_field', 'Seuls consentProof et signerId sont admis.');
+        // Le mandant qui signe, pour un mandat à plusieurs mandants ; le premier par défaut (AU001).
+        if (body.signerId !== undefined && (typeof body.signerId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(body.signerId))) return failure(400, 'invalid_ids', 'signerId mal formé.');
+        const r = await new SignatureEnLigne(s.db, s.acces, s.journal, { now: s.now, scans: pieces }).start(viewer, id!, {
+          consentProof: typeof body.consentProof === 'string' ? body.consentProof : '',
+          ...(typeof body.signerId === 'string' ? { signerId: body.signerId } : {}),
+        });
+        // Le mode de la session, fixé à son ouverture : d'essai tant que H05 et H24 ne sont pas faits (AU003).
+        if (r.ok) return json(200, { ok: true, mode: r.value.mode, data: r.value });
+        if (r.code !== 'send_refused' && r.rule === 'R16') return refusal({ rule: 'R16', code: r.code });
+        return json(400, { ok: false, rule: r.rule, code: r.code, ...('check' in r ? { check: r.check } : {}) });
+      },
+    },
     {
       method: 'GET',
       pattern: new RegExp(`^/biens/${ID}/mandat$`),
@@ -2087,6 +2363,8 @@ export async function journalError(journal: JournalStore, actor: string, route: 
 export async function handleRequest(request: Request, config: ApiConfig): Promise<Response> {
   const now = config.now ?? (() => new Date());
   const url = new URL(request.url);
+  // AU075b · un début de liens qui ne mènerait pas aux pages du bon n'est pas pris : ni page, ni signature à distance.
+  const bonVisiteBase = bonVisiteLinkBase(config.bonVisiteBase);
   // L'application de l'agent (A01) : une coquille sans aucune donnée, servie seulement en mode essai.
   const app = handleAgentApp(request);
   if (app) return config.mode === TRIAL_MODE ? app : failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
@@ -2142,6 +2420,17 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       if (page) return page;
     } catch (error) {
       await partenairesPublicError(config.db, error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
+  // Les pages publiques du bon de visite (AU075b) : signer à distance et rouvrir son exemplaire, le jeton seul ouvre.
+  if (url.pathname.startsWith(BON_VISITE_PUBLIC_PATH) && bonVisiteBase) {
+    if (config.mode !== TRIAL_MODE) return failure(503, 'not_in_trial_mode', 'API fermée : seul le mode essai est admis.');
+    try {
+      const page = await handleBonVisitePublic(request, { db: config.db, now, baseUrl: bonVisiteBase });
+      if (page) return page;
+    } catch (error) {
+      await journalError(new SqlJournalStore(config.db), 'public:bon-visite', 'visites.bon.public', error, now);
       return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
     }
   }
@@ -2271,10 +2560,26 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
         intakeKeys: config.intakeKeys,
         ...(config.bookingLimits ? { limits: config.bookingLimits } : {}),
         linkBase: config.appointmentLinkBase ?? null,
+        agenda: agendaBusyOf(config.db, new SqlJournalStore(config.db), config.agendas ?? null, now),
         now,
       });
     } catch (error) {
       await journalError(new SqlJournalStore(config.db), 'intake:site_booking', 'rendez-vous', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
+
+  // AU045 : les appels renvoyés vers l'assistant vocal, signés par le service téléphonique [R710].
+  if (path === TELEPHONIE_PATHS.appel || path === TELEPHONIE_PATHS.tour || path === TELEPHONIE_PATHS.fin) {
+    try {
+      return await handleTelephonie(request, path, {
+        ...(config.telephonie ?? { mode: undefined, accountSid: undefined, authToken: undefined }),
+        db: config.db,
+        now,
+        linkBase: config.appointmentLinkBase ?? null,
+      });
+    } catch (error) {
+      await journalError(new SqlJournalStore(config.db), 'telephonie', 'voix.telephonie', error, now);
       return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
     }
   }
@@ -2310,6 +2615,17 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     }
   }
 
+  // L'accès de sortie d'un agent parti (AU111) : public, le lien seul ouvre ; jamais un client.
+  if (path.startsWith('/sortie/')) {
+    try {
+      const exit = await handleSortiePublic(request, path, { db: config.db, journal: new SqlJournalStore(config.db), now }, config.reseau?.pieces ?? null);
+      if (exit) return exit;
+    } catch (error) {
+      await journalError(new SqlJournalStore(config.db), 'public:sortie', 'reseau.sortie', error, now);
+      return failure(500, 'internal_error', 'Erreur interne, écrite au journal.');
+    }
+  }
+
   // La connexion par une clé d'appareil (BR06) : publique, limitée en débit, une seule réponse pour tout refus [R600].
   try {
     const login = await handleConnexion(request, { db: config.db, now, site: config.cles ?? null, ...(config.clesLimits ? { limits: config.clesLimits } : {}) });
@@ -2334,11 +2650,15 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // Les clés du secret `API_KEYS`, et celles remises par une invitation (Z02). Un secret présent mais mal formé
   // ferme toute l'API, même s'il existe des clés d'invitation : lecture prudente. À côté des clés, la séance d'une clé
   // d'appareil (BR06), relue dans la base à chaque demande : une clé retirée ou un agent parti la coupent [R600, R82].
-  const secretKeys = config.apiKeys === undefined || config.apiKeys.trim() === '' ? [] : parseApiKeys(config.apiKeys);
-  if (secretKeys === null) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');
-  const keys = mergeKeys(secretKeys, await invitedKeys(config.db));
+  const parsedKeys = config.apiKeys === undefined || config.apiKeys.trim() === '' ? [] : parseApiKeys(config.apiKeys);
+  if (parsedKeys === null) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');
+  // AU108 · avec les séances réglées, une clé du secret d'un agent, de la direction ou de la conformité sans date de fin
+  // n'ouvre rien : elle serait un accès permanent à côté des séances. La clé « mcp » de l'assistant n'ouvre que le MCP.
+  const secretKeys = config.cles ? parsedKeys.filter((k) => k.expiresOn !== undefined || k.scope === 'mcp' || !DEVICE_KEY_ROLES.includes(k.role)) : parsedKeys;
+  // AU108 · avec les séances réglées, une clé d'application ne vit que le temps de ranger la clé de l'appareil.
+  const keys = mergeKeys(secretKeys, await invitedKeys(config.db, config.cles ? { now: now() } : {}));
   if (keys.length === 0 && !config.cles) return failure(503, 'keys_not_configured', 'API fermée : aucune clé configurée.');
-  let keyViewer = keys.length > 0 ? await viewerFromRequest(request, keys) : null;
+  let keyViewer = keys.length > 0 ? await viewerFromRequest(request, keys, parisLocalTime(now(), 'Europe/Paris').date) : null;
   // La clé qu'un agent a créée pour son assistant (BR09), relue dans la base à chaque demande : retirée, ou son agent
   // parti, elle n'est plus reconnue [R82]. Elle porte la portée « mcp » : elle n'ouvre que le serveur MCP [R590].
   if (keyViewer === null) {
@@ -2368,8 +2688,8 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
   // clients (EC07), fermée sans espace configuré.
   const routes: RouteDef[] = [
     ...ROUTES,
-    ...m08Routes({ unsubscribeBase: config.alertUnsubscribeBase ?? null, ...(config.reportWriter ? { reportWriter: config.reportWriter } : {}) }),
-    ...annonceRoutes(),
+    ...m08Routes({ agendas: config.agendas ?? null, unsubscribeBase: config.alertUnsubscribeBase ?? null, slipLinkBase: bonVisiteBase, geocoder: config.secteursGeocoder ?? config.estimation?.geocoder ?? null, tiles: config.mapTiles ?? null, ...(config.reportWriter ? { reportWriter: config.reportWriter } : {}) }),
+    ...annonceRoutes(config.listing ?? {}),
     ...offreRoutes(config.pieces ?? null),
     ...m10Routes(config.pieces ?? null),
     ...mandatRoutes(config.pieces ?? null),
@@ -2378,6 +2698,8 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...reseauRoutes(config.reseau ?? {}),
     ...rolloutRoutes(config.automationRolloutOpen === true),
     ...captationRolloutRoutes(config.captationRollout),
+    ...mailIntakeRoutes({ mode: config.mode, networkId: config.mail?.networkId, forwardTo: config.mail?.forwardTo, ownAddresses: config.mail?.ownAddresses }),
+    ...metaIntakeRoutes({ mode: config.mode, ...(config.meta ?? { appSecret: undefined, verifyTokenSha256: undefined, networkId: undefined, ownIds: undefined, appIds: undefined }) }),
     ...m15Routes(config.pieces ?? null, config.location ?? {}),
     ...coproprieteRoutesDef(coproprieteSourcesOf(config)),
     ...avantContratRoutesDef(config.pieces ?? null, config.avantContrat ?? {}),
@@ -2393,7 +2715,9 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...tourneeRoutesDef(config.estimation?.geocoder ?? null),
     ...rechercheRoutesDef(),
     ...statistiquesSiteRoutesDef(),
-    ...pigeRoutesDef(config.pigeSource ?? null),
+    ...pigeRoutesDef(config.pigeSource ?? null, config.pigeProvider ?? null),
+    ...boiteRoutesDef(config.boite),
+    ...reprisesVocalesRoutesDef(config.voiceAudio ?? null),
     ...adressePigeRoutesDef(adressePigeSourcesOf(config)),
     ...sequencesRoutesDef(),
     ...phasesRoutesDef(),
@@ -2403,7 +2727,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...postgresqlRoutesDef(config.platformNetworkId || null),
     ...licencesRoutesDef(),
     ...recrutementRoutesDef(),
-    ...marketingRoutesDef(),
+    ...marketingRoutesDef(config.ads ?? null),
     ...formationRoutesDef(),
     ...mcpRoutesDef(),
     ...financesRoutesDef(config.lecteurFactures ?? null),
@@ -2415,9 +2739,10 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...m20Routes(config.gagner),
     ...accordsFicheRoutes(),
     ...biensDeFicheRoutes(),
-    ...dicteeRoutesDef(config.reportWriter ?? null),
+    ...dicteeRoutesDef(config.reportWriter ?? null, config.agendas ?? null),
     ...appelsFicheRoutes(),
     ...notificationsRoutesDef(),
+    ...horsLigneRoutesDef(config.horsLigne ?? null),
     ...m01Routes(config),
     ...avisRoutes(config),
     ...repriseRoutes(),
@@ -2445,6 +2770,12 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
       await appendEvent(s.journal, { type: 'acces.refuse', actor: `${viewer.role}:${viewer.userId}`, subject: null, data: { rule: 'R590', role: viewer.role, kind: `route.${route.name}`, code } }, now);
       return json(403, { ok: false, rule: 'R590', code });
     }
+    // AU107 · un rôle à accès limité n'atteint que ses routes nommées : toute autre est refusée avant sa porte [R16].
+    const limited = LIMITED_ROLE_ROUTES[viewer.role];
+    if (limited !== undefined && !limited.includes(route.name)) {
+      await appendEvent(s.journal, { type: 'acces.refuse', actor: `${viewer.role}:${viewer.userId}`, subject: null, data: { rule: 'R16', role: viewer.role, kind: `route.${route.name}`, code: 'limited_role' } }, now);
+      return json(403, { ok: false, rule: 'R16', code: 'limited_role' });
+    }
     // Un agent parti ne lit ni n'écrit plus rien, dès minuit le jour de son départ [R86, R16] ; un agent au dossier
     // incomplet n'a que les routes de son intégration [R82]. Le refus est écrit au journal avant toute lecture.
     if (viewer.role === 'agent') {
@@ -2456,7 +2787,34 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
         return json(403, { ok: false, rule, code });
       }
     }
-    return await route.handle(s, viewer, params, request);
+    const response = await route.handle(s, viewer, params, request);
+    // AU108 · la clé de cet appareil rangée par une clé d'application : celle-ci cesse ; l'appareil entre désormais par
+    // ses séances, qu'on coupe en retirant sa seule clé, sans toucher aux autres appareils [R600].
+    const appKey = invitationKeyOf(request);
+    // AU067 · une rétractation ou une annulation du mandat retire l'annonce tout de suite, partout, avec chaque accusé ;
+    // ce qui échoue reste dû au passage planifié [R42, R668].
+    if ((route.name === 'mandat.retractation' || route.name === 'mandat.annulation') && response.ok && params[0]) {
+      const retraits = new m07.RetraitsImmediats(s.db, s.acces, s.journal, { now, ...(config.listing?.channels ? { channels: config.listing.channels } : {}), ...(config.listing?.portals ? { portals: config.listing.portals } : {}) });
+      const propertyId = await retraits.propertyOfMandate(viewer.networkId, params[0]);
+      if (propertyId !== null) {
+        const done = await retraits.run(viewer.networkId, propertyId, `${String(viewer.role)}:${viewer.userId}`);
+        // AU036 · les vraies publications du bien sur les réseaux sont retirées dans le même geste ; ce qui échoue reste
+        // dû au passage planifié (`runLiveWithdrawals`) [R42].
+        const pull = config.studio?.withdrawals ?? config.studio?.social ?? null;
+        const reseaux = pull ? await withdrawLiveNow(s.db, s.journal, now, pull, viewer.networkId, propertyId, `${String(viewer.role)}:${viewer.userId}`) : null;
+        const body = (await response.json()) as Record<string, unknown>;
+        return json(response.status, { ...body, retraits: { state: done.state, channels: done.channels, portals: done.portals, busy: done.busy, ...(reseaux ? { reseaux } : {}) } });
+      }
+    }
+    if (route.name === 'cles.appareils.retrait' && response.ok && params[0]) await retireApplicationKeysOf(s.db, s.journal, params[0], `${viewer.role}:${viewer.userId}`, now);
+    if (appKey !== null && route.name === 'cles.enregistrement.fin' && response.ok) {
+      if (await retireApplicationKey(s.db, s.journal, appKey, `${viewer.role}:${viewer.userId}`, now)) {
+        // L'application le sait : elle quitte la clé retirée et propose l'entrée par la clé de l'appareil.
+        const body = (await response.json()) as Record<string, unknown>;
+        return json(response.status, { ...body, handoff: true });
+      }
+    }
+    return response;
   } catch (error) {
     // Jamais d'erreur avalée : une ligne au journal, sans le détail qui pourrait porter une donnée [R13].
     try {

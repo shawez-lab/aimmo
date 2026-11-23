@@ -66,6 +66,8 @@ export const BANQUE_REFUSALS: Readonly<Record<string, string>> = Object.freeze({
   bad_time: 'Le jour de la ligne est d’avant la facture validée : l’encaissement ne se range pas.',
   future_time: 'Le jour de la ligne est à venir : l’encaissement attend ce jour.',
   not_pending: 'Cette relance n’attend plus de validation : l’écran est relu.',
+  texte_change: 'Le texte de cette relance a été refait depuis votre lecture : l’écran est relu, relisez-le avant de valider.',
+  texte_a_refaire: 'Une part de paiement est arrivée : le texte se refait au reste dû au prochain passage, puis se relit avant d’être validé.',
 });
 
 export const BANQUE_REMINDER_STATES: Readonly<Record<string, string>> = Object.freeze({
@@ -286,7 +288,7 @@ globalThis.AIMMO_BANQUE = function (t) {
       if (r.status === 'a_valider') {
         var holder = el('div');
         twoSteps(holder, 'Valider ce texte', 'Valider ce texte, tel quel : il partira au prochain passage, par le contrôle central, en mode essai.', 'Confirmer la validation', function () {
-          write(R + '/' + encodeURIComponent(r.id) + '/validation', undefined, function () { return 'Relance de la facture ' + r.label + ' validée : elle partira au prochain passage, en mode essai.'; });
+          write(R + '/' + encodeURIComponent(r.id) + '/validation', { preparedAt: r.preparedAt, text: r.text }, function () { return 'Relance de la facture ' + r.label + ' validée : elle partira au prochain passage, en mode essai.'; });
         });
         li.appendChild(holder);
       }

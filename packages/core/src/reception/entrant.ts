@@ -34,6 +34,11 @@ export interface InboundMessage {
   kind: InboundKind;
   /** Identifiant du message chez le canal : la clé de la réception unique [R18]. */
   externalId: string;
+  /**
+   * Les autres identifiants sous lesquels ce même message a pu être déjà rangé : l'identifiant du mail d'une demande de
+   * portail rangée sous sa référence de demande (AU032). Un message déjà rangé sous l'un d'eux est un doublon [R18].
+   */
+  previousExternalIds?: readonly string[];
   /** Fil de la conversation chez le canal : conversation Meta, numéro WhatsApp, fil de mails, session du site. */
   conversationRef: string | null;
   sender: InboundSender;

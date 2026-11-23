@@ -1,6 +1,8 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { renderSlipSignPage } from '../src/bon-visite-public.ts';
+import { renderSlipCopy } from '../../core/src/visites/signature-bon.ts';
 import { DESIGN_CSS, PAIRES_TEXTE, PAIRES_TRAIT, PALETTE, PRINT_DESIGN_CSS, renderPublicPage, renderValuationPrint, type Teinte } from '@aimmo/core';
 import { renderLegalNotice, renderPrivacyPage, withLegalLinks } from '../../core/src/attirer/mentions-site.ts';
 import { renderEstimationPage } from '../../core/src/attirer/page-estimation.ts';
@@ -30,7 +32,7 @@ const LISTING: PageInput = {
     state: 'en_vente',
     title: 'Maison 5 pièces à Talant',
     body: 'Un jardin clos.\nTrois chambres.',
-    mentions: `Prix : 320${S}000${N}€ honoraires inclus.\nCarte professionnelle n° CPI 0000.`,
+    mentions: `Prix : 320${S}000${N}€ honoraires inclus.\nClasse énergie D, classe climat B. Logement à consommation énergétique moyenne.\nCarte professionnelle n° CPI 0000.`,
     priceEur: 320000,
     media: [],
   },
@@ -62,8 +64,8 @@ async function screens(): Promise<{ name: string; html: string; css?: string; js
       budget: BUDGETS.page,
     },
     { name: 'liste des communes', html: renderPricesList(Array.from({ length: 2000 }, (_, i) => { const n = (i * 7919 + 100000).toString(36); return { slug: `v${n}`, name: `Ville ${n}` }; }))!, budget: BUDGETS.page },
-    { name: 'mentions légales', html: withLegalLinks(renderLegalNotice({ values: {}, cardNumber: null, cardHolder: null, missing: ['x'] })), budget: BUDGETS.page },
-    { name: 'données personnelles', html: withLegalLinks(renderPrivacyPage({ values: {}, cardNumber: null, cardHolder: null, missing: ['x'] })), budget: BUDGETS.page },
+    { name: 'mentions légales', html: withLegalLinks(renderLegalNotice({ values: {}, cardNumber: null, cardHolder: null, missing: ['x'], launchClosedBy: [] })), budget: BUDGETS.page },
+    { name: 'données personnelles', html: withLegalLinks(renderPrivacyPage({ values: {}, cardNumber: null, cardHolder: null, missing: ['x'], launchClosedBy: [] })), budget: BUDGETS.page },
     { name: 'estimation en ligne', html: renderEstimationPage({ visitorId: 'visite-0000000000000001', open: true, appointmentHref: '/agents' }), budget: BUDGETS.page },
     {
       name: 'estimation en ligne, sa fourchette',
@@ -73,6 +75,13 @@ async function screens(): Promise<{ name: string; html: string; css?: string; js
     { name: 'accueil du réseau', html: renderSiteHome({ kind: 'reseau', recruiting: true, agent: null, listings: [], checkedAt: new Date(0) }), budget: BUDGETS.page },
     { name: 'accueil du site d’un agent', html: renderSiteHome({ kind: 'agent', recruiting: false, agent: { agentId: 'a1', name: 'Alex Exemple', mentions: { rsacNumber: '123 456 789', rsacRegistry: 'Dijon', cardNumber: 'CPI 0000', cardHolder: 'Société Exemple' } }, listings: [], checkedAt: new Date(0) }), budget: BUDGETS.page },
     { name: 'page du bien', html: renderListingPage(LISTING), budget: BUDGETS.page },
+    // AU075b · le bon de visite à signer à distance, puis l'exemplaire signé : sans script, dans le système de design.
+    { name: 'bon de visite à signer', html: renderSlipSignPage({ action: '/visite/signer/' + 'a'.repeat(64), paragraphs: ['DOCUMENT D’ESSAI.', 'Bon de visite : Inès Exemple visite REF-T-1.'], slipHash: 'f'.repeat(64), error: 'Code faux.' }), budget: BUDGETS.page },
+    {
+      name: 'exemplaire du bon de visite',
+      html: renderSlipCopy('<!doctype html><html><body><p>Bon de visite : Inès Exemple visite REF-T-1.</p></body></html>', { appointmentId: 'v1', slipId: 's1', slipHash: 'f'.repeat(64), signedAt: '2027-03-03T15:00:00.000Z', place: 'distance', method: 'code', channel: 'sms', drawingHash: null, mode: 'essai', realSignature: false }),
+      budget: BUDGETS.page,
+    },
     { name: 'page du bien retiré', html: renderListingPage({ ...LISTING, payload: { ...LISTING.payload, state: 'retiree' } }), budget: BUDGETS.page },
     { name: 'fiche imprimable', html: renderListingPrint(LISTING)!, print: true, budget: BUDGETS.page },
     {
@@ -189,6 +198,7 @@ describe('Z03 · système de design d’AIMMO', () => {
       'core/src/recherche/page-publique.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/presentation/presentation.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/medias/visite-distance.ts': /^<style>\$\{CSS\}<\/style>$/,
+      'core/src/visites/signature-bon.ts': /^<style>\$\{CSS\}<\/style>$/,
       'core/src/marketing/lettre.ts': /^<style>\$\{MAGAZINE_CSS\}<\/style>$/,
     };
     const offenders: string[] = [];

@@ -24,6 +24,7 @@ import { ROLES, decideAccess, type Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { runBatch } from '../db/sql.ts';
 import { Diffusion } from '../documents/retractation.ts';
+import { mandateTerms } from '../documents/conditions.ts';
 import { mandateFeeAt, saleAgentAt } from '../dossiers/acte.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -94,6 +95,12 @@ export interface GridInput {
   validFrom: string;
   defaultRateBp: number;
   agents?: { agentId: string; rateBp: number }[];
+  /**
+   * AU092 · les paliers de la grille contractuelle : la part de l'agent selon son chiffre d'affaires cumulé de l'année
+   * civile (honoraires des ventes déjà comptées). Le premier part de 0, chacun au-dessus du précédent. Un agent qui a son
+   * taux propre le garde.
+   */
+  tiers?: { fromCents: number; rateBp: number }[];
   /** La dernière version vue par l'écran : une version rangée entre-temps refuse celle-ci, aucun taux ne se perd [R17]. */
   expectedVersion?: number | null;
 }
@@ -102,6 +109,24 @@ export interface GridLine {
   version: number;
   validFrom: string;
   defaultRateBp: number;
+  /** AU092 · ses paliers, du plus bas au plus haut ; vide sans grille à paliers. */
+  tiers: { fromCents: number; rateBp: number }[];
+}
+
+/** AU092 · le palier retenu pour une vente, rangé avec elle : l'année, le cumul lu avant elle, le palier, son taux. */
+export interface TierPick {
+  year: number;
+  cumulCents: number;
+  tierSeq: number;
+  fromCents: number;
+  rateBp: number;
+}
+
+/** AU092 · le palier d'un cumul : le plus haut qu'il atteint. */
+export function tierFor(tiers: readonly { fromCents: number; rateBp: number }[], cumulCents: number): { seq: number; fromCents: number; rateBp: number } | null {
+  let pick: { seq: number; fromCents: number; rateBp: number } | null = null;
+  tiers.forEach((t, i) => { if (cumulCents >= t.fromCents) pick = { seq: i + 1, fromCents: t.fromCents, rateBp: t.rateBp }; });
+  return pick;
 }
 
 export interface CommissionView {
@@ -122,7 +147,34 @@ export interface CommissionView {
   signedOn: string | null;
   /** Vente annulée par un avoir : plus rien ne s'encaisse ni ne se verse [R71]. */
   cancelled: boolean;
+  /** AU092 · le palier retenu, pour la direction et l'agent de la vente ; `null` hors grille à paliers. */
+  tier: TierPick | null;
+  /** AU091 · les régularisations approuvées, de la plus ancienne à la plus récente : pour la direction et l'agent de la
+   * vente ; vide pour un agent qui n'a qu'une part [R68]. */
+  revisions: CommissionRevision[];
 }
+
+/** AU091 · une version de la commission, approuvée par la direction après un avenant d'honoraires [R678]. */
+export interface CommissionRevision {
+  version: number;
+  at: string;
+  feeBeforeCents: number;
+  feeAfterCents: number;
+  chargeBefore: 'vendeur' | 'acquereur' | null;
+  chargeAfter: 'vendeur' | 'acquereur' | null;
+  amendmentId: string;
+  reason: string;
+  approvedBy: string;
+  sharesBefore: CommissionShare[];
+  sharesAfter: CommissionShare[];
+}
+
+/** AU091 · ce que la régularisation refuse : rien n'est écrit. */
+export type RegularizationProblem = {
+  ok: false;
+  rule: 'R678' | null;
+  code: 'unknown' | 'bad_reason' | 'not_planned' | 'already_due' | 'nothing_to_fix' | 'partage_invalide' | 'partage_inconnu' | 'parts_changees' | 'releve_emis' | 'stale';
+};
 
 /** Une vente que le passage n'arrive pas à faire avancer : la direction tranche [R63, R67]. Sans montant ni nom [R13]. */
 export interface CommissionBlocked {
@@ -131,7 +183,7 @@ export interface CommissionBlocked {
 }
 
 export type CommissionRefusal = { ok: false; rule: 'R16'; code: string };
-type GridProblem = { ok: false; rule: null; code: 'bad_day' | 'past_day' | 'bad_rate' | 'unknown_agent' | 'duplicate_agent' | 'stale_grid' };
+type GridProblem = { ok: false; rule: null; code: 'bad_day' | 'past_day' | 'bad_rate' | 'unknown_agent' | 'duplicate_agent' | 'stale_grid' | 'bad_tiers' };
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const validDay = (v: unknown): v is string => {
@@ -199,20 +251,38 @@ export class Commissions {
       const row = await this.db.first<{ network_id: string }>('SELECT network_id FROM agents WHERE id = ?', [a.agentId]);
       if (!row || row.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown_agent' };
     }
+    // Sans paliers dits, la nouvelle version garde ceux de la grille qui vaut à son premier jour : un écran qui ne les
+    // montre pas ne les efface pas.
+    // Une liste vide les retire.
+    const tiers =
+      input.tiers !== undefined
+        ? input.tiers
+        : (
+            await this.db.all<{ from_cents: number; rate_bp: number }>(
+              // Ceux de la grille qui vaut au jour de la nouvelle version, jamais ceux d'une version programmée plus tard.
+              `SELECT t.from_cents, t.rate_bp FROM commission_grid_tiers t
+                WHERE t.grid_id = (SELECT g.id FROM commission_grids g WHERE g.network_id = ? AND g.valid_from <= ? ORDER BY g.valid_from DESC, g.version DESC LIMIT 1)
+                ORDER BY t.seq`,
+              [viewer.networkId, input.validFrom],
+            )
+          ).map((t) => ({ fromCents: Number(t.from_cents), rateBp: Number(t.rate_bp) }));
+    if (!Array.isArray(tiers) || tiers.length === 1 || tiers.length > 10) return { ok: false, rule: null, code: 'bad_tiers' };
+    for (let i = 0; i < tiers.length; i++) {
+      const t = tiers[i];
+      if (!t || !Number.isInteger(t.fromCents) || t.fromCents < 0 || !validRate(t.rateBp)) return { ok: false, rule: null, code: 'bad_tiers' };
+      if (i === 0 ? t.fromCents !== 0 : t.fromCents <= tiers[i - 1]!.fromCents) return { ok: false, rule: null, code: 'bad_tiers' };
+    }
     const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM commission_grids WHERE network_id = ?', [viewer.networkId]);
     if (input.expectedVersion !== undefined && input.expectedVersion !== (last?.v ?? null)) return { ok: false, rule: null, code: 'stale_grid' };
     const version = (last?.v ?? 0) + 1;
     const id = this.newId();
-    // Une seule écriture : une grille n'existe jamais sans ses taux d'agents.
-    await this.db.run('INSERT INTO commission_grids (id, network_id, version, valid_from, default_rate_bp, agent_rates, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
-      id,
-      viewer.networkId,
-      version,
-      input.validFrom,
-      input.defaultRateBp,
-      JSON.stringify(Object.fromEntries(agents.map((a) => [a.agentId, a.rateBp]))),
-      this.actor(viewer),
-      this.now().toISOString(),
+    // Une seule écriture : une grille n'existe jamais sans ses taux d'agents ni ses paliers.
+    await runBatch(this.db, [
+      {
+        sql: 'INSERT INTO commission_grids (id, network_id, version, valid_from, default_rate_bp, agent_rates, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        params: [id, viewer.networkId, version, input.validFrom, input.defaultRateBp, JSON.stringify(Object.fromEntries(agents.map((a) => [a.agentId, a.rateBp]))), this.actor(viewer), this.now().toISOString()],
+      },
+      ...tiers.map((t, i) => ({ sql: 'INSERT INTO commission_grid_tiers (grid_id, network_id, seq, from_cents, rate_bp) VALUES (?, ?, ?, ?, ?)', params: [id, viewer.networkId, i + 1, t.fromCents, t.rateBp] })),
     ]);
     await appendEvent(this.journal, { type: 'commission.grille', actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data: { version, validFrom: input.validFrom } }, this.now);
     return { ok: true, version };
@@ -226,13 +296,19 @@ export class Commissions {
    */
   async currentGrid(viewer: Viewer): Promise<{ ok: true; value: { version: number | null; inForce: GridLine | null; upcoming: GridLine[]; agents: { agentId: string; rateBp: number | null }[] } } | CommissionRefusal> {
     if (viewer.role !== 'direction') return this.refuse(viewer, 'commission_grid_read', 'role');
-    const all = await this.db.all<{ version: number; valid_from: string; default_rate_bp: number; agent_rates: string }>(
-      'SELECT version, valid_from, default_rate_bp, agent_rates FROM commission_grids WHERE network_id = ? ORDER BY valid_from DESC, version DESC',
+    const all = await this.db.all<{ id: string; version: number; valid_from: string; default_rate_bp: number; agent_rates: string }>(
+      'SELECT id, version, valid_from, default_rate_bp, agent_rates FROM commission_grids WHERE network_id = ? ORDER BY valid_from DESC, version DESC',
       [viewer.networkId],
     );
+    const tierRows = await this.db.all<{ grid_id: string; from_cents: number; rate_bp: number }>('SELECT grid_id, from_cents, rate_bp FROM commission_grid_tiers WHERE network_id = ? ORDER BY grid_id, seq', [viewer.networkId]);
     const today = localTime(this.now(), 'Europe/Paris').date;
     const g = all.find((x) => x.valid_from <= today) ?? null;
-    const line = (x: { version: number; valid_from: string; default_rate_bp: number }): GridLine => ({ version: x.version, validFrom: x.valid_from, defaultRateBp: x.default_rate_bp });
+    const line = (x: { id: string; version: number; valid_from: string; default_rate_bp: number }): GridLine => ({
+      version: x.version,
+      validFrom: x.valid_from,
+      defaultRateBp: x.default_rate_bp,
+      tiers: tierRows.filter((t) => t.grid_id === x.id).map((t) => ({ fromCents: Number(t.from_cents), rateBp: Number(t.rate_bp) })),
+    });
     // À venir : pour chaque jour, seule la dernière version comptera ; du plus proche au plus lointain.
     const upcoming = all.filter((x, i) => x.valid_from > today && all.findIndex((y) => y.valid_from === x.valid_from) === i).reverse().map(line);
     const rates = g ? (JSON.parse(g.agent_rates) as Record<string, number>) : {};
@@ -257,6 +333,39 @@ export class Commissions {
     ]);
   }
 
+  /**
+   * AU092 · le taux de la vente : le taux propre de l'agent s'il en a un ; sinon le palier que son cumul de l'année
+   * atteint, rangé avec la vente une seule fois ; sinon le taux de la grille.
+   */
+  private async rateFor(networkId: string, fileId: string, row: { agent_id: string; grid_id: string; compromis_on: string }): Promise<number> {
+    const grid = (await this.db.first<{ default_rate_bp: number; agent_rates: string }>('SELECT default_rate_bp, agent_rates FROM commission_grids WHERE id = ?', [row.grid_id]))!;
+    const rates = JSON.parse(grid.agent_rates) as Record<string, number>;
+    if (Object.hasOwn(rates, row.agent_id)) return rates[row.agent_id]!;
+    const kept = await this.db.first<{ rate_bp: number }>('SELECT rate_bp FROM commission_tier_picks WHERE file_id = ?', [fileId]);
+    if (kept) return Number(kept.rate_bp);
+    const tiers = (await this.db.all<{ from_cents: number; rate_bp: number }>('SELECT from_cents, rate_bp FROM commission_grid_tiers WHERE grid_id = ? ORDER BY seq', [row.grid_id])).map((t) => ({ fromCents: Number(t.from_cents), rateBp: Number(t.rate_bp) }));
+    if (tiers.length === 0) return grid.default_rate_bp;
+    const year = Number(row.compromis_on.slice(0, 4));
+    // Le cumul : les honoraires des ventes de l'agent déjà comptées cette année civile, compromis avant celui-ci (même
+    // jour : dans l'ordre des dossiers), hors ventes arrêtées.
+    const cumul = await this.db.first<{ n: number | null }>(
+      `SELECT SUM(c.fee_cents) AS n FROM commissions c
+        WHERE c.network_id = ? AND c.agent_id = ? AND c.compromis_on >= ? AND c.compromis_on < ?
+          AND (c.compromis_on < ? OR (c.compromis_on = ? AND c.file_id < ?))
+          AND EXISTS (SELECT 1 FROM commission_shares s WHERE s.file_id = c.file_id)
+          AND NOT EXISTS (SELECT 1 FROM sale_file_stops stop_ WHERE stop_.file_id = c.file_id)`,
+      [networkId, row.agent_id, `${year}-01-01`, `${year + 1}-01-01`, row.compromis_on, row.compromis_on, fileId],
+    );
+    const cumulCents = Number(cumul?.n ?? 0);
+    const tier = tierFor(tiers, cumulCents)!;
+    await this.db.run(
+      'INSERT INTO commission_tier_picks (file_id, network_id, year, cumul_cents, tier_seq, from_cents, rate_bp, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING',
+      [fileId, networkId, year, cumulCents, tier.seq, tier.fromCents, tier.rateBp, this.now().toISOString()],
+    );
+    const stored = await this.db.first<{ rate_bp: number }>('SELECT rate_bp FROM commission_tier_picks WHERE file_id = ?', [fileId]);
+    return Number(stored!.rate_bp);
+  }
+
   private rateOf(grid: { default_rate_bp: number; agent_rates: string }, agentId: string): number {
     const rates = JSON.parse(grid.agent_rates) as Record<string, number>;
     return Object.hasOwn(rates, agentId) ? rates[agentId]! : grid.default_rate_bp;
@@ -266,6 +375,121 @@ export class Commissions {
   private async waiting(fileId: string, type: 'commission.attente' | 'commission.ecart', code: string): Promise<void> {
     const seen = (await this.journal.bySubject(`sale_file:${fileId}`)).some((e) => e.type === type && e.data.code === code);
     if (!seen) await appendEvent(this.journal, { type, actor: 'system:pilotage', subject: `sale_file:${fileId}`, data: { rule: 'R67', code } }, this.now);
+  }
+
+  /**
+   * AU091 · les honoraires qu'un avenant signé après le compromis a changés, au jour de l'acte (ou aujourd'hui avant
+   * lui) : `null` si rien ne diffère de la commission en cours. Lus du mandat et de ses avenants signés, jamais saisis
+   * [R41, R63].
+   */
+  private async pendingTerms(fileId: string, c: { mandate_id: string; compromis_on: string; fee_cents: number; fee_charge: 'vendeur' | 'acquereur' | null }): Promise<{ amendmentId: string; feeCents: number; feeCharge: 'vendeur' | 'acquereur' | null } | null> {
+    const closing = await this.db.first<{ signed_on: string }>('SELECT signed_on FROM sale_file_closings WHERE file_id = ?', [fileId]);
+    const day = closing?.signed_on ?? localTime(this.now(), 'Europe/Paris').date;
+    const terms = await mandateTerms(this.db, c.mandate_id, new Date(`${day}T11:00:00.000Z`));
+    if (!terms || terms.feeEur === null) return null;
+    const feeCents = terms.feeEur * 100;
+    // Comparé aux honoraires en cours, régularisés ou non : une version approuvée avant un acte rapporté à une date où
+    // son avenant ne valait pas encore ne rend rien dû ; elle se régularise de nouveau, vers le mandat seul.
+    if (feeCents === c.fee_cents && terms.feeCharge === c.fee_charge) return null;
+    // La source : le dernier avenant pris en effet après le compromis, ou le mandat lui-même s'il n'y en a aucun.
+    const after = terms.amendments.filter((a) => a.effectiveOn > c.compromis_on && (a.feeEur !== null || a.feeCharge !== null));
+    return { amendmentId: after.at(-1)?.documentId ?? `mandat:${c.mandate_id}`, feeCents, feeCharge: terms.feeCharge };
+  }
+
+  private async sharesOf(fileId: string): Promise<CommissionShare[]> {
+    const rows = await this.db.all<{ kind: CommissionShare['kind']; beneficiary_id: string | null; reason: CommissionShare['reason']; amount_cents: number }>(
+      'SELECT kind, beneficiary_id, reason, amount_cents FROM commission_shares WHERE file_id = ? ORDER BY seq',
+      [fileId],
+    );
+    const shares = rows.map((s): CommissionShare => ({ kind: s.kind, beneficiaryId: s.beneficiary_id, reason: s.reason, amountCents: Number(s.amount_cents) }));
+    return shares;
+  }
+
+  /**
+   * AU091 · la régularisation d'une commission prévue après un avenant d'honoraires signé après le compromis [R678].
+   * La direction seule l'approuve, avec son motif ; le code recalcule les honoraires (ceux de l'avenant), les parts (au
+   * même taux, palier compris, avec partages et parrainage de M14 ; un partage ou une prime rangés sans leur source
+   * branchée refusent, jamais effacés). Avec une agence partenaire, sa part suit au taux du bon, tant que son relevé n'est
+   * pas émis (AU091b). En une seule
+   * écriture : la version, qui garde les parts d'avant et d'après, puis le montant de chaque part et les honoraires
+   * (les parts gardent leur rang et leur bénéficiaire ; rien ne s'efface). Seulement
+   * tant que la commission n'est pas due : aucune facture ni aucun versement n'existe encore, donc rien n'est payé deux
+   * fois ; les factures se préparent ensuite sur les montants régularisés. Aucun montant n'est reçu [R63, R67].
+   */
+  async regularize(viewer: Viewer, fileId: string, input: { reason?: unknown; expectedVersion?: unknown }): Promise<{ ok: true; value: { version: number; feeBeforeCents: number; feeAfterCents: number } } | CommissionRefusal | RegularizationProblem> {
+    if (viewer.role !== 'direction') return this.refuse(viewer, 'commission_regularisation', 'role');
+    const refusal = await this.readerRefusal(viewer);
+    if (refusal) return this.refuse(viewer, 'commission_regularisation', refusal);
+    const c = await this.db.first<{ network_id: string; agent_id: string; mandate_id: string; compromis_on: string; fee_cents: number; fee_charge: 'vendeur' | 'acquereur' | null; grid_id: string }>(
+      'SELECT network_id, agent_id, mandate_id, compromis_on, fee_cents, fee_charge, grid_id FROM commissions WHERE file_id = ?',
+      [fileId],
+    );
+    if (!c || c.network_id !== viewer.networkId) return { ok: false, rule: null, code: 'unknown' };
+    const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
+    if (reason.length < 10 || reason.length > 500) return { ok: false, rule: null, code: 'bad_reason' };
+    const steps = await this.db.all<{ status: string }>('SELECT status FROM commission_steps WHERE file_id = ?', [fileId]);
+    if (!steps.some((x) => x.status === 'prevue')) return { ok: false, rule: 'R678', code: 'not_planned' };
+    if (steps.some((x) => x.status !== 'prevue')) return { ok: false, rule: 'R678', code: 'already_due' };
+    // L'écran dit la dernière version qu'il a montrée (0 sans régularisation) : une autre entre-temps refuse celle-ci.
+    const seen = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM commission_revisions WHERE file_id = ?', [fileId]);
+    if (input.expectedVersion !== undefined && input.expectedVersion !== (seen?.v ?? 0)) return { ok: false, rule: null, code: 'stale' };
+    // AU091b · une vente avec une agence partenaire : sa part et son relevé suivent la version approuvée, tant que le relevé
+    // n'est pas émis. Un relevé déjà émis a pu être facturé par l'agence : jamais payé deux fois, la direction tranche.
+    const agency = await this.db.first<{ delegation_id: string; agency_id: string; partner_share_bp: number; amount_cents: number }>(
+      `SELECT x.delegation_id, a.agency_id, x.partner_share_bp, x.amount_cents FROM commission_agency_shares x
+       JOIN agency_delegations d ON d.id = x.delegation_id JOIN agency_shares a ON a.id = d.share_id WHERE x.file_id = ?`,
+      [fileId],
+    );
+    if (agency && (await this.db.first('SELECT 1 FROM agency_fee_statements WHERE delegation_id = ? OR file_id = ?', [agency.delegation_id, fileId]))) return { ok: false, rule: 'R678', code: 'releve_emis' };
+    const pending = await this.pendingTerms(fileId, c);
+    if (!pending) return { ok: false, rule: 'R678', code: 'nothing_to_fix' };
+    const agencyShare = (amountCents: number): CommissionShare => ({ kind: 'agence', beneficiaryId: `agence:${agency!.agency_id}`, reason: null, amountCents });
+    const before = [...(await this.sharesOf(fileId)), ...(agency ? [agencyShare(Number(agency.amount_cents))] : [])];
+    // Un partage ou une prime déjà rangés ne s'effacent jamais faute de savoir les recalculer : sans la source de M14, rien.
+    if ((before.some((x) => x.kind === 'partage') && !this.partages) || (before.some((x) => x.kind === 'parrainage') && !this.primes)) return { ok: false, rule: null, code: 'partage_inconnu' };
+    // La part de l'agence d'abord, au même taux du bon et au centime inférieur, puis la grille sur le reste [R235].
+    const agencyCents = agency ? Math.floor((pending.feeCents * Number(agency.partner_share_bp)) / 10_000) : 0;
+    const base = pending.feeCents - agencyCents;
+    // Le taux de la vente ne change pas : celui gardé au compromis (taux propre, palier rangé, ou taux de la grille).
+    const rate = await this.rateFor(c.network_id, fileId, c);
+    let shares: CommissionShare[];
+    try {
+      const splits = this.partages ? await this.partages.of(c.network_id, fileId, c.agent_id) : [];
+      const networkBefore = base - Math.floor((base * rate) / 10_000);
+      const prime = this.primes ? await this.primes.of(c.network_id, c.agent_id, networkBefore) : null;
+      shares = computeShares(base, c.agent_id, rate, splits, prime);
+    } catch {
+      return { ok: false, rule: null, code: 'partage_invalide' };
+    }
+    const after = [...shares, ...(agency ? [agencyShare(agencyCents)] : [])];
+    // La somme des parts fait les honoraires, au centime [R69].
+    if (after.reduce((a, x) => a + x.amountCents, 0) !== pending.feeCents) return { ok: false, rule: null, code: 'partage_invalide' };
+    // Les mêmes parts, aux mêmes bénéficiaires : seul leur montant change ; rien ne s'efface [R17]. Un partage ou une prime
+    // apparus ou disparus depuis le compromis : la direction tranche autrement.
+    const shape = (list: CommissionShare[]) => JSON.stringify(list.map((x) => [x.kind, x.beneficiaryId, x.reason]));
+    if (shape(before) !== shape(after)) return { ok: false, rule: null, code: 'parts_changees' };
+    const version = (seen?.v ?? 0) + 1;
+    const at = this.now().toISOString();
+    try {
+      await runBatch(this.db, [
+        {
+          sql: `INSERT INTO commission_revisions (file_id, network_id, version, fee_before_cents, fee_after_cents, charge_before, charge_after, amendment_id, reason, shares_before, shares_after, approved_by, at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          params: [fileId, c.network_id, version, Number(c.fee_cents), pending.feeCents, c.fee_charge, pending.feeCharge, pending.amendmentId, reason, JSON.stringify(before), JSON.stringify(after), this.actor(viewer), at],
+        },
+        // Chaque part à son nouveau montant, avant les honoraires : la garde de la base vérifie ceux de la version.
+        ...shares.map((sh, i) => ({ sql: 'UPDATE commission_shares SET amount_cents = ? WHERE file_id = ? AND seq = ?', params: [sh.amountCents, fileId, i + 1] })),
+        // AU091b · la part de l'agence, à son nouveau montant ; la garde de la base la recalcule et refuse un relevé émis.
+        ...(agency ? [{ sql: 'UPDATE commission_agency_shares SET amount_cents = ? WHERE file_id = ?', params: [agencyCents, fileId] }] : []),
+        { sql: 'UPDATE commissions SET fee_cents = ?, fee_charge = ? WHERE file_id = ? AND fee_cents = ?', params: [pending.feeCents, pending.feeCharge, fileId, Number(c.fee_cents)] },
+      ]);
+    } catch {
+      // Une autre régularisation ou l'acte devenu dû entre-temps : les gardes de la base ont tout refusé, rien n'est écrit.
+      return { ok: false, rule: null, code: 'stale' };
+    }
+    // Au journal : le dossier, la version et le motif approuvé par la direction, jamais un montant ni un nom [R13].
+    await appendEvent(this.journal, { type: 'commission.regularisation', actor: this.actor(viewer), subject: `sale_file:${fileId}`, data: { rule: 'R678', version, amendmentId: pending.amendmentId } }, this.now);
+    return { ok: true, value: { version, feeBeforeCents: Number(c.fee_cents), feeAfterCents: pending.feeCents } };
   }
 
   /**
@@ -281,11 +505,11 @@ export class Commissions {
          JOIN sale_file_dates d ON d.file_id = f.id AND d.kind = 'compromis_signe'
            AND d.version = (SELECT MAX(version) FROM sale_file_dates WHERE file_id = f.id AND kind = 'compromis_signe')
        WHERE f.network_id = ? AND ${openFile('f')} AND NOT EXISTS (SELECT 1 FROM commission_steps s WHERE s.file_id = f.id AND s.status = 'prevue')
-       ORDER BY f.opened_at, f.id`,
+       ORDER BY d.day, f.id`,
       [networkId],
     );
     for (const f of files) {
-      let row = await this.db.first<{ agent_id: string; fee_cents: number; grid_id: string }>('SELECT agent_id, fee_cents, grid_id FROM commissions WHERE file_id = ?', [f.id]);
+      let row = await this.db.first<{ agent_id: string; fee_cents: number; grid_id: string; compromis_on: string }>('SELECT agent_id, fee_cents, grid_id, compromis_on FROM commissions WHERE file_id = ?', [f.id]);
       if (!row) {
         // L'agent qui tenait le bien le jour du compromis, même parti depuis : la commission reste la sienne (RC37).
         f.agent_id = await saleAgentAt(this.db, networkId, f.property_id, f.day);
@@ -307,13 +531,12 @@ export class Commissions {
           'INSERT INTO commissions (file_id, network_id, agent_id, mandate_id, compromis_on, fee_cents, fee_charge, grid_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (file_id) DO NOTHING',
           [f.id, networkId, f.agent_id, fee.mandateId, f.day, fee.feeEur * 100, fee.feeCharge, grid.id, at],
         );
-        row = (await this.db.first<{ agent_id: string; fee_cents: number; grid_id: string }>('SELECT agent_id, fee_cents, grid_id FROM commissions WHERE file_id = ?', [f.id]))!;
+        row = (await this.db.first<{ agent_id: string; fee_cents: number; grid_id: string; compromis_on: string }>('SELECT agent_id, fee_cents, grid_id, compromis_on FROM commissions WHERE file_id = ?', [f.id]))!;
       }
       // Les parts, en une seule écriture, seulement s'il n'y en a aucune : deux passages ou une reprise ne mêlent
       // jamais deux calculs.
       if (!(await this.db.first('SELECT 1 FROM commission_shares WHERE file_id = ?', [f.id]))) {
-        const grid = (await this.db.first<{ default_rate_bp: number; agent_rates: string }>('SELECT default_rate_bp, agent_rates FROM commission_grids WHERE id = ?', [row.grid_id]))!;
-        const rate = this.rateOf(grid, row.agent_id);
+        const rate = await this.rateFor(networkId, f.id, row);
         let shares: CommissionShare[];
         // La part d'une agence partenaire, si le dossier vient d'une délégation signée (HX01) : sortie des honoraires
         // avant la grille, au centime inférieur, dans la même écriture que les autres parts [R235].
@@ -375,10 +598,14 @@ export class Commissions {
       [networkId],
     );
     for (const k of closed) {
-      const c = (await this.db.first<{ fee_cents: number; mandate_id: string; compromis_on: string }>('SELECT fee_cents, mandate_id, compromis_on FROM commissions WHERE file_id = ?', [k.file_id]))!;
+      const c = (await this.db.first<{ fee_cents: number; fee_charge: 'vendeur' | 'acquereur' | null; mandate_id: string; compromis_on: string }>('SELECT fee_cents, fee_charge, mandate_id, compromis_on FROM commissions WHERE file_id = ?', [k.file_id]))!;
       const latest = await this.db.first<{ day: string }>("SELECT day FROM sale_file_dates WHERE file_id = ? AND kind = 'compromis_signe' ORDER BY version DESC LIMIT 1", [k.file_id]);
+      // AU091 · l'acte rapporte les honoraires du compromis ; une commission régularisée se compare à ceux d'avant sa
+      // première version.
+      const first = await this.db.first<{ fee_before_cents: number }>('SELECT fee_before_cents FROM commission_revisions WHERE file_id = ? AND version = 1', [k.file_id]);
+      const atCompromis = first ? Number(first.fee_before_cents) : Number(c.fee_cents);
       // Jamais corrigé par le code : la direction tranche [R63]. Dit une fois par raison.
-      if (c.fee_cents !== k.fee_eur * 100) {
+      if (atCompromis !== k.fee_eur * 100) {
         await this.waiting(k.file_id, 'commission.ecart', 'honoraires');
         continue;
       }
@@ -388,6 +615,12 @@ export class Commissions {
       }
       if (latest?.day !== c.compromis_on) {
         await this.waiting(k.file_id, 'commission.ecart', 'compromis');
+        continue;
+      }
+      // AU091 · un avenant signé après le compromis a changé les honoraires : la commission n'est pas due à l'ancien
+      // montant ; la direction régularise d'abord [R678].
+      if (await this.pendingTerms(k.file_id, c)) {
+        await this.waiting(k.file_id, 'commission.ecart', 'avenant_honoraires');
         continue;
       }
       const { changes } = await this.db.run("INSERT INTO commission_steps (file_id, status, proof_ref, at, by) VALUES (?, 'due', ?, ?, 'system:pilotage') ON CONFLICT DO NOTHING", [k.file_id, k.proof_ref, at]);
@@ -487,6 +720,31 @@ export class Commissions {
       const payout = await this.db.first<{ paid_at: string }>('SELECT paid_at FROM commission_payouts WHERE file_id = ?', [r.file_id]);
       const cancelled = await this.db.first("SELECT 1 FROM invoices WHERE file_id = ? AND kind = 'avoir' AND json_extract(content, '$.reason') = 'vente_annulee'", [r.file_id]);
       const closing = await this.db.first<{ signed_on: string }>('SELECT signed_on FROM sale_file_closings WHERE file_id = ?', [r.file_id]);
+      const revisions = whole
+        ? (
+            await this.db.all<{ version: number; at: string; fee_before_cents: number; fee_after_cents: number; charge_before: 'vendeur' | 'acquereur' | null; charge_after: 'vendeur' | 'acquereur' | null; amendment_id: string; reason: string; approved_by: string; shares_before: string; shares_after: string }>(
+              'SELECT version, at, fee_before_cents, fee_after_cents, charge_before, charge_after, amendment_id, reason, approved_by, shares_before, shares_after FROM commission_revisions WHERE file_id = ? ORDER BY version',
+              [r.file_id],
+            )
+          ).map((x): CommissionRevision => {
+            // Un agent ne lit que ses parts, comme pour la commission en cours [R68, R235].
+            const keep = (list: CommissionShare[]) => (own ? list.filter((sh) => sh.beneficiaryId === viewer.userId) : list);
+            return {
+              version: Number(x.version),
+              at: x.at,
+              feeBeforeCents: Number(x.fee_before_cents),
+              feeAfterCents: Number(x.fee_after_cents),
+              chargeBefore: x.charge_before,
+              chargeAfter: x.charge_after,
+              amendmentId: x.amendment_id,
+              reason: x.reason,
+              approvedBy: x.approved_by,
+              sharesBefore: keep(JSON.parse(x.shares_before) as CommissionShare[]),
+              sharesAfter: keep(JSON.parse(x.shares_after) as CommissionShare[]),
+            };
+          })
+        : [];
+      const pick = whole ? await this.db.first<{ year: number; cumul_cents: number; tier_seq: number; from_cents: number; rate_bp: number }>('SELECT year, cumul_cents, tier_seq, from_cents, rate_bp FROM commission_tier_picks WHERE file_id = ?', [r.file_id]) : null;
       value.push({
         fileId: r.file_id,
         agentId: whole ? r.agent_id : null,
@@ -506,6 +764,8 @@ export class Commissions {
           : null,
         signedOn: closing?.signed_on ?? null,
         cancelled: !!cancelled,
+        revisions,
+        tier: pick ? { year: Number(pick.year), cumulCents: Number(pick.cumul_cents), tierSeq: Number(pick.tier_seq), fromCents: Number(pick.from_cents), rateBp: Number(pick.rate_bp) } : null,
       });
     }
     await appendEvent(this.journal, { type: 'commission.lecture', actor: this.actor(viewer), subject: `network:${viewer.networkId}`, data: { count: value.length } }, this.now);

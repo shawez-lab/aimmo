@@ -99,7 +99,7 @@ async function setup() {
     const d = await amenagements.declare(viewer, prop.id, { stagedRef: ref(prop.id, 2), realRef: ref(prop.id, 1), changes: [{ kind: 'meubler', style: 'scandinave' }] });
     if (!d.ok) throw new Error('aménagement');
   }
-  await langues.declareLanguages(alexV, alex.id, ['ar']);
+  await langues.declareLanguages(alexV, alex.id, ['en', 'ar']);
   return { db, videos, langues, network, alex, sam, p, q, as, alexV, samV, sheet, media };
 }
 
@@ -178,7 +178,13 @@ describeWithSqlite('HX42 · vidéo depuis les photos, voix off et avatar', () =>
     const plan = await t.videos.plan(t.samV, t.q.id);
     if (!plan.ok) throw new Error('plan');
     expect(plan.value.avatar).toBe(false);
-    expect(plan.value.languages).toEqual(['fr', 'en']);
+    // Sam ne déclare aucune langue : le français seul, l'anglais n'est plus ouvert d'office (AU113).
+    expect(plan.value.languages).toEqual(['fr']);
+    // Un relecteur désigné pour l'arabe sur ce bien ouvre l'arabe aux sous-titres de cette vidéo (AU113).
+    expect(await t.langues.designateReviewer(t.as('direction', 'dir-1'), t.q.id, 'ar', t.alex.id)).toEqual({ ok: true });
+    const reviewed = await t.videos.plan(t.samV, t.q.id);
+    expect(reviewed.ok && reviewed.value.languages).toEqual(['fr', 'ar']);
+    expect(await t.langues.designateReviewer(t.as('direction', 'dir-1'), t.q.id, 'ar', null)).toEqual({ ok: true });
     const input = { videoRef: vid(t.q.id, 1), videoSha256: sha('f'), durationSeconds: 16, planSha256: plan.value.planSha256, avatar: true, avatarSampleSha256: sha('a'), mentions: [GENERATED_VIDEO_MENTION, likenessMention(false, true)], subtitles: { fr: ['Deux pièces'] }, caption: 'Visite', processedOn: 'appareil' };
     expect(await t.videos.record(t.samV, t.q.id, input)).toMatchObject({ ok: false, rule: 'R495', code: 'sans_accord' });
     expect(await t.videos.record(t.alexV, t.q.id, input)).toMatchObject({ ok: false, rule: 'R16' });

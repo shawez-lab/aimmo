@@ -176,8 +176,25 @@ export interface PortalTextWriter {
 // ——— Légendes [R478] ———
 
 /** Ce qu'une photo peut montrer, dans une liste fermée : chacun n'est dit que si la fiche le porte. */
-export const PHOTO_SUBJECTS = ['piece_principale', 'chambre', 'balcon', 'terrasse', 'jardin', 'cour', 'terrain', 'stationnement', 'ascenseur'] as const;
+export const PHOTO_SUBJECTS = [
+  'piece_principale', 'chambre', 'cuisine', 'salle_de_bain', 'toilettes', 'entree', 'facade',
+  'balcon', 'terrasse', 'jardin', 'cour', 'terrain', 'stationnement', 'ascenseur',
+] as const;
 export type PhotoSubject = (typeof PHOTO_SUBJECTS)[number];
+
+/**
+ * Le dernier sujet dit de chaque photo d'un bien : les choix d'avant AU114 (`diffusion_photo_subjects`) et ceux d'après
+ * (`diffusion_photo_descriptions`, liste élargie), le plus récent faisant foi.
+ */
+const LATEST_SUBJECTS = `SELECT media_ref, subject FROM (
+  SELECT media_ref, subject, at, 1 AS src, id FROM diffusion_photo_subjects WHERE property_id = ?
+  UNION ALL SELECT media_ref, subject, at, 2 AS src, id FROM diffusion_photo_descriptions WHERE property_id = ?
+) a WHERE NOT EXISTS (
+  SELECT 1 FROM (
+    SELECT media_ref, at, 1 AS src, id FROM diffusion_photo_subjects WHERE property_id = ?
+    UNION ALL SELECT media_ref, at, 2 AS src, id FROM diffusion_photo_descriptions WHERE property_id = ?
+  ) b WHERE b.media_ref = a.media_ref AND (b.at > a.at OR (b.at = a.at AND (b.src > a.src OR (b.src = a.src AND b.id > a.id))))
+)`;
 
 /** La fiche porte-t-elle ce que la photo est dite montrer ? */
 export function subjectInSheet(subject: PhotoSubject, f: ListingFacts): boolean {
@@ -186,6 +203,13 @@ export function subjectInSheet(subject: PhotoSubject, f: ListingFacts): boolean 
       return (f.rooms ?? 0) > 0;
     case 'chambre':
       return (f.bedrooms ?? 0) > 0;
+    // Toute habitation a sa cuisine, sa salle d'eau, ses toilettes, son entrée et sa façade (AU114).
+    case 'cuisine':
+    case 'salle_de_bain':
+    case 'toilettes':
+    case 'entree':
+    case 'facade':
+      return f.kind === 'home' || f.kind === 'building';
     case 'balcon':
     case 'terrasse':
     case 'jardin':
@@ -214,6 +238,16 @@ function subjectText(subject: PhotoSubject, f: ListingFacts): string {
       return f.rooms === 1 ? 'la pièce principale' : `une des ${f.rooms} pièces principales`;
     case 'chambre':
       return f.bedrooms === 1 ? 'la chambre' : `une des ${f.bedrooms} chambres`;
+    case 'cuisine':
+      return 'la cuisine';
+    case 'salle_de_bain':
+      return 'une salle d’eau';
+    case 'toilettes':
+      return 'les toilettes';
+    case 'entree':
+      return 'l’entrée';
+    case 'facade':
+      return 'la façade';
     case 'balcon':
       return outdoorFloor('le balcon');
     case 'terrasse':
@@ -355,7 +389,8 @@ export class TextesPortails {
     if (!f) return null;
     const row = await this.db.first<{ data: string }>(
       `SELECT s.data FROM listing_versions v JOIN listing_drafts d ON d.id = v.draft_id
-       JOIN property_sheets s ON s.property_id = v.property_id AND s.version = d.sheet_version
+       JOIN property_sheets s ON s.property_id = v.property_id
+         AND s.version = COALESCE((SELECT m.sheet_version FROM listing_version_media_sheets m WHERE m.version_id = v.id), d.sheet_version)
        WHERE v.property_id = ? AND v.seq = ?`,
       [propertyId, seq],
     );
@@ -375,8 +410,12 @@ export class TextesPortails {
           elevator: c?.elevator ?? null,
           energyClass: sheet.energy?.energyClass ?? null,
           climateClass: sheet.energy?.climateClass ?? null,
+          amenities: c?.amenities ?? [],
+          condition: c?.condition ?? null,
+          carrezM2: c?.carrezM2 ?? null,
+          usableM2: c?.usableM2 ?? null,
         }
-      : { ...f.facts, bedrooms: null, floor: null, floorsTotal: null, buildYear: null, heating: null, outdoor: [], landM2: null, parkingSpaces: null, elevator: null, energyClass: null, climateClass: null };
+      : { ...f.facts, bedrooms: null, floor: null, floorsTotal: null, buildYear: null, heating: null, outdoor: [], landM2: null, parkingSpaces: null, elevator: null, energyClass: null, climateClass: null, amenities: [], condition: null, carrezM2: null, usableM2: null };
     return { current: f.facts, published, publishedSheet: sheet };
   }
 
@@ -508,6 +547,41 @@ export class TextesPortails {
 
   // ------------------------------------------------------------------ Photos
 
+  /**
+   * Les légendes des photos de la dernière version publiée, pour la page et la fiche du bien (AU114) : les mêmes que
+   * celles des portails [R478]. Rien de publié : aucune.
+   */
+  async publishedCaptions(networkId: string, propertyId: string): Promise<Map<string, string>> {
+    const v = await this.latestVersion(networkId, propertyId);
+    if (!v) return new Map();
+    const payload = JSON.parse(v.payload) as Omit<ListingPayload, 'version'>;
+    const facts = await this.factsOf(propertyId, Number(v.seq));
+    if (!facts) return new Map();
+    const media = await this.captioned(propertyId, payload.media ?? [], facts);
+    return new Map(media.filter((m) => m.caption !== null).map((m) => [m.ref, m.caption!] as const));
+  }
+
+  /** Pour l'agent du bien : chaque photo de la fiche avec ce qu'elle est dite montrer, et les sujets que la fiche permet [R478]. */
+  async photoSubjects(viewer: Viewer, propertyId: unknown): Promise<{ ok: true; value: { photos: { ref: string; subject: PhotoSubject | null }[]; allowed: PhotoSubject[] } } | Refusal> {
+    const o = await this.owner(viewer, propertyId);
+    if (!o.ok) return o;
+    const sheet = await this.sheet(o.propertyId);
+    const f = await this.annonces.factsFor(o.propertyId);
+    const rows = await this.db.all<{ media_ref: string; subject: string }>(
+      LATEST_SUBJECTS,
+      [o.propertyId, o.propertyId, o.propertyId, o.propertyId],
+    );
+    const said = new Map(rows.map((r) => [r.media_ref, r.subject] as const));
+    const allowed = f ? PHOTO_SUBJECTS.filter((s) => subjectInSheet(s, f.facts)) : [];
+    const photos = (sheet?.media ?? [])
+      .filter((m) => m.kind === 'photo')
+      .map((m) => {
+        const s = said.get(m.ref);
+        return { ref: m.ref, subject: s && s !== 'aucun' && (allowed as string[]).includes(s) ? (s as PhotoSubject) : null };
+      });
+    return { ok: true, value: { photos, allowed } };
+  }
+
   /** L'agent du bien dit ce que montre une photo de la fiche, dans la liste fermée, et seulement si la fiche le porte [R478]. */
   async describePhoto(viewer: Viewer, input: { propertyId: unknown; ref: unknown; subject: unknown }): Promise<{ ok: true } | Refusal | Problem> {
     const o = await this.owner(viewer, input.propertyId);
@@ -519,7 +593,7 @@ export class TextesPortails {
     const f = await this.annonces.factsFor(o.propertyId);
     if (subject !== 'aucun' && (!f || !subjectInSheet(subject as PhotoSubject, f.facts))) return { ok: false, rule: 'R478', code: 'absent_de_la_fiche' };
     // La légende se lit aussi contre la fiche publiée : un sujet qu'elle ne porte pas encore n'apparaît qu'à la publication suivante.
-    await this.db.run('INSERT INTO diffusion_photo_subjects (id, network_id, property_id, media_ref, subject, by_actor, at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
+    await this.db.run('INSERT INTO diffusion_photo_descriptions (id, network_id, property_id, media_ref, subject, by_actor, at) VALUES (?, ?, ?, ?, ?, ?, ?)', [
       this.newId(),
       o.networkId,
       o.propertyId,
@@ -542,9 +616,8 @@ export class TextesPortails {
     // Les retouches déclarées des photos publiées : celles de la fiche d'où vient la version, jamais d'une fiche plus récente.
     const edits = new Map((facts.publishedSheet?.media ?? []).map((m) => [m.ref, m.edit] as const));
     const rows = await this.db.all<{ media_ref: string; subject: string }>(
-      `SELECT s.media_ref, s.subject FROM diffusion_photo_subjects s
-       WHERE s.property_id = ? AND s.rowid = (SELECT t.rowid FROM diffusion_photo_subjects t WHERE t.property_id = s.property_id AND t.media_ref = s.media_ref ORDER BY t.at DESC, t.rowid DESC LIMIT 1)`,
-      [propertyId],
+      LATEST_SUBJECTS,
+      [propertyId, propertyId, propertyId, propertyId],
     );
     const subjects = new Map(rows.filter((r) => r.subject !== 'aucun').map((r) => [r.media_ref, r.subject as PhotoSubject] as const));
     // Les retouches locales déclarées au certificat de chaque photo [R490].

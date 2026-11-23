@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ListingFacts } from '../src/annonces/annonce-sourcee.ts';
+import { PageBien } from '../src/annonces/page-bien.ts';
 import { DiffusionSurveillee } from '../src/diffusion/surveillance.ts';
 import { controlPortalText, maskPortalText, PHOTO_SUBJECTS, photoCaption, subjectInSheet, TextesPortails, type PortalTextWriter } from '../src/diffusion/textes.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
@@ -112,7 +113,8 @@ describe('HX39 · légendes des photos, sans base', () => {
   });
 
   it('[R478] aucune légende ne cite un élément absent de la fiche, quel que soit le sujet dit', () => {
-    const empty: ListingFacts = { ...FACTS, rooms: null, bedrooms: 0, outdoor: [], landM2: null, parkingSpaces: 0, elevator: false };
+    // Un terrain nu : pas même une cuisine, une salle d'eau ou une façade (AU114).
+    const empty: ListingFacts = { ...FACTS, kind: 'land', rooms: null, bedrooms: 0, outdoor: [], landM2: null, parkingSpaces: 0, elevator: false };
     for (const subject of PHOTO_SUBJECTS) {
       expect(subjectInSheet(subject, empty)).toBe(false);
       expect(photoCaption({ index: 1, total: 1, subject, facts: empty, edit: 'aucune', overlay: null })).toBe('Photo 1 sur 1 du bien.');
@@ -130,6 +132,9 @@ describe('HX39 · légendes des photos, sans base', () => {
       }
     }
     expect(photoCaption({ index: 1, total: 1, subject: 'terrain', facts: full, edit: 'aucune', overlay: null })).toBe('Photo 1 sur 1 : le terrain de 450 m².');
+    // AU114 · les pièces de toute habitation, pour une maison ou un appartement.
+    expect(photoCaption({ index: 2, total: 5, subject: 'cuisine', facts: FACTS, edit: 'aucune', overlay: null })).toBe('Photo 2 sur 5 : la cuisine.');
+    expect(photoCaption({ index: 3, total: 5, subject: 'salle_de_bain', facts: FACTS, edit: 'aucune', overlay: null })).toBe('Photo 3 sur 5 : une salle d’eau.');
   });
 });
 
@@ -287,6 +292,50 @@ describeWithSqlite('HX39 · texte par portail et légendes des photos', () => {
     expect(media[0]!.caption).toBe('Photo 1 sur 2 du bien. Lumière et cadrage retouchés.');
   });
 
+  it('[R478] AU066 · une photo ajoutée ou dite retouchée sans toucher au texte validé a la légende de la fiche du jour', async () => {
+    const t = await setup();
+    const row = await t.db.first<{ network_id: string; version: number; data: string; created_by: string }>('SELECT * FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [t.propertyId]);
+    const sheet = JSON.parse(row!.data) as { media: { ref: string; kind: string; edit: string }[] };
+    const version = (n: number) => t.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', [`fiche-${n}`, t.propertyId, row!.network_id, Number(row!.version) + n, JSON.stringify(sheet), row!.created_by, t.now().toISOString()]);
+    const added = { ref: `biens/${t.propertyId}/0b6f1d2e-1111-4a2b-8c3d-0000000000aa.jpg`, kind: 'photo', edit: 'aucune' };
+    sheet.media.push(added);
+    await version(1);
+    await t.publication.sync(t.network.id, t.propertyId);
+    const caption = async () => (await t.tp.portalPayload(t.network.id, t.propertyId, 'seloger'))!.media.at(-1)!.caption;
+    expect(await caption()).not.toContain('retouchés');
+    // La même photo, dite retouchée ensuite, sans autre changement : une version de plus, et la légende le dit.
+    added.edit = 'lumiere_cadrage';
+    await version(2);
+    // Même si le passage est coupé juste après la version, avant le lien vers sa fiche : le suivant répare le lien.
+    await t.db.exec("CREATE TRIGGER coupure BEFORE INSERT ON listing_version_media_sheets BEGIN SELECT RAISE(ABORT, 'coupure'); END;");
+    await expect(t.publication.sync(t.network.id, t.propertyId)).rejects.toThrow(/coupure/);
+    await t.db.exec('DROP TRIGGER coupure');
+    await t.db.run('UPDATE listing_sync_leases SET expires_at = ? WHERE property_id = ?', [new Date(0).toISOString(), t.propertyId]);
+    expect((await t.publication.sync(t.network.id, t.propertyId)).created).toBe(false);
+    expect(await caption()).toContain('Lumière et cadrage retouchés.');
+  });
+
+  it('AU114 · la page publique et la fiche imprimable portent la légende de chaque photo, en texte de remplacement et en légende visible', async () => {
+    const t = await setup();
+    const [p1, p2] = t.photos;
+    // L'agent voit chaque photo de la fiche et les sujets que la fiche permet ; personne d'autre.
+    expect(await t.tp.photoSubjects(t.sam, t.propertyId)).toMatchObject({ ok: false, rule: 'R16' });
+    const before = await t.tp.photoSubjects(t.agent, t.propertyId);
+    expect(before.ok && before.value.photos).toEqual([{ ref: p1, subject: null }, { ref: p2, subject: null }]);
+    expect(before.ok && before.value.allowed).toEqual(expect.arrayContaining(['cuisine', 'chambre', 'balcon']));
+    expect(before.ok && before.value.allowed).not.toContain('jardin');
+    expect(await t.tp.describePhoto(t.agent, { propertyId: t.propertyId, ref: p1, subject: 'cuisine' })).toEqual({ ok: true });
+    const after = await t.tp.photoSubjects(t.agent, t.propertyId);
+    expect(after.ok && after.value.photos[0]).toEqual({ ref: p1, subject: 'cuisine' });
+    const pages = new PageBien(t.db, t.acces, t.journal, { now: t.now });
+    const html = (await pages.page(t.network.id, t.propertyId))!;
+    expect(html).toContain('alt="Photo 1 sur 2 : la cuisine. Lumière et cadrage retouchés."');
+    expect(html).toContain('<span class="legende">Photo 1 sur 2 : la cuisine. Lumière et cadrage retouchés.</span>');
+    // Sans sujet dit, la place et l'aménagement virtuel restent dits.
+    expect(html).toContain('alt="Photo 2 sur 2 du bien. Aménagement virtuel');
+    expect((await pages.print(t.network.id, t.propertyId))!).toContain('<span class="legende">Photo 1 sur 2 : la cuisine.');
+  });
+
   it('[R478] une fiche qui ne porte plus ce que la photo montrait : la légende ne le cite plus', async () => {
     const t = await setup();
     expect(await t.tp.describePhoto(t.agent, { propertyId: t.propertyId, ref: t.photos[0], subject: 'balcon' })).toEqual({ ok: true });
@@ -317,7 +366,9 @@ describeWithSqlite('HX39 · texte par portail et légendes des photos', () => {
     const t = await setup();
     await t.tp.write(t.agent, { propertyId: t.propertyId, portal: 'seloger', ...SELOGER });
     await t.tp.describePhoto(t.agent, { propertyId: t.propertyId, ref: t.photos[0], subject: 'balcon' });
-    for (const table of ['diffusion_portal_texts', 'diffusion_portal_text_validations', 'diffusion_photo_subjects']) {
+    // Une ligne d'avant AU114, rangée dans la première table.
+    await t.db.run("INSERT INTO diffusion_photo_subjects (id, network_id, property_id, media_ref, subject, by_actor, at) VALUES ('ancien', ?, ?, ?, 'balcon', 'agent:x', '2027-01-01T00:00:00.000Z')", [t.network.id, t.propertyId, t.photos[0]!]);
+    for (const table of ['diffusion_portal_texts', 'diffusion_portal_text_validations', 'diffusion_photo_subjects', 'diffusion_photo_descriptions']) {
       await expect(t.db.run(`DELETE FROM ${table}`)).rejects.toThrow();
       await expect(t.db.run(`UPDATE ${table} SET by_actor = 'x'`.replace('by_actor', table === 'diffusion_portal_texts' ? 'created_by' : 'by_actor'))).rejects.toThrow();
     }

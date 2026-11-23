@@ -21,6 +21,7 @@ import { identiteAuCoffre } from './identite-coffre.ts';
 import { AmenagementsVirtuels } from '../src/medias/index.ts';
 import { CertificatsPhotos } from '../src/studio/index.ts';
 import { designerTout } from './designation-jeu.ts';
+import { rangerStatut } from './statut-agent-jeu.ts';
 
 // Réseau, bien, vendeur et mandat inventés.
 const MANDATE = 'Mandat de test : {{mandant.nom}}, {{bien.prix}}, {{honoraires.montant}} {{honoraires.charge}}, {{mandat.duree_mois}}.\n\nNuméro : {{registre.numero}} · {{bien.adresse}} · {{bien.cadastre}} · {{mandant.domicile}}.';
@@ -46,10 +47,12 @@ export class FakeChannel implements ListingChannel {
   }
 }
 
-export async function setupAnnonce(options: { card?: boolean; twin?: boolean } = {}) {
+export async function setupAnnonce(options: { card?: boolean; statut?: boolean; twin?: boolean; diagnosedOn?: string; signedAt?: Date } = {}) {
+  // Un autre jour de signature décale tout le jeu : l'horloge part une heure après.
+  const signedAt = options.signedAt ?? SIGNED;
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
-  let clock = new Date('2027-02-10T10:00:00.000Z');
+  let clock = new Date(signedAt.getTime() + 60 * 60 * 1000);
   const now = () => clock;
   const journal = new SqlJournalStore(db);
   const store = new FicheClient(db, { now });
@@ -70,13 +73,15 @@ export async function setupAnnonce(options: { card?: boolean; twin?: boolean } =
   await controles.setFeeSchedule(direction, { maxRatePercent: 6, minEur: 0 });
   await new RegistreMandats(db, journal, { now }).configure(direction, { prefix: 'T-', firstNumber: 1, width: 3 });
   const p = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: 'Léa', lastName: 'Exemple' });
-  const b = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'REF-T-1', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 });
+  // AU070 : la nature du logement n'existe qu'après la migration 4011 (certains tests rejouent une base plus ancienne).
+  const dwelling = (await db.all<{ name: string }>('PRAGMA table_info(properties)')).some((c) => c.name === 'dwelling') ? { dwelling: 'house' as const } : {};
+  const b = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'REF-T-1', kind: 'home', ...dwelling, postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 });
   const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: p.id, kind: 'sell' });
   await store.linkProjectProperty({ networkId: network.id, agentId: alex.id, projectId: project.id, propertyId: b.id, role: 'owned' });
-  await identiteAuCoffre({ db, acces, journal, now }, agent, p.id, { piece: 'carte_identite', seenAt: SIGNED });
+  await identiteAuCoffre({ db, acces, journal, now }, agent, p.id, { piece: 'carte_identite', seenAt: signedAt });
   await new FicheBien(db, acces, journal, { now }).save(agent, b.id, {
     characteristics: { bedrooms: 2, floor: 3, floorsTotal: 5, buildYear: 1965, heating: 'collectif', outdoor: ['balcon'], parkingSpaces: 1, elevator: true },
-    energy: { energyClass: 'D', climateClass: 'C', annualCostMinEur: 1100, annualCostMaxEur: 1550, costReferenceYear: 2023, diagnosedOn: '2027-01-15' },
+    energy: { energyClass: 'D', climateClass: 'C', annualCostMinEur: 1100, annualCostMaxEur: 1550, costReferenceYear: 2023, diagnosedOn: options.diagnosedOn ?? '2027-01-15' },
     coownership: { isCoownership: true, lots: 24, annualChargesEur: 1800, proceedings: false },
     risks: { inRiskZone: false },
     media: [
@@ -103,10 +108,12 @@ export async function setupAnnonce(options: { card?: boolean; twin?: boolean } =
     if (!d.ok) throw new Error(`jumelle ${d.code}`);
   }
   if (options.card !== false) await new MentionsAnnonce(db, acces, journal, { now }).setCardNumber(direction, 'CPI 2101 2027 000 000 001');
+  // Le statut des agents, rangé par la direction : sans lui, l'annonce ne part pas (AU007) [R152].
+  if (options.statut !== false) await rangerStatut(db, journal, now, direction, [alex.id, sam.id]);
   await designerTout(db);
   const d = await modeles.generate(agent, { kind: 'mandat_vente_simple', personId: p.id, propertyId: b.id, inputs: { 'honoraires.montant': 10000, 'honoraires.charge': 'acquereur', 'mandat.duree_mois': 12 } });
   if (!d.ok) throw new Error(d.code);
-  const signed = await new SignaturePapier(db, acces, journal, { now }).register(agent, d.document.id, { signedAt: SIGNED, place: 'hors_agence', scanRef: 'scans/mandat.pdf', source: 'referral' });
+  const signed = await new SignaturePapier(db, acces, journal, { now }).register(agent, d.document.id, { signedAt, place: 'hors_agence', scanRef: 'scans/mandat.pdf', source: 'referral' });
   if (!signed.ok) throw new Error(signed.code);
   const annonces = new Annonces(db, acces, journal, { now });
   const draft = await annonces.propose(agent, b.id);

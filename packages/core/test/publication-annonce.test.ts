@@ -118,6 +118,34 @@ describeWithSqlite('P04 · publication partout, au même prix, en mode essai', (
     expect(retired?.data).toEqual({ rule: 'R42', seq: 2, state: 'retiree', reason: 'mentions_incompletes' });
   });
 
+  it('[R45] AU005 : un diagnostic de 2019 ne se valide ni ne se publie', async () => {
+    const t = await setup({ diagnosedOn: '2019-06-12' });
+    t.setClock(new Date('2027-03-01T10:00:00.000Z'));
+    const v = await t.annonces.validate(t.agent, t.draftId);
+    expect(v).toMatchObject({ ok: false, rule: 'R43', code: 'mentions_incomplete' });
+    expect(!v.ok && 'missing' in v && v.missing).toEqual([{ id: 'energie', status: 'manquante', reason: 'diagnostic_perime' }]);
+    expect(await t.publication.sync(t.network.id, t.propertyId)).toEqual({ version: null, state: null, created: false, pushed: [], failed: [] });
+    expect(t.channels.every((c) => c.received.length === 0)).toBe(true);
+  });
+
+  it('[R45] AU005 : une annonce en ligne est retirée partout au premier passage où son diagnostic n’est plus valable', async () => {
+    // Diagnostic du 30 juin 2021 : valable jusqu'au 31 décembre 2024 inclus. Mandat signé en novembre 2024.
+    const t = await setup({ diagnosedOn: '2021-06-30', signedAt: new Date('2024-11-06T09:00:00.000Z') });
+    t.setClock(new Date('2024-11-07T10:00:00.000Z'));
+    expect(await t.annonces.validate(t.agent, t.draftId)).toMatchObject({ ok: true });
+    t.setClock(new Date('2024-12-02T10:00:00.000Z'));
+    expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ version: 1, state: 'en_vente', created: true });
+    // 22 h 30 UTC le 31 décembre : encore le 31 décembre à Paris, rien ne change.
+    t.setClock(new Date('2024-12-31T22:30:00.000Z'));
+    expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ version: 1, created: false, pushed: [] });
+    // 23 h 30 UTC : déjà le 1er janvier 2025 à Paris, l'annonce est retirée de chaque canal.
+    t.setClock(new Date('2024-12-31T23:30:00.000Z'));
+    expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ version: 2, state: 'retiree', created: true });
+    expect(t.channels.map((c) => c.received.at(-1)?.state)).toEqual(['retiree', 'retiree', 'retiree', 'retiree']);
+    const retired = (await t.journal.bySubject(`property:${t.propertyId}`)).find((x) => x.type === 'annonce.retiree');
+    expect(retired?.data).toEqual({ rule: 'R42', seq: 2, state: 'retiree', reason: 'mentions_incompletes' });
+  });
+
   it('[R42] un bien en erreur n’arrête pas le passage des autres ; l’échec est au journal', async () => {
     const t = await setup();
     t.setClock(new Date('2027-02-12T10:00:00.000Z'));
@@ -214,9 +242,9 @@ describeWithSqlite('P04 · un passage à la fois par bien', () => {
     expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ busy: true, created: false, pushed: [] });
     t.channels[0]!.gate = null;
     release();
-    expect(await first).toMatchObject({ version: 1, state: 'en_vente' });
-    // Le passage suivant retire l'annonce partout : la dernière chose reçue par chaque canal est le retrait.
-    expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ version: 2, state: 'retiree', created: true });
+    // AU067 : le premier passage relit ce qui doit être montré avant de rendre la main, et retire lui-même l'annonce.
+    expect(await first).toMatchObject({ version: 2, state: 'retiree', created: true });
+    expect(await t.publication.sync(t.network.id, t.propertyId)).toMatchObject({ version: 2, state: 'retiree', created: false });
     expect(t.channels.map((c) => c.received.at(-1)?.state)).toEqual(['retiree', 'retiree', 'retiree', 'retiree']);
   });
 

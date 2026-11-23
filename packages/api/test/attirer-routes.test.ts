@@ -6,6 +6,7 @@ import { attirerRoutes, handleAttirerPublic, listingReference, type AttirerServi
 import { htmlProblems } from '../../core/src/design/audit.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { SITE_MENTION_FIELDS, SITE_TREATMENTS } from '../../core/src/attirer/mentions-site.ts';
+import { launchProofInputs } from '../../core/test/mise-en-service-jeu.ts';
 import { REGISTRE_TRAITEMENTS } from '../../core/src/conformite/registre-traitements.ts';
 import { AGENTS_PER_PAGE, COMMUNES_PER_PAGE, renderAgentsList, renderPricesList } from '../../core/src/attirer/annuaire-site.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
@@ -318,6 +319,18 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
     expect(await gated!.text()).toContain('Disallow: /');
     expect((await handleAttirerPublic({ ...t.s, mode: 'reel' }, new Request(`${NET}/mentions-legales`)))!.headers.get('x-robots-tag')).toBe('noindex, nofollow');
     expect((await t.call(direction, 'POST', '/attirer/mentions-site', Object.fromEntries(Object.keys(SITE_MENTION_FIELDS).map((f) => [f, `Texte inventé ${f}`])))).status).toBe(200);
+    // [R675] Toutes les mentions, mais sans preuve de mise en service : le site reste en essai, et la page le dit.
+    expect(await (await handleAttirerPublic({ ...t.s, mode: 'reel' }, new Request(`${NET}/robots.txt`)))!.text()).toContain('Disallow: /');
+    const closed = await handleAttirerPublic({ ...t.s, mode: 'reel' }, new Request(`${NET}/mentions-legales`));
+    expect(closed!.headers.get('x-robots-tag')).toBe('noindex, nofollow');
+    expect(await closed!.text()).toContain('sa mise en service n’est pas terminée');
+    expect((await t.call(camille, 'GET', '/attirer/mise-en-service')).status).toBe(403);
+    expect((await t.call(camille, 'POST', '/attirer/mise-en-service', launchProofInputs('2026-10-29', 'CPI 9999 0000 000 000 001')[0])).status).toBe(403);
+    expect((await t.call(direction, 'POST', '/attirer/mise-en-service', { prerequisite: 'carte' })).status).toBe(400);
+    for (const input of launchProofInputs('2026-10-29', 'CPI 9999 0000 000 000 001')) expect((await t.call(direction, 'POST', '/attirer/mise-en-service', input)).status).toBe(200);
+    const board = (await t.call(direction, 'GET', '/attirer/mise-en-service')).body.data as { verified: boolean; features: { feature: string; open: boolean }[] };
+    expect(board.verified).toBe(false);
+    expect(board.features).toEqual([expect.objectContaining({ feature: 'site_reel', open: true })]);
     const reel = await handleAttirerPublic({ ...t.s, mode: 'reel' }, new Request(`${NET}/robots.txt`));
     expect(await reel!.text()).toContain('Allow: /');
     expect((await handleAttirerPublic({ ...t.s, mode: 'reel' }, new Request(`${NET}/mentions-legales`)))!.headers.get('x-robots-tag')).toBeNull();
@@ -624,5 +637,14 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
     expect(htmlProblems(await res.text())).toEqual([]);
     expect((await t.get(`${CAMILLE}/quartiers/ville-test/ouest`))!.status).toBe(404);
     expect((await t.call(direction, 'GET', `/attirer/quartiers/${zone!.id}/textes`)).body.data).toHaveLength(1);
+  });
+
+  it('[R07] [R16] AU012 : la direction règle le titre écrit à côté du nom des agents, dans une liste fermée', async () => {
+    const t = await setup();
+    expect((await t.call(direction, 'GET', '/attirer/titre-agent')).body).toMatchObject({ ok: true, data: { setting: null, shown: 'agent immobilier' } });
+    expect((await t.call(direction, 'POST', '/attirer/titre-agent', { title: 'mandataire immobilier' })).body).toMatchObject({ ok: false, rule: 'R07', code: 'titre_hors_liste' });
+    expect((await t.call(camille, 'POST', '/attirer/titre-agent', { title: 'conseiller immobilier' })).status).toBe(403);
+    expect((await t.call(direction, 'POST', '/attirer/titre-agent', { title: 'agent commercial en immobilier' })).status).toBe(200);
+    expect((await t.call(direction, 'GET', '/attirer/titre-agent')).body).toMatchObject({ ok: true, data: { setting: 'agent commercial en immobilier', shown: 'agent commercial en immobilier' } });
   });
 });

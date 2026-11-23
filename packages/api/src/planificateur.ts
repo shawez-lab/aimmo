@@ -1,4 +1,4 @@
-import { Acces, DecisionEnvoi, Diffusion, investir, FicheClient, reseau, location, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, onSaleDatesJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult, commerces } from '@aimmo/core';
+import { Acces, DecisionEnvoi, Diffusion, investir, FicheClient, reseau, location, FicheUnique, Planificateur, SITE_JOBS_TRIAL, SqlJournalStore, Visites, alertsJob, onSaleDatesJob, visitReportsJob, weeklyPointJob, appointmentBriefJob, appointmentReminderJob, dailyPlanJob, legalBasisJob, mandateDeadlinesJob, valueTrackingJob, vendorFollowUpJob, type CommuneRanges, type ScheduledJob, type SqlDatabase, type TickResult, commerces, annonces } from '@aimmo/core';
 import { TRIAL_MODE, journalError } from './app.ts';
 import { offersDailyJob } from './offres.ts';
 import { apresVenteBase, apresVenteJobs } from './apres-vente.ts';
@@ -18,12 +18,18 @@ import { ControleGels, complaintsJob } from '../../core/src/securite/index.ts';
 import { signPickupsJob } from '../../core/src/panneaux/index.ts';
 import { dpeWatchJob, type DiagnosisFeed } from '../../core/src/veille-dpe/index.ts';
 import { facturationJobs } from '../../core/src/facturation/index.ts';
+import { Pige, pigeCollectJob, type PigeSource } from '../../core/src/pige/index.ts';
+
+/** La pige ne lit que les cases déjà publiées des prix regroupés : jamais une source de ventes [R274]. */
+const NO_SALES: PriceSalesSource = { coverage: async () => null, within: async () => [] };
 
 export interface SchedulerConfig {
   db: SqlDatabase;
   /** Variable `MODE` : hors essai, rien ne passe. */
   mode: string | undefined;
   jobs?: readonly ScheduledJob[];
+  /** AU068 · le lecteur réel des annonces en ligne (H10) ; absent, aucune relecture ne passe. */
+  listingReader?: annonces.OnlineListingReader | null;
   /** Variable `RDV_LINK_BASE` : début du lien pour décaler ou annuler un rendez-vous ; absent, les rappels partent sans lien. */
   appointmentLinkBase?: string | undefined;
   /** La fourchette des communes (E05) pour le suivi de valeur ; absente, le suivi ne prépare aucun envoi. */
@@ -49,6 +55,8 @@ export interface SchedulerConfig {
   studioFiles?: { has(ref: string): Promise<boolean> } | null;
   /** Le lien de désinscription de la lettre, vérifié par `letterUnsubscribeBase` ; absent, aucune lettre ne part [R584]. */
   letterUnsubscribeBase?: string | null;
+  /** AU034 : le vrai fournisseur de la pige et son réseau ; absent, la relève quotidienne ne lit rien [R671]. */
+  pigeProvider?: { networkId: string; source: PigeSource } | null;
   now?: () => Date;
 }
 
@@ -166,6 +174,9 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // Veille des diagnostics énergétiques (HX16, BR26), à 7 h : les diagnostics nouveaux des secteurs ouverts, rangés
       // une seule fois par réseau, dans l'alerte du jour ; seuls le code postal et le jour partent, rien n'est envoyé [R288, R289].
       dpeWatchJob(config.db, config.dpeFeed ?? null, journal, { now }),
+      // Pige (AU034), à 6 h : les annonces du fournisseur réglé, par la même porte que toute relève ; chaque passage
+      // laisse sa ligne, une panne va au journal et à l'écran [R671, R273].
+      pigeCollectJob(config.db, journal, new Pige(config.db, journal, new PrixRegroupes(config.db, journal, NO_SALES, { now }), { now }), config.pigeProvider ?? null, { now }),
       // Séquences de prospection (HX20, BR31), de 9 h à 19 h du lundi au samedi : arrêt sur tous les canaux à la première
       // réponse ou opposition, puis les mails et SMS dus remis au contrôle central, canaux du mode essai seulement ;
       // Bloctel n'est pas branché (H61) [R300, R301, R26].
@@ -182,6 +193,9 @@ export async function runScheduler(config: SchedulerConfig): Promise<TickResult 
       // samedi à 10 h et 16 h, les éditions de la lettre ouvertes depuis moins de sept jours, par le contrôle central,
       // seulement avec le lien de désinscription réglé [R582, R583, R584, R26].
       ...marketingJobs(config.db, journal, { now, files: config.studioFiles ?? null, letterUnsubscribeBase: config.letterUnsubscribeBase ?? null }),
+      // Relecture des annonces en ligne (AU068), à 7 h, 12 h et 18 h, seulement avec le lecteur réel : un ancien prix
+      // ou une annonce retirée encore visible ouvre une tâche datée pour l'agent [R473].
+      ...(config.listingReader ? [portalCheckJob(config.db, journal, config.listingReader, { now })] : []),
     ];
     return await new Planificateur(config.db, journal, jobs, { now }).tick();
   } catch (error) {
@@ -266,6 +280,23 @@ export function freezeSweepJob(db: SqlDatabase, journal: SqlJournalStore, option
       const store = new FicheClient(db, { now: options.now });
       const acces = new Acces(db, store, new FicheUnique(db, store, { now: options.now }), journal, { now: options.now });
       await new ControleGels(db, acces, journal, { now: options.now }).sweepAll();
+    },
+  };
+}
+
+/** Le nom du passage de relecture des annonces en ligne, sans donnée. */
+export const PORTAL_CHECK_JOB = 'annonces.relecture';
+
+/** AU068 · La relecture des annonces acceptées de chaque réseau, par le lecteur réel, trois fois par jour [R473]. */
+export function portalCheckJob(db: SqlDatabase, journal: SqlJournalStore, reader: annonces.OnlineListingReader, options: { now: () => Date }): ScheduledJob {
+  return {
+    name: PORTAL_CHECK_JOB,
+    hours: [7, 12, 18],
+    run: async () => {
+      const store = new FicheClient(db, { now: options.now });
+      const acces = new Acces(db, store, new FicheUnique(db, store, { now: options.now }), journal, { now: options.now });
+      const surveillance = new annonces.DiffusionSurveillee(db, acces, journal, { now: options.now });
+      for (const n of await db.all<{ id: string }>('SELECT id FROM networks ORDER BY id')) await surveillance.verifyAll(n.id, reader);
     },
   };
 }

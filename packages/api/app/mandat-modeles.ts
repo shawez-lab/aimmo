@@ -11,19 +11,23 @@ import { MANDAT_REGLAGE_PART } from './mandat-reglage.ts';
  * puis l'écart de prix toléré (BR119, `mandat-reglage.ts`).
  */
 const MANDATE_ONLY = ['honoraires.montant', 'honoraires.charge', 'mandat.duree_mois', 'registre.numero'];
-const AVENANT_ONLY = ['mandat.numero', 'avenant.objet', 'avenant.prix', 'avenant.duree_mois'];
+const AVENANT_ONLY = ['mandat.numero', 'avenant.objet', 'avenant.prix', 'avenant.duree_mois', 'avenant.honoraires', 'avenant.honoraires_charge', 'avenant.type', 'avenant.date_effet'];
 const fieldsOf = (hidden: string[]): string =>
   Object.entries(TEMPLATE_FIELDS).filter(([name]) => !hidden.includes(name)).map(([name, f]) => `{{${name}}} : ${f.label}`).join(' · ');
 const MANDATE_NEEDS = 'Places obligatoires : {{registre.numero}}, {{honoraires.montant}}, {{honoraires.charge}}, {{mandat.duree_mois}}, et la désignation : {{bien.adresse}}, {{bien.cadastre}} et {{mandant.domicile}}.';
-const AVENANT_NEEDS = 'Places obligatoires : {{mandat.numero}}, et {{avenant.objet}} ou bien {{avenant.prix}} avec {{avenant.duree_mois}}.';
+const AVENANT_NEEDS = 'Places obligatoires : {{mandat.numero}}, et {{avenant.objet}} ou bien {{avenant.prix}} avec {{avenant.duree_mois}}. {{avenant.objet}} écrit aussi les honoraires, leur charge, le type du mandat et la date d’effet. Pour rendre un mandat exclusif, la clause d’exclusivité forme un paragraphe qui commence par « !! » suivi d’une espace.';
 // Ce que l'écran de l'agent envoie toujours : le serveur refuse toute saisie qui n'a pas sa place sur le document (`bad_input`).
 // Pour un mandat de vente, s'y ajoute la désignation, sans laquelle le document reste incomplet (AU002).
 const MANDATE_INPUTS = [['honoraires.montant', 'honoraires.charge', 'mandat.duree_mois', 'bien.adresse', 'bien.cadastre', 'mandant.domicile']];
 const AVENANT_INPUTS = [['avenant.objet'], ['avenant.prix', 'avenant.duree_mois']];
+const RENTAL_NEEDS = 'Places obligatoires : {{registre.numero}}, {{honoraires.montant}} (les honoraires du bailleur), {{mandat.duree_mois}}, et la désignation : {{bien.adresse}}, {{bien.cadastre}} et {{mandant.domicile}}. Pas de {{honoraires.charge}} : ceux du locataire suivent le barème plafonné.';
+const RENTAL_INPUTS = [['honoraires.montant', 'mandat.duree_mois', 'bien.adresse', 'bien.cadastre', 'mandant.domicile']];
 const KINDS = [
   { kind: 'mandat_vente_simple', title: 'Mandat de vente simple', needs: MANDATE_NEEDS, inputs: MANDATE_INPUTS, fields: fieldsOf(AVENANT_ONLY) },
   { kind: 'mandat_vente_exclusif', title: 'Mandat de vente exclusif', needs: `${MANDATE_NEEDS} La clause d’exclusivité forme un paragraphe qui commence par « !! » suivi d’une espace.`, inputs: MANDATE_INPUTS, fields: fieldsOf(AVENANT_ONLY) },
   { kind: 'avenant_mandat', title: 'Avenant au mandat', needs: AVENANT_NEEDS, inputs: AVENANT_INPUTS, fields: fieldsOf(MANDATE_ONLY) },
+  // AU014 : le mandat de location, honoraires du bailleur seuls ; ceux du locataire suivent le barème plafonné de la mise en location.
+  { kind: 'mandat_location', title: 'Mandat de location', needs: RENTAL_NEEDS, inputs: RENTAL_INPUTS, fields: fieldsOf([...AVENANT_ONLY, 'honoraires.charge']) },
 ];
 const REFUSALS = {
   no_designation_field: 'Il manque la désignation : {{bien.adresse}}, {{bien.cadastre}} et {{mandant.domicile}} ont chacun leur place dans un mandat de vente. Rien n’est rangé.',

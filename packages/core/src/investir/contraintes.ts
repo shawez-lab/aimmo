@@ -15,7 +15,7 @@ import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
-import { FINAL_ENERGY_BAN_FROM, MAX_FINAL_ENERGY_KWH, banDate } from '../location/logement.ts';
+import { FINAL_ENERGY_BAN_FROM, MAX_FINAL_ENERGY_KWH, banDate, territoryOf, type Territory } from '../location/logement.ts';
 import type { RentalTarget } from './profil.ts';
 
 export const ENERGY_CLASSES = ['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const;
@@ -88,10 +88,11 @@ const dayFr = (iso: string): string => {
  * La contrainte d'énergie, par les seules règles écrites de M15 : une classe G (date passée) ou une consommation au-delà
  * de 450 kWh/m²/an rend le bien interdit ; F et E portent leur date à venir ; sans classe, « inconnue ».
  */
-export function energyConstraint(energyClass: InvestEnergyClass | null, finalEnergyKwh: number | null, today: string, source: string): EnergyConstraint {
+export function energyConstraint(energyClass: InvestEnergyClass | null, finalEnergyKwh: number | null, today: string, source: string, territory: Territory = 'metropole'): EnergyConstraint {
   const base = { kind: 'energie' as const, energyClass, finalEnergyKwh, source };
   // Le seuil de consommation passe avant tout : il interdit même quand la classe manque.
-  if (finalEnergyKwh !== null && finalEnergyKwh > MAX_FINAL_ENERGY_KWH && FINAL_ENERGY_BAN_FROM <= today) {
+  // Le seuil des 450 kWh ne vaut qu'en métropole ; l'outre-mer a son propre calendrier par classe (AU098b).
+  if (territory === 'metropole' && finalEnergyKwh !== null && finalEnergyKwh > MAX_FINAL_ENERGY_KWH && FINAL_ENERGY_BAN_FROM <= today) {
     return {
       ...base,
       status: 'interdit',
@@ -102,7 +103,7 @@ export function energyConstraint(energyClass: InvestEnergyClass | null, finalEne
   if (energyClass === null) {
     return { ...base, status: 'inconnue', bannedFrom: null, text: 'Classe énergie inconnue : à vérifier avant toute proposition de location.' };
   }
-  const ban = banDate(energyClass);
+  const ban = banDate(energyClass, territory);
   if (ban !== null && ban <= today) {
     return { ...base, status: 'interdit', bannedFrom: ban, text: `${RENTAL_BAN_ALERT} : classe énergie ${energyClass}, interdite à la location depuis le ${dayFr(ban)}.` };
   }
@@ -326,7 +327,7 @@ export class Contraintes {
     const kwh = rawKwh === null ? null : Math.ceil(rawKwh);
     const energySource =
       fromSheet !== null ? `fiche du bien ${input.propertyId}, version ${sheetVersion}` : energyClass !== null ? (input.energySource ?? 'dit par l’agent') : 'aucune';
-    const energy = energyConstraint(energyClass, kwh, today, energySource);
+    const energy = energyConstraint(energyClass, kwh, today, energySource, territoryOf(input.inseeCode));
     const constraints: Constraint[] = [energy];
 
     const k = sheet?.coownership;

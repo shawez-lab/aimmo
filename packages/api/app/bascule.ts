@@ -69,37 +69,12 @@ export const BASCULE_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-
 /** Le chargeur posé dans le script de l'application : l'écran est servi à part, chargé une fois, jamais gardé. */
 export const BASCULE_JS = `
   /* ---------- La bascule sur l'écran du réseau (B05), chargée au premier geste [R16, R201]. ---------- */
-  var basculeTools = null, basculeLoading = false;
   function wipeBascule() {
     clear($('bascule-corps'));
     $('bascule-etat').textContent = '';
   }
   function withBascule(act) {
-    if (!currentKey) return Promise.resolve(false);
-    if (basculeTools) return act(basculeTools);
-    if (basculeLoading) return Promise.resolve(false);
-    basculeLoading = true;
-    var mine = session;
-    $('bascule-etat').textContent = 'Chargement…';
-    return new Promise(function (resolve) {
-      var s = document.createElement('script');
-      s.setAttribute('src', '/app/bascule.js');
-      s.addEventListener('load', function () {
-        basculeLoading = false;
-        var make = globalThis.AIMMO_BASCULE;
-        try { delete globalThis.AIMMO_BASCULE; } catch (e) { /* rien */ }
-        if (mine !== session) { resolve(false); return; }
-        if (typeof make !== 'function') { $('bascule-etat').textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        basculeTools = make({ $: $, el: el, clear: clear, send: send, button: button, date: date, session: function () { return session; } });
-        resolve(act(basculeTools));
-      });
-      s.addEventListener('error', function () {
-        basculeLoading = false;
-        if (mine === session) $('bascule-etat').textContent = 'Pas de réseau. Réessayez dans un moment.';
-        resolve(false);
-      });
-      $('reseau').appendChild(s);
-    });
+    return withTool('bascule', 'AIMMO_BASCULE', 'bascule-etat', 'reseau', act, function () { return { $: $, el: el, clear: clear, send: send, button: button, date: date, session: function () { return session; } }; });
   }
 `;
 

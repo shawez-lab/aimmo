@@ -1,9 +1,11 @@
 // X28 : ce que le fichier des vérifications doit garder. Lu par les garde-fous à chaque vérification,
 // pour que personne ne retire un contrôle ni ne rapproche le délai de la durée réelle sans que cela se voie.
 
-// Plus longue vérification réussie, mesurée sur les 100 dernières le 2026-11-03 : 15,5 minutes.
+// Plus longue vérification réussie, mesurée sur les 40 dernières le 2026-11-22 : 31,9 minutes, et des vérifications
+// arrêtées par le délai de 35 minutes encore en cours ce jour-là (AU039, AU038, AU091b, main) : 32 minutes retenues.
+// Avant : 25 minutes le 2026-11-19.
 // À relever quand la suite grandit ; le délai doit garder 30 % de marge au-dessus.
-export const DUREE_MESUREE_MINUTES = 15.5;
+export const DUREE_MESUREE_MINUTES = 32;
 const DELAI_MINIMUM = Math.ceil(DUREE_MESUREE_MINUTES * 1.3);
 
 const COMMANDES = [
@@ -62,7 +64,8 @@ function deploymentGuards(job, label) {
       errors.push(`${label} : une mutation distante n’est pas précédée de la garde du commit actuel.`);
     }
   });
-  if (mutations !== 3) errors.push(`${label} : les trois mutations protégées doivent rester explicites.`);
+  // Base du réseau et base des bacs à sable (AU025) : création et migrations de chacune, puis la mise en ligne.
+  if (mutations !== 5) errors.push(`${label} : les cinq mutations protégées doivent rester explicites.`);
   if (/continue-on-error|\|\|\s*(true|:|exit 0)/.test(job)) {
     errors.push(`${label} : un échec de la garde ou du déploiement ne peut être ignoré.`);
   }

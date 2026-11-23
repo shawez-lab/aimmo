@@ -229,6 +229,8 @@ describeWithSqlite('RC34 · la chaîne de captation joint l’annonce traduite v
     t.setClock(new Date('2027-03-01T08:00:00.000Z'));
     await t.publication.sync(t.network.id, t.propertyId);
     const tr = new AnnoncesTraduites(t.db, t.acces, t.journal, { now: t.now, translator: new EchoTranslator() });
+    // L'agent déclare parler anglais : l'anglais n'est plus ouvert d'office (AU113).
+    await tr.declareLanguages(t.agent, t.agent.userId, ['en']);
     const proposed = await tr.propose(t.agent, t.propertyId, 'en');
     if (!proposed.ok) throw new Error(proposed.code);
     const valid = await tr.validate(t.agent, proposed.value.id);
@@ -244,7 +246,7 @@ describeWithSqlite('RC34 · la chaîne de captation joint l’annonce traduite v
     expect(body).toMatch(/\n\nHello, the property in Dijon is available : 210 000 €, 62 m²\. Would you like to arrange a visit\?\n\n/);
     // Les mentions de la version publiée, mot pour mot, leurs parenthèses seules mises en virgules [R08].
     expect(french.mentions).toContain('(abonnements compris)');
-    expect(body).toContain(`\n\n${valid.value.title}\n\n${valid.value.body}\n\n${french.mentions!.replace(' (abonnements compris)', ', abonnements compris')}`);
+    expect(body).toContain(`\n\n${valid.value.title}\n\n${valid.value.body}\n\n${french.mentions!.replace(/\s*\(([^()]*)\)/g, ', $1')}`);
     expect(body).not.toMatch(/[()]/);
   });
 });

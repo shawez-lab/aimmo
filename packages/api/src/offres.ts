@@ -101,6 +101,9 @@ export function offreRoutes(pieces: OfferUploadStore | null = null): OffreRoute[
         downPaymentEur: b.downPaymentEur, loanEur: b.loanEur, signedRef: b.signedRef, receivedAt: b.receivedAt, requestKey: b.requestKey,
       }))),
     },
+    // Le collègue qui suit l'acquéreur autorise l'agent du bien à présenter son offre, pour ce seul bien (AU081).
+    { method: 'POST', pattern: new RegExp(`^/offres/biens/${ID}/partages$`), name: 'offres.partage', handle: withBody(async (s, v, [id], b) => reply(await o(s).registre.shareBuyer(v, id!, b.buyerPersonId))) },
+    { method: 'POST', pattern: new RegExp(`^/offres/partages/${ID}/retrait$`), name: 'offres.partage_retrait', handle: async (s, v, [id]) => reply(await o(s).registre.revokeShare(v, id!)) },
     { method: 'GET', pattern: new RegExp(`^/offres/biens/${ID}$`), name: 'offres.liste', handle: async (s, v, [id]) => reply(await new SuiviOffres(s.db, s.acces, s.journal, { now: s.now }).listFor(v, id!)) },
     // L'écran de l'agent (O10) : le suivi, les contacts qui peuvent être l'acquéreur, le dépôt d'une pièce.
     { method: 'GET', pattern: new RegExp(`^/offres/biens/${ID}/suivi$`), name: 'offres.suivi', handle: async (s, v, [id]) => reply(await new SuiviOffres(s.db, s.acces, s.journal, { now: s.now }).board(v, id!)) },

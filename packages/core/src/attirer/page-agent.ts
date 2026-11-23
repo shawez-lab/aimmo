@@ -18,6 +18,7 @@ import { escapeHtml } from '../documents/modeles.ts';
 import { euros } from '../annonces/mentions.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { DEFAULT_PROFESSIONAL_TITLE, capitalizedTitle, professionalTitle, type ProfessionalTitle } from './qualite.ts';
 import { LISTINGS_PER_PAGE, LISTABLE_STATUSES, when, type ListingGate } from './liste-biens.ts';
 
 export interface AgentMentions {
@@ -50,6 +51,8 @@ export interface AgentPageInput {
   listings: AgentListing[];
   /** Le lien vers les avis publiés par les clients eux-mêmes (fiche Google de l'agent), s'il est réglé. */
   reviewsUrl: string | null;
+  /** Le titre réglé par la direction (AU012) ; sans lui, « agent immobilier » [R07]. */
+  title?: ProfessionalTitle;
 }
 
 export interface PublicAgent {
@@ -101,7 +104,8 @@ export function mentionsLine(m: AgentMentions): string {
 /** La page de l'agent : la base du système de design d'AIMMO, puis sa mise en page, en jetons [R201]. */
 export function renderAgentPage(input: AgentPageInput, check?: { at: Date; more: boolean }): string {
   const name = `${input.firstName} ${input.lastName}`;
-  const title = `${name}, agent immobilier`;
+  const quality = input.title ?? DEFAULT_PROFESSIONAL_TITLE;
+  const title = `${name}, ${quality}`;
   const head = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="index"><meta name="theme-color" content="${THEME_COLOR}"><title>${escapeHtml(title)}</title><style>${CSS}</style></head>`;
   const brand = `<header class="tete"><p class="marque">AIMMO</p><a href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div>`;
   const contact: string[] = [];
@@ -122,13 +126,23 @@ export function renderAgentPage(input: AgentPageInput, check?: { at: Date; more:
       : `<p class="doux">Les avis de ses clients seront bientôt en ligne.</p>`;
   return (
     `${head}<body>${brand}<main>` +
-    `<section class="qui" aria-labelledby="nom"><p class="metier">Agent immobilier${input.zone ? ` · ${escapeHtml(input.zone)}` : ''}</p><h1 id="nom">${escapeHtml(name)}</h1>` +
+    `<section class="qui" aria-labelledby="nom"><p class="metier">${escapeHtml(capitalizedTitle(quality))}${input.zone ? ` · ${escapeHtml(input.zone)}` : ''}</p><h1 id="nom">${escapeHtml(name)}</h1>` +
     `<p class="statut">${escapeHtml(mentionsLine(input.mentions))}</p></section>` +
     (contact.length > 0 ? `<nav class="contact" aria-label="Contacter ${escapeHtml(input.firstName)}">${contact.join('')}</nav>` : '') +
     `<h2>Ses biens</h2>${check ? `<p class="doux">Mandats vérifiés le ${when(check.at)}.</p>` : ''}${listings}${check?.more ? '<p><a href="/biens">Voir tous les biens du site</a></p>' : ''}` +
     `<h2>Avis de ses clients</h2>${reviews}` +
     `</main></body></html>`
   );
+}
+
+/** Le dernier statut rangé d'un agent par la direction : le plus récent, puis le dernier écrit (AT03, AU007) [R152]. */
+export function latestLegalMention(db: SqlDatabase, networkId: string, agentId: string): Promise<{ legal_status: string; rsac_number: string; rsac_registry: string } | null> {
+  return db.first('SELECT legal_status, rsac_number, rsac_registry FROM agent_legal_mentions WHERE agent_id = ? AND network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [agentId, networkId]);
+}
+
+/** Le dernier titulaire de la carte du réseau rangé par la direction, de la même façon [R152]. */
+export function latestCardHolder(db: SqlDatabase, networkId: string): Promise<{ holder_name: string } | null> {
+  return db.first('SELECT holder_name FROM card_holders WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
 }
 
 export class PageAgent {
@@ -237,14 +251,11 @@ export class PageAgent {
     );
     if (!agent) return { ok: false, rule: 'R16', reason: 'agent_inconnu' };
     if (agent.status !== 'active') return { ok: false, rule: 'R16', reason: 'agent_parti' };
-    const legal = await this.db.first<{ rsac_number: string; rsac_registry: string }>(
-      'SELECT rsac_number, rsac_registry FROM agent_legal_mentions WHERE agent_id = ? AND network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1',
-      [agentId, networkId],
-    );
+    const legal = await latestLegalMention(this.db, networkId, agentId);
     if (!legal) return { ok: false, rule: 'R152', reason: 'statut_manquant' };
     const card = await this.db.first<{ card_number: string }>('SELECT card_number FROM listing_settings WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
     if (!card || card.card_number.trim() === '') return { ok: false, rule: 'R152', reason: 'carte_manquante' };
-    const holder = await this.db.first<{ holder_name: string }>('SELECT holder_name FROM card_holders WHERE network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1', [networkId]);
+    const holder = await latestCardHolder(this.db, networkId);
     if (!holder) return { ok: false, rule: 'R152', reason: 'titulaire_manquant' };
     const contact = await this.db.first<{ phone: string; email: string }>(
       'SELECT phone, email FROM agent_public_cards WHERE agent_id = ? AND network_id = ? ORDER BY set_at DESC, rowid DESC LIMIT 1',
@@ -297,6 +308,7 @@ export class PageAgent {
         mentions: { rsacNumber: legal.rsac_number, rsacRegistry: legal.rsac_registry, cardNumber: card.card_number.trim(), cardHolder: holder.holder_name },
         listings,
         reviewsUrl: reviews?.url ?? null,
+        title: await professionalTitle(this.db, networkId, agentId),
       },
     };
   }

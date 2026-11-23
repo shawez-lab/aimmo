@@ -3,26 +3,53 @@ import { REGISTRE_GELS_URL, REGISTRE_GELS_USER_AGENT } from './securite.ts';
 import { handleEmail, type InboundEmail } from './courrier.ts';
 import { fromD1, type D1Database } from './d1.ts';
 import { investorFeesRate, runScheduler } from './planificateur.ts';
+import { bonVisiteLinkBase } from './bon-visite-public.ts';
 import { letterUnsubscribeBase } from './marketing-passage.ts';
 import { isQuarterMinute, runNotificationsPass } from './notifications.ts';
 import { R2PieceStore, type R2Like } from './dossiers.ts';
 import { runListingSync, type MediaStore } from './vitrine.ts';
-import { R2AgentPieceStore, type R2AgentBucket } from './reseau.ts';
+import { HttpTileSource, tileTemplateOf } from './carte.ts';
+import type { AnnonceOptions } from './annonces.ts';
+import { R2AgentPieceStore, type R2AgentBucket, type ReseauOptions } from './reseau.ts';
+import { D1SandboxStorage } from './bac-a-sable.ts';
 import { R2VaultStorage, type R2VaultBucket } from './conformite.ts';
 import { R2PartnerFiles, type R2PartnerBucket } from './partenaires.ts';
 import { R2DossierStorage, type R2DossierBucket } from './commerces.ts';
 import { R2FichiersPlages, plagesBucket } from './reprise-fichiers.ts';
-import { BanGeocoder, DvfSiteSales, EstimationEnLigne, GpuUrbanism, httpDvfReader } from '@aimmo/core';
+import { BanGeocoder, DvfSiteSales, EstimationEnLigne, GpuUrbanism, annonces, httpDvfReader, SqlJournalStore } from '@aimmo/core';
 import type { StudioUploadStore } from '../../core/src/studio/depot.ts';
 import { readClesConfig } from './cles.ts';
 import { AdemeDiagnosisFeed } from '../../core/src/veille-dpe/index.ts';
+import { HttpPigeSource, missingPigeSettings, type PigeFetcher, type PigeProviderSettings, type PigeSource } from '../../core/src/pige/index.ts';
+import { runLiveWithdrawals, socialFromEnv } from './reseaux-reels.ts';
+import { gbpFromEnv } from './fiche-google-reelle.ts';
+import { dossierFilesOf, mailboxesFromEnv, runMailboxPass, type BoiteEnv } from './boite.ts';
+import { runTelephoniePass } from './telephonie.ts';
+import { audioSourceFromEnv, transcriberFromEnv, type TranscriptionEnv } from './reprises-vocales.ts';
+import { adsFromEnv, runAdsPass, type AdsEnv } from './publicite-reelle.ts';
+import { agendasFromEnv, runAgendaPass, type AgendaEnv } from './agenda-reel.ts';
+
+/**
+ * AU036 : les vrais Facebook et Instagram du réseau. Publier seulement quand tout est rangé (sinon tout reste d'essai) ;
+ * retirer tant que le compte et le jeton sont rangés, même une fois les envois coupés [R42].
+ */
+const socialOf = (env: Env) => socialFromEnv(env, fetch.bind(globalThis));
+const socialSettings = (s: ReturnType<typeof socialOf>) => ({ social: s.publish, withdrawals: s.withdraw });
 
 /**
  * Liaisons du Worker, déclarées dans wrangler.toml ; `API_KEYS` et `INTAKE_KEYS` sont des secrets Cloudflare.
  * `MAIL_NETWORK_ID`, `MAIL_FORWARD_TO` et `MAIL_OWN_ADDRESSES` servent à la réception des mails (C06).
  */
 export interface Env {
+  /** AU073b · le modèle d'adresse des tuiles de la carte des secteurs (`https://…/{z}/{x}/{y}.png`) ; absent, pas de carte. */
+  CARTE_TUILES_URL?: string;
+  /** AU068 · « oui » : la relecture des annonces en ligne lit les pages publiques des portails (H10). Absent : aucune relecture. */
+  RELECTURE_PORTAILS?: string;
   DB: D1Database;
+  /** AU025 : la base D1 à part des bacs à sable, en Europe, jamais celle du réseau. Absente, le bac à sable reste fermé. */
+  BAC_A_SABLE_DB?: D1Database;
+  /** AU025 : le module d'académie que vaut le premier parcours fini ; absent, le parcours ne compte pas à l'académie. */
+  BAC_A_SABLE_MODULE?: string;
   API_KEYS?: string;
   INTAKE_KEYS?: string;
   MODE?: string;
@@ -35,6 +62,37 @@ export interface Env {
   META_NETWORK_ID?: string;
   META_OWN_IDS?: string;
   META_APP_IDS?: string;
+  /** AU036 : `reel` met en service les vrais réseaux, avec `META_PAGE_ID`, `META_IG_USER_ID`, `META_PAGE_TOKEN` (un secret) et `RESEAUX_MEDIA_BASE`. */
+  RESEAUX_MODE?: string;
+  META_PAGE_ID?: string;
+  META_IG_USER_ID?: string;
+  META_PAGE_TOKEN?: string;
+  RESEAUX_MEDIA_BASE?: string;
+  /** AU037 : `reel` met en service la vraie fiche Google, avec `GBP_CLIENT_ID`, `GBP_CLIENT_SECRET` et `GBP_REFRESH_TOKEN` (deux secrets). */
+  GBP_MODE?: string;
+  GBP_CLIENT_ID?: string;
+  GBP_CLIENT_SECRET?: string;
+  GBP_REFRESH_TOKEN?: string;
+  /**
+   * AU038 : `ADS_MODE` = `reel` met en service la publicité payante avec son plafond (`ADS_PLAFOND_CENTS`), sa page
+   * d'arrivée, les lieux des communes et les réglages de chaque plateforme (`publicite-reelle.ts`, H63).
+   */
+  ADS_MODE?: AdsEnv['ADS_MODE'];
+  ADS_PLAFOND_CENTS?: string;
+  ADS_LANDING_URL?: string;
+  ADS_LIEUX?: string;
+  GOOGLE_ADS_CLIENT_ID?: string;
+  GOOGLE_ADS_CLIENT_SECRET?: string;
+  GOOGLE_ADS_REFRESH_TOKEN?: string;
+  GOOGLE_ADS_DEVELOPER_TOKEN?: string;
+  GOOGLE_ADS_CUSTOMER_ID?: string;
+  GOOGLE_ADS_LOGIN_CUSTOMER_ID?: string;
+  GOOGLE_ADS_MOTS?: string;
+  GOOGLE_ADS_TITRES?: string;
+  GOOGLE_ADS_TEXTES?: string;
+  META_ADS_TOKEN?: string;
+  META_ADS_ACCOUNT_ID?: string;
+  META_ADS_TEXTE?: string;
   /** Adresse publique des fichiers DVF du site, lus en lecture seule (E05), par exemple `https://…/donnees-dvf/`. */
   DVF_BASE_URL?: string;
   /** L'adresse du fichier JSON du registre des gels (BR85) ; absente, celle de la documentation de la DG Trésor. */
@@ -43,6 +101,8 @@ export interface Env {
   RDV_LINK_BASE?: string;
   /** Début du lien de désinscription des alertes (T03), en https, sans chiffre, terminé par `/alertes/desinscription/`. */
   ALERT_UNSUBSCRIBE_BASE?: string;
+  /** AU075b · début des liens du bon de visite (signer à distance, exemplaire), en https, sans chiffre, terminé par `/` ; absent, aucune signature à distance. */
+  BON_VISITE_BASE?: string;
   /** Début du lien de désinscription de la lettre (BR112), en https, sans chiffre, terminé par `/lettre/desinscription/` ; absent, aucune lettre ne part. */
   LETTRE_DESINSCRIPTION_BASE?: string;
   /**
@@ -81,6 +141,73 @@ export interface Env {
   ESPACE_BASE?: string;
   /** Secret : les clés du relevé prouvé de l'espace, `nom:secret` séparées par des virgules ; absent, relevé indisponible [R164]. */
   ESPACE_RELEVE_KEYS?: string;
+  /** AU034 : l'adresse https des annonces du fournisseur de pige retenu par le réseau ; absente, aucune relève. */
+  PIGE_SOURCE_URL?: string;
+  /** AU034, secret : la clé donnée par le fournisseur de pige. */
+  PIGE_SOURCE_TOKEN?: string;
+  /** AU034 : le réseau dont le fournisseur couvre le secteur ; seul lui relève. */
+  PIGE_NETWORK_ID?: string;
+  /**
+   * AU043 : `reel` relie les vraies boîtes des agents (H55), avec le client OAuth de Google (`BOITE_GOOGLE_CLIENT_ID`,
+   * `BOITE_GOOGLE_CLIENT_SECRET`) ou de Microsoft (`BOITE_MICROSOFT_CLIENT_ID`, `BOITE_MICROSOFT_CLIENT_SECRET`,
+   * `BOITE_MICROSOFT_TENANT`) et le secret `BOITE_JETONS` (`boite.ts`).
+   */
+  BOITE_MODE?: BoiteEnv['BOITE_MODE'];
+  BOITE_GOOGLE_CLIENT_ID?: string;
+  BOITE_GOOGLE_CLIENT_SECRET?: string;
+  BOITE_MICROSOFT_CLIENT_ID?: string;
+  BOITE_MICROSOFT_CLIENT_SECRET?: string;
+  BOITE_MICROSOFT_TENANT?: string;
+  BOITE_JETONS?: string;
+  /**
+   * AU053 : `reel` relie les vrais agendas des agents (H21, H53), avec le client OAuth de Google
+   * (`AGENDA_GOOGLE_CLIENT_ID`, `AGENDA_GOOGLE_CLIENT_SECRET`) ou de Microsoft (`AGENDA_MICROSOFT_CLIENT_ID`,
+   * `AGENDA_MICROSOFT_CLIENT_SECRET`, `AGENDA_MICROSOFT_TENANT`) et le secret `AGENDA_JETONS` (`agenda-reel.ts`).
+   */
+  AGENDA_MODE?: AgendaEnv['AGENDA_MODE'];
+  AGENDA_GOOGLE_CLIENT_ID?: string;
+  AGENDA_GOOGLE_CLIENT_SECRET?: string;
+  AGENDA_MICROSOFT_CLIENT_ID?: string;
+  AGENDA_MICROSOFT_CLIENT_SECRET?: string;
+  AGENDA_MICROSOFT_TENANT?: string;
+  AGENDA_JETONS?: string;
+  /**
+   * AU044 : `reel` branche le vrai transcripteur des notes vocales (H52), avec `TRANSCRIPTION_URL`, `TRANSCRIPTION_MODEL`
+   * et le secret `TRANSCRIPTION_KEY` ; le secret `WHATSAPP_MEDIA_TOKEN` lit les notes WhatsApp (`reprises-vocales.ts`).
+   */
+  TRANSCRIPTION_MODE?: TranscriptionEnv['TRANSCRIPTION_MODE'];
+  TRANSCRIPTION_URL?: string;
+  TRANSCRIPTION_MODEL?: string;
+  TRANSCRIPTION_KEY?: string;
+  WHATSAPP_MEDIA_TOKEN?: string;
+  /**
+   * AU045 : `reel` ouvre le vrai raccordement téléphonique de l'assistant vocal (`telephonie.ts`), avec la variable
+   * `TWILIO_ACCOUNT_SID` et le secret `TWILIO_AUTH_TOKEN` (H78) ; sinon les adresses répondent 503.
+   */
+  TELEPHONIE_MODE?: string;
+  TWILIO_ACCOUNT_SID?: string;
+  TWILIO_AUTH_TOKEN?: string;
+}
+
+/** AU043 : les vraies boîtes des agents, et le rangement de leurs pièces dans `PIECES` ; sinon rien n'est lu [R683]. */
+export function boiteOf(env: Env): { mailboxes: ReturnType<typeof mailboxesFromEnv>; files: ReturnType<typeof dossierFilesOf> } {
+  return { mailboxes: mailboxesFromEnv(env, fetch.bind(globalThis)), files: dossierFilesOf(env.PIECES ? new R2PieceStore(env.PIECES) : null) };
+}
+
+/** AU053 : les vrais agendas des agents, seulement quand tout est rangé ; sinon aucun agenda n'est lu [R702]. */
+export function agendasOf(env: Env): ReturnType<typeof agendasFromEnv> {
+  return agendasFromEnv(env, fetch.bind(globalThis));
+}
+
+/** Les réglages du fournisseur de pige (AU034), tels quels : leur forme est contrôlée par la couche métier. */
+export function pigeProvider(env: Pick<Env, 'PIGE_SOURCE_URL' | 'PIGE_SOURCE_TOKEN' | 'PIGE_NETWORK_ID'>): PigeProviderSettings {
+  return { url: env.PIGE_SOURCE_URL, token: env.PIGE_SOURCE_TOKEN, networkId: env.PIGE_NETWORK_ID };
+}
+
+/** Le vrai fournisseur de pige, seulement quand aucun réglage ne manque ; sinon aucune source [R671]. */
+export function pigeSourceOf(settings: PigeProviderSettings, fetcher: PigeFetcher = fetch.bind(globalThis)): { networkId: string; source: PigeSource } | null {
+  if (missingPigeSettings(settings).length > 0) return null;
+  return { networkId: (settings.networkId ?? '').trim(), source: new HttpPigeSource(fetcher, { url: settings.url ?? '', token: settings.token ?? '' }) };
 }
 
 /** L'adresse du registre des gels : une adresse https seule, sinon celle de la documentation de la DG Trésor (BR85). */
@@ -132,6 +259,14 @@ export function mediaUploads(bucket: { put?(key: string, value: Uint8Array, opti
 }
 
 /**
+ * AU103b : les images entières des visites rangées dans `MEDIA`, sous `visites/`, par le même dépôt que le Studio ; sans
+ * `MEDIA` (ou sans `put`), `null` : le dépôt répond 503 et l'image reste sur le téléphone, qui la renverra [R677].
+ */
+export function visitImagesOf(env: Pick<Env, 'MEDIA'>): StudioUploadStore | null {
+  return env.MEDIA ? mediaUploads(env.MEDIA) : null;
+}
+
+/**
  * Les fichiers déposés de l'agence sous licence (BR82) : les compartiments des médias, des pièces et des commerces qui
  * savent `head` et `get`, jamais le coffre [R663] ; aucun : `null`, les routes des contenus sont fermées.
  */
@@ -140,21 +275,46 @@ export function fichiersReprise(env: Pick<Env, 'MEDIA' | 'PIECES' | 'COMMERCES'>
   return buckets.length > 0 ? new R2FichiersPlages(buckets) : null;
 }
 
+function sandboxOptions(env: Env): NonNullable<ReseauOptions['sandbox']> | null {
+  if (!env.BAC_A_SABLE_DB || env.BAC_A_SABLE_DB === env.DB) return null;
+  const moduleId = env.BAC_A_SABLE_MODULE && /^[A-Za-z0-9_-]{1,64}$/.test(env.BAC_A_SABLE_MODULE) ? env.BAC_A_SABLE_MODULE : null;
+  // Aucune migration à jouer ici : la mise en ligne applique à cette base les mêmes migrations qu'à celle du réseau.
+  return { migrations: [], storage: new D1SandboxStorage(fromD1(env.BAC_A_SABLE_DB), fromD1(env.DB)), academyModuleId: moduleId };
+}
+
+/**
+ * AU067 · Les canaux et les connecteurs réels des annonces et des portails, les mêmes pour le retrait immédiat et pour
+ * le passage des quarts d'heure qui en réessaie les échecs. Aucun n'est encore branché (H10) : tout reste en essai.
+ */
+function listingOptions(_env: Env): AnnonceOptions {
+  return {};
+}
+
 export default {
   fetch(request: Request, env: Env): Promise<Response> {
     const estimation = estimationServices(env);
     return handleRequest(request, {
       db: fromD1(env.DB),
+      listing: listingOptions(env),
       apiKeys: env.API_KEYS,
       intakeKeys: env.INTAKE_KEYS,
       mode: env.MODE,
       appointmentLinkBase: env.RDV_LINK_BASE,
+      // AU053 : un événement occupé de l'agenda relié de l'agent refuse le créneau [R33, R702].
+      agendas: agendasOf(env),
       alertUnsubscribeBase: env.ALERT_UNSUBSCRIBE_BASE,
+      // AU075b : les pages du bon de visite, signé à distance, puis son exemplaire, un an.
+      bonVisiteBase: bonVisiteLinkBase(env.BON_VISITE_BASE),
       ...(env.MEDIA ? { media: env.MEDIA } : {}),
       ...(env.PIECES ? { pieces: new R2PieceStore(env.PIECES) } : {}),
-      // M14 (J13) : sans IA branchée (H13), l'entraînement rend les répliques écrites ; le bac à sable reste fermé.
-      reseau: { pieces: env.PIECES ? new R2AgentPieceStore(env.PIECES) : null },
+      // M14 (J13) : sans IA branchée (H13), l'entraînement rend les répliques écrites.
+      // AU025 : le bac à sable vit dans sa propre base D1, avec les migrations du réseau et aucune de ses lignes.
+      reseau: { pieces: env.PIECES ? new R2AgentPieceStore(env.PIECES) : null, sandbox: sandboxOptions(env) },
       candidatureNetworkId: env.CANDIDATURE_NETWORK_ID,
+      // AU037 : la vraie fiche Google seulement quand tout est rangé (H07) ; sinon, essai.
+      attirer: { gbp: gbpFromEnv(env, fetch.bind(globalThis)) },
+      // AU038 : la publicité payante réelle, plateforme par plateforme, seulement quand tout est rangé (H63).
+      ads: adsFromEnv(env, fetch.bind(globalThis)),
       // BR05 : sans site WebAuthn réglé (H64), les routes des clés d'appareil et de l'export de l'agent sont fermées.
       cles: readClesConfig(env.CLES_RP_ID, env.CLES_ORIGINS),
       coffre: env.COFFRE ? new R2VaultStorage(env.COFFRE) : null,
@@ -172,22 +332,41 @@ export default {
       },
       // M19 (X10) : photos, originaux, preuves et accords dans `MEDIA`, dont seule l'existence est lue ; absent, fermé.
       // X12 : les fichiers finis rangés tels quels dans `MEDIA` ; sans lui (H25), le dépôt est fermé.
-      studio: { files: env.MEDIA ? mediaFiles(env.MEDIA) : null, uploads: env.MEDIA ? mediaUploads(env.MEDIA) : null },
+      // AU036 : les vrais Facebook et Instagram du réseau seulement quand tout est rangé (H06, H77) ; sinon, essai.
+      // AU103b : les images entières des visites sans réseau dans `MEDIA` ; absent, elles restent sur le téléphone.
+      horsLigne: { images: visitImagesOf(env) },
+      studio: { files: env.MEDIA ? mediaFiles(env.MEDIA) : null, uploads: env.MEDIA ? mediaUploads(env.MEDIA) : null, ...socialSettings(socialOf(env)) },
       // M20 complet (G12) : preuves de coût dans `PIECES` ; géocodeur des lettres seulement avec les données publiques
       // de l'estimation ; sans IA branchée (H13), les textes du code. Rien ne part : mode essai.
       gagner: { proofs: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, uploads: env.PIECES ? new R2PartnerFiles(env.PIECES) : null, geocoder: estimation?.geocoder ?? null },
       ...(estimation ? { estimation, fetchPublicData: fetch.bind(globalThis) } : {}),
+      // AU034 : le vrai fournisseur de la pige, et ses réglages pour l'état de la relève [R671].
+      pigeSource: pigeSourceOf(pigeProvider(env))?.source ?? null,
+      pigeProvider: pigeProvider(env),
+      // AU043 : les vraies boîtes mail reliées par les agents (H55) ; rien n'est lu sans elles, rien ne part [R683].
+      boite: boiteOf(env),
+      // AU044 : l'audio d'une note vocale en reprise, lu chez Meta à l'instant, au seul appui de l'agent [R696].
+      voiceAudio: audioSourceFromEnv(env, fetch.bind(globalThis)),
       // BR85 : le registre des gels lu en GET sur le fichier public, au seul appui du responsable ; jamais un envoi.
       registreGels: { get: fetch.bind(globalThis), url: registreGelsUrl(env.REGISTRE_GELS_URL), userAgent: REGISTRE_GELS_USER_AGENT },
       // BR87 : la zone du résumé de copropriété lue en GET à la Base adresse nationale puis au Géoportail, au seul appui
       // de l'agent du bien ; aucun secret, jamais un envoi. Sans lecteur IA (H13), la prélecture laisse tout à lire.
+      // AU073 : les secteurs des recherches et la position des biens, à la Base adresse nationale, même sans DVF.
+      secteursGeocoder: new BanGeocoder(fetch.bind(globalThis)),
+      // AU073b : les tuiles de la carte des secteurs, lues en GET chez le fournisseur réglé ; seuls le niveau et les
+      // numéros de la tuile partent, jamais un envoi.
+      mapTiles: tileTemplateOf(env.CARTE_TUILES_URL) ? new HttpTileSource(tileTemplateOf(env.CARTE_TUILES_URL)!, fetch.bind(globalThis)) : null,
       copropriete: { geocoder: new BanGeocoder(fetch.bind(globalThis)), urbanism: new GpuUrbanism(fetch.bind(globalThis)) },
+      telephonie: { mode: env.TELEPHONIE_MODE, accountSid: env.TWILIO_ACCOUNT_SID, authToken: env.TWILIO_AUTH_TOKEN },
+      mail: { networkId: env.MAIL_NETWORK_ID, forwardTo: env.MAIL_FORWARD_TO, ownAddresses: env.MAIL_OWN_ADDRESSES },
       meta: {
         appSecret: env.META_APP_SECRET,
         verifyTokenSha256: env.META_VERIFY_TOKEN_SHA256,
         networkId: env.META_NETWORK_ID,
         ownIds: env.META_OWN_IDS,
         appIds: env.META_APP_IDS,
+        // AU044 : le vrai transcripteur quand tout est rangé (H52) ; sinon chaque note passe à l'agent [R241, R696].
+        transcriber: transcriberFromEnv(env, fetch.bind(globalThis)),
       },
     });
   },
@@ -204,6 +383,7 @@ export default {
     await runScheduler({
       db: fromD1(env.DB),
       mode: env.MODE,
+      listingReader: env.RELECTURE_PORTAILS === 'oui' ? new annonces.HttpListingReader(fetch.bind(globalThis) as unknown as annonces.FetchLike) : null,
       appointmentLinkBase: env.RDV_LINK_BASE,
       alertUnsubscribeBase: env.ALERT_UNSUBSCRIBE_BASE,
       communeRanges: estimation ? new EstimationEnLigne(estimation.geocoder, estimation.sales) : null,
@@ -218,9 +398,37 @@ export default {
       // BR112 : le calendrier de publication lit les certificats et les accords dans `MEDIA` ; la lettre attend son lien.
       studioFiles: env.MEDIA ? mediaFiles(env.MEDIA) : null,
       letterUnsubscribeBase: letterUnsubscribeBase(env.LETTRE_DESINSCRIPTION_BASE),
+      // AU034 : la relève quotidienne de la pige, seulement avec le fournisseur réglé.
+      pigeProvider: pigeSourceOf(pigeProvider(env)),
     });
     // Le passage de publication (P10), une fois par quart d'heure, hors du planificateur horaire.
-    if (env.MODE === TRIAL_MODE) await runListingSync(fromD1(env.DB));
+    if (env.MODE === TRIAL_MODE) await runListingSync(fromD1(env.DB), undefined, listingOptions(env));
+    // AU036 : les vraies publications d'un bien qui ne peut plus être diffusé sont retirées chez le réseau [R42].
+    const social = socialOf(env).withdraw;
+    if (env.MODE === TRIAL_MODE && social) {
+      const db = fromD1(env.DB);
+      await runLiveWithdrawals(db, new SqlJournalStore(db), () => new Date(), social);
+    }
+    // AU038 : les demandes venues des campagnes rapprochées, la dépense lue chez la plateforme, le seuil contrôlé [R588].
+    {
+      const db = fromD1(env.DB);
+      await runAdsPass(db, new SqlJournalStore(db), () => new Date(), adsFromEnv(env, fetch.bind(globalThis)));
+    }
+    // AU045 : les appels de l'assistant vocal dits finis, ou restés sans nouvelle, que personne n'a pu finir [R710, R18].
+    {
+      const db = fromD1(env.DB);
+      await runTelephoniePass({ db, now: () => new Date(), linkBase: env.RDV_LINK_BASE ?? null });
+    }
+    // AU043 : la boîte de chaque agent qui l'a reliée est lue et triée ; une panne est écrite au journal [R683].
+    {
+      const db = fromD1(env.DB);
+      await runMailboxPass({ db, journal: new SqlJournalStore(db), now: () => new Date(), ...boiteOf(env) });
+    }
+    // AU053 : les agendas reliés, dans les deux sens ; une panne est écrite au journal et reprise [R13, R236, R702].
+    {
+      const db = fromD1(env.DB);
+      await runAgendaPass({ db, journal: new SqlJournalStore(db), now: () => new Date(), agendas: agendasOf(env) });
+    }
   },
   async email(message: InboundEmail, env: Env): Promise<void> {
     await handleEmail(message, {

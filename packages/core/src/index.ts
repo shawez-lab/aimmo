@@ -90,6 +90,8 @@ export {
   ICON_SVG as DESIGN_ICON_SVG,
   PAIRES_TEXTE,
   PAIRES_TRAIT,
+  ETIQUETTES_CSS,
+  ETIQUETTES_DPE,
   PALETTE,
   POLICES,
   PRINT_DESIGN_CSS,
@@ -98,3 +100,5 @@ export {
   renderPublicPage,
 } from './design/systeme.ts';
 export type { PublicPageOptions, Teinte } from './design/systeme.ts';
+export { GeographieReseau, NETWORK_COMMUNE_FIELDS, isInseeCode } from './geographie/communes.ts';
+export type { GeographyRefusal, NetworkCommune, NetworkGeography } from './geographie/communes.ts';

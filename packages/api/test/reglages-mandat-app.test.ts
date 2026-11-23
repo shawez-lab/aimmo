@@ -125,6 +125,27 @@ describe('D13 · réglages du mandat pour la direction', () => {
     expect(t.texts()).toContain('5,5 % du prix au plus');
   });
 
+  it('[R41] AU058 · des tranches se saisissent une par ligne, forfait ou taux, et se lisent en vigueur', async () => {
+    const tiers = [{ upToEur: 100000, flatEur: 8000 }, { upToEur: 250000, ratePercent: 4 }, { upToEur: null, ratePercent: 3.5 }];
+    const t = await run({ 'GET /v1/honoraires/bareme': ok(null), 'POST /v1/honoraires/bareme': ok(undefined) });
+    await t.voir();
+    t.input('regmandat-taux').value = '10';
+    t.input('regmandat-minimum').value = '3000';
+    t.input('regmandat-tranches').value = 'Jusqu’à 100 000 : 8 000 €\njusqu’à 250 000 € : 4 %\nAu-delà : 3,5 %';
+    t.table['GET /v1/honoraires/bareme'] = ok({ ...FEES, tiers });
+    await t.click(t.find('Ranger le barème')[0]);
+    expect(t.posts()).toEqual([{ method: 'POST', url: '/v1/honoraires/bareme', body: { maxRatePercent: 10, minEur: 3000, tiers } }]);
+    expect(t.texts()).toContain('Jusqu’à 100');
+    expect(t.texts()).toContain('3,5 % du prix au plus');
+    // Une ligne illisible : rien ne part, et la forme attendue est dite.
+    t.input('regmandat-taux').value = '10';
+    t.input('regmandat-minimum').value = '3000';
+    t.input('regmandat-tranches').value = 'tout pour moi';
+    await t.click(t.find('Ranger le barème')[0]);
+    expect(t.posts()).toHaveLength(1);
+    expect(t.state()).toContain('Les tranches : une par ligne');
+  });
+
   it('[R41] un barème vide ou illisible ne part pas ; un refus du serveur est dit en français', async () => {
     const t = await run({ 'POST /v1/honoraires/bareme': no(400, { ok: false, code: 'bad_schedule' }) });
     await t.voir();

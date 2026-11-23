@@ -43,9 +43,11 @@ const SANDBOX = {
 const COUNTER = {
   agentId: 'ag1',
   startedOn: '2027-07-01',
+  arrivedOn: '2027-07-01',
+  periodSource: 'arrivee',
   obligations: [
-    { obligation: 'annuelle', from: '2027-07-01', until: '2028-06-30', requiredMinutes: 840, doneMinutes: 150, missingMinutes: 690, daysLeft: 354 },
-    { obligation: 'deontologie', from: '2027-07-01', until: '2030-06-30', requiredMinutes: 120, doneMinutes: 120, missingMinutes: 0, daysLeft: 1084 },
+    { obligation: 'annuelle', from: '2027-07-01', until: '2028-06-30', requiredMinutes: 840, doneMinutes: 150, declaredMinutes: 45, missingMinutes: 690, daysLeft: 354 },
+    { obligation: 'deontologie', from: '2027-07-01', until: '2030-06-30', requiredMinutes: 120, doneMinutes: 120, declaredMinutes: 0, missingMinutes: 0, daysLeft: 1084 },
   ],
 };
 const TRACKS = [
@@ -79,11 +81,12 @@ const AGENT: Record<string, Answer> = {
   'GET /v1/annonces': ok([]),
   'GET /v1/apres-vente/journee': ok({ remercier: [], recommandations: [], taches: [] }),
   'GET /v1/reseau/mon-dossier': ok(FILE),
-  'GET /v1/reseau/mon-referent': ok({ firstName: 'Bérénice', until: '2027-10-10' }),
+  'GET /v1/reseau/mon-referent': ok({ firstName: 'Bérénice', until: '2027-10-10', phone: '06 00 00 00 01', email: 'berenice@exemple.test' }),
   'GET /v1/reseau/mon-bac-a-sable': ok(SANDBOX),
   'GET /v1/reseau/ma-formation': ok(COUNTER),
   'GET /v1/reseau/academie': ok(TRACKS),
   'POST /v1/reseau/academie/modules/m2/fait': ok(null, { already: false }),
+  'GET /v1/formation/agents/ag1/attestations': ok({ attestations: [] }),
 };
 const DIRECTION: Record<string, Answer> = {
   'GET /v1/moi': ok({ role: 'direction', firstName: null }),
@@ -172,13 +175,13 @@ describe('J14 · écrans de M14 dans l’application', () => {
     const screen = [...t.calls, ...d.calls].filter((c) => /^\/v1\/reseau\//.test(c.url) || !/^\/v1\/(moi|plan-du-jour|alertes-agent|contacts-chauds|rendez-vous\/jour|usage|annonces$|offres\/a-tenir|apres-vente|pilotage)/.test(c.url));
     expect(screen.length).toBeGreaterThanOrEqual(9);
     for (const c of screen) {
-      expect(c.url.startsWith('/v1/reseau/'), c.url).toBe(true);
+      expect(/^\/v1\/(reseau|formation)\//.test(c.url), c.url).toBe(true);
       expect(c.auth).toBe(`Bearer ${KEY}`);
       expect(c.url).not.toContain(KEY);
     }
     const routes = [...INTEGRATION_SCRIPT.matchAll(/'(\/v1\/[^']*)'/g)].map((m) => m[1]!);
     expect(routes.length).toBeGreaterThan(6);
-    for (const r of routes) expect(r.startsWith('/v1/reseau/'), r).toBe(true);
+    for (const r of routes) expect(/^\/v1\/(reseau|formation)\//.test(r), r).toBe(true);
   });
 
   it('[R82] « Mon intégration » : chaque pièce et son état, l’étape suivante, le référent et le premier parcours ; tout texte reçu reste du texte', async () => {
@@ -197,6 +200,9 @@ describe('J14 · écrans de M14 dans l’application', () => {
     expect(text).toContain('l’accès aux clients reste fermé');
     expect(text).toContain('Bérénice');
     expect(text).toContain('Votre référent jusqu’au ');
+    // AU112 · un toucher pour joindre le référent, par ses coordonnées professionnelles.
+    const links = t.body().all().filter((e) => e.tagName === 'a').map((e) => [e.textContent, e.attributes.href]);
+    expect(links).toEqual(expect.arrayContaining([['Appeler Bérénice', 'tel:0600000001'], ['Écrire à Bérénice', 'mailto:berenice@exemple.test']]));
     expect(text).toContain('Contact reçu');
     expect(text).toContain('Qualifiez le contact inventé.');
     expect(text).toContain(INJECTED);
@@ -218,7 +224,9 @@ describe('J14 · écrans de M14 dans l’application', () => {
     await t.ouvrir('integration-ouvrir');
     const text = t.body().textContent;
     expect(text).toContain('Pas encore de référent : la direction vous en attribue un pour vos 90 premiers jours.');
-    expect(text).toContain('Votre premier parcours n’est pas encore ouvert : la direction l’ouvre à votre entrée.');
+    // AU025 : un parcours pas encore ouvert s'ouvre depuis l'écran, par l'agent lui-même.
+    expect(text).toContain('Un exercice à vous seul, sur un contact inventé');
+    expect(t.byText('Ouvrir mon exercice')).toBeDefined();
     expect(text).not.toContain('l’accès aux clients reste fermé');
     const u = await run({ 'GET /v1/reseau/mon-bac-a-sable': no(503, { ok: false, rule: null, code: 'unavailable' }), 'GET /v1/reseau/mon-dossier': no(503, { ok: false, rule: null, code: 'unavailable' }) });
     await u.ouvrir('integration-ouvrir');
@@ -252,13 +260,21 @@ describe('J14 · écrans de M14 dans l’application', () => {
     const t = await run();
     await t.ouvrir('academie-ouvrir');
     expect(t.els['integration-titre']!.textContent).toBe('Académie');
-    expect(sections(t)).toEqual(['Mes heures de formation', 'Parcours d’entrée']);
+    expect(sections(t)).toEqual(['Mes heures de formation', 'Parcours d’entrée', 'Mes attestations']);
     const text = t.body().textContent;
     // Les chiffres du serveur, tels quels : rien n'est recalculé ici.
     expect(text).toContain('2 h 30 sur 14 h');
     expect(text).toContain('Il reste 11 h 30 avant le ');
     expect(text).toContain('(354 jours)');
     expect(text).toContain('Obligation remplie pour la période');
+    // AU027 : les heures déclarées sans quiz réussi sont dites à part, jamais ajoutées au compte.
+    expect(text).toContain('Plus 0 h 45 déclarées sans justificatif : réussissez le quiz du module pour qu’elles comptent.');
+    expect(text.match(/déclarées sans justificatif/g)).toHaveLength(1);
+    // AU028 : rien n'est dit d'un cycle antérieur qui n'a pas été repris.
+    expect(text).not.toContain('cycle d’avant');
+    const repris = await run({ 'GET /v1/reseau/ma-formation': ok({ ...COUNTER, startedOn: '2025-09-01', periodSource: 'cycle_anterieur' }) });
+    await repris.ouvrir('academie-ouvrir');
+    expect(repris.body().textContent).toContain('Vos périodes continuent votre cycle d’avant votre arrivée, commencé le 01/09/2025 ; vos attestations d’avant y sont comptées.');
     expect(text).toContain('Aucun horaire imposé');
     expect(text).toContain('1 module(s) fait(s) sur 2');
     expect(text).toContain('120 min · déontologie · obligatoire');
@@ -418,5 +434,247 @@ describe('J14 · écrans de M14 dans l’application', () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(u.calls.some((c) => c.url.startsWith('/v1/reseau'))).toBe(false);
     expect(u.els.accueil!.hidden).toBe(false);
+  });
+});
+
+describe('AU024 · déposer une pièce là où elle manque, depuis le téléphone', () => {
+  const PATH = '/v1/reseau/agents/ag1/pieces/fichier';
+  const RECEIPT = { kind: 'immatriculation_rsac', label: 'Immatriculation au registre spécial des agents commerciaux', version: 1, receivedAt: '2027-07-12T08:00:00.000Z', bytes: 245_760 };
+  const after = { ...FILE, lines: FILE.lines.map((l) => (l.kind === 'immatriculation_rsac' ? { ...l, state: 'valide', version: 1, issuedOn: '2027-07-01' } : l)) };
+  const photo = (extra: Record<string, unknown> = {}) => ({ name: 'kbis.jpg', type: 'image/jpeg', size: 245_760, ...extra });
+  /** Le bloc de dépôt d'une pièce : son résumé, son fichier, ses dates, son bouton. */
+  const box = (t: Awaited<ReturnType<typeof run>>, summary: string) => {
+    const d = t.body().all().find((e) => e.tagName === 'details' && e.children[0]?.textContent === summary);
+    if (!d) throw new Error(`bloc absent : ${summary}`);
+    const inputOf = (label: string) => d.all().find((e) => e.attributes.id === d.all().find((x) => x.tagName === 'label' && x.textContent === label)?.attributes.for);
+    return { d, inputOf, text: () => d.textContent, confirm: () => d.all().find((e) => e.tagName === 'button' && e.textContent === 'Confirmer l’envoi') };
+  };
+  const choose = async (t: Awaited<ReturnType<typeof run>>, input: FakeElement | undefined, file: unknown) => {
+    (input as unknown as { files: unknown[] }).files = [file];
+    input!.listeners.change!({});
+    await settle();
+  };
+
+  it('[R82] constat : chaque pièce manquante, en projet ou échue a son dépôt ; une pièce valide n’en a pas', async () => {
+    const t = await run();
+    await t.ouvrir('integration-ouvrir');
+    const summaries = t.body().all().filter((e) => e.tagName === 'summary').map((e) => e.textContent);
+    expect(summaries).toEqual(expect.arrayContaining(['Déposer la version signée', 'Déposer cette pièce', 'Déposer la nouvelle version']));
+    expect(summaries.filter((s) => s.startsWith('Déposer'))).toHaveLength(3);
+    const file = box(t, 'Déposer cette pièce').inputOf('Le document : PDF, ou photo JPEG ou PNG, 10 Mo au plus')!;
+    expect(file.attributes).toMatchObject({ type: 'file', accept: 'application/pdf,image/jpeg,image/png' });
+    // L'assurance demande sa fin de validité ; l'immatriculation la propose ; le contrat n'en a pas.
+    expect(box(t, 'Déposer la nouvelle version').inputOf('Fin de validité, lue sur le document')).toBeDefined();
+    expect(box(t, 'Déposer cette pièce').inputOf('Fin de validité, si le document en porte une')).toBeDefined();
+  });
+
+  it('[R82] [R16] aperçu avant l’envoi, confirmation, fichier envoyé tel quel avec sa clé, puis l’accusé de réception du serveur', async () => {
+    const t = await run({ [`POST ${PATH}?kind=immatriculation_rsac&issuedOn=2027-07-01`]: ok({ ...after, receipt: RECEIPT }), 'GET /v1/reseau/mon-dossier': ok(FILE) });
+    await t.ouvrir('integration-ouvrir');
+    const b = box(t, 'Déposer cette pièce');
+    // Rien ne part sans document ni date.
+    await t.click(b.confirm());
+    expect(b.text()).toContain('Choisissez d’abord le document, ou prenez-le en photo.');
+    const f = photo();
+    await choose(t, b.inputOf('Le document : PDF, ou photo JPEG ou PNG, 10 Mo au plus'), f);
+    expect(b.text()).toContain('Avant l’envoi : « kbis.jpg », photo, 240 Ko. Vérifiez que c’est bien : Immatriculation au registre spécial des agents commerciaux.');
+    await t.click(b.confirm());
+    expect(b.text()).toContain('Indiquez la date du document.');
+    expect(t.posts()).toEqual([]);
+    b.inputOf('Date du document')!.value = '2027-07-01';
+    await t.click(b.confirm());
+    const sent = t.calls.find((c) => c.method === 'POST')!;
+    expect(sent.url).toBe(`${PATH}?kind=immatriculation_rsac&issuedOn=2027-07-01`);
+    expect(sent.body).toBe(f);
+    expect(sent.auth).toBe(`Bearer ${KEY}`);
+    // L'écran est relu : la pièce est valide, et l'accusé de réception est dit.
+    expect(t.state()).toBe('Reçue le 12/07/2027 à 10:00 : Immatriculation au registre spécial des agents commerciaux, version 1, 240 Ko. Elle compte dès maintenant dans votre dossier.');
+  });
+
+  it('[R82] un fichier d’un autre type ou trop lourd n’est pas proposé ; un refus du serveur est dit en mots', async () => {
+    const t = await run({ [`POST ${PATH}?kind=assurance_rcp&issuedOn=2027-07-01&validUntil=2028-06-30`]: no(400, { ok: false, rule: null, code: 'bad_file' }) });
+    await t.ouvrir('integration-ouvrir');
+    const b = box(t, 'Déposer la nouvelle version');
+    const input = b.inputOf('Le document : PDF, ou photo JPEG ou PNG, 10 Mo au plus');
+    await choose(t, input, { name: 'page.html', type: 'text/html', size: 10 });
+    expect(b.text()).toContain('Ce fichier n’est ni un PDF ni une photo JPEG ou PNG : choisissez-en un autre.');
+    await choose(t, input, { name: 'scan.pdf', type: 'application/pdf', size: 12 * 1024 * 1024 });
+    expect(b.text()).toContain('Ce fichier pèse 12,0 Mo : 10 Mo au plus.');
+    b.inputOf('Date du document')!.value = '2027-07-01';
+    await t.click(b.confirm());
+    expect(t.posts()).toEqual([]);
+    await choose(t, input, { name: 'scan.pdf', type: 'application/pdf', size: 90_000 });
+    await t.click(b.confirm());
+    expect(b.text()).toContain('Cette pièce a une fin de validité : lisez-la sur le document et indiquez-la.');
+    b.inputOf('Fin de validité, lue sur le document')!.value = '2028-06-30';
+    await t.click(b.confirm());
+    expect(b.text()).toContain('Ce fichier ne se lit pas comme il le dit : reprenez la photo ou le PDF.');
+  });
+});
+
+describe('AU025 · le premier parcours se fait depuis l’écran', () => {
+  const steps = (done: number) => ['contact_recu', 'qualification', 'rappel_fait', 'rendez_vous', 'avis_valide'].map((step, i) => ({ step, label: `Étape ${i + 1}`, done: i < done, at: i < done ? '2027-07-12T08:00:00.000Z' : null }));
+  const progress = (done: number) => ({ agentId: 'ag1', steps: steps(done), next: done < 5 ? `Étape ${done + 1}` : null, completed: done === 5, countedAtAcademy: done === 5 });
+
+  it('[R82] l’agent ouvre son exercice, puis seule la prochaine étape porte son geste ; chaque geste part à sa route', async () => {
+    const t = await run({
+      'GET /v1/reseau/mon-bac-a-sable': no(400, { ok: false, rule: null, code: 'not_opened' }),
+      'POST /v1/reseau/mon-bac-a-sable': ok(progress(0)),
+    });
+    await t.ouvrir('integration-ouvrir');
+    await t.click(t.byText('Ouvrir mon exercice'));
+    expect(t.posts().map((c) => c.url)).toEqual(['/v1/reseau/mon-bac-a-sable']);
+    for (const [done, label, step] of [[0, 'Recevoir le message du vendeur', 'contact_recu'], [2, 'Je l’ai rappelé', 'rappel_fait'], [3, 'Fixer le rendez-vous d’estimation', 'rendez_vous'], [4, 'Valider l’avis de valeur', 'avis_valide']] as const) {
+      const u = await run({ 'GET /v1/reseau/mon-bac-a-sable': ok(progress(done)), [`POST /v1/reseau/mon-bac-a-sable/etapes/${step}`]: ok(progress(done + 1)) });
+      await u.ouvrir('integration-ouvrir');
+      const gestures = u.body().all().filter((e) => e.tagName === 'button' && Object.values({ a: 'Recevoir le message du vendeur', b: 'Je l’ai rappelé', c: 'Fixer le rendez-vous d’estimation', d: 'Valider l’avis de valeur' }).includes(e.textContent));
+      expect(gestures.map((e) => e.textContent)).toEqual([label]);
+      await u.click(u.byText(label));
+      expect(u.posts().map((c) => c.url)).toEqual([`/v1/reseau/mon-bac-a-sable/etapes/${step}`]);
+      expect(u.state()).toBe('Étape faite : votre progression est gardée.');
+    }
+    // Fini : plus aucun geste, le parcours est dit complet.
+    const f = await run({ 'GET /v1/reseau/mon-bac-a-sable': ok(progress(5)) });
+    await f.ouvrir('integration-ouvrir');
+    expect(f.body().textContent).toContain('Parcours complet, compté à l’académie.');
+    expect(f.body().all().filter((e) => e.tagName === 'button' && /vendeur|rappelé|rendez-vous|avis/.test(e.textContent))).toEqual([]);
+  });
+
+  it('une qualification manquée : un nouveau message relance le parcours', async () => {
+    const t = await run({ 'GET /v1/reseau/mon-bac-a-sable': ok(progress(1)), 'POST /v1/reseau/mon-bac-a-sable/etapes/contact_recu': ok(progress(2)) });
+    await t.ouvrir('integration-ouvrir');
+    await t.click(t.byText('Recevoir un nouveau message'));
+    expect(t.posts().map((c) => c.url)).toEqual(['/v1/reseau/mon-bac-a-sable/etapes/contact_recu']);
+  });
+
+  it('une étape refusée est dite en clair, jamais par un code', async () => {
+    const t = await run({ 'GET /v1/reseau/mon-bac-a-sable': ok(progress(2)), 'POST /v1/reseau/mon-bac-a-sable/etapes/rappel_fait': no(400, { ok: false, rule: null, code: 'not_next_step' }) });
+    await t.ouvrir('integration-ouvrir');
+    await t.click(t.byText('Je l’ai rappelé'));
+    expect(t.state()).toBe('Faites d’abord l’étape d’avant : la liste est relue.');
+  });
+
+});
+
+describe('AU026 · le quiz et l’attestation se passent depuis l’académie, sans appel manuel à l’API', () => {
+  const DRAWN = {
+    attemptId: 'q1',
+    questions: [
+      { questionId: 'x1', prompt: 'Qui signe le mandat ?', choices: ['Le vendeur', 'Le voisin'] },
+      { questionId: 'x2', prompt: INJECTED, choices: ['Oui', 'Non', 'Je ne sais pas'] },
+    ],
+  };
+  const FINGERPRINT = 'a'.repeat(64);
+  const ATTESTATION = {
+    attestationId: 'at1',
+    fingerprint: FINGERPRINT,
+    document: {
+      kind: 'aimmo.attestation-formation', version: 1, attestationId: 'at1', networkId: 'n1', agentId: 'ag1',
+      scope: { kind: 'track', ref: 'entree' },
+      modules: [{ moduleId: 'm1', title: 'Déontologie du mandat', durationMinutes: 120 }],
+      ruleIds: ['R570'], questionCount: 2, issuedOn: '2027-07-12',
+    },
+  };
+  const WRONG = {
+    allRight: false,
+    results: [
+      { questionId: 'x1', right: true, review: null },
+      { questionId: 'x2', right: false, review: { moduleId: 'm1', moduleTitle: 'Déontologie du mandat', videoId: 'abcdefghijk', ruleId: 'R570', ruleTitle: 'Quiz tiré des règles' } },
+    ],
+    modulesToDo: [],
+    attestation: null,
+  };
+  const PERFECT = { allRight: true, results: [{ questionId: 'x1', right: true, review: null }, { questionId: 'x2', right: true, review: null }], modulesToDo: [], attestation: ATTESTATION };
+  const quizButtons = (t: Awaited<ReturnType<typeof run>>) => t.body().all().filter((e) => e.tagName === 'button' && /quiz/i.test(e.textContent));
+  const answer = (t: Awaited<ReturnType<typeof run>>, values: string[]) => values.forEach((v, n) => { t.body().all().find((e) => e.attributes.id === `quiz-q-${n}`)!.value = v; });
+
+  it('[R570] chaque parcours et chaque module offrent leur quiz : tiré par le serveur, sans la bonne réponse', async () => {
+    const t = await run({ 'POST /v1/formation/quiz': ok(DRAWN) });
+    await t.ouvrir('academie-ouvrir');
+    // Le constat de l'audit : sans ces boutons, le quiz ne se passait que par un appel manuel à l'API.
+    expect(quizButtons(t).map((b) => b.textContent)).toEqual(['Passer le quiz du parcours', 'Quiz de ce module', 'Quiz de ce module']);
+    await t.click(t.byText('Passer le quiz du parcours'));
+    expect(t.posts().map((c) => [c.url, c.body])).toEqual([['/v1/formation/quiz', JSON.stringify({ track: 'entree' })]]);
+    expect(t.els['integration-titre']!.textContent).toBe('Quiz · Parcours d’entrée');
+    expect(t.els['integration-retour']!.textContent).toBe('Retour à l’académie');
+    const text = t.body().textContent;
+    expect(text).toContain('Qui signe le mandat ?');
+    expect(text).toContain(INJECTED);
+    expect(t.body().all().some((e) => e.tagName === 'img')).toBe(false);
+    // Un quiz de module se tire par son seul module.
+    const u = await run({ 'POST /v1/formation/quiz': ok(DRAWN) });
+    await u.ouvrir('academie-ouvrir');
+    await u.click(u.byText('Quiz de ce module', 1));
+    expect(u.posts().map((c) => c.body)).toEqual([JSON.stringify({ moduleId: 'm2' })]);
+  });
+
+  it('[R570] [R14] les réponses rendues une fois : juste ou à revoir, avec le module et la règle, sans note ni bonne réponse', async () => {
+    const t = await run({ 'POST /v1/formation/quiz': ok(DRAWN), 'POST /v1/formation/quiz/q1/reponses': ok(WRONG) });
+    await t.ouvrir('academie-ouvrir');
+    await t.click(t.byText('Passer le quiz du parcours'));
+    // Une question sans réponse : rien ne part.
+    answer(t, ['0', '']);
+    await t.click(t.byText('Rendre mes réponses'));
+    expect(t.state()).toBe('Répondez à chaque question avant de rendre le quiz.');
+    expect(t.posts()).toHaveLength(1);
+    answer(t, ['0', '2']);
+    await t.click(t.byText('Rendre mes réponses'));
+    expect(t.posts().map((c) => [c.url, c.body])[1]).toEqual(['/v1/formation/quiz/q1/reponses', JSON.stringify({ answers: [0, 2] })]);
+    const text = t.body().textContent;
+    expect(text).toContain('Juste');
+    expect(text).toContain('À revoir');
+    expect(text).toContain('Revoir le module « Déontologie du mandat », règle R570 : Quiz tiré des règles.');
+    expect(t.body().all().filter((e) => e.tagName === 'a').map((a) => a.attributes.href)).toEqual(['https://www.youtube-nocookie.com/embed/abcdefghijk']);
+    // Aucune note, aucun nombre de bonnes réponses, aucun pourcentage [R14].
+    expect(text).not.toMatch(/\d+\s*(\/|sur)\s*\d+|%|note|score/i);
+    expect(t.state()).toBe('Quiz rendu : revoyez les modules indiqués, puis tirez un nouveau quiz.');
+    // Rendu deux fois : le refus du serveur est dit en français.
+    const u = await run({ 'POST /v1/formation/quiz': ok(DRAWN), 'POST /v1/formation/quiz/q1/reponses': no(409, { ok: false, rule: null, code: 'already_submitted' }) });
+    await u.ouvrir('academie-ouvrir');
+    await u.click(u.byText('Passer le quiz du parcours'));
+    answer(u, ['0', '1']);
+    await u.click(u.byText('Rendre mes réponses'));
+    expect(u.state()).toBe('Ce quiz a déjà été rendu : tirez-en un nouveau pour qu’il compte.');
+    const v = await run({ 'POST /v1/formation/quiz': no(409, { ok: false, rule: null, code: 'not_enough_questions' }) });
+    await v.ouvrir('academie-ouvrir');
+    await v.click(v.byText('Passer le quiz du parcours'));
+    expect(v.state()).toBe('Pas encore assez de questions pour ce quiz : la direction en prépare. Revenez plus tard.');
+  });
+
+  it('[R571] un quiz sans faute donne l’attestation à l’écran : son empreinte, le document enregistré tel quel, la page de vérification', async () => {
+    const t = await run({ 'POST /v1/formation/quiz': ok(DRAWN), 'POST /v1/formation/quiz/q1/reponses': ok(PERFECT) });
+    const saved: { parts: unknown[]; download?: string }[] = [];
+    t.context.Blob = function (this: { parts: unknown[] }, parts: unknown[]) { this.parts = parts; saved.push({ parts }); };
+    t.context.URL = { createObjectURL: () => 'blob:essai', revokeObjectURL: () => undefined };
+    await t.ouvrir('academie-ouvrir');
+    await t.click(t.byText('Passer le quiz du parcours'));
+    answer(t, ['0', '0']);
+    await t.click(t.byText('Rendre mes réponses'));
+    expect(t.state()).toBe('Sans faute : votre attestation est délivrée.');
+    const text = t.body().textContent;
+    expect(text).toContain('Parcours d’entrée · délivrée le ');
+    expect(text).toContain('Déontologie du mandat · 120 min');
+    expect(text).toContain(`Empreinte : ${FINGERPRINT}`);
+    expect(t.body().all().some((e) => e.tagName === 'a' && e.attributes.href === '/attestation')).toBe(true);
+    await t.click(t.byText('Enregistrer l’attestation'));
+    // Le document tel que rangé, seul : c'est lui que la page de vérification recalcule [R571].
+    expect(saved.map((x) => JSON.parse(String(x.parts[0])))).toEqual([ATTESTATION.document]);
+    expect(t.state()).toBe('Attestation enregistrée sur cet appareil.');
+  });
+
+  it('[R571] [R16] les attestations déjà obtenues se relisent et s’enregistrent depuis l’académie, par l’agent lui-même', async () => {
+    const t = await run({ 'GET /v1/formation/agents/ag1/attestations': ok({ attestations: [ATTESTATION] }) });
+    await t.ouvrir('academie-ouvrir');
+    expect(t.calls.filter((c) => c.method === 'GET' && c.url.startsWith('/v1/formation/')).map((c) => [c.url, c.auth])).toEqual([['/v1/formation/agents/ag1/attestations', `Bearer ${KEY}`]]);
+    expect(t.body().textContent).toContain(`Empreinte : ${FINGERPRINT}`);
+    expect(t.byText('Enregistrer l’attestation')).toBeDefined();
+    const u = await run();
+    await u.ouvrir('academie-ouvrir');
+    expect(u.body().textContent).toContain('Aucune attestation pour le moment');
+    // Une empreinte douteuse n'est pas montrée comme une attestation.
+    const v = await run({ 'GET /v1/formation/agents/ag1/attestations': ok({ attestations: [{ ...ATTESTATION, fingerprint: 'x' }] }) });
+    await v.ouvrir('academie-ouvrir');
+    expect(v.body().textContent).not.toContain('Empreinte');
+    expect(v.byText('Enregistrer l’attestation')).toBeUndefined();
   });
 });

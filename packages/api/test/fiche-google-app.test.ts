@@ -345,12 +345,12 @@ describe('AT14 · écran « Fiche Google »', () => {
 
     it('elle règle la fiche ; un refus est dit en français', async () => {
       const t = await direction({ 'POST /v1/attirer/google/agents/ag-1/fiche': no(400, { ok: false, rule: null, code: 'invalide' }) });
-      expect(t.input('Référence de la fiche chez Google (locations/…)').value).toBe('locations/42');
+      expect(t.input('Référence de la fiche chez Google (accounts/…/locations/…)').value).toBe('locations/42');
       t.input('Nom affiché sur la fiche').value = 'Camille Essai';
-      t.input('Référence de la fiche chez Google (locations/…)').value = 'locations/43';
+      t.input('Référence de la fiche chez Google (accounts/…/locations/…)').value = 'locations/43';
       await t.click(t.buttons('Enregistrer la fiche')[0]);
       expect(JSON.parse(t.posts()[0]!.body!)).toEqual({ title: 'Camille Essai', locationRef: 'locations/43', websiteUri: LOCATION.websiteUri });
-      expect(t.state()).toContain('référence qui commence par locations/');
+      expect(t.state()).toContain('une référence accounts/…/locations/…');
       t.table['POST /v1/attirer/google/agents/ag-1/fiche'] = ok(null);
       await t.click(t.buttons('Enregistrer la fiche')[0]);
       expect(t.state()).toBe('Fiche enregistrée.');
@@ -374,6 +374,44 @@ describe('AT14 · écran « Fiche Google »', () => {
       expect(t.posts().map((c) => c.url)).toEqual(['/v1/attirer/google/textes/d1/liberer']);
       expect(t.state()).toBe('Envoi clos : le texte peut repartir.');
     });
+
+    it('AU037 : en réel, elle met la fiche à jour sur Google, et l’accusé ou l’échec est dit avec son geste', async () => {
+      const real = { canConfigure: true, mode: 'reel', link: { state: 'pret', action: null, info: null } };
+      const t = await direction({
+        'GET /v1/attirer/google/agents/ag-1': ok(screenData(real)),
+        'POST /v1/attirer/google/agents/ag-1/informations': no(400, { ok: false, rule: null, code: 'echec', error: 'connexion', action: 'reconnecter' }),
+      });
+      expect(t.texts()).toContain('Reliée à Google : ce qui part est confirmé par Google.');
+      await t.click(t.buttons('Mettre à jour la fiche sur Google')[0]);
+      expect(t.posts().map((c) => c.url)).toEqual(['/v1/attirer/google/agents/ag-1/informations']);
+      expect(t.state()).toBe('Google refuse la connexion du compte qui gère les fiches. À faire : reconnecter le compte Google du réseau (la direction).');
+      t.table['POST /v1/attirer/google/agents/ag-1/informations'] = ok({ changed: true, mode: 'reel' });
+      t.table['GET /v1/attirer/google/agents/ag-1'] = ok(screenData({ ...real, link: { state: 'pret', action: null, info: { at: '2026-11-21T10:00:00.000Z', ackRef: 'locations/42', error: null, action: null } } }));
+      await t.click(t.buttons('Mettre à jour la fiche sur Google')[0]);
+      expect(t.state()).toBe('Fiche mise à jour : Google l’a confirmé.');
+      expect(t.texts()).toContain(': confirmées par Google.');
+    });
+  });
+
+  it('AU037 : une fiche à reconnecter le dit ; un texte parti montre la confirmation et son lien, un échec son geste', async () => {
+    const t = await run({
+      'GET /v1/attirer/google/moi': ok(screenData({
+        mode: 'reel',
+        link: { state: 'a_reconnecter', action: 'reconnecter', info: null },
+        reviews: [review({ draft: draft({ state: 'echec', validatedAt: '2026-11-21T09:00:00.000Z', error: 'droits', action: 'relier' }) })],
+        publications: [draft({ draftId: 'p1', origin: 'code', linkUri: 'https://camille.exemple.test/biens/b1', state: 'envoye', ackRef: 'accounts/7/locations/42/localPosts/p1', url: 'https://local.google.test/p1' }), draft({ draftId: 'p2', state: 'envoye', ackRef: 'x/y', url: 'javascript:alert(1)' })],
+      })),
+    });
+    await t.ouvrir();
+    expect(t.texts()).toContain('Google refuse la connexion : rien ne peut partir tant que le compte n’est pas reconnecté.');
+    expect(t.texts()).toContain('À faire : reconnecter le compte Google du réseau (la direction).');
+    expect(t.texts()).toContain('Ce compte Google ne gère pas cette fiche. À faire : vérifier la référence de la fiche');
+    expect(t.buttons('Réessayer l’envoi sur Google')).toHaveLength(1);
+    expect(t.texts()).toContain('Confirmé par Google.');
+    const links = t.body().all().filter((e) => e.tagName === 'a');
+    // Seul un lien en https rendu par Google est posé ; jamais un autre.
+    expect(links.map((a) => a.attributes.href)).toEqual(['https://local.google.test/p1']);
+    expect(t.buttons('Mettre à jour la fiche sur Google')).toEqual([]);
   });
 
   it('[R201] l’écran est servi à part, jamais gardé sur l’appareil, et tient son budget', async () => {

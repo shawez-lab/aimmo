@@ -387,19 +387,53 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
       expect(uses, file).toEqual(
         file === 'worker.ts'
           ? [
+              // Les vraies publications du réseau sur Facebook et Instagram (AU036), seulement mises en service quand
+              // tout est rangé (R134) ; chaque publication est validée par l'agent, et retirée quand le bien ne peut
+              // plus être diffusé (R42). Ce ne sont pas des messages à une personne.
+              'const socialOf = (env: Env) => socialFromEnv(env, fetch.bind(globalThis));',
+              // AU043 : la vraie boîte mail de l'agent qui a donné son accord (H55), en lecture seule (`gmail.readonly`,
+              // `Mail.Read`) ; aucune adresse n'envoie, ne déplace ni n'efface un mail [R683]. Rien ne part.
+              'return { mailboxes: mailboxesFromEnv(env, fetch.bind(globalThis)), files: dossierFilesOf(env.PIECES ? new R2PieceStore(env.PIECES) : null) };',
+              // AU053 : le vrai agenda de l'agent qui l'a relié (H21, H53) : seuls l'heure, le type et un intitulé sans nom
+              // ni coordonnée y sont écrits [R236, R702]. Ce n'est pas un message à une personne ; rien ne part.
+              'return agendasFromEnv(env, fetch.bind(globalThis));',
+              // Le fournisseur de pige du réseau (AU034), en GET : seule la date de début part, la clé dans l'en-tête.
+              'export function pigeSourceOf(settings: PigeProviderSettings, fetcher: PigeFetcher = fetch.bind(globalThis)): { networkId: string; source: PigeSource } | null {',
               'const reader = env.DVF_BASE_URL ? httpDvfReader(fetch.bind(globalThis), env.DVF_BASE_URL) : null;',
               'return reader ? { geocoder: new BanGeocoder(fetch.bind(globalThis)), sales: new DvfSiteSales(reader) } : undefined;',
+              // La vraie fiche Google de chaque agent (AU037), seulement mise en service quand tout est rangé (H07) :
+              // chaque réponse ou publication est validée par un humain (R154), la mise à jour est un geste de la
+              // direction. Ce ne sont pas des messages à une personne.
+              'attirer: { gbp: gbpFromEnv(env, fetch.bind(globalThis)) },',
+              // La vraie publicité payante (AU038), seulement mise en service quand tout est rangé (H63) : chaque
+              // campagne est validée par la direction, sous un plafond [R587]. Ce ne sont pas des messages à une personne.
+              'ads: adsFromEnv(env, fetch.bind(globalThis)),',
       // Les données publiques d'un bien pour l'avis de valeur (E09), en lecture seule, jamais un envoi.
       '...(estimation ? { estimation, fetchPublicData: fetch.bind(globalThis) } : {}),',
+              // AU044 : l'audio d'une note vocale en reprise, lu en GET chez Meta au seul appui de l'agent [R696] ; jamais un envoi.
+              'voiceAudio: audioSourceFromEnv(env, fetch.bind(globalThis)),',
               // Le fichier public du registre des gels de la DG Trésor (BR85), lu en GET au seul appui du responsable de
               // la conformité, jamais un envoi.
               'registreGels: { get: fetch.bind(globalThis), url: registreGelsUrl(env.REGISTRE_GELS_URL), userAgent: REGISTRE_GELS_USER_AGENT },',
+              // La Base adresse nationale pour le secteur d'une recherche et la position d'un bien (AU073), en GET : seuls un
+              // lieu ou l'adresse désignée partent, jamais un envoi.
+              'secteursGeocoder: new BanGeocoder(fetch.bind(globalThis)),',
+              // AU073b : les tuiles de la carte des secteurs, en GET chez le fournisseur réglé ; seuls le niveau et les numéros partent.
+              'mapTiles: tileTemplateOf(env.CARTE_TUILES_URL) ? new HttpTileSource(tileTemplateOf(env.CARTE_TUILES_URL)!, fetch.bind(globalThis)) : null,',
               // La base ouverte des diagnostics de l'ADEME pour la veille (HX16, BR26), en lecture seule : seuls le code
               // postal et le jour partent, jamais un envoi.
               // La Base adresse nationale puis le Géoportail de l'urbanisme pour la zone du résumé de copropriété (BR87),
               // lus en GET au seul appui de l'agent du bien, jamais un envoi.
               'copropriete: { geocoder: new BanGeocoder(fetch.bind(globalThis)), urbanism: new GpuUrbanism(fetch.bind(globalThis)) },',
+              // AU044 : le vrai transcripteur des notes vocales (H52), seulement quand tout est rangé : l'audio seul part au
+              // service, rien n'est écrit à une personne [R696].
+              'transcriber: transcriberFromEnv(env, fetch.bind(globalThis)),',
+              // AU068 : la page publique d'une annonce acceptée, lue en GET sans redirection ni cookie, seulement avec
+              // RELECTURE_PORTAILS=oui (H10) ; jamais un envoi.
+              "listingReader: env.RELECTURE_PORTAILS === 'oui' ? new annonces.HttpListingReader(fetch.bind(globalThis) as unknown as annonces.FetchLike) : null,",
               'dpeFeed: new AdemeDiagnosisFeed(fetch.bind(globalThis)),',
+              // Le passage de la publicité (AU038) : les mêmes plateformes, jamais un message à une personne.
+              'await runAdsPass(db, new SqlJournalStore(db), () => new Date(), adsFromEnv(env, fetch.bind(globalThis)));',
             ]
           : [],
       );

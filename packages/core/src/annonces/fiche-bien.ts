@@ -14,6 +14,7 @@
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
+import { DWELLINGS, type Dwelling } from '../db/types.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -28,6 +29,51 @@ export type HeatingKind = (typeof HEATING_KINDS)[number];
 
 export const OUTDOOR_KINDS = ['balcon', 'terrasse', 'jardin', 'cour'] as const;
 export type OutdoorKind = (typeof OUTDOOR_KINDS)[number];
+
+/** AU061 · équipements courants, dits sur la fiche : seuls ceux-là peuvent être nommés dans l'annonce. */
+// `garage` et `plain_pied` (AU051) : le calcul de l'avis de valeur les prend en compte, il faut donc pouvoir les dire.
+export const AMENITIES = ['piscine', 'cave', 'cheminee', 'grenier', 'veranda', 'climatisation', 'garage', 'plain_pied'] as const;
+export type Amenity = (typeof AMENITIES)[number];
+/** AU061 · l'état du bien, dit sur la fiche : « travaux à prévoir » ou « refait à neuf » se disent depuis lui seul. */
+export const CONDITIONS = ['neuf', 'refait_a_neuf', 'bon_etat', 'travaux_a_prevoir', 'a_renover'] as const;
+export type Condition = (typeof CONDITIONS)[number];
+
+/**
+ * AU063 · Les surfaces d'un bien, chacune avec son unité (le m², au centième) et sa source : la surface habitable (celle
+ * du bien), la surface Carrez (lot de copropriété, loi du 18 décembre 1996) et la surface utile (commerce, bureau).
+ */
+export const SURFACE_KINDS = ['habitable', 'carrez', 'utile'] as const;
+export type SurfaceKind = (typeof SURFACE_KINDS)[number];
+/** D'où vient la surface : un mesurage d'un professionnel, l'acte ou le titre, ou le dire du vendeur. */
+export const SURFACE_SOURCES = ['mesurage', 'acte', 'vendeur'] as const;
+export type SurfaceSource = (typeof SURFACE_SOURCES)[number];
+export const SURFACE_LABEL: Readonly<Record<SurfaceKind, string>> = { habitable: 'surface habitable', carrez: 'surface Carrez', utile: 'surface utile' };
+export const SURFACE_SOURCE_LABEL: Readonly<Record<SurfaceSource, string>> = { mesurage: 'mesurage d’un professionnel', acte: 'acte de propriété', vendeur: 'déclarée par le vendeur' };
+/**
+ * La surface que chaque support affiche, dite une fois pour toutes (AU063) : un support ne choisit jamais seul. L'annonce
+ * et le site disent l'habitable, et la Carrez quand la fiche la porte ; un commerce dit sa surface utile ; les portails et
+ * la fiche commerciale reçoivent chacune, à sa place.
+ */
+export const SURFACE_DISPLAY: Readonly<Record<'annonce' | 'site' | 'portails' | 'fiche_commerciale', readonly SurfaceKind[]>> = {
+  annonce: ['habitable', 'carrez'],
+  site: ['habitable', 'carrez'],
+  portails: ['habitable', 'carrez', 'utile'],
+  fiche_commerciale: ['habitable', 'carrez', 'utile'],
+};
+export type SurfaceSupport = keyof typeof SURFACE_DISPLAY;
+
+/** Les surfaces qu'un support affiche, dans son ordre, avec leur libellé et leur source ; jamais une surface absente. */
+export function surfacesFor(
+  support: SurfaceSupport,
+  f: { kind?: string; surfaceM2: number | null; carrezM2?: number | null; usableM2?: number | null; surfaceSources?: Partial<Record<SurfaceKind, SurfaceSource>> },
+): { kind: SurfaceKind; m2: number; label: string; source: SurfaceSource | null }[] {
+  const value: Record<SurfaceKind, number | null> = { habitable: f.surfaceM2, carrez: f.carrezM2 ?? null, utile: f.usableM2 ?? null };
+  // Un local, des murs ou un fonds se disent d'abord par leur surface utile, partout où elle est rangée.
+  const kinds = f.kind === 'commercial' || f.kind === 'business_walls' || f.kind === 'business' ? (['utile', ...SURFACE_DISPLAY[support].filter((k) => k !== 'utile')] as SurfaceKind[]) : SURFACE_DISPLAY[support];
+  return kinds
+    .filter((k) => value[k] !== null)
+    .map((k) => ({ kind: k, m2: value[k]!, label: SURFACE_LABEL[k], source: f.surfaceSources?.[k] ?? null }));
+}
 
 export const MEDIA_KINDS = ['photo', 'video', 'visite_virtuelle'] as const;
 export type MediaKind = (typeof MEDIA_KINDS)[number];
@@ -47,6 +93,27 @@ export interface Characteristics {
   landM2: number | null;
   parkingSpaces: number | null;
   elevator: boolean | null;
+  /** Maison ou appartement, dit sur la fiche ; absent tant qu'on ne l'a pas dit (AU070). */
+  dwelling?: Dwelling;
+  /** Les équipements courants du bien (AU061) ; absent tant qu'on n'en a dit aucun. */
+  amenities?: Amenity[];
+  /** L'état du bien (AU061) ; absent tant qu'on ne l'a pas dit. */
+  condition?: Condition;
+  /** La surface Carrez et la surface utile, en m² au centième (AU063) ; absentes tant qu'on ne les a pas dites. */
+  carrezM2?: number;
+  usableM2?: number;
+  /** La source de chaque surface dite (AU063). */
+  surfaceSources?: Partial<Record<SurfaceKind, SurfaceSource>>;
+}
+
+/**
+ * La période des prix de l'énergie, dans les mots du diagnostic : « au 1er janvier 2021 » pour une année, « sur les
+ * années 2021, 2022 et 2023 » quand il en cite plusieurs (modèle de DPE du 1er juillet 2024) (AU065).
+ */
+export function energyPriceText(e: { costReferenceYear: number; costReferenceYears?: number[] | null }): string {
+  const ys = e.costReferenceYears ?? [];
+  const when = ys.length > 1 ? `sur les années ${ys.slice(0, -1).join(', ')} et ${ys.at(-1)}` : `au 1er janvier ${e.costReferenceYear}`;
+  return `Prix moyens des énergies indexés ${when} (abonnements compris).`;
 }
 
 export interface EnergyDiagnosis {
@@ -54,8 +121,22 @@ export interface EnergyDiagnosis {
   climateClass: EnergyClass;
   annualCostMinEur: number;
   annualCostMaxEur: number;
-  /** L'année des prix de l'énergie utilisés par le diagnostic. */
+  /** L'année des prix de l'énergie utilisés par le diagnostic ; s'il en cite plusieurs, la dernière. */
   costReferenceYear: number;
+  /**
+   * Les années des prix quand le diagnostic en cite plusieurs, telles qu'il les écrit (« indexés sur les années 2021,
+   * 2022 et 2023 ») : de 2 à 5 années qui se suivent, la dernière étant `costReferenceYear` (AU065).
+   */
+  costReferenceYears?: number[];
+  /**
+   * AU064 · ce qui permet de reprendre le diagnostic sans le ressaisir : son numéro d'enregistrement à l'ADEME (13
+   * caractères, vérifiable à l'observatoire des DPE), la consommation d'énergie primaire (kWh/m²/an) et les émissions
+   * (kg CO₂/m²/an) qu'il écrit, et le document lui-même (`biens/<bien>/<uuid>.pdf`).
+   */
+  ademeNumber?: string;
+  primaryEnergyKwhM2?: number;
+  ghgKgM2?: number;
+  documentRef?: string;
   /** `AAAA-MM-JJ`. */
   diagnosedOn: string;
 }
@@ -96,6 +177,10 @@ type Refusal = { ok: false; rule: 'R16'; code: string };
 const MAX_MEDIA = 80;
 // La référence est donnée par le stockage, jamais écrite à la main : le dossier du bien, puis un identifiant tiré au
 // hasard. Aucun nom de fichier libre, qui pourrait porter une adresse [R46], ni la photo d'un autre bien.
+/** Le numéro d'enregistrement d'un DPE à l'ADEME : 13 caractères, chiffres et lettres capitales (AU064). */
+export const ADEME_NUMBER = /^[0-9A-Z]{13}$/;
+/** Le diagnostic lui-même, rangé comme une photo du bien, en PDF. */
+const DPE_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pdf$/;
 const MEDIA_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.(?:jpg|png|webp|mp4)$/;
 const MEDIA_EXT: Record<MediaKind, readonly string[]> = { photo: ['jpg', 'png', 'webp'], video: ['mp4'], visite_virtuelle: ['mp4'] };
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -134,7 +219,7 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
   // Caractéristiques.
   const c = input.characteristics ?? {};
   if (!isRecord(c)) return bad('characteristics');
-  const cExtra = onlyKeys(c, ['bedrooms', 'floor', 'floorsTotal', 'buildYear', 'heating', 'outdoor', 'landM2', 'parkingSpaces', 'elevator'], 'characteristics');
+  const cExtra = onlyKeys(c, ['bedrooms', 'floor', 'floorsTotal', 'buildYear', 'heating', 'outdoor', 'landM2', 'parkingSpaces', 'elevator', 'dwelling', 'amenities', 'condition', 'carrezM2', 'usableM2', 'surfaceSources'], 'characteristics');
   if (cExtra) return bad(cExtra);
   const bedrooms = intOrNull(c.bedrooms, 0, 50);
   if (!bedrooms.ok) return bad('characteristics.bedrooms');
@@ -155,6 +240,27 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
   if (!parking.ok) return bad('characteristics.parkingSpaces');
   const elevator = c.elevator ?? null;
   if (elevator !== null && typeof elevator !== 'boolean') return bad('characteristics.elevator');
+  const dwelling = c.dwelling ?? null;
+  if (dwelling !== null && !(DWELLINGS as readonly unknown[]).includes(dwelling)) return bad('characteristics.dwelling');
+  const amenitiesRaw = c.amenities ?? [];
+  if (!Array.isArray(amenitiesRaw) || amenitiesRaw.some((a) => !(AMENITIES as readonly unknown[]).includes(a)) || new Set(amenitiesRaw).size !== amenitiesRaw.length) return bad('characteristics.amenities');
+  const condition = c.condition ?? null;
+  if (condition !== null && !(CONDITIONS as readonly unknown[]).includes(condition)) return bad('characteristics.condition');
+  // AU063 · surfaces au centième de m², comme la surface du bien (AU062) ; chaque source dite d'une liste fermée.
+  const hundredths = (v: unknown): { ok: boolean; value: number | null } => {
+    if (v === undefined || v === null) return { ok: true, value: null };
+    if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0 || v > 100_000 || Number(v.toFixed(2)) !== v) return { ok: false, value: null };
+    return { ok: true, value: v };
+  };
+  const carrez = hundredths(c.carrezM2);
+  if (!carrez.ok) return bad('characteristics.carrezM2');
+  const usable = hundredths(c.usableM2);
+  if (!usable.ok) return bad('characteristics.usableM2');
+  const sourcesRaw = c.surfaceSources ?? {};
+  if (!isRecord(sourcesRaw) || Object.entries(sourcesRaw).some(([k, v]) => !(SURFACE_KINDS as readonly string[]).includes(k) || !(SURFACE_SOURCES as readonly unknown[]).includes(v))) return bad('characteristics.surfaceSources');
+  // Une source se dit pour une surface rangée, jamais seule.
+  if ((sourcesRaw.carrez !== undefined && carrez.value === null) || (sourcesRaw.utile !== undefined && usable.value === null)) return bad('characteristics.surfaceSources');
+  const surfaceSources = Object.fromEntries(SURFACE_KINDS.filter((k) => sourcesRaw[k] !== undefined).map((k) => [k, sourcesRaw[k]])) as Partial<Record<SurfaceKind, SurfaceSource>>;
   const characteristics: Characteristics = {
     bedrooms: bedrooms.value,
     floor: floor.value,
@@ -166,6 +272,12 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
     landM2: landM2.value,
     parkingSpaces: parking.value,
     elevator: elevator as boolean | null,
+    ...(dwelling !== null ? { dwelling: dwelling as Dwelling } : {}),
+    ...(amenitiesRaw.length > 0 ? { amenities: AMENITIES.filter((a) => (amenitiesRaw as unknown[]).includes(a)) } : {}),
+    ...(condition !== null ? { condition: condition as Condition } : {}),
+    ...(carrez.value !== null ? { carrezM2: carrez.value } : {}),
+    ...(usable.value !== null ? { usableM2: usable.value } : {}),
+    ...(Object.keys(surfaceSources).length > 0 ? { surfaceSources } : {}),
   };
 
   // Diagnostic énergétique.
@@ -173,7 +285,7 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
   if (input.energy !== null && input.energy !== undefined) {
     const e = input.energy;
     if (!isRecord(e)) return bad('energy');
-    const eExtra = onlyKeys(e, ['energyClass', 'climateClass', 'annualCostMinEur', 'annualCostMaxEur', 'costReferenceYear', 'diagnosedOn'], 'energy');
+    const eExtra = onlyKeys(e, ['energyClass', 'climateClass', 'annualCostMinEur', 'annualCostMaxEur', 'costReferenceYear', 'costReferenceYears', 'diagnosedOn', 'ademeNumber', 'primaryEnergyKwhM2', 'ghgKgM2', 'documentRef'], 'energy');
     if (eExtra) return bad(eExtra);
     if (!(ENERGY_CLASSES as readonly unknown[]).includes(e.energyClass)) return bad('energy.energyClass');
     if (!(ENERGY_CLASSES as readonly unknown[]).includes(e.climateClass)) return bad('energy.climateClass');
@@ -181,14 +293,32 @@ export function parseSheet(input: unknown, today: Date, propertyId: string): Par
     if (!isInt(e.annualCostMaxEur, 1, 1_000_000)) return bad('energy.annualCostMaxEur');
     if (e.annualCostMinEur > e.annualCostMaxEur) return bad('energy.annualCostMinEur');
     if (!isInt(e.costReferenceYear, 2000, year)) return bad('energy.costReferenceYear');
+    // Plusieurs années : celles du diagnostic, qui se suivent, la dernière étant l'année des prix (AU065).
+    const years = e.costReferenceYears;
+    if (years !== undefined && years !== null) {
+      if (!Array.isArray(years) || years.length < 2 || years.length > 5 || !years.every((y, i) => isInt(y, 2000, year) && (i === 0 || y === years[i - 1] + 1)) || years.at(-1) !== e.costReferenceYear) {
+        return bad('energy.costReferenceYears');
+      }
+    }
     if (!validDay(e.diagnosedOn) || e.diagnosedOn > todayDay) return bad('energy.diagnosedOn');
+    // AU064 · numéro, valeurs et document du diagnostic : chacun contrôlé, facultatif, jamais deviné.
+    const given = (v: unknown) => v !== undefined && v !== null;
+    if (given(e.ademeNumber) && (typeof e.ademeNumber !== 'string' || !ADEME_NUMBER.test(e.ademeNumber))) return bad('energy.ademeNumber');
+    if (given(e.primaryEnergyKwhM2) && !isInt(e.primaryEnergyKwhM2, 0, 2000)) return bad('energy.primaryEnergyKwhM2');
+    if (given(e.ghgKgM2) && !isInt(e.ghgKgM2, 0, 500)) return bad('energy.ghgKgM2');
+    if (given(e.documentRef) && (typeof e.documentRef !== 'string' || !e.documentRef.startsWith(`biens/${propertyId}/`) || !DPE_FILE.test(e.documentRef.slice(`biens/${propertyId}/`.length)))) return bad('energy.documentRef');
     energy = {
       energyClass: e.energyClass as EnergyClass,
       climateClass: e.climateClass as EnergyClass,
       annualCostMinEur: e.annualCostMinEur,
       annualCostMaxEur: e.annualCostMaxEur,
       costReferenceYear: e.costReferenceYear,
+      ...(Array.isArray(years) ? { costReferenceYears: [...(years as number[])] } : {}),
       diagnosedOn: e.diagnosedOn,
+      ...(given(e.ademeNumber) ? { ademeNumber: e.ademeNumber as string } : {}),
+      ...(given(e.primaryEnergyKwhM2) ? { primaryEnergyKwhM2: e.primaryEnergyKwhM2 as number } : {}),
+      ...(given(e.ghgKgM2) ? { ghgKgM2: e.ghgKgM2 as number } : {}),
+      ...(given(e.documentRef) ? { documentRef: e.documentRef as string } : {}),
     };
   }
 

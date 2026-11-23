@@ -159,7 +159,7 @@ async function progress(s: LocationServices, v: Viewer, id: string): Promise<Out
     value: {
       facts,
       fees: f ? { tenantCents: f.tenantCents, tenantInventoryCents: f.tenantInventoryCents, landlordCents: f.landlordCents, landlordInventoryCents: f.landlordInventoryCents, depositCents: f.depositCents } : null,
-      lease: lease ? { leaseId: lease.leaseId, mode: lease.mode, complete: lease.complete, bailleur: signed?.bailleur ?? null, locataire: signed?.locataire ?? null, copiesSent: signed?.copiesSent ?? [] } : null,
+      lease: lease ? { leaseId: lease.leaseId, mode: lease.mode, complete: lease.complete, bailleur: signed?.bailleur ?? null, locataire: signed?.locataire ?? null, colocataires: signed?.colocataires ?? [], signedAt: signed?.signedAt ?? null, copiesSent: signed?.copiesSent ?? [], cotenantCopiesSent: signed?.cotenantCopiesSent ?? [] } : null,
       inventoryClosed: closed !== null && lease !== null && closed.leaseId === lease.leaseId,
       closedInventoryId: closed !== null && lease !== null && closed.leaseId === lease.leaseId ? closed.inventoryId : null,
       // L'état des lieux du bail en vigueur, rangé mais pas encore signé des deux parties : à signer sans le refaire.
@@ -292,6 +292,14 @@ const ROUTES: LocationRoute[] = [
     handle: withBody(async (s, v, [id], b) => reply(await core(s).applications.addGuarantor(v, id, { kind: b.kind, personId: b.personId }))),
   },
   {
+    // AU097 · un colocataire ajouté ou retiré : un locataire de plus du même bail, avec ses pièces et sa signature.
+    method: 'POST',
+    pattern: new RegExp(`^/location/candidatures/${ID}/colocataires$`),
+    name: 'location.candidature.colocataire',
+    roles: WRITERS,
+    handle: withBody(async (s, v, [id], b) => reply(await core(s).applications.setCotenant(v, id, { personId: b.personId, action: b.action }))),
+  },
+  {
     method: 'POST',
     pattern: new RegExp(`^/location/candidatures/${ID}/pieces$`),
     name: 'location.candidature.piece',
@@ -333,7 +341,7 @@ const ROUTES: LocationRoute[] = [
     name: 'location.bail',
     roles: WRITERS,
     handle: withBody(async (s, v, [id], b) =>
-      reply(await core(s).leases.generate(v, id, { address: b.address, ownerAddress: b.ownerAddress, habitat: b.habitat, equipment: b.equipment, professionalCard: b.professionalCard, noticeRef: b.noticeRef })),
+      reply(await core(s).leases.generate(v, id, { address: b.address, ownerAddress: b.ownerAddress, habitat: b.habitat, equipment: b.equipment, professionalCard: b.professionalCard, noticeRef: b.noticeRef, landlord: b.landlord, variant: b.variant, mobilityMonths: b.mobilityMonths, mobilityReason: b.mobilityReason })),
     ),
   },
   {
@@ -341,7 +349,7 @@ const ROUTES: LocationRoute[] = [
     pattern: new RegExp(`^/location/${ID}/bail/signatures$`),
     name: 'location.bail.signature_ouverte',
     roles: WRITERS,
-    handle: withBody(async (s, v, [id], b) => reply(await core(s).signatures.start(v, id, { party: b.party, consentProof: b.consentProof }))),
+    handle: withBody(async (s, v, [id], b) => reply(await core(s).signatures.start(v, id, { party: b.party, personId: b.personId, consentProof: b.consentProof }))),
   },
   {
     method: 'POST',

@@ -53,8 +53,10 @@ export interface StudioServices {
   uploads?: StudioUploadStore | null;
   /** L'IA qui rédige le corps d'une publication ; absente, le texte de secours. */
   writer?: SocialWriter | null;
-  /** Les réseaux, chacun derrière son interface ; par défaut, tous en essai. Aucun canal réel n'est accepté [R26]. */
+  /** Les réseaux, chacun derrière son interface ; par défaut, tous en essai. Un canal réel exige `live` [R26, R134]. */
   channels?: readonly SocialChannel[];
+  /** La mise en service des vrais réseaux (AU036), donnée par le Worker seul quand le compte du réseau est rangé. */
+  live?: boolean;
   /** La porte de diffusion ; par défaut celle de D05 [R42]. */
   diffusion?: { canDiffuse(networkId: string, propertyId: string, at?: Date): Promise<{ allowed: boolean }> };
   /** Les mentions obligatoires ; par défaut celles de M07, calculées par `computeMentions` [R43]. */
@@ -165,7 +167,7 @@ export function studioCore(s: StudioServices) {
         channels: s.channels ?? SOCIAL_CHANNELS.map((c) => trialSocialChannel(c)),
         origin: new OrigineContacts(s.db, s.journal, { now: s.now }),
       },
-      { ...opts, writer: s.writer ?? null },
+      { ...opts, writer: s.writer ?? null, ...(s.live === true ? { live: true } : {}) },
     ),
     supports: new Supports(s.db, acces, s.journal, pages, { now: s.now }),
     bibliotheque,

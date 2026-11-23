@@ -1,6 +1,8 @@
 import { expect, it } from 'vitest';
-import { ALERT_PURPOSE, PointSemaine, RendezVous, SELLER_UPDATE_PURPOSE, verifyChain } from '@aimmo/core';
+import { ALERT_PURPOSE, FakeAgenda, PointSemaine, RendezVous, SELLER_UPDATE_PURPOSE, verifyChain } from '@aimmo/core';
+import type { AgendaDirectory } from '../src/agenda-reel.ts';
 import { handleRequest } from '../src/app.ts';
+import { bonVisiteLinkBase } from '../src/bon-visite-public.ts';
 import { sha256Hex } from '../src/index.ts';
 import { setupAnnonce } from '../../core/test/annonces-jeu.ts';
 import { describeWithSqlite } from '../../core/test/sqlite.ts';
@@ -16,7 +18,7 @@ const WEDNESDAY_14H = '2027-03-03T13:00:00.000Z';
 const WEEK = { weekly: [1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, from: '09:00', to: '19:00' })) };
 const TEMPLATE = 'Bon de visite : {{visiteur.nom}} visite {{bien.reference}} le {{visite.date}}.';
 
-async function setup() {
+async function setup(agendas: AgendaDirectory | null = null, bonVisiteBase: string | null = null) {
   const t = await setupAnnonce();
   const ids: Record<Who, { role: string; userId: string; networkId: string }> = {
     alex: { role: 'agent', userId: t.alexId, networkId: t.network.id },
@@ -29,7 +31,7 @@ async function setup() {
   const call = async (who: Who, method: 'GET' | 'POST', path: string, body?: unknown) => {
     const init: RequestInit = { method, headers: { authorization: `Bearer ${KEYS[who]}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) } };
     if (body !== undefined) init.body = JSON.stringify(body);
-    const r = await handleRequest(new Request(`${BASE}/v1${path}`, init), { db: t.db, apiKeys, mode: 'essai', alertUnsubscribeBase: UNSUBSCRIBE, now: t.now });
+    const r = await handleRequest(new Request(`${BASE}/v1${path}`, init), { db: t.db, apiKeys, mode: 'essai', alertUnsubscribeBase: UNSUBSCRIBE, now: t.now, agendas, bonVisiteBase });
     return { status: r.status, body: (await r.json()) as { ok: boolean; data?: any; code?: string; rule?: string | null } };
   };
   // Le vendeur accepte le suivi de sa vente par mail ; l'acquéreur d'Alex, ses alertes sur WhatsApp.
@@ -46,7 +48,11 @@ async function setup() {
     return /(\d{6})/.exec(m!.body)![1]!;
   };
   const toSeller = () => db.all<{ body: string }>('SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? ORDER BY m.occurred_at, m.rowid', [t.personId]);
-  return { ...t, call, buyer, project, sms, toSeller };
+  // AU075b · une page publique, sans clé : ce que reçoit le navigateur du visiteur.
+  const open = (method: 'GET' | 'POST', path: string, form?: string) =>
+    handleRequest(new Request(`${BASE}${path}`, { method, ...(form === undefined ? {} : { headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form }) }), { db: t.db, apiKeys, mode: 'essai', alertUnsubscribeBase: UNSUBSCRIBE, now: t.now, agendas, bonVisiteBase });
+  const toBuyer = async () => enClair(db.all<{ id: string; channel: string; body: string }>('SELECT m.id, m.channel, m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? ORDER BY m.occurred_at, m.rowid', [buyer.id]));
+  return { ...t, call, open, buyer, project, sms, toSeller, toBuyer };
 }
 
 describeWithSqlite('T08 · routes de M08', () => {
@@ -54,7 +60,7 @@ describeWithSqlite('T08 · routes de M08', () => {
     const t = await setup();
     t.setClock(TUESDAY_10H);
     // L'agent pose la recherche de son acquéreur.
-    const search = await t.call('alex', 'POST', `/acquereurs/projets/${t.project.id}/recherche`, { propertyKinds: ['apartment'], communes: ['Dijon'], budgetMaxEur: 220000, surfaceMinM2: 55 });
+    const search = await t.call('alex', 'POST', `/acquereurs/projets/${t.project.id}/recherche`, { propertyKinds: ['house'], communes: ['Dijon'], budgetMaxEur: 220000, surfaceMinM2: 55 });
     expect(search.status).toBe(200);
     expect((await t.call('alex', 'GET', `/acquereurs/projets/${t.project.id}/recherche`)).body).toMatchObject({ ok: true, data: { current: { version: 1 } } });
     // Le bien est diffusable : l'acquéreur est proposé, avec les raisons, et la carte de la demande le compte.
@@ -89,6 +95,17 @@ describeWithSqlite('T08 · routes de M08', () => {
     expect((await t.call('alex', 'POST', `/visites/${id}/confirmation`, { code: await t.sms(), lastName: 'Durand' })).body).toMatchObject({ ok: true, data: { confirmed: true } });
     expect((await t.call('alex', 'GET', `/visites/${id}`)).body.data.safety).toBe('confirmee');
 
+    // AU075 · Le bon signé sur le téléphone de l'agent : code au visiteur par SMS, bon lu à l'écran, code tapé, sans papier.
+    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'distance', consentProof: 'accord' })).body).toMatchObject({ ok: false, code: 'distance_not_served' });
+    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'sur_place', consentProof: 'accord oral du visiteur, noté par l’agent', extra: 1 })).status).toBe(400);
+    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'sur_place', consentProof: 'accord oral du visiteur, noté par l’agent' })).body).toMatchObject({ ok: true, data: { place: 'sur_place', channel: 'sms', mode: 'essai' } });
+    expect((await t.call('alex', 'GET', `/visites/${id}/bon/a-signer`)).body).toMatchObject({ ok: true, data: { paragraphs: expect.arrayContaining([expect.stringContaining('REF-T-1')]) } });
+    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-sur-place`, { code: '000000' })).body).toMatchObject({ ok: false, code: 'wrong_code' });
+    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-sur-place`, { code: await t.sms(), drawing: 'M0 0 L4 4' })).body).toMatchObject({ ok: true, data: { copy: 'remis', copyLink: false, proof: { method: 'code_et_trace', realSignature: false } } });
+    expect((await t.call('alex', 'GET', `/visites/${id}/bon/exemplaire`)).body).toMatchObject({ ok: true, data: { paragraphs: expect.arrayContaining([expect.stringContaining('REF-T-1')]), proof: { place: 'sur_place' } } });
+    expect((await t.call('alex', 'GET', `/visites/${id}`)).body.data.slip).toMatchObject({ signed: true, online: { status: 'signee', place: 'sur_place', copy: 'remis' } });
+    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature`, { signedAt: '2027-03-03T12:39:00.000Z', scanRef: 'scans/bon.pdf' })).body).toMatchObject({ ok: false, code: 'signed_online' });
+
     // Le compte rendu dicté : sans IA branchée, l'agent écrit, valide en un geste, le vendeur le reçoit sans le nom [R52].
     t.setClock(new Date('2027-03-03T14:10:00.000Z'));
     expect((await t.call('alex', 'POST', `/visites/${id}/compte-rendu/dictee`, { dictation: 'Inès a aimé la lumière et le balcon, cuisine à refaire.' })).body).toMatchObject({ ok: true, data: { report: null } });
@@ -109,6 +126,10 @@ describeWithSqlite('T08 · routes de M08', () => {
     expect(list.body.data.points[0].text).toContain('Avis des visiteurs : Le visiteur a aimé la lumière du séjour');
     expect((await t.call('sam', 'GET', '/points?semaine=2027-03-01')).body.data.points).toEqual([]);
     expect((await t.call('alex', 'POST', `/points/${t.mandateId}/2027-03-01/validation`, { actions: ['Revoir le prix ensemble'] })).body).toMatchObject({ ok: false, rule: 'R53' });
+    // Une décision de prix : explicite et liée à un rendez-vous tenu avec le vendeur, sinon refusée (AU078) [R53].
+    expect((await t.call('alex', 'POST', `/points/${t.mandateId}/2027-03-01/validation`, { actions: [], decisionPrix: 'baisse' })).status).toBe(400);
+    expect((await t.call('alex', 'POST', `/points/${t.mandateId}/2027-03-01/validation`, { actions: [], decisionPrix: { rendezVous: 'inconnu', prix: 200000, confirme: true } })).body).toMatchObject({ ok: false, rule: 'R53', code: 'exchange_unknown' });
+    expect((await t.call('alex', 'POST', `/points/${t.mandateId}/2027-03-01/validation`, { actions: [], decisionPrix: { rendezVous: 'inconnu', prix: 200000 } })).body).toMatchObject({ ok: false, rule: 'R53', code: 'price_decision_not_confirmed' });
     expect((await t.call('alex', 'POST', `/points/${t.mandateId}/2027-03-01/validation`, { actions: ['Organiser de nouvelles visites cette semaine'] })).body).toMatchObject({ ok: true, data: { delivery: 'sent' } });
     expect((await t.toSeller()).at(-1)!.body).toContain('Organiser de nouvelles visites cette semaine');
 
@@ -128,7 +149,7 @@ describeWithSqlite('T08 · routes de M08', () => {
   it('[R16] chaque route passe par les droits ; chaque refus rend 403 ou 404 et écrit une ligne au journal', async () => {
     const t = await setup();
     t.setClock(TUESDAY_10H);
-    await t.call('alex', 'POST', `/acquereurs/projets/${t.project.id}/recherche`, { propertyKinds: ['apartment'], communes: ['Dijon'], budgetMaxEur: 220000 });
+    await t.call('alex', 'POST', `/acquereurs/projets/${t.project.id}/recherche`, { propertyKinds: ['house'], communes: ['Dijon'], budgetMaxEur: 220000 });
     await t.call('direction', 'POST', '/visites/modeles', { body: TEMPLATE });
     const wa = await t.call('alex', 'POST', `/acquereurs/biens/${t.propertyId}/whatsapp/${t.project.id}`);
     const id = (await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: t.project.id, start: WEDNESDAY_14H })).body.data.visit.appointment.id as string;
@@ -151,6 +172,10 @@ describeWithSqlite('T08 · routes de M08', () => {
       ['sam', 'GET', `/visites/${id}`],
       ['sam', 'GET', `/visites/${id}/bon`],
       ['sam', 'POST', `/visites/${id}/bon/signature`, { signedAt: WEDNESDAY_14H, scanRef: 'scans/bon.pdf' }],
+      ['sam', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'sur_place', consentProof: 'accord' }],
+      ['sam', 'GET', `/visites/${id}/bon/a-signer`],
+      ['sam', 'POST', `/visites/${id}/bon/signature-sur-place`, { code: '123456' }],
+      ['sam', 'GET', `/visites/${id}/bon/exemplaire`],
       ['sam', 'POST', `/visites/${id}/annulation`],
       ['sam', 'POST', `/visites/${id}/code`, { consentProof: 'accord' }],
       ['sam', 'POST', `/visites/${id}/confirmation`, { code: '123456', lastName: 'Durand' }],
@@ -190,5 +215,249 @@ describeWithSqlite('T08 · routes de M08', () => {
     expect((await t.call('alex', 'GET', '/points?semaine=lundi')).status).toBe(400);
     expect((await t.call('alex', 'GET', '/acquereurs/inconnu')).status).toBe(404);
     expect(await t.db.all('SELECT * FROM visits')).toEqual([]);
+  });
+
+  it('[R32] AU077 · POST /visites avec joinVisit : un second acquéreur rejoint la visite au même créneau ; joinVisit mal formé, 400', async () => {
+    const t = await setup();
+    t.setClock(TUESDAY_10H);
+    expect((await t.call('direction', 'POST', '/visites/modeles', { body: TEMPLATE })).status).toBe(200);
+    const first = await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: t.project.id, start: WEDNESDAY_14H });
+    expect(first.status).toBe(200);
+    const leadId = first.body.data.visit.appointment.id as string;
+    const leo = await t.store.createPerson({ networkId: t.network.id, agentId: t.alexId, firstName: 'Léo', lastName: 'Martin' });
+    const project = await t.store.createProject({ networkId: t.network.id, agentId: t.alexId, personId: leo.id, kind: 'buy' });
+    expect((await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: project.id, start: WEDNESDAY_14H, joinVisit: 42 })).status).toBe(400);
+    expect((await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: project.id, start: WEDNESDAY_14H })).body).toMatchObject({ ok: false, code: 'taken' });
+    const joined = await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: project.id, start: WEDNESDAY_14H, joinVisit: leadId });
+    expect(joined.status).toBe(200);
+    expect(joined.body.data.visit.appointment).toMatchObject({ person_id: leo.id, group_id: leadId, status: 'booked' });
+  });
+
+  it('[R33] [R702] AU053 · une visite fixée par l’agent se contrôle sur son agenda relié ; injoignable, rien n’est fixé', async () => {
+    const fake = new FakeAgenda();
+    let alexId = '';
+    const agendas: AgendaDirectory = { provider: fake, of: (a) => (a === alexId ? 'google' : null), agents: () => [alexId] };
+    const t = await setup(agendas);
+    alexId = t.alexId;
+    t.setClock(TUESDAY_10H);
+    await t.call('direction', 'POST', '/visites/modeles', { body: TEMPLATE });
+    // Un événement privé de l'agent, mercredi de 13 h 30 à 15 h : la visite de 14 h est refusée.
+    fake.agentEdit(t.alexId, { start: new Date('2027-03-03T12:30:00.000Z'), end: new Date('2027-03-03T14:00:00.000Z') });
+    const ask = { propertyId: t.propertyId, projectId: t.project.id, start: WEDNESDAY_14H };
+    const busy = await t.call('alex', 'POST', '/visites', ask);
+    expect(busy.body).toMatchObject({ ok: false, rule: 'R33' });
+    // Le rendez-vous de l'agent pour son client, de même.
+    expect((await t.call('alex', 'POST', '/rendez-vous', { personId: t.buyer.id, kind: 'appel', start: WEDNESDAY_14H })).body).toMatchObject({ ok: false, rule: 'R33' });
+    // L'agenda injoignable : 503, aucune visite fixée.
+    fake.failWith = new Error('panne');
+    const down = await t.call('alex', 'POST', '/visites', { ...ask, start: '2027-03-04T13:00:00.000Z' });
+    expect(down.status).toBe(503);
+    expect(down.body).toMatchObject({ ok: false, code: 'agenda_indisponible', rule: 'R702' });
+    expect(await t.db.all("SELECT id FROM appointments WHERE status = 'booked' AND kind = 'visite'")).toHaveLength(0);
+    // Revenu, et l'heure libre : la visite est fixée.
+    fake.failWith = null;
+    expect((await t.call('alex', 'POST', '/visites', { ...ask, start: '2027-03-04T13:00:00.000Z' })).status).toBe(200);
+  });
+
+  it('[R32] AU056 · POST /rendez-vous : l’agent fixe un rendez-vous chez le notaire de 90 minutes, le conflit se contrôle sur 90 minutes', async () => {
+    const t = await setup();
+    t.setClock(TUESDAY_10H);
+    const start = WEDNESDAY_14H;
+    const body = { personId: t.buyer.id, kind: 'signature', start, durationMinutes: 90 };
+    expect((await t.call('alex', 'POST', '/rendez-vous', { ...body, durationMinutes: 22 })).body).toMatchObject({ ok: false, code: 'invalid_duration' });
+    expect((await t.call('alex', 'POST', '/rendez-vous', { ...body, salle: 'B' })).body).toMatchObject({ ok: false, code: 'unknown_field' });
+    expect((await t.call('alex', 'POST', '/rendez-vous', { ...body, kind: 'notaire' })).status).toBe(400);
+    expect((await t.call('alex', 'POST', '/rendez-vous', { ...body, kind: 'visite', durationMinutes: 20 })).body).toMatchObject({ ok: false, rule: 'R40', code: 'visit_route' });
+    expect((await t.call('sam', 'POST', '/rendez-vous', body)).status).toBe(403);
+    expect((await t.call('direction', 'POST', '/rendez-vous', body)).status).toBe(403);
+    const booked = await t.call('alex', 'POST', '/rendez-vous', body);
+    expect(booked.status).toBe(200);
+    const a = booked.body.data.appointment;
+    expect((Date.parse(a.end_at) - Date.parse(a.start_at)) / 60_000).toBe(90);
+    // Un appel 75 minutes après le début tombe dans les 90 minutes : refusé [R32].
+    const later = new Date(Date.parse(start) + 75 * 60_000).toISOString();
+    expect((await t.call('alex', 'POST', '/rendez-vous', { personId: t.buyer.id, kind: 'appel', start: later })).body).toMatchObject({ ok: false, rule: 'R32', code: 'taken' });
+    expect((await t.call('alex', 'POST', '/rendez-vous', { personId: t.buyer.id, kind: 'appel', start: new Date(Date.parse(start) + 90 * 60_000).toISOString(), durationMinutes: 10 })).status).toBe(200);
+  });
+
+  it('[R32] AU056 · POST /visites : une contre-visite de 20 minutes, durée choisie par l’agent seul', async () => {
+    const t = await setup();
+    t.setClock(TUESDAY_10H);
+    expect((await t.call('direction', 'POST', '/visites/modeles', { body: TEMPLATE })).status).toBe(200);
+    const visit = { propertyId: t.propertyId, projectId: t.project.id, start: WEDNESDAY_14H };
+    // La direction fixe une visite à la durée du type, jamais une durée propre.
+    expect((await t.call('direction', 'POST', '/visites', { ...visit, durationMinutes: 20 })).body).toMatchObject({ ok: false, code: 'bad_duration' });
+    expect((await t.call('alex', 'POST', '/visites', { ...visit, durationMinutes: 7 })).body).toMatchObject({ ok: false, code: 'invalid_duration' });
+    const contre = await t.call('alex', 'POST', '/visites', { ...visit, durationMinutes: 20 });
+    expect(contre.status).toBe(200);
+    const a = contre.body.data.visit.appointment;
+    expect((Date.parse(a.end_at) - Date.parse(a.start_at)) / 60_000).toBe(20);
+  });
+});
+
+describeWithSqlite('AU075b · les pages publiques du bon de visite', () => {
+  const SLIPS = 'https://aimmo.example.test/';
+  async function visitWithSlip(bonVisiteBase: string | null) {
+    const t = await setup(null, bonVisiteBase);
+    t.setClock(TUESDAY_10H);
+    expect((await t.call('direction', 'POST', '/visites/modeles', { body: TEMPLATE })).status).toBe(200);
+    const visit = await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: t.project.id, start: WEDNESDAY_14H });
+    return { t, id: visit.body.data.visit.appointment.id as string };
+  }
+
+  it('[R506] sans page servie : rien sous /visite/, pas de signature à distance, l’écran ne la propose pas', async () => {
+    const { t, id } = await visitWithSlip(null);
+    expect((await t.call('alex', 'GET', `/visites/${id}`)).body.data.slip).toMatchObject({ distance: false });
+    t.setClock(new Date('2027-03-03T15:00:00.000Z'));
+    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'distance', consentProof: 'accord' })).body).toMatchObject({ ok: false, code: 'distance_not_served' });
+    const none = await t.open('GET', `/visite/signer/${'a'.repeat(64)}`);
+    expect(none.status).toBe(404);
+    expect(await none.text()).not.toContain('<form');
+  });
+
+  it('[R506] un début de liens avec un chemin mènerait à des liens sans page : refusé, rien n’est proposé ni servi', async () => {
+    expect(bonVisiteLinkBase('https://aimmo.example.test/')).toBe('https://aimmo.example.test/');
+    for (const bad of ['https://aimmo.example.test/public/', 'http://aimmo.example.test/', 'https://aimmo.example.test', 'https://aimmo2.example.test/', '', undefined]) expect(bonVisiteLinkBase(bad)).toBeNull();
+    const { t, id } = await visitWithSlip('https://aimmo.example.test/public/');
+    expect((await t.call('alex', 'GET', `/visites/${id}`)).body.data.slip).toMatchObject({ distance: false });
+    t.setClock(new Date('2027-03-03T15:00:00.000Z'));
+    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'distance', channel: 'sms', consentProof: 'accord' })).body).toMatchObject({ ok: false, code: 'distance_not_served' });
+    expect((await t.open('GET', `/visite/signer/${'a'.repeat(64)}`)).status).toBe(404);
+    expect(await t.toBuyer()).toEqual([]);
+  });
+
+  it('[R506] [R40] page servie : lien et code partent chacun dans son message, le visiteur lit et signe par la page, sans script', async () => {
+    const { t, id } = await visitWithSlip(SLIPS);
+    expect((await t.call('alex', 'GET', `/visites/${id}`)).body.data.slip).toMatchObject({ distance: true, signed: false });
+    // Après la visite, l'agent envoie le lien.
+    t.setClock(new Date('2027-03-03T15:00:00.000Z'));
+    const opened = await t.call('alex', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'distance', channel: 'sms', consentProof: 'accord du visiteur, noté par l’agent' });
+    expect(opened.body).toMatchObject({ ok: true, data: { place: 'distance', channel: 'sms', mode: 'essai' } });
+    const sent = await t.toBuyer();
+    const linkMessage = sent.find((m) => m.body.includes('/visite/signer/'))!;
+    const token = /https:\/\/aimmo\.example\.test\/visite\/signer\/([0-9a-f]{64})/.exec(linkMessage.body)![1]!;
+    const codeMessage = sent.find((m) => m.id !== linkMessage.id && /\b\d{6}\b/.test(m.body))!;
+    const code = /\b(\d{6})\b/.exec(codeMessage.body)![1]!;
+    // Le lien et le code ne sont jamais dans le même message.
+    expect(linkMessage.body).not.toContain(code);
+    expect(codeMessage.body).not.toContain(token);
+
+    // La page à lire : le bon, le champ du code, le système de design, aucun script, rien d'extérieur.
+    const page = await t.open('GET', `/visite/signer/${token}`);
+    expect(page.status).toBe(200);
+    expect(page.headers.get('content-security-policy')).toMatch(/default-src 'none'/);
+    expect(page.headers.get('cache-control')).toBe('no-store');
+    const html = await page.text();
+    expect(html).toContain('REF-T-1');
+    expect(html).toContain(`<form method="post" action="/visite/signer/${token}">`);
+    expect(html).toContain('autocomplete="one-time-code"');
+    expect(html).toContain('class="marque">AIMMO');
+    expect(html).not.toMatch(/<script/i);
+    expect(html).not.toMatch(/https?:\/\/(?!aimmo\.example\.test)/);
+    // Le bon est celui du visiteur, avec son nom ; jamais son téléphone ni rien d'autre de sa fiche.
+    expect(html).not.toMatch(/33600000001|00 00 00 01/);
+
+    // Un code faux : redit en mots, la page reste à signer.
+    const wrong = await t.open('POST', `/visite/signer/${token}`, 'code=000000');
+    expect(wrong.status).toBe(422);
+    expect(await wrong.text()).toContain('Code faux');
+    // Le bon code : signé, sans l'agent ; l'écran de l'agent le voit.
+    const done = await t.open('POST', `/visite/signer/${token}`, `code=${code}`);
+    expect(done.status).toBe(200);
+    const doneHtml = await done.text();
+    expect(doneHtml).toContain('Votre bon de visite est signé');
+    expect(doneHtml).not.toMatch(/<script/i);
+    expect((await t.call('alex', 'GET', `/visites/${id}`)).body.data.slip).toMatchObject({ signed: true, online: { status: 'signee', place: 'distance', copy: 'remis' } });
+    // Le lien ne sert plus.
+    expect((await t.open('GET', `/visite/signer/${token}`)).status).toBe(409);
+    expect((await t.open('POST', `/visite/signer/${token}`, `code=${code}`)).status).toBe(409);
+    // Un jeton mal formé ou inconnu : un seul refus, sans rien dire.
+    expect((await t.open('GET', '/visite/signer/pas-un-jeton')).status).toBe(404);
+    expect((await t.open('GET', `/visite/signer/${'b'.repeat(64)}`)).status).toBe(404);
+  });
+
+  it('[R506] le lien de l’exemplaire part avec la preuve et l’ouvre pendant un an, puis plus', async () => {
+    const { t, id } = await visitWithSlip(SLIPS);
+    t.setClock(new Date('2027-03-03T15:00:00.000Z'));
+    await t.call('alex', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'distance', channel: 'sms', consentProof: 'accord du visiteur, noté par l’agent' });
+    const before = await t.toBuyer();
+    const token = /\/visite\/signer\/([0-9a-f]{64})/.exec(before.find((m) => m.body.includes('/visite/signer/'))!.body)![1]!;
+    const code = /\b(\d{6})\b/.exec(before.find((m) => !m.body.includes('/visite/') && /\b\d{6}\b/.test(m.body))!.body)![1]!;
+    expect((await t.open('POST', `/visite/signer/${token}`, `code=${code}`)).status).toBe(200);
+    // La preuve part avec le lien de l'exemplaire et l'empreinte du bon.
+    const proof = (await t.toBuyer()).find((m) => m.body.includes('/visite/exemplaire/'))!;
+    expect(proof.body).toMatch(/Empreinte du bon signé : [0-9a-f]{64}/);
+    const copyToken = /https:\/\/aimmo\.example\.test\/visite\/exemplaire\/([0-9a-f]{64})/.exec(proof.body)![1]!;
+    const hash = /Empreinte du bon signé : ([0-9a-f]{64})/.exec(proof.body)![1]!;
+    // L'exemplaire : le bon tel qu'il a été signé, sa preuve, sans script.
+    const copy = await t.open('GET', `/visite/exemplaire/${copyToken}`);
+    expect(copy.status).toBe(200);
+    expect(copy.headers.get('content-security-policy')).toMatch(/default-src 'none'/);
+    const html = await copy.text();
+    expect(html).toContain('REF-T-1');
+    expect(html).toContain(hash);
+    expect(html).toContain('à distance, par le lien reçu');
+    expect(html).not.toMatch(/<script/i);
+    // Onze mois plus tard, il s'ouvre encore ; passé un an, plus.
+    t.setClock(new Date('2028-02-03T15:00:00.000Z'));
+    expect((await t.open('GET', `/visite/exemplaire/${copyToken}`)).status).toBe(200);
+    t.setClock(new Date('2028-03-04T15:00:00.000Z'));
+    expect((await t.open('GET', `/visite/exemplaire/${copyToken}`)).status).toBe(410);
+    // Le lien de signature n'ouvre pas l'exemplaire, ni l'inverse.
+    expect((await t.open('GET', `/visite/exemplaire/${token}`)).status).toBe(404);
+    expect((await t.open('POST', `/visite/exemplaire/${copyToken}`, 'code=1')).status).toBe(405);
+  });
+});
+
+describeWithSqlite('AU073 · le secteur par les routes, sans le service DVF', () => {
+  it('la Base adresse nationale des secteurs se règle seule : un lieu dit se géocode même sans estimation', async () => {
+    const t = await setup();
+    const geocoder = { geocode: async (q: string) => (q === 'Gare de Dijon' ? { label: q, lat: 47.3233, lon: 5.0275, postalCode: '21000', inseeCode: '21231' } : null) };
+    const apiKeys = JSON.stringify([{ sha256: await sha256Hex(KEYS.alex), role: 'agent', userId: t.alexId, networkId: t.network.id }]);
+    const post = async (config: Record<string, unknown>) => {
+      const r = await handleRequest(
+        new Request(`${BASE}/v1/acquereurs/projets/${t.project.id}/secteur`, { method: 'POST', headers: { authorization: `Bearer ${KEYS.alex}`, 'content-type': 'application/json' }, body: JSON.stringify({ shape: 'cercle', place: 'Gare de Dijon', radiusM: 1500, label: 'Autour de la gare' }) }),
+        { db: t.db, apiKeys, mode: 'essai', now: t.now, ...config } as never,
+      );
+      return (await r.json()) as { ok: boolean; code?: string };
+    };
+    expect(await post({})).toMatchObject({ ok: false, code: 'geocodage_absent' });
+    expect(await post({ secteursGeocoder: geocoder })).toMatchObject({ ok: true });
+  });
+});
+
+describeWithSqlite('AU073b · la carte des secteurs par les routes : un lieu pour la centrer, des tuiles par le Worker', () => {
+  const geocoder = { geocode: async (q: string) => (q === 'Gare de Dijon' ? { label: q, lat: 47.3233, lon: 5.0275, postalCode: '21000', inseeCode: '21231' } : null) };
+  async function run(who: Who, path: string, config: Record<string, unknown> = {}) {
+    const t = await setup();
+    const apiKeys = JSON.stringify(await Promise.all((['alex', 'sam', 'compliance'] as Who[]).map(async (w) => ({ sha256: await sha256Hex(KEYS[w]), role: w === 'compliance' ? 'compliance' : 'agent', userId: w === 'alex' ? t.alexId : w === 'sam' ? t.sam.userId : 'c-1', networkId: t.network.id }))));
+    const r = await handleRequest(new Request(`${BASE}/v1${path.replace('{projet}', t.project.id)}`, { headers: { authorization: `Bearer ${KEYS[who]}` } }), { db: t.db, apiKeys, mode: 'essai', now: t.now, ...config } as never);
+    const events = (await t.journal.all()).filter((e) => e.type === 'acces.refuse' || e.type === 'carte.tuile_echec').map((e) => [e.type, e.actor, e.data.code]);
+    return { status: r.status, cache: r.headers.get('cache-control'), body: (await r.json()) as { ok: boolean; data?: any; code?: string }, events };
+  }
+
+  it('[R16] le lieu qui centre la carte : l’agent de la fiche seul ; un lieu inconnu ou sans géocodeur est dit', async () => {
+    expect(await run('alex', '/acquereurs/projets/{projet}/secteur/lieu?q=Gare%20de%20Dijon', { secteursGeocoder: geocoder })).toMatchObject({ status: 200, body: { ok: true, data: { lat: 47.3233, lon: 5.0275 } } });
+    expect((await run('alex', '/acquereurs/projets/{projet}/secteur/lieu?q=Nulle%20part', { secteursGeocoder: geocoder })).body).toMatchObject({ ok: false, code: 'lieu_introuvable' });
+    expect((await run('alex', '/acquereurs/projets/{projet}/secteur/lieu?q=Gare%20de%20Dijon')).body).toMatchObject({ ok: false, code: 'geocodage_absent' });
+    expect((await run('sam', '/acquereurs/projets/{projet}/secteur/lieu?q=Gare%20de%20Dijon', { secteursGeocoder: geocoder })).status).toBe(403);
+  });
+
+  it('[R16] une tuile passe par le Worker, seuls ses numéros partent ; hors niveaux, sans fournisseur ou hors rôle : refusée', async () => {
+    const asked: number[][] = [];
+    const tiles = { tile: async (z: number, x: number, y: number) => (asked.push([z, x, y]), { type: 'image/png', bytes: new Uint8Array([137, 80, 78, 71]) }) };
+    const r = await run('alex', '/carte/tuiles/15/16841/11706', { mapTiles: tiles });
+    expect(r).toMatchObject({ status: 200, cache: 'private, max-age=86400', body: { ok: true, data: { type: 'image/png', base64: 'iVBORw==' } } });
+    expect(asked).toEqual([[15, 16841, 11706]]);
+    expect(await run('alex', '/carte/tuiles/15/16841/11706')).toMatchObject({ status: 404, body: { code: 'carte_absente' } });
+    expect((await run('alex', '/carte/tuiles/20/1/1', { mapTiles: tiles })).status).toBe(400);
+    expect((await run('alex', '/carte/tuiles/12/9999/1', { mapTiles: tiles })).status).toBe(400);
+    const refused = await run('compliance', '/carte/tuiles/15/16841/11706', { mapTiles: tiles });
+    expect(refused.status).toBe(403);
+    expect(refused.events).toEqual([['acces.refuse', 'compliance:c-1', 'role']]);
+    expect(asked).toHaveLength(1);
+    // Le fournisseur en panne : 502, et une ligne au journal, sans la tuile.
+    const down = await run('alex', '/carte/tuiles/15/16841/11706', { mapTiles: { tile: async () => { throw new Error('panne'); } } });
+    expect(down).toMatchObject({ status: 502, body: { code: 'tuile_indisponible' }, events: [['carte.tuile_echec', 'system:carte', 'erreur']] });
   });
 });

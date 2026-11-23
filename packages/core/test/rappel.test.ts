@@ -2,6 +2,8 @@ import { expect, it } from 'vitest';
 import {
   Acces,
   Attribution,
+  DEFAULT_ATTRIBUTION_SETTINGS,
+  FicheAgent,
   Qualification,
   Rappels,
   ReconnaissanceBien,
@@ -9,6 +11,7 @@ import {
   applyMigrations,
   createCaptation,
   fromSyncSqlite,
+  type CallbackWindow,
   type SqlDatabase,
 } from '../src/index.ts';
 import { loadMigrations } from './migrations.ts';
@@ -19,7 +22,7 @@ const SUNDAY_23H = Date.parse('2026-12-06T22:00:00.000Z');
 const TUESDAY_10H = Date.parse('2026-12-08T09:00:00.000Z');
 const MINUTE = 60_000;
 
-async function setup() {
+async function setup(callbackWindow?: CallbackWindow) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   let clock = TUESDAY_10H;
@@ -27,8 +30,10 @@ async function setup() {
   const journal = new SqlJournalStore(db);
   const { chaine, store, fiche, reception } = createCaptation(db, journal, { now, withQualification: false });
   const qualification = new Qualification(db, store, fiche, reception, new ReconnaissanceBien(db), journal, { now });
-  const attribution = new Attribution(db, fiche, journal, { now });
-  const rappels = new Rappels(db, fiche, journal, { now });
+  const settings = callbackWindow ? { ...DEFAULT_ATTRIBUTION_SETTINGS, callbackWindow } : undefined;
+  const attribution = new Attribution(db, fiche, journal, { now, ...(settings ? { settings } : {}) });
+  const rappels = new Rappels(db, fiche, journal, { now, ...(callbackWindow ? { callbackWindow } : {}) });
+  const ficheAgent = new FicheAgent(db, new Acces(db, store, fiche, journal, { now }), { now, ...(callbackWindow ? { callbackWindow } : {}) });
   const acces = new Acces(db, store, fiche, journal, { now });
   const network = await store.createNetwork('Réseau test');
   const alex = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
@@ -48,18 +53,20 @@ async function setup() {
     return { q, task, elapsed: clock - started };
   };
   const as = (role: 'agent' | 'direction' | 'partner', userId: string) => ({ role, userId, networkId: network.id });
-  return { db, store, journal, rappels, acces, network, alex, sam, contact, as, setClock: (t: number) => (clock = t) };
+  return { db, store, journal, rappels, ficheAgent, attribution, acces, network, alex, sam, contact, as, setClock: (t: number) => (clock = t) };
 }
 
 describeWithSqlite('Q04 · tâche « rappeler » et liste des contacts chauds', () => {
   it('chaque contact chaud a sa tâche chez son agent en moins d’une minute, de jour comme de nuit ; un contact tiède ou froid n’en a pas', async () => {
     const t = await setup();
+    // La nuit du dimanche, le délai part de l'ouverture du lundi à 8 h : 9 h d'attente, puis 8 h [R682].
+    const due = [8 * 60 * MINUTE, 17 * 60 * MINUTE];
     for (const [i, at] of [TUESDAY_10H, SUNDAY_23H].entries()) {
       t.setClock(at);
       const hot = await t.contact(`Hugo${i}`, 'Je souhaite vendre ma maison à Talant rapidement.');
       expect(hot.task).toMatchObject({ reason: 'Vendeur, délai immédiat, commune donnée : 70, chaud.', done_at: null });
       expect(Date.parse(hot.task!.created_at) - at).toBeLessThan(MINUTE);
-      expect(Date.parse(hot.task!.due_at) - at).toBe(8 * 60 * MINUTE);
+      expect(Date.parse(hot.task!.due_at) - at).toBe(due[i]);
     }
     expect((await t.contact('Inès', 'Je cherche une maison.')).task).toBeNull();
     expect((await t.contact('Jules', 'Vous êtes ouverts le samedi ?')).task).toBeNull();
@@ -164,5 +171,57 @@ describeWithSqlite('Q04 · tâche « rappeler » et liste des contacts chauds', 
     const sends = await t.db.all<{ kind: string }>('SELECT kind FROM send_log');
     expect(sends.length - before).toBe(1);
     expect(sends.every((s) => s.kind === 'reply')).toBe(true);
+  });
+});
+
+describeWithSqlite('AU042 · la tâche « rappeler » suit la limite du service de rappel', () => {
+  it('[R682] une tâche rangée en heures écoulées se lit avec la limite du service, comme la réattribution', async () => {
+    const t = await setup();
+    // Samedi 12 décembre 2026, 21 h à Paris : contact chaud.
+    const saturday = Date.parse('2026-12-12T20:00:00.000Z');
+    t.setClock(saturday);
+    const hot = await t.contact('Hugo', 'Je souhaite vendre ma maison à Talant rapidement.');
+    expect(hot.task!.due_at).toBe('2026-12-14T15:00:00.000Z');
+    // Une tâche d'avant R682 : sa limite rangée tombe le dimanche à 5 h.
+    await t.db.run('UPDATE callback_tasks SET due_at = ? WHERE id = ?', [new Date(saturday + 8 * 60 * MINUTE).toISOString(), hot.task!.id]);
+    t.setClock(Date.parse('2026-12-13T10:00:00.000Z'));
+    const list = await t.rappels.hotList(t.acces, t.as('direction', 'dir-1'));
+    expect(list.ok && list.value.contacts).toEqual([expect.objectContaining({ taskId: hot.task!.id, dueAt: '2026-12-14T15:00:00.000Z', overdue: false })]);
+    t.setClock(Date.parse('2026-12-14T15:00:00.000Z'));
+    const later = await t.rappels.hotList(t.acces, t.as('direction', 'dir-1'));
+    expect(later.ok && later.value.contacts[0]).toMatchObject({ overdue: true });
+  });
+});
+
+describeWithSqlite('AU042 · un service de rappel réglé autrement vaut partout', () => {
+  it('[R682] ouvert le dimanche : la tâche, la liste, la fiche de l’agent et la réattribution disent la même limite', async () => {
+    const open7 = { timeZone: 'Europe/Paris', from: 8 * 60, until: 20 * 60, days: [1, 2, 3, 4, 5, 6, 7], closedOnHolidays: true };
+    const t = await setup(open7);
+    t.setClock(Date.parse('2026-12-12T20:00:00.000Z'));
+    const hot = await t.contact('Hugo', 'Je souhaite vendre ma maison à Talant rapidement.');
+    const due = '2026-12-13T15:00:00.000Z';
+    expect(hot.task!.due_at).toBe(due);
+    const list = await t.rappels.hotList(t.acces, t.as('direction', 'dir-1'));
+    expect(list.ok && list.value.contacts[0]).toMatchObject({ dueAt: due });
+    const fiche = await t.ficheAgent.read(t.as('agent', t.alex.id), hot.q.person_id);
+    expect(fiche.ok && fiche.value.callbacks).toEqual([expect.objectContaining({ dueAt: due })]);
+    t.setClock(Date.parse(due) - 60_000);
+    expect(await t.attribution.reassignOverdue(t.network.id)).toEqual([]);
+  });
+
+  it('[R682] une tâche rangée avec d’autres heures du service se lit avec les heures en vigueur', async () => {
+    const open7 = { timeZone: 'Europe/Paris', from: 8 * 60, until: 20 * 60, days: [1, 2, 3, 4, 5, 6, 7], closedOnHolidays: true };
+    const t = await setup(open7);
+    t.setClock(Date.parse('2026-12-12T20:00:00.000Z'));
+    const hot = await t.contact('Hugo', 'Je souhaite vendre ma maison à Talant rapidement.');
+    // Rangée quand le dimanche était fermé : lundi 16 h ; le service ouvre désormais le dimanche, limite dimanche 16 h.
+    await t.db.run('UPDATE callback_tasks SET due_at = ? WHERE id = ?', ['2026-12-14T15:00:00.000Z', hot.task!.id]);
+    const due = '2026-12-13T15:00:00.000Z';
+    const list = await t.rappels.hotList(t.acces, t.as('direction', 'dir-1'));
+    expect(list.ok && list.value.contacts[0]).toMatchObject({ dueAt: due });
+    const fiche = await t.ficheAgent.read(t.as('agent', t.alex.id), hot.q.person_id);
+    expect(fiche.ok && fiche.value.callbacks).toEqual([expect.objectContaining({ dueAt: due })]);
+    t.setClock(Date.parse(due));
+    expect(await t.attribution.reassignOverdue(t.network.id)).toHaveLength(1);
   });
 });

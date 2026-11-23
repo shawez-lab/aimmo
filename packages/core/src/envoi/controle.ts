@@ -15,7 +15,7 @@
 import type { IdentifierKind, Message, OutboundChannelName } from '../db/types.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
-import { AgentWhatsAppLink, type OutboundChannel } from './canaux.ts';
+import { AgentWhatsAppLink, type OutboundAttachment, type OutboundChannel } from './canaux.ts';
 import { decideSend, type SendKind } from './decision.ts';
 import type { DecisionEnvoi } from './service.ts';
 import { isWorkingDay, localTime } from './horaires.ts';
@@ -120,6 +120,11 @@ export interface SendOrder {
   maxQuestions?: number;
   /** Les secrets du texte : remis au canal, jamais rangés en clair, ni dans les messages, ni dans le résultat [HX61]. */
   secrets?: readonly SendSecret[];
+  /**
+   * Les pièces jointes d'un mail (AU003 : l'exemplaire signé et son dossier de preuve) : produites par le code, jamais
+   * par l'IA ; remises au canal réel seulement, jamais rangées avec le message ni mises dans la boîte d'essai.
+   */
+  attachments?: readonly OutboundAttachment[];
   /**
    * La coordonnée à viser, normalisée, quand la personne l'a choisie (réservation en ligne, V09) : elle doit être une
    * coordonnée de la fiche pour ce canal, fiches réunies comprises ; sinon l'envoi est refusé. Absente : la première.
@@ -620,7 +625,7 @@ export class ControleEnvois {
     const sent = await log('sent', aiNote ? 'R12' : decision.rule, aiNote ?? decision.reason, flags);
     let receipt: { externalId: string | null };
     try {
-      receipt = await (real ?? port).deliver({ channel: order.channel, to, body, messageId: message.id, ...(thread ? { thread: thread.kind } : {}) });
+      receipt = await (real ?? port).deliver({ channel: order.channel, to, body, messageId: message.id, ...(thread ? { thread: thread.kind } : {}), ...(order.attachments && order.channel === 'email' ? { attachments: order.attachments } : {}) });
     } catch {
       // Le détail de l'erreur peut contenir l'adresse : il ne va pas au journal.
       // Les réservations sont libérées pour un nouvel essai, sans effacer leur ligne.

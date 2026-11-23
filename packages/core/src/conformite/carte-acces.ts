@@ -44,8 +44,8 @@ export interface ViaLocator {
   startsWith?: Readonly<Record<string, string>>;
   /** Les lignes ne comptent que si ces champs du JSON de `data` ont ces valeurs (champ → valeur). */
   jsonIs?: Readonly<Record<string, string>>;
-  /** Les lignes ne comptent pas si ce champ du JSON de `data` a cette valeur (champ → valeur). */
-  jsonNot?: Readonly<Record<string, string>>;
+  /** Les lignes ne comptent pas si ce champ du JSON de `data` a cette valeur, ou l'une de ces valeurs. */
+  jsonNot?: Readonly<Record<string, string | readonly string[]>>;
   /** Les lignes ne comptent que si ces colonnes ont l'une de ces valeurs. */
   only?: Readonly<Record<string, readonly string[]>>;
   /** Les lignes ne comptent pas si ces colonnes ont l'une de ces valeurs. */
@@ -103,7 +103,7 @@ export type AccessMapEntry =
        * Les colonnes `shared` ne le sont que pour les lignes dont `key` figure dans `from.column` : un mandat n'est à deux
        * parties que s'il a un autre mandant (AU001). Sans cela, toute ligne de la table est partagée.
        */
-      sharedIf?: { key: string; from: string; column: string };
+      sharedIf?: { key: string; from: string; column: string; alsoFrom?: readonly string[] };
       /** Des lignes à écarter : une colonne et les débuts de valeur écartés. */
       /**
        * Des lignes à écarter : celles dont `column` commence par l'un des `prefixes`, et celles dont `marked` contient
@@ -122,7 +122,8 @@ const by = (...columns: string[]): DirectLocator[] => columns.map((column) => ({
 const via = (column: string, from: string, key = 'id', extra: Partial<ViaLocator> = {}): ViaLocator => ({ column, from, key, ...extra });
 const out = (excluded: ExclusionReason, why: string): AccessMapEntry => ({ excluded, why });
 /** Un document qui a d'autres mandants (AU001). */
-const CO_MANDANTS = (key: string) => ({ key, from: 'document_co_mandants', column: 'document_id' });
+// Un document nommant plusieurs personnes : des co-mandants (AU001) ou un représentant par procuration (AU059).
+const CO_MANDANTS = (key: string) => ({ key, from: 'document_co_mandants', column: 'document_id', alsoFrom: ['document_proxies'] });
 
 /** Le traitement dont le droit d'accès s'exerce auprès de la CNIL. */
 export const LCB_FT_TRAITEMENT = 'conformite-lcb-ft';
@@ -170,6 +171,9 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'dossier.date': 'partage',
   'dossier.date_a_saisir': 'partage',
   'dossier.echeance': 'partage',
+  // Les conditions suspensives sont celles du compromis, signé par les deux parties (AU082).
+  'dossier.condition': 'partage',
+  'dossier.condition_alerte': 'partage',
   'dossier.piece_recue': 'partage',
   'dossier.depot': INTERNE('Fichier déposé par l\'agent, pas encore rangé comme pièce : sa référence, sans donnée d\'un client.'),
   'dossier.depot.refuse': INTERNE('Dépôt refusé pour un motif technique, sans donnée d\'un client.'),
@@ -233,12 +237,17 @@ export const SALE_FILE_EVENTS: Readonly<Record<string, SaleFileEventUse>> = {
   'facture.envoi_en_panne': INTERNE('Plateforme de facturation en panne : fonctionnement du réseau.'),
   'facture.facturx_attente': INTERNE('Facture électronique en attente d\'identités : fonctionnement du réseau, sans donnée du client.'),
   'facture.facturx_panne': INTERNE('Identités de facturation en panne : fonctionnement du réseau.'),
+  'facture.reelle_attente': INTERNE('Facture réelle en attente d\'identités : fonctionnement du réseau, sans donnée du client.'),
+  'facture.statut': INTERNE('Statut d\'une facture chez la plateforme agréée : fonctionnement du réseau, sans donnée du client.'),
+  'facture.suivi_en_panne': INTERNE('Suivi de la plateforme de facturation en panne : fonctionnement du réseau.'),
   'commission.attente': INTERNE('Rémunération de l\'agent.'),
   'commission.ecart': INTERNE('Rémunération de l\'agent.'),
   'commission.etape': INTERNE('Rémunération de l\'agent.'),
+  'commission.regularisation': INTERNE('Rémunération de l\'agent, régularisée après un avenant.'),
   'commission.encaissement': INTERNE('Encaissement des honoraires par le réseau.'),
   // HX49 : rapprochement d'une facture et d'une ligne de banque (des identifiants) ; relance d'une facture impayée, qui porte la fiche du client.
   'banque.rapprochement': INTERNE('Rapprochement d\'une facture et d\'une ligne de banque du réseau : des identifiants, sans donnée d\'un client.'),
+  'banque.part': INTERNE('Part d\'une ligne de banque du réseau rapprochée d\'une facture (AU094) : des identifiants, sans montant ni donnée d\'un client.'),
   'facture.relance': 'client',
   'commission.reversement': INTERNE('Reversement à l\'agent.'),
   'commission.alerte_reversement': INTERNE('Alerte de reversement à l\'agent.'),
@@ -268,6 +277,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   ad_campaign: { excluded: 'sans_client', why: 'Une campagne de publicité payante (HX54) : sa création, ses validations, son lancement, son arrêt et ses contacts comptés, sans donnée d\'un client ; les contacts se lisent dans ad_campaign_contacts par person_id.' },
   device: { excluded: 'agent', why: 'Une clé d\'accès d\'un appareil d\'un utilisateur du réseau (HX56) : rangement, accord, retrait, connexion.' },
   user: { excluded: 'agent', why: 'Un utilisateur du réseau, objet d\'une preuve de second facteur (HX56) : « ajouter un appareil ».' },
+  exit_access: { excluded: 'agent', why: 'Un accès de sortie d\'un agent parti (AU111) : un refus de son retrait, sans le lien ni donnée d\'un client.' },
   edition: { excluded: 'sans_client', why: 'Une édition de la lettre d\'information (HX53) : son ouverture par la direction, sans donnée d\'un client.' },
   lettre: ENVOI('lettre d\'information d\'une édition, HX53'),
   bien: ENVOI('bien proposé à une personne, une seule fois [R05], relu par la lettre d\'information, HX53'),
@@ -282,6 +292,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   vitrine: { excluded: 'sans_client', why: 'Un écran de vitrine du réseau ou d\'un agent : sa création, sans donnée d\'un client.' },
   scenario: { excluded: 'sans_client', why: 'Un scénario automatique de la direction : sa composition, ses essais, ses allumages, sans donnée d\'un client.' },
   avis_verifie: { excluded: 'sans_client', why: 'Un avis vérifié publié (HX46) : la remise de sa preuve à la conformité, ou un refus d\'accès, sans donnée d\'un client.' },
+  captation: { excluded: 'pas_un_sujet', why: 'L\'état de la réception des mails (AU032) : un refus de lecture, des réglages et des comptes, jamais une personne.' },
   copy: { excluded: 'pas_un_sujet', why: 'Une copie de la base : des comptes, jamais une donnée d\'une personne.' },
   person: 'journal',
   mandate: 'journal',
@@ -315,6 +326,7 @@ export const JOURNAL_SUBJECTS: Readonly<Record<string, JournalSubjectUse>> = {
   shop_order: { excluded: 'sans_client', why: 'Commande de supports de l\'agent : l\'annonce publiée et sa carte professionnelle, sans donnée d\'un client.' },
   inbound: 'journal',
   voice_note: 'journal',
+  voice_recovery: { excluded: 'non_rattachable', why: 'Reprise d\'une note vocale non transcrite (AU044) : canal et raison seuls, sans référence de l\'audio ni texte ; la note est un message illisible sans fiche.' },
   call: 'journal',
   prospecting_sequence: 'journal',
   prospecting_sequence_step: { excluded: 'pas_un_sujet', why: 'Refus d\'accès à une étape de séquence inconnue ou d\'un autre agent : la ligne ne porte que l\'identifiant demandé.' },
@@ -403,11 +415,15 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   qualification_corrections: { locate: [via('qualification_id', 'qualifications')] },
   contact_scores: { locate: by('person_id') },
   attributions: { locate: by('person_id') },
+  attribution_capacity: { locate: [via('attribution_id', 'attributions')] },
   callback_tasks: { locate: by('person_id') },
   missed_promise_tasks: { locate: by('person_id') },
   call_notes: { locate: by('person_id') },
   agent_import_contacts: { locate: by('person_id') },
   agent_import_referrals: { locate: by('person_id') },
+  agent_import_history: { locate: by('person_id') },
+  agent_import_reminders: { locate: by('person_id') },
+  agent_import_reminder_closures: { locate: [via('origin_key', 'agent_import_reminders', 'origin_key')] },
   // I05 : les exports bruts de H15, déposés par la direction pour la reprise ; le texte n'est rattaché à aucune fiche
   // (les fiches reprises, elles, sont lues par la carte). Gardés pour relancer la reprise, puis purgés par la procédure
   // d'effacement de la conformité : leurs morceaux s'effacent, la reprise refuse alors un dépôt incomplet.
@@ -421,9 +437,12 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   send_reservations: { locate: by('person_id') },
   inbound_messages: { locate: by('person_id') },
   reception_log: { locate: [via('inbound_id', 'inbound_messages')] },
+  inbound_message_keys: { locate: [via('inbound_id', 'inbound_messages')] },
   virtual_tour_contacts: { locate: [via('inbound_id', 'inbound_messages')] },
   // Une note vocale se reconnaît au message reçu qu'elle est devenue : même réseau, même canal, même identifiant.
   voice_notes: { locate: [via('external_id', 'inbound_messages', 'external_id', { alsoMatch: { network_id: 'network_id', channel: 'channel' } })] },
+  // AU044 : la reprise d'une note non transcrite suit son message illisible.
+  voice_note_recoveries: { locate: [via('inbound_id', 'inbound_messages')] },
   // HX21 : un appel se retrouve par sa fiche ; un appel masqué ne garde rien de personnel.
   calls: { locate: by('person_id') },
   // HX20 : les séquences de prospection d'une personne, et le texte écrit pour elle à chaque étape.
@@ -492,6 +511,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   offline_ops: { locate: [via('appointment_id', 'appointments')] },
   visit_field_notes: { locate: [via('appointment_id', 'appointments')] },
   visit_photos: { locate: [via('appointment_id', 'appointments')] },
+  visit_photo_files: { locate: [via('photo_id', 'visit_photos')] },
   visit_shot_skips: { locate: [via('appointment_id', 'appointments')] },
   presentation_ratings: { locate: [via('appointment_id', 'appointments')] },
   daily_plans: { locate: [{ json: 'items', idFields: ['personId', 'memberIds'], onlyMine: ['personId', 'memberIds'] }] },
@@ -502,6 +522,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   visit_dossiers: { locate: by('person_id'), secrets: ['token_hash'] },
   remote_visits: { locate: by('person_id') },
   remote_slip_signatures: { locate: [via('appointment_id', 'appointments')], secrets: ['token_hash', 'code_hash'] },
+  visit_slip_signatures: { locate: [via('appointment_id', 'appointments')], secrets: ['token_hash', 'code_hash', 'copy_token_hash'] },
   visit_safety: { locate: [via('appointment_id', 'appointments')], secrets: ['code_hash'] },
   safety_alerts: { locate: [via('appointment_id', 'appointments')] },
   visit_reports: { locate: [via('appointment_id', 'appointments')] },
@@ -520,14 +541,22 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   document_templates: out('sans_client', 'Modèle de document du réseau.'),
   // Un mandat qui nomme plusieurs mandants (AU001) est, comme un bail, à plusieurs parties : la fiche de l'autre et le texte
   // qui les nomme tous ne sont jamais montrés, leur empreinte reste ; un mandat à un seul mandant est montré entier [R96].
-  documents: { locate: [...by('person_id'), via('mandate_id', 'mandates'), via('id', 'document_co_mandants', 'document_id')], foreignPersons: ['person_id'], shared: ['content'], sharedIf: CO_MANDANTS('id') },
+  documents: { locate: [...by('person_id'), via('mandate_id', 'mandates'), via('id', 'document_co_mandants', 'document_id'), via('id', 'document_proxies', 'document_id')], foreignPersons: ['person_id'], shared: ['content'], sharedIf: CO_MANDANTS('id') },
   // AU001 : un autre mandant d'un mandat, par sa fiche.
   document_co_mandants: { locate: [...by('person_id')] },
+  // AU059 : le mandant comme son représentant y trouvent la ligne qui les nomme.
+  document_mandant_rights: { locate: [...by('person_id')] },
+  document_proxies: { locate: [...by('mandant_person_id'), ...by('proxy_person_id')], foreignPersons: ['mandant_person_id', 'proxy_person_id'] },
+  signature_session_proxies: { locate: [...by('mandant_person_id'), ...by('proxy_person_id')], foreignPersons: ['mandant_person_id', 'proxy_person_id'] },
   // AU002 : le domicile du mandant, par sa fiche ; la désignation du bien, par le bien.
   person_domiciles: { locate: by('person_id') },
   property_designations: { locate: [via('property_id', 'properties')] },
+  valuation_addresses: { locate: [via('property_id', 'properties')] },
+  property_positions: { locate: [via('property_id', 'properties')] },
   property_sanitation: { locate: [via('property_id', 'properties')] },
+  property_installations: { locate: [via('property_id', 'properties')] },
   fee_schedules: out('sans_client', 'Barème d\'honoraires du réseau.'),
+  fee_schedule_tiers: out('sans_client', 'Tranches du barème d\'honoraires du réseau.'),
   identity_checks: { locate: by('person_id') },
   document_checks: { locate: [via('document_id', 'documents')] },
   mandate_clause_versions: out('sans_client', 'Texte d\'une clause du questionnaire de mandat, écrit par la direction.'),
@@ -555,6 +584,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // Un mandat à plusieurs mandants (AU001) : la session d'un autre signataire vient avec le document ; son tracé et sa
   // fiche ne sont jamais montrés [R96].
   signature_sessions: { locate: [...by('signer_person_id'), via('document_id', 'documents')], secrets: ['code_hash'], shared: ['drawing_hash', 'copy_content'], sharedIf: CO_MANDANTS('document_id'), foreignPersons: ['signer_person_id'] },
+  // AU003 : le dossier de preuve et l'exemplaire remis, par le document ; la remise, par la fiche du mandant.
+  signature_dossiers: { locate: [via('document_id', 'documents')], shared: ['copy_content'], sharedIf: CO_MANDANTS('document_id') },
+  signature_remises: { locate: [...by('person_id'), via('document_id', 'documents')] },
+  signature_validations: out('sans_client', 'Validation du format du dossier de preuve par l\'avocat du réseau.'),
   // biens-annonces : les biens de la personne, par son mandat, son projet ou sa mise en location.
   properties: { locate: [via('id', 'mandates', 'property_id'), via('id', 'project_properties', 'property_id'), via('id', 'rental_listings', 'property_id')] },
   property_links: { locate: [via('property_id', 'properties')] },
@@ -562,16 +595,24 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   property_sheets: { locate: [via('property_id', 'properties')] },
   listing_settings: out('sans_client', 'Réglage des annonces du réseau (numéro de carte professionnelle).'),
   card_holders: out('sans_client', 'Titulaire de la carte professionnelle du réseau.'),
+  agent_title_settings: out('sans_client', 'Titre écrit à côté du nom des agents, réglé par la direction.'),
   site_legal_mentions: out('sans_client', 'Mentions légales du site, réglées par la direction.'),
+  launch_proofs: out('sans_client', 'Preuves de mise en service du réseau (carte, garantie, assurance, médiateur, relecture), déclarées par la direction (AU088) : aucun client.'),
   listing_drafts: { locate: [via('property_id', 'properties')] },
   listing_validations: { locate: [via('property_id', 'properties')] },
   listing_translations: { locate: [via('property_id', 'properties')] },
   listing_translation_validations: { locate: [via('property_id', 'properties')] },
+  translation_reviewers: { locate: [via('property_id', 'properties')] },
   listing_versions: { locate: [via('property_id', 'properties')] },
+  listing_version_media_sheets: { locate: [via('version_id', 'listing_versions')] },
   video_text_checks: { locate: [via('property_id', 'properties')] },
   agent_import_properties: { locate: [via('property_id', 'properties')] },
+  agent_import_property_pieces: { locate: [via('property_id', 'properties')] },
+  agent_import_property_addresses: { locate: [via('property_id', 'properties')] },
   // acquereurs
   buyer_searches: { locate: by('person_id') },
+  buyer_search_confirmations: { locate: [via('project_id', 'projects')] },
+  buyer_search_areas: { locate: [via('project_id', 'projects')] },
   phrase_searches: { locate: [via('project_id', 'projects')] },
   property_alerts: { locate: by('person_id') },
   alert_unsubscribe_tokens: { locate: by('person_id'), secrets: ['token_hash'] },
@@ -583,6 +624,10 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   ad_campaign_repauses: out('sans_client', 'Pauses redemandées d\'une campagne (HX54) : aucune personne.'),
   ad_campaign_launches: out('sans_client', 'Réponses des plateformes aux lancements d\'une campagne (HX54) : aucune personne.'),
   ad_campaign_contacts: { locate: by('person_id') },
+  ad_campaign_start_modes: out('sans_client', 'Mode de la plateforme au lancement d\'une campagne (AU038) : essai ou réel ; aucune personne.'),
+  ad_campaign_receipts: out('sans_client', 'Accusé de la plateforme au lancement d\'une campagne (AU038) : sa référence et le mode ; aucune personne.'),
+  ad_campaign_failures: out('sans_client', 'Échecs d\'appel à la plateforme d\'une campagne (AU038), en code et en geste ; aucune personne.'),
+  ad_campaign_arrivals: { locate: [via('inbound_id', 'inbound_messages')] },
   newsletter_editions: out('sans_client', 'Éditions de la lettre d\'information (HX53) : un titre, la direction qui l\'ouvre ; aucune personne.'),
   newsletter_letters: { locate: by('person_id') },
   newsletter_unsubscribe_tokens: { locate: by('person_id'), secrets: ['token_hash'] },
@@ -592,6 +637,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // Les coacquéreurs (AU009) : leurs fiches ne sont pas montrées à l'acquéreur en tête qui demande ses données.
   // Un coacquéreur trouve l'offre par son lien ; la fiche de l'acquéreur en tête et la liste des autres lui sont masquées.
   offer_co_buyers: { locate: by('person_id') },
+  offer_buyer_shares: { locate: by('buyer_person_id') },
   offer_register: { locate: [...by('buyer_person_id'), via('id', 'offer_co_buyers', 'offer_id', { tag: 'coacquereur' })], own: { buyer_person_id: [] }, shared: ['co_buyers'] },
   // Ce qui suit l'offre est rendu à l'acquéreur en tête seul : son contrôle porte son identité ; un coacquéreur reçoit
   // l'offre et l'avancée du dossier, jamais le contrôle ni les échanges de l'autre (AU009) [R96].
@@ -621,6 +667,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // La notification d'un coacquéreur est la sienne (AU009).
   sale_file_buyer_notices: { locate: by('person_id') },
   sale_file_tasks: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
+  // Les conditions suspensives du dossier et leurs alertes (AU082).
+  sale_file_conditions: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
+  sale_file_condition_tasks: { locate: [via('file_id', 'sale_files', 'id', { notOnlyBy: 'coacquereur' })] },
   sale_file_reminders: { locate: by('person_id') },
   // Le financement est celui de l'acquéreur : le vendeur ne le voit pas.
   sale_file_financing: { locate: [via('file_id', 'sale_files', 'id', { onlyMatchedBy: 'buyer_person_id' })] },
@@ -654,6 +703,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // commissions-factures
   sale_commissions: out('agent', 'Honoraires et rémunération de l\'agent.'),
   commission_grids: out('sans_client', 'Grille de rémunération des agents.'),
+  commission_tier_picks: out('agent', 'Palier retenu pour la rémunération d’une vente.'),
+  commission_revisions: out('agent', 'Versions d’une commission régularisée après un avenant d’honoraires.'),
   commissions: out('agent', 'Rémunération de l\'agent.'),
   commission_shares: out('agent', 'Partage de la rémunération entre agents.'),
   custom_reports: out('agent', 'Rapports sur mesure enregistrés par un agent ou la direction (HX62) : des mesures et un regroupement, aucun client.'),
@@ -667,13 +718,19 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   security_challenges: out('agent', 'Défis envoyés aux appareils des utilisateurs du réseau (HX56) : aucun client ; l\'objet d\'une action sensible n\'est qu\'un identifiant.'),
   security_sessions: out('agent', 'Séances ouvertes par la clé d\'un appareil (HX56) : aucun client.'),
   security_step_ups: out('agent', 'Preuves du second facteur des utilisateurs du réseau (HX56) : aucun client ; l\'objet n\'est qu\'un identifiant.'),
+  agent_export_authorizations: out('agent', 'Autorisation d\'un export de reprise d\'un agent (AU110) : périmètre, contrat, durée, aucun client.'),
   agent_exports: out('agent', 'Empreinte d\'un export complet remis à un agent (HX62) : jamais le contenu, aucun client.'),
+  agent_exit_accesses: out('agent', 'Accès de sortie d\'un agent parti (AU111) : l\'empreinte du lien et sa durée, aucun client.'),
+  agent_exit_access_revocations: out('agent', 'Retrait d\'un accès de sortie d\'agent (AU111) : qui et quand, aucun client.'),
   commission_steps: out('agent', 'Étapes du paiement de la rémunération de l\'agent.'),
   invoice_drafts: { locate: by('recipient_person_id') },
   invoices: { locate: [via('draft_id', 'invoice_drafts')] },
   invoice_transmissions: { locate: [via('invoice_id', 'invoices')] },
   invoice_facturx: { locate: [via('invoice_id', 'invoices')] },
   invoice_transmission_claims: { locate: [via('invoice_id', 'invoices')] },
+  invoice_real_numbers: { locate: [via('invoice_id', 'invoices')] },
+  invoice_real_deposits: { locate: [via('invoice_id', 'invoices')] },
+  invoice_real_statuses: { locate: [via('invoice_id', 'invoices')] },
   commission_receipts: out('agent', 'Encaissement des honoraires par le réseau.'),
   // HX49 : les factures fournisseurs et le relevé de la banque du réseau ne portent aucune donnée d'un client (le
   // libellé du relevé n'est pas gardé) ; le rapprochement suit la facture du client, la relance est à son destinataire.
@@ -681,6 +738,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   supplier_invoices: out('sans_client', 'Facture d\'un fournisseur du réseau.'),
   bank_lines: out('non_rattachable', 'Ligne du relevé de banque du réseau : un jour, un montant, une empreinte, sans libellé.'),
   bank_reconciliations: { locate: [via('invoice_id', 'invoices')] },
+  bank_allocations: { locate: [via('invoice_id', 'invoices')] },
   invoice_reminders: { locate: by('person_id') },
   agent_cost_assignments: out('sans_client', 'Poste d\'une facture d\'un fournisseur du réseau, dit par la direction (HX65).'),
   agent_cost_settings: out('sans_client', 'Réglages du coût complet de l\'agent moyen, par la direction (HX65).'),
@@ -710,6 +768,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   assistant_keys: out('agent', 'Clé que l\'agent confie à son assistant pour le serveur MCP (BR09) : empreinte seule.'),
   agent_zones: out('agent', 'Communes de l\'agent.'),
   agent_availabilities: out('agent', 'Disponibilités de l\'agent.'),
+  agent_capacities: out('agent', 'Capacité déclarée de l\'agent à l\'attribution (AU041).'),
   agent_public_cards: out('agent', 'Carte publique de l\'agent.'),
   agent_language_declarations: out('agent', 'Langues que l\'agent déclare parler.'),
   // HX31 : les écrans de vitrine, sans donnée d'un client.
@@ -727,6 +786,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   diffusion_portal_texts: { locate: [via('property_id', 'properties')] },
   diffusion_portal_text_validations: { locate: [via('text_id', 'diffusion_portal_texts')] },
   diffusion_photo_subjects: { locate: [via('property_id', 'properties')] },
+  diffusion_photo_descriptions: { locate: [via('property_id', 'properties')] },
   // HX07 : la boutique de l'agent, sans donnée d'un client.
   shop_tariffs: out('sans_client', 'Tarifs des supports imprimés, depuis le devis d\'un imprimeur.'),
   shop_orders: out('agent', 'Commande de supports de l\'agent : l\'annonce publiée et sa carte professionnelle.'),
@@ -765,6 +825,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   address_scores: out('non_rattachable', 'Score de vente d\'une adresse : ses points publics sourcés et datés, aucun propriétaire.'),
   address_score_mandates: out('non_rattachable', 'Mandat signé relié à une adresse notée, pour mesurer le score.'),
   // HX11 : la pige des annonces de particuliers, sans nom, numéro, mail ni texte de l'annonce.
+  pige_runs: out('sans_client', 'Passage de la relève de la pige : réussi ou en panne, des nombres, aucune annonce.'),
   pige_no_agency: out('sans_client', 'Empreinte d\'un bien vu « pas d\'agence » : il n\'entre jamais dans la file.'),
   pige_ads: out('sans_client', 'Annonce de particulier : le bien sans adresse et sa source, jamais le particulier.'),
   pige_oppositions: out('sans_client', 'Bien de pige fermé après un non du particulier, par son empreinte.'),
@@ -776,6 +837,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   pige_address_proposals: out('agent', 'Adresses probables d\'une annonce, tirées des diagnostics publiés, pour l\'agent de la zone.'),
   pige_property_keys: out('sans_client', 'Empreinte reliée à un bien créé depuis la pige : un seul bien par bien de pige.'),
   pige_properties: { locate: [via('property_id', 'properties')] },
+  voice_assistant_sessions: out('non_rattachable', 'État d\'un appel en cours de l\'assistant vocal (AU045) : le numéro de l\'appelant n\'y vit que le temps de l\'appel, effacé à la fin ; l\'appel rangé est dans calls.'),
   voice_assistant_lines: out('agent', 'Ligne de l\'assistant vocal : le numéro de l\'agent, rien d\'un client.'),
   agent_legal_mentions: out('agent', 'Mentions légales de l\'agent : statut et immatriculation.'),
   agent_review_links: out('agent', 'Lien d\'avis de l\'agent.'),
@@ -791,6 +853,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   quiz_questions: out('sans_client', 'Questions de formation des agents (HX63).'),
   quiz_attempts: out('agent', 'Quiz de formation de l\'agent, réponses lues par lui seul (HX63).'),
   quiz_attestations: out('agent', 'Attestations de formation de l\'agent (HX63).'),
+  academy_prior_entries: out('agent', 'Cycle de formation de l\'agent avant son arrivée (AU028).'),
   sandbox_runs: out('agent', 'Bac à sable de l\'agent, sur des clients inventés.'),
   sandbox_steps: out('agent', 'Étapes du bac à sable de l\'agent.'),
   training_cases: out('sans_client', 'Cas d\'entraînement inventés.'),
@@ -810,6 +873,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   phase1_app_inventories: out('sans_client', 'Tâches encore planifiées dans les applications, dites par la direction avec leur preuve (HX70).'),
   phase_openings: out('agent', 'Ouverture d\'une phase de la Feuille de route par la direction (HX71).'),
   region_decisions: out('sans_client', 'Régions ouvertes ou fermées par la direction (HX72) : un code de région, aucune personne.'),
+  network_communes: out('sans_client', 'Communes du réseau inscrites ou retirées par la direction (AU039) : un nom et un code INSEE, aucune personne.'),
   licence_tariffs: out('sans_client', 'Tarif de la licence du logiciel, un seul pour toutes les agences (HX73) : un prix, aucune personne.'),
   software_licences: out('sans_client', 'Licence du logiciel donnée à une agence hors réseau (HX73) : une entreprise, jamais un client.'),
   licence_states: out('sans_client', 'État d\'une licence du logiciel (HX73) : une entreprise, jamais un client.'),
@@ -873,20 +937,25 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'appointments', 'id', { prefix: 'appointment:' }),
       via('subject', 'appointments', 'id', { prefix: 'visit:' }),
       via('subject', 'rental_applications', 'id', { prefix: 'rental_application:' }),
+      // AU097 · l'ajout ou le retrait d'un colocataire nomme sa ligne : il est aussi au colocataire concerné, à lui seul.
+      via('data', 'rental_cotenant_changes', 'id', { jsonPath: 'change', startsWith: { subject: 'rental_application:', type: 'location.colocataire' } }),
       // Le journal du logement est au propriétaire, sauf l'arrivée d'une candidature, qui est au candidat (ci-dessous).
       // Les événements d'une session de signature du bail sont à qui signe (le propriétaire reçoit les siens par sa
       // propre session, ci-dessous), jamais à l'autre partie.
       // Ce qui est fait par le locataire en tant que partie (sa signature de l'état des lieux, son exemplaire du bail)
       // est au locataire seul.
-      via('subject', 'rental_listings', 'id', { prefix: 'rental:', except: { type: ['location.candidature', 'location.signature_ouverte', 'location.signature_essai'] }, jsonNot: { party: 'locataire' } }),
+      via('subject', 'rental_listings', 'id', { prefix: 'rental:', except: { type: ['location.candidature', 'location.signature_ouverte', 'location.signature_essai'] }, jsonNot: { party: ['locataire', 'colocataire'] } }),
       // Au journal du logement, ce qui nomme une candidature est au candidat, et ce qui nomme une session de
       // signature du bail est à qui signe.
       via('data', 'rental_applications', 'id', { prefix: 'rental_application:', jsonPath: 'application', startsWith: { subject: 'rental:' } }),
       via('data', 'rental_lease_signatures', 'id', { jsonPath: 'session', startsWith: { subject: 'rental:' } }),
+      // AU097 · la signature d'un colocataire : ses événements sont à lui seul.
+      via('data', 'rental_lease_cotenant_signatures', 'id', { jsonPath: 'session', startsWith: { subject: 'rental:' } }),
       // L'état des lieux du locataire, retrouvé par son bail : le logement et la version au journal, jamais ce que le
       // propriétaire y a signé ; son exemplaire du bail, par l'empreinte de l'exemplaire.
       via('data', 'rental_inventories', 'version', { jsonPath: 'version', onlyMatchedBy: 'locataire', startsWith: { subject: 'rental:', type: 'location.etat_des_lieux' }, alsoMatch: { subject: 'listing_id' }, alsoMatchPrefix: { subject: 'rental:' }, jsonNot: { party: 'bailleur' } }),
-      via('data', 'rental_lease_copies', 'content_sha256', { jsonPath: 'copy', onlyMatchedBy: 'locataire', startsWith: { subject: 'rental:', type: 'location.bail_exemplaire' }, jsonNot: { party: 'bailleur' } }),
+      // L'avis d'exemplaire d'un colocataire nomme sa session : il est à lui seul, jamais au locataire ni au bailleur (AU097).
+      via('data', 'rental_lease_copies', 'content_sha256', { jsonPath: 'copy', onlyMatchedBy: 'locataire', startsWith: { subject: 'rental:', type: 'location.bail_exemplaire' }, jsonNot: { party: ['bailleur', 'colocataire'] } }),
       via('subject', 'person_requests', 'id', { prefix: 'person_request:' }),
       via('subject', 'prospect_retention_cycles', 'id', { prefix: 'prospect_retention:' }),
       // Le journal d'un bien n'est qu'à qui le possède : par son mandat, son projet (bien possédé) ou sa mise en
@@ -913,6 +982,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
       via('subject', 'safety_alerts', 'id', { prefix: 'alert:' }),
       via('subject', 'offer_proposals', 'id', { prefix: 'proposal:' }),
       via('subject', 'rental_lease_signatures', 'id', { prefix: 'lease_signature:' }),
+      via('subject', 'rental_lease_cotenant_signatures', 'id', { prefix: 'lease_signature:' }),
     ],
     // Les données d'un événement peuvent nommer une autre personne (`referrer: person:<id>`) : masquées.
     foreignPersons: ['actor', 'data'],
@@ -923,6 +993,8 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // droits-des-personnes
   person_requests: { locate: by('person_id') },
   person_request_outputs: { locate: [via('request_id', 'person_requests')] },
+  erasure_object_targets: { locate: [via('request_id', 'person_requests')] },
+  erasure_text_wipes: { locate: [via('request_id', 'person_requests')] },
   person_request_answers: { locate: [via('request_id', 'person_requests')] },
   person_request_alerts: { locate: [via('request_id', 'person_requests')] },
   // durees-et-fuites : le prospect par son cycle ; la personne concernée par une fuite, par la liste figée.
@@ -949,7 +1021,13 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // Un garant Visale n'a pas de personne : sa ligne et son visa sont au candidat (W24).
   rental_guarantors: { locate: [...by('person_id'), via('application_id', 'rental_applications', 'id', { where: { kind: 'visale' } })] },
   // Les pièces du candidat lui-même ; celles d'un garant sont au garant.
-  rental_application_pieces: { locate: [via('application_id', 'rental_applications', 'id', { where: { holder: 'candidat' } }), via('holder', 'rental_guarantors')] },
+  rental_application_pieces: { locate: [via('application_id', 'rental_applications', 'id', { where: { holder: 'candidat' } }), via('holder', 'rental_guarantors'), via('holder', 'persons', 'id', { prefix: 'colocataire:' })] },
+  // AU097 · chaque colocataire : sa ligne, sa place au bail, sa signature et son avis d'exemplaire sont à lui.
+  rental_cotenant_changes: { locate: by('person_id') },
+  rental_lease_cotenants: { locate: by('person_id') },
+  rental_lease_cotenant_revisions: { locate: [via('lease_id', 'rental_leases')] },
+  rental_lease_cotenant_signatures: { locate: by('person_id'), secrets: ['code_hash'] },
+  rental_lease_cotenant_copy_deliveries: { locate: by('person_id') },
   // Chaque fichier déposé, joint ou non, est à la personne pour qui il a été déposé (W19).
   rental_piece_deposits: { locate: by('person_id') },
   // Le constat d'une pièce est à la personne de la pièce, comme la pièce elle-même (HX47).
@@ -962,11 +1040,12 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   // Le bail et l'état des lieux rendus portent les noms et le domicile des deux parties : leur texte n'est pas montré,
   // leur empreinte reste ; chaque partie en a reçu son exemplaire.
   // Le bail retrouvé par la candidature est celui du locataire : marqué, pour lui rendre ce qu'il y a fait en partie.
-  rental_leases: { locate: [via('listing_id', 'rental_listings'), via('application_id', 'rental_applications', 'id', { tag: 'locataire' })], shared: ['content'] },
+  rental_leases: { locate: [via('listing_id', 'rental_listings'), via('application_id', 'rental_applications', 'id', { tag: 'locataire' }), via('id', 'rental_lease_cotenants', 'lease_id', { tag: 'colocataire' })], shared: ['content'] },
   // La signature en ligne du bail : chaque partie a la sienne ; l'exemplaire signé nomme les deux, son texte n'est
   // montré à aucune, son empreinte reste.
   rental_lease_signatures: { locate: by('person_id'), secrets: ['code_hash'] },
-  rental_lease_copies: { locate: [via('lease_id', 'rental_leases'), via('lease_id', 'rental_leases', 'id', { onlyMatchedBy: 'locataire', tag: 'locataire' })], shared: ['content'] },
+  // AU097 · un colocataire retrouve l'exemplaire du bail qui le nomme, jamais ce qui est au seul locataire choisi.
+  rental_lease_copies: { locate: [via('lease_id', 'rental_leases'), via('lease_id', 'rental_leases', 'id', { onlyMatchedBy: 'locataire', tag: 'locataire' }), via('lease_id', 'rental_leases', 'id', { onlyMatchedBy: 'colocataire', tag: 'colocataire' })], shared: ['content'] },
   rental_lease_copy_deliveries: { locate: [via('lease_id', 'rental_lease_copies', 'lease_id')] },
   rental_fees: { locate: [via('listing_id', 'rental_listings')] },
   // L'état des lieux et la remise des clés : au propriétaire par son logement, au locataire par son bail.
@@ -997,6 +1076,9 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   social_post_validations: out('sans_client', 'Validation d\'une publication par l\'agent : aucune personne.'),
   social_post_attempts: out('sans_client', 'Essais d\'envoi d\'une publication, en mode essai : aucune personne.'),
   social_post_sends: out('sans_client', 'Issues des envois d\'une publication : aucune personne.'),
+  social_live_attempts: out('sans_client', 'Envois réels d\'une publication vers un réseau (AU036) : aucune personne.'),
+  social_live_removals: out('sans_client', 'Retraits chez le réseau des vraies publications d\'un bien qui ne peut plus être diffusé : aucune personne.'),
+  social_live_sends: out('sans_client', 'Issues des envois réels : référence et lien public de la publication chez le réseau, ou code de l\'échec ; aucune personne.'),
   social_calendar_rules: out('agent', 'Réglages du calendrier de publication d\'un agent (HX52) : nombres par réseau et heures, aucune personne.'),
   social_calendar_slots: out('sans_client', 'Créneaux du calendrier de publication (HX52) : un bien, une publication, un réseau, une heure ; aucune personne.'),
   social_calendar_runs: out('sans_client', 'Passages des créneaux du calendrier (HX52) : aucune personne.'),
@@ -1030,6 +1112,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   business_transfer_dates: { locate: [via('file_id', 'business_transfer_files')] },
   business_transfer_ready: { locate: [via('file_id', 'business_transfer_files')] },
   business_transfer_tasks: { locate: [via('file_id', 'business_transfer_files')] },
+  business_lease_tasks: { locate: [via('property_id', 'properties')] },
   business_transfer_buyers: { locate: by('person_id') },
   business_valuation_scales: out('sans_client', 'Barèmes d\'estimation par activité, rangés par la direction : aucune personne.'),
   market_rent_imports: out('sans_client', 'Imports des loyers de marché de la Carte des loyers de l\'ANIL, par commune : aucune personne.'),
@@ -1066,6 +1149,7 @@ export const CARTE_ACCES: Readonly<Record<string, AccessMapEntry>> = {
   gbp_drafts: out('agent', 'Texte de la fiche Google de l\'agent, sans nom de client par règle [R154].'),
   gbp_validations: out('agent', 'Validation d\'un texte de la fiche Google.'),
   gbp_sends: out('agent', 'Envoi à la fiche Google de l\'agent.'),
+  gbp_receipts: out('agent', 'Accusé de Google ou code de l\'échec d\'un envoi réel à la fiche Google de l\'agent (AU037).'),
   gbp_claims: out('agent', 'Réservation d\'un envoi à la fiche Google de l\'agent.'),
   public_sites: out('agent', 'Site public d\'un agent, ou du réseau : aucune personne cliente.'),
   seo_signals: out('sans_client', 'Adresses de pages publiques signalées aux moteurs : aucune personne.'),

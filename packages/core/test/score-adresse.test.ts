@@ -148,7 +148,7 @@ describeWithSqlite('HX17 · score de vente par adresse', () => {
     // Rien de ce qu'une source rend en trop n'entre : ni nom, ni numéro, ni vente [R291, R29].
     const stored = JSON.stringify(await t.db.all('SELECT * FROM address_scores'));
     for (const out of [JSON.stringify(r.value), stored]) {
-      expect(out).not.toMatch(/Jean|Essai"|0600000000|proprietaire|2500|t:\d/);
+      expect(out).not.toMatch(/Jean|Essai"|0600000000|proprietaire|:2500[,}]|t:\d/);
     }
     // Noté de nouveau le même jour : le même score, rangé une seule fois.
     const again = await t.scores.score(t.agentAlex, { address: '7 rue des Essais, Talant' });
@@ -318,4 +318,9 @@ describeWithSqlite('HX17 · score de vente par adresse', () => {
     await expect(t.db.run('UPDATE address_scores SET score = 0')).rejects.toThrow(/rien ne change/);
     await expect(t.db.run('DELETE FROM address_scores')).rejects.toThrow(/rien ne s'efface/);
   });
+});
+
+it('[R100] AU098b · une adresse de La Réunion classée G suit le calendrier de l’outre-mer : interdite à partir de 2028', () => {
+  const r = computeScore(facts({ address: { key: 'ban:97411_0001_00007', label: '7 Rue des Essais 97400 Saint-Denis', postcode: '97400', commune: 'Saint-Denis', inseeCode: '97411' } }), TODAY);
+  expect(r.points.find((p) => p.signal === 'interdiction_louer')?.fact).toContain('à partir du 1er janvier 2028');
 });

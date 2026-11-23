@@ -9,12 +9,14 @@
  * chaque geste au journal, sans aucune valeur de la recherche [R13].
  */
 import type { Acces } from '../acces/acces.ts';
+import { areaOfProject, type SearchArea } from './secteurs.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { Project } from '../db/types.ts';
 import { plain } from '../envoi/texte.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
+import { GeographieReseau } from '../geographie/communes.ts';
 import { DEADLINES, DEFAULT_COMMUNES, FINANCINGS, isCriterion, type Deadline, type Financing } from '../qualification/regles.ts';
 
 /** Les types de bien recherchés : une liste fermée. */
@@ -49,11 +51,32 @@ export interface BuyerSearch {
   roomsMin: number | null;
   bedroomsMin: number | null;
   budgetMaxEur: number | null;
+  /** Les équipements sans lesquels la personne ne veut pas du bien : éliminatoires, quand `features` n'en fait que des souhaits (AU071). */
+  requiredFeatures?: BuyerFeature[];
+  /** Le budget dit infranchissable : aucune tolérance au-dessus (AU115). */
+  budgetStrict?: boolean;
+  /** Le secteur privé de la recherche, rangé à part et joint au rapprochement (AU073) ; jamais modifié par ici. */
+  area?: SearchArea | null;
+  /** Étages acceptés, 0 pour le rez-de-chaussée : « pas de rez-de-chaussée » donne 1 au moins (AU072). */
+  floorMin?: number | null;
+  floorMax?: number | null;
+  /** La classe énergie la moins bonne acceptée : « D au moins » accepte A à D (AU072). */
+  energyClassMax?: SearchEnergyClass | null;
+  /** Le terrain minimal, en m² (AU072). */
+  landMinM2?: number | null;
+  /** Parmi l'étage, la classe et le terrain, ceux qui ne sont que des souhaits : jamais éliminatoires (AU072). */
+  softCriteria?: SoftCriterion[];
   /** Tel que la personne l'a déclaré, jamais évalué [R24]. */
   financing: Financing | null;
   urgency: Deadline | null;
 }
 export type SearchField = keyof BuyerSearch;
+
+export const SEARCH_ENERGY_CLASSES = ['A', 'B', 'C', 'D', 'E', 'F', 'G'] as const;
+export type SearchEnergyClass = (typeof SEARCH_ENERGY_CLASSES)[number];
+/** Chaque borne d'étage a sa propre force : « pas de rez-de-chaussée » impératif, « si possible 3e au plus » souhait. */
+export const SOFT_CRITERIA = ['floorMin', 'floorMax', 'energy', 'land'] as const;
+export type SoftCriterion = (typeof SOFT_CRITERIA)[number];
 
 export const SEARCH_FIELDS: readonly SearchField[] = [
   'propertyKinds',
@@ -63,6 +86,13 @@ export const SEARCH_FIELDS: readonly SearchField[] = [
   'roomsMin',
   'bedroomsMin',
   'budgetMaxEur',
+  'requiredFeatures',
+  'budgetStrict',
+  'floorMin',
+  'floorMax',
+  'energyClassMax',
+  'landMinM2',
+  'softCriteria',
   'financing',
   'urgency',
 ];
@@ -137,8 +167,11 @@ export type SearchRefusal = {
 };
 export type SearchCheck = { ok: true; value: Partial<BuyerSearch> } | SearchRefusal;
 
-const LIST_FIELDS: readonly SearchField[] = ['propertyKinds', 'communes', 'features'];
+const LIST_FIELDS: readonly SearchField[] = ['propertyKinds', 'communes', 'features', 'requiredFeatures', 'softCriteria'];
 const INT_LIMITS: Partial<Record<SearchField, [number, number]>> = {
+  floorMin: [0, 100],
+  floorMax: [0, 100],
+  landMinM2: [1, 10_000_000],
   surfaceMinM2: [1, 100_000],
   roomsMin: [1, 50],
   bedroomsMin: [1, 50],
@@ -151,7 +184,9 @@ const refuse = (code: string, field?: SearchField, rule: 'R50' | 'R16' = 'R50'):
 function isListed(key: string, value: string, communes: readonly string[]): boolean {
   if (key === 'communes') return communes.some((c) => termKey(c) === termKey(value));
   if (key === 'propertyKinds') return (BUYER_PROPERTY_KINDS as readonly string[]).includes(value);
-  if (key === 'features') return (BUYER_FEATURES as readonly string[]).includes(value);
+  if (key === 'features' || key === 'requiredFeatures') return (BUYER_FEATURES as readonly string[]).includes(value);
+  if (key === 'softCriteria') return (SOFT_CRITERIA as readonly string[]).includes(value);
+  if (key === 'energyClassMax') return (SEARCH_ENERGY_CLASSES as readonly string[]).includes(value);
   if (key === 'financing') return (FINANCINGS as readonly string[]).includes(value);
   if (key === 'urgency') return (DEADLINES as readonly string[]).includes(value);
   return false;
@@ -191,11 +226,17 @@ export function checkSearchChanges(input: unknown, communes: readonly string[] =
         let canonical: string | undefined;
         if (field === 'communes') canonical = communes.find((c) => termKey(c) === termKey(v));
         else if (field === 'propertyKinds') canonical = (BUYER_PROPERTY_KINDS as readonly string[]).includes(v) ? v : undefined;
+        else if (field === 'softCriteria') canonical = (SOFT_CRITERIA as readonly string[]).includes(v) ? v : undefined;
         else canonical = (BUYER_FEATURES as readonly string[]).includes(v) ? v : undefined;
         if (canonical === undefined) return refuse('hors_liste', field);
         if (!kept.includes(canonical)) kept.push(canonical);
       }
       out[field] = kept;
+      continue;
+    }
+    if (field === 'budgetStrict') {
+      if (value !== null && typeof value !== 'boolean') return refuse('valeur', field);
+      out[field] = value === true;
       continue;
     }
     if (value === null) {
@@ -208,10 +249,16 @@ export function checkSearchChanges(input: unknown, communes: readonly string[] =
       out[field] = value;
       continue;
     }
-    const allowed: readonly string[] = field === 'financing' ? FINANCINGS : DEADLINES;
+    const allowed: readonly string[] = field === 'financing' ? FINANCINGS : field === 'energyClassMax' ? SEARCH_ENERGY_CLASSES : DEADLINES;
     if (typeof value !== 'string' || !allowed.includes(value)) return refuse('hors_liste', field);
     out[field] = value;
   }
+  // Un étage minimal au-dessus du maximal ne laisse aucun bien : refusé, nommé.
+  const fMin = 'floorMin' in out ? out.floorMin : undefined;
+  const fMax = 'floorMax' in out ? out.floorMax : undefined;
+  // Un souhait n'écarte rien : seules deux bornes impératives inversées ne laissent aucun bien (R51).
+  const softs = Array.isArray(out.softCriteria) ? (out.softCriteria as string[]) : [];
+  if (typeof fMin === 'number' && typeof fMax === 'number' && fMin > fMax && !softs.includes('floorMin') && !softs.includes('floorMax')) return refuse('valeur', 'floorMin');
   return { ok: true, value: out as Partial<BuyerSearch> };
 }
 
@@ -228,6 +275,13 @@ export interface BuyerSearchRow {
   rooms_min: number | null;
   bedrooms_min: number | null;
   budget_max_eur: number | null;
+  required_features?: string | null;
+  budget_strict?: number | null;
+  floor_min?: number | null;
+  floor_max?: number | null;
+  energy_class_max?: string | null;
+  land_min_m2?: number | null;
+  soft_criteria?: string | null;
   financing: Financing | null;
   urgency: Deadline | null;
   sources: string;
@@ -256,6 +310,13 @@ export const EMPTY_SEARCH: Readonly<BuyerSearch> = Object.freeze({
   roomsMin: null,
   bedroomsMin: null,
   budgetMaxEur: null,
+  requiredFeatures: [],
+  budgetStrict: false,
+  floorMin: null,
+  floorMax: null,
+  energyClassMax: null,
+  landMinM2: null,
+  softCriteria: [],
   financing: null,
   urgency: null,
 });
@@ -290,6 +351,13 @@ export function toVersion(row: BuyerSearchRow): BuyerSearchVersion {
       roomsMin: row.rooms_min,
       bedroomsMin: row.bedrooms_min,
       budgetMaxEur: row.budget_max_eur,
+      requiredFeatures: parseList<BuyerFeature>(row.required_features ?? '[]'),
+      budgetStrict: Number(row.budget_strict ?? 0) === 1,
+      floorMin: row.floor_min ?? null,
+      floorMax: row.floor_max ?? null,
+      energyClassMax: (row.energy_class_max ?? null) as SearchEnergyClass | null,
+      landMinM2: row.land_min_m2 ?? null,
+      softCriteria: parseList<SoftCriterion>(row.soft_criteria ?? '[]'),
       financing: row.financing,
       urgency: row.urgency,
     },
@@ -336,16 +404,21 @@ interface QualificationRow {
 export class FicheAcquereur {
   private readonly now: () => Date;
   private readonly newId: () => string;
-  private readonly communes: readonly string[];
+  private readonly geographie: GeographieReseau;
 
   constructor(
     private readonly db: SqlDatabase,
     private readonly journal: JournalStore,
-    options: FicheAcquereurOptions = {},
+    private readonly options: FicheAcquereurOptions = {},
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
-    this.communes = options.communes ?? DEFAULT_COMMUNES;
+    this.geographie = new GeographieReseau(db, journal, { now: this.now });
+  }
+
+  /** Les communes du réseau, lues dans son paramétrage géographique, jamais dans le code [R679]. */
+  private async communesOf(networkId: string): Promise<readonly string[]> {
+    return this.options.communes ?? (await this.geographie.names(networkId));
   }
 
   /** La dernière version, sans contrôle d'accès : pour le code du système (rapprochement). */
@@ -374,6 +447,25 @@ export class FicheAcquereur {
    * L'agent de la fiche ou la direction modifie la recherche : une nouvelle version, l'ancienne gardée [R17]. Un
    * champ hors liste ou discriminant est refusé, et le refus va au journal sans la valeur [R13, R50].
    */
+  /**
+   * L'acquéreur dit sa recherche toujours d'actualité (AU074) : elle reste active au rapprochement sans que l'agent
+   * modifie un critère. Mêmes droits qu'une modification ; une ligne par confirmation, rien ne change ni ne s'efface.
+   */
+  async confirm(acces: Acces, viewer: Viewer, projectId: string): Promise<{ ok: true; value: { confirmedAt: string } } | SearchRefusal> {
+    const project = await this.buyProject(viewer, projectId);
+    if (!project) return this.refused(viewer, projectId, 'unknown');
+    if (viewer.role !== 'agent' && viewer.role !== 'direction') return this.refused(viewer, projectId, 'role');
+    const read = await acces.readFiche(viewer, project.person_id);
+    if (!read.ok) return refuse(read.code, undefined, 'R16');
+    if (read.view !== 'full') return this.refused(viewer, projectId, 'not_assigned');
+    // Une recherche rangée, ou le seul secteur d'un projet (AU073) : l'une ou l'autre se confirme.
+    if (!(await this.current(project.id)) && !(await areaOfProject(this.db, project.id))) return refuse('sans_recherche', undefined, 'R16');
+    const at = this.now().toISOString();
+    await this.db.run('INSERT INTO buyer_search_confirmations (project_id, network_id, confirmed_at, confirmed_by) VALUES (?, ?, ?, ?)', [project.id, project.network_id, at, `${viewer.role}:${viewer.userId}`]);
+    await appendEvent(this.journal, { type: 'acquereur.recherche_confirmee', actor: `${viewer.role}:${viewer.userId}`, subject: `person:${project.person_id}`, data: { project: project.id } }, this.now);
+    return { ok: true, value: { confirmedAt: at } };
+  }
+
   async update(acces: Acces, viewer: Viewer, projectId: string, input: unknown): Promise<UpdateResult> {
     const project = await this.buyProject(viewer, projectId);
     if (!project) return this.refused(viewer, projectId, 'unknown');
@@ -386,7 +478,7 @@ export class FicheAcquereur {
     if (!read.ok) return refuse(read.code, undefined, 'R16');
     if (read.view !== 'full') return this.refused(viewer, projectId, 'not_assigned');
 
-    const checked = checkSearchChanges(input, this.communes);
+    const checked = checkSearchChanges(input, await this.communesOf(viewer.networkId));
     if (!checked.ok) {
       await appendEvent(
         this.journal,
@@ -426,7 +518,7 @@ export class FicheAcquereur {
     if (kinds.length > 0) said.propertyKinds = kinds;
     const features = criteria.filter((c): c is BuyerFeature => (BUYER_FEATURES as readonly string[]).includes(c));
     if (features.length > 0) said.features = features;
-    const city = q.city === null ? undefined : this.communes.find((c) => termKey(c) === termKey(q.city ?? ''));
+    const city = q.city === null ? undefined : (await this.communesOf(q.network_id)).find((c) => termKey(c) === termKey(q.city ?? ''));
     if (city) said.communes = [city];
     for (const c of criteria) {
       const m = /^(rooms|bedrooms):(\d{1,2})$/.exec(c);
@@ -491,7 +583,7 @@ export class FicheAcquereur {
   ): Promise<UpdateResult> {
     for (let attempt = 0; attempt < 5; attempt += 1) {
       const last = await this.current(project.id);
-      const previous: BuyerSearch = last ? last.search : { ...EMPTY_SEARCH, propertyKinds: [], communes: [], features: [] };
+      const previous: BuyerSearch = last ? last.search : { ...EMPTY_SEARCH, propertyKinds: [], communes: [], features: [], requiredFeatures: [], softCriteria: [] };
       const sources: Partial<Record<SearchField, string>> = last ? { ...last.sources } : {};
       const changes = changesOf(previous, sources);
       const next: BuyerSearch = { ...previous };
@@ -506,12 +598,17 @@ export class FicheAcquereur {
         sources[field] = source;
       }
       if (changed.length === 0) return { ok: true, created: false, value: last };
+      // Les bornes d'étage se lisent ensemble, sur la recherche qui en résulte : un minimum au-dessus du maximum ne laisse aucun bien (AU072).
+      // Un souhait d'étage n'écarte rien : seules deux bornes impératives inversées sont refusées (R51).
+      const softs = next.softCriteria ?? [];
+      if (next.floorMin != null && next.floorMax != null && next.floorMin > next.floorMax && !softs.includes('floorMin') && !softs.includes('floorMax')) return refuse('valeur', 'floorMin');
       const version = (last?.version ?? 0) + 1;
       const id = this.newId();
       const { changes: inserted } = await this.db.run(
         `INSERT INTO buyer_searches (id, network_id, project_id, person_id, version, property_kinds, communes, features, surface_min_m2,
-           rooms_min, bedrooms_min, budget_max_eur, financing, urgency, sources, origin, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
+           rooms_min, bedrooms_min, budget_max_eur, required_features, budget_strict, floor_min, floor_max, energy_class_max, land_min_m2, soft_criteria,
+           financing, urgency, sources, origin, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
         [
           id,
           project.network_id,
@@ -525,6 +622,13 @@ export class FicheAcquereur {
           next.roomsMin,
           next.bedroomsMin,
           next.budgetMaxEur,
+          JSON.stringify(next.requiredFeatures ?? []),
+          next.budgetStrict ? 1 : 0,
+          next.floorMin ?? null,
+          next.floorMax ?? null,
+          next.energyClassMax ?? null,
+          next.landMinM2 ?? null,
+          JSON.stringify(next.softCriteria ?? []),
           next.financing,
           next.urgency,
           JSON.stringify(sources),

@@ -5,6 +5,7 @@
  * par le contrôle central (S06), pour tout message automatique ; ce module tient l'état de la conversation,
  * prévient l'agent et lui montre la conversation sous ses droits [R16].
  */
+import { keyLookupForms } from '../fiche/empreinte.ts';
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { FicheClient } from '../db/fiche-client.ts';
@@ -140,7 +141,8 @@ export class ConversationRelais {
     }
     if (reply.result?.status === 'sent') return { status: 'replied', conversationId, reply };
     // Une réponse qui n'a pas pu partir n'est jamais un silence : l'agent est prévenu [R12].
-    if (reply.result?.needsHuman || reply.result?.rule === 'R21' || reply.result?.rule === 'R22') {
+    // La demande d'un portail sans réponse partie (aucune coordonnée lisible, refus) revient toujours à l'agent [R669].
+    if (reply.result?.needsHuman || reply.result?.rule === 'R21' || reply.result?.rule === 'R22' || row.kind === 'portal_email') {
       await this.alert(row.person_id, conversationId, 'needs_reply', row.received_at);
     }
     return { status: 'not_sent', conversationId, reply };
@@ -173,9 +175,9 @@ export class ConversationRelais {
         [networkId, conversationId],
       )) ??
       // L'agent a écrit le premier : la personne est retrouvée par son identifiant chez le canal (C02).
-      (await this.db.first<{ person_id: string }>('SELECT person_id FROM contact_keys WHERE network_id = ? AND key = ? LIMIT 1', [
+      (await this.db.first<{ person_id: string }>('SELECT person_id FROM contact_keys WHERE network_id = ? AND key IN (?, ?) LIMIT 1', [
         networkId,
-        `${reply.channel}:direct:${reply.conversationRef}`,
+        ...(await keyLookupForms(networkId, [`${reply.channel}:direct:${reply.conversationRef}`])),
       ]));
     if (!last) return 'unknown_conversation';
     const view = await this.fiche.view(last.person_id);

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { FakeChannel, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, createCaptation, fromSyncSqlite, type SqlDatabase } from '../src/index.ts';
-import { Academie, BacASable, SANDBOX_STEPS, type SandboxStorage, type SandboxWorld } from '../src/reseau/index.ts';
+import { Academie, BacASable, SANDBOX_GESTURES, SANDBOX_STEPS, type SandboxStorage, type SandboxWorld } from '../src/reseau/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 
@@ -224,5 +224,61 @@ describeWithSqlite('bac à sable du premier parcours (Jamais vu)', () => {
     const w = await setup();
     const bad = new BacASable(w.db, w.journal, w.academie, { migrations: loadMigrations(), storage: { open: async () => w.db }, now: () => new Date(clock) });
     await expect(bad.open(w.as(w.newcomer))).rejects.toThrow(/autre base/);
+  });
+
+  it('[R82] [R16] AU025 : l\'agent fait les cinq étapes depuis son écran, une à une, dans l\'ordre, et sa progression reste', async () => {
+    const w = await setup();
+    const me = w.as(w.newcomer);
+    // Pas encore ouvert : aucun geste.
+    expect(await w.bac.act(me, 'contact_recu')).toEqual({ ok: false, rule: null, code: 'not_opened' });
+    expect((await w.bac.open(me)).ok).toBe(true);
+    // Hors de l'ordre, une étape inconnue, la qualification (faite par la chaîne), un autre rôle : refusés.
+    expect(await w.bac.act(me, 'rendez_vous')).toEqual({ ok: false, rule: null, code: 'not_next_step' });
+    expect(await w.bac.act(me, 'qualification')).toEqual({ ok: false, rule: null, code: 'invalid_step' });
+    expect(await w.bac.act(w.dir, 'contact_recu')).toEqual({ ok: false, rule: 'R16', code: 'role' });
+    const seen: string[][] = [];
+    for (const gesture of SANDBOX_GESTURES) {
+      const r = await w.bac.act(me, gesture);
+      if (!r.ok) throw new Error(`${gesture} : ${r.code}`);
+      seen.push(r.value.steps.filter((s) => s.done).map((s) => s.step));
+    }
+    expect(seen).toEqual([
+      ['contact_recu', 'qualification'],
+      ['contact_recu', 'qualification', 'rappel_fait'],
+      ['contact_recu', 'qualification', 'rappel_fait', 'rendez_vous'],
+      [...SANDBOX_STEPS],
+    ]);
+    expect(await w.bac.act(me, 'avis_valide')).toEqual({ ok: false, rule: null, code: 'completed' });
+    // Progression persistante : un autre service, plus tard, sur le même stockage, relit le parcours fini.
+    clock += 86_400_000;
+    const again = new BacASable(w.db, w.journal, w.academie, { migrations: loadMigrations(), storage: w.storage, academyModuleId: w.moduleId, now: () => new Date(clock) });
+    const read = await again.progress(me, w.newcomer);
+    expect(read.ok && read.value.completed && read.value.countedAtAcademy).toBe(true);
+    expect(read.ok && read.value.next).toBeNull();
+    // L'autre agent n'a rien : son bac à sable n'est pas celui de la nouvelle.
+    expect(await again.progress(w.as(w.veteran), w.veteran)).toEqual({ ok: false, rule: null, code: 'not_opened' });
+    expect(w.storage.bases.size).toBe(1);
+  });
+
+  it('[R82] AU025 : une qualification tombée en panne ne bloque pas l\'exercice : un nouveau contact reçu le reprend', async () => {
+    const w = await setup();
+    const me = w.as(w.newcomer);
+    const opened = await w.bac.open(me);
+    if (!opened.ok) throw new Error(opened.code);
+    const sandbox = opened.world.db;
+    await sandbox.exec("CREATE TRIGGER panne BEFORE INSERT ON qualifications BEGIN SELECT RAISE(ABORT, 'panne'); END;");
+    const first = await w.bac.act(me, 'contact_recu');
+    if (!first.ok) throw new Error(first.code);
+    expect(first.value.steps.filter((s) => s.done).map((s) => s.step)).toEqual(['contact_recu']);
+    // Les autres gestes restent fermés ; la qualification n'est pas un geste.
+    expect(await w.bac.act(me, 'rappel_fait')).toEqual({ ok: false, rule: null, code: 'not_next_step' });
+    expect(await w.bac.act(me, 'qualification')).toEqual({ ok: false, rule: null, code: 'invalid_step' });
+    await sandbox.exec('DROP TRIGGER panne');
+    const again = await w.bac.act(me, 'contact_recu');
+    if (!again.ok) throw new Error(again.code);
+    expect(again.value.steps.filter((s) => s.done).map((s) => s.step)).toEqual(['contact_recu', 'qualification']);
+    for (const gesture of ['rappel_fait', 'rendez_vous', 'avis_valide']) expect([gesture, (await w.bac.act(me, gesture)).ok]).toEqual([gesture, true]);
+    const end = await w.bac.progress(me, w.newcomer);
+    expect(end.ok && end.value.completed).toBe(true);
   });
 });

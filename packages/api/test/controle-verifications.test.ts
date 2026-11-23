@@ -120,7 +120,7 @@ describe('X28 · les vérifications tiennent dans leur délai', () => {
 
   it('l’attente de la séance dure plus que le délai du travail, pour ne pas lire une coupure comme une panne', () => {
     const fichiers = reels();
-    expect(controleVerifications({ ...fichiers, attente: fichiers.attente.replace(/minutesFromNow\(30\)/, 'minutesFromNow(20)') }).join()).toContain('attendre-verifications.mjs');
+    expect(controleVerifications({ ...fichiers, attente: fichiers.attente.replace(/(const checksDeadline = minutesFromNow\()\d+\)/, '$120)') }).join()).toContain('attendre-verifications.mjs');
   });
 
   describe('les garde-fous lancés dans un dépôt', () => {

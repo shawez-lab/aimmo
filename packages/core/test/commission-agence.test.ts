@@ -53,7 +53,7 @@ describeWithSqlite('HX59 · la part de l’agence partenaire déduite de la comm
     await new Echeancier(t.db, t.acces, t.journal, { now: t.now }).record(t.agent, fileId, { kind: 'compromis_signe', day: '2027-03-10', proofRef: PROOF });
     expect(await c.sync(t.network.id)).toEqual({ planned: 1, due: 0 });
     /** Les pièces, puis l'acte. */
-    const acte = async () => {
+    const acte = async (expected = { planned: 0, due: 1 }) => {
       const pieces = new PiecesDossier(t.db, t.acces, t.journal, storage, { now: t.now });
       await lieuConnu(t, t.propertyId);
       const s = await pieces.status(t.agent, fileId);
@@ -68,7 +68,7 @@ describeWithSqlite('HX59 · la part de l’agence partenaire déduite de la comm
       t.setClock(at9('2027-06-11'));
       const done = await new ActeVente(t.db, t.acces, t.journal, storage, { now: t.now }).record(t.agent, fileId, { signedOn: '2027-06-10', proofRef: ACT_PROOF });
       if (!done.ok) throw new Error(done.code);
-      expect(await c.sync(t.network.id)).toEqual({ planned: 0, due: 1 });
+      expect(await c.sync(t.network.id)).toEqual(expected);
     };
     return { ...t, p, c, agency, shareId, fileId, acte };
   }
@@ -89,6 +89,8 @@ describeWithSqlite('HX59 · la part de l’agence partenaire déduite de la comm
     expect(mine.ok && mine.value[0]!.shares).toEqual([{ kind: 'agent', beneficiaryId: t.alexId, reason: null, amountCents: 420_000 }]);
     // La part de l'agence ne se saisit pas, ni ne change, par la base.
     await expect(t.db.run('UPDATE commission_agency_shares SET amount_cents = 1')).rejects.toThrow(/rien ne change/);
+    // Sans avenant signé, rien à régulariser [R678].
+    expect(await t.c.regularize(t.direction, t.fileId, { reason: 'Avenant de baisse signé avec le vendeur.' })).toEqual({ ok: false, rule: 'R678', code: 'nothing_to_fix' });
     await t.acte();
     // Le relevé de l'acte retrouve la même part.
     expect(await t.p.statement(t.agency, t.shareId)).toMatchObject({ ok: true, value: { partnerCents: 400_000, ownCents: 600_000 } });
@@ -170,5 +172,91 @@ describeWithSqlite('HX59 · la part de l’agence partenaire déduite de la comm
       ['reseau', 300_000],
       ['agent', 700_000],
     ]);
+  });
+
+  /** AU091b · un avenant au mandat de la vente, signé et rangé comme le fait D07 (honoraires changés), inventé. */
+  async function avenant(t: Awaited<ReturnType<typeof setup>>, feeEur: number, signedAt: string) {
+    const m = (await t.db.first<{ mandate_id: string }>('SELECT mandate_id FROM commissions WHERE file_id = ?', [t.fileId]))!;
+    const id = 'avenant-agence-essai-1';
+    await t.db.run(
+      `INSERT INTO documents (id, network_id, template_id, template_version, template_hash, kind, mode, status, missing, agent_id, person_id, property_id, content, content_hash, created_by, created_at, facts, mandate_id)
+       SELECT ?, d.network_id, d.template_id, d.template_version, d.template_hash, 'avenant_mandat', d.mode, 'complet', '[]', d.agent_id, d.person_id, d.property_id, 'Avenant inventé', 'h', d.created_by, ?, ?, s.mandate_id
+         FROM signed_documents s JOIN documents d ON d.id = s.document_id WHERE s.mandate_id = ? AND s.copy_content IS NOT NULL`,
+      [id, signedAt, JSON.stringify({ feeChanged: true, feeEur }), m.mandate_id],
+    );
+    await t.db.run(
+      "INSERT INTO signed_amendments (document_id, network_id, mandate_id, signed_at, place, scan_ref, copy_content, copy_hash, registered_by, created_at) VALUES (?, ?, ?, ?, 'agence', ?, 'copie', 'h', 'agent:x', ?)",
+      [id, t.network.id, m.mandate_id, signedAt, 'scans/avenant-agence-1.pdf', signedAt],
+    );
+    return id;
+  }
+  const MOTIF = 'Avenant de baisse signé avec le vendeur le 2 avril.';
+
+  it('[R678] [R235] [R69] 10 000 € ramenés à 8 000 € avec un bon à 40 % : part de l’agence et relevé à 3 200 €, grille sur le reste', async () => {
+    const t = await setup('avant');
+    await avenant(t, 8000, '2027-04-02T09:00:00.000Z');
+    await t.acte({ planned: 0, due: 0 });
+    // Le relevé attend la régularisation : jamais calculé sur l'ancien montant.
+    expect(await t.p.statement(t.agency, t.shareId)).toEqual({ ok: true, value: null });
+    const done = await t.c.regularize(t.direction, t.fileId, { reason: MOTIF, expectedVersion: 0 });
+    expect(done).toEqual({ ok: true, value: { version: 1, feeBeforeCents: 1_000_000, feeAfterCents: 800_000 } });
+    const list = await t.c.list(t.direction);
+    if (!list.ok) throw new Error();
+    const sale = list.value[0]!;
+    // 8 000 € : l'agence 3 200 € ; sur 4 800 €, l'agent 70 % (3 360 €), le réseau 1 440 €.
+    expect(sale.shares).toEqual([
+      { kind: 'reseau', beneficiaryId: null, reason: null, amountCents: 144_000 },
+      { kind: 'agent', beneficiaryId: t.alexId, reason: null, amountCents: 336_000 },
+      { kind: 'agence', beneficiaryId: `agence:${t.agency.userId}`, reason: null, amountCents: 320_000 },
+    ]);
+    expect(sale.feeCents).toBe(800_000);
+    // La version garde la part de l'agence d'avant et d'après.
+    expect(sale.revisions[0]!.sharesBefore.find((x) => x.kind === 'agence')!.amountCents).toBe(400_000);
+    expect(sale.revisions[0]!.sharesAfter.find((x) => x.kind === 'agence')!.amountCents).toBe(320_000);
+    // L'agent ne voit que sa part, jamais celle de l'agence, ni dans les versions.
+    const mine = await t.c.list(t.agent);
+    expect(mine.ok && JSON.stringify(mine.value)).not.toContain(t.agency.userId);
+    // Puis la commission devient due, et le relevé se calcule une fois, sur les honoraires régularisés.
+    expect(await t.c.sync(t.network.id)).toEqual({ planned: 0, due: 1 });
+    expect(await t.p.statement(t.agency, t.shareId)).toMatchObject({ ok: true, value: { feeCents: 800_000, partnerCents: 320_000, ownCents: 480_000 } });
+    // La facture de l'agence au montant du relevé régularisé seulement.
+    expect(await t.p.recordPartnerInvoice(t.direction, t.shareId, { ttcCents: 400_000, proofRef: PROOF })).toMatchObject({ ok: false, code: 'montant_different' });
+    expect(await t.p.recordPartnerInvoice(t.direction, t.shareId, { ttcCents: 320_000, proofRef: PROOF })).toMatchObject({ ok: true });
+    // Les factures : honoraires de 8 000 €, reversement de l'agent sur le reste ; tout fait les honoraires [R69].
+    const f = new Factures(t.db, t.acces, t.journal, { now: t.now });
+    await f.prepare(t.network.id);
+    const drafts = await f.drafts(t.direction);
+    if (!drafts.ok) throw new Error();
+    expect(drafts.value.map((d) => [d.kind, d.amountCents])).toEqual([
+      ['honoraires', 800_000],
+      ['reversement', 336_000],
+    ]);
+    expect(336_000 + 144_000 + 320_000).toBe(800_000);
+    // Rien d'autre ne change la part de l'agence par la base.
+    await expect(t.db.run('UPDATE commission_agency_shares SET amount_cents = 320000')).rejects.toThrow(/rien ne change/);
+  });
+
+  it('[R678] [R235] un relevé d’agence déjà émis refuse la régularisation, dans le code et dans la base', async () => {
+    const t = await setup('avant');
+    await avenant(t, 8000, '2027-04-02T09:00:00.000Z');
+    await t.acte({ planned: 0, due: 0 });
+    // Un relevé émis avant AU091b, sur les honoraires de l'acte (10 000 €), a pu être facturé par l'agence.
+    const d = (await t.db.first<{ id: string }>('SELECT id FROM agency_delegations'))!;
+    await t.db.run(
+      "INSERT INTO agency_fee_statements (delegation_id, network_id, file_id, fee_cents, partner_share_bp, partner_cents, own_cents, computed_at) VALUES (?, ?, ?, 1000000, 4000, 400000, 600000, 'x')",
+      [d.id, t.network.id, t.fileId],
+    );
+    expect(await t.c.regularize(t.direction, t.fileId, { reason: MOTIF })).toEqual({ ok: false, rule: 'R678', code: 'releve_emis' });
+    // Rien n'a changé : ni version, ni honoraires, ni part de l'agence.
+    expect(await t.db.first('SELECT COUNT(*) AS n FROM commission_revisions')).toEqual({ n: 0 });
+    expect(await t.db.first('SELECT fee_cents FROM commissions WHERE file_id = ?', [t.fileId])).toEqual({ fee_cents: 1_000_000 });
+    expect(await t.db.first('SELECT amount_cents FROM commission_agency_shares WHERE file_id = ?', [t.fileId])).toEqual({ amount_cents: 400_000 });
+    // La base refuse aussi une version rangée à la main.
+    await expect(
+      t.db.run(
+        "INSERT INTO commission_revisions (file_id, network_id, version, fee_before_cents, fee_after_cents, charge_before, charge_after, amendment_id, reason, shares_before, shares_after, approved_by, at) SELECT file_id, network_id, 1, fee_cents, 800000, fee_charge, fee_charge, 'a', 'Motif assez long', '[]', '[]', 'x', 'x' FROM commissions WHERE file_id = ?",
+        [t.fileId],
+      ),
+    ).rejects.toThrow(/relevé d'agence déjà émis/);
   });
 });

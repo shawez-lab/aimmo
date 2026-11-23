@@ -28,6 +28,7 @@ import { trialChannels } from '../captation/essai.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { actorOf, gateSaleFile, type FileRefusal, type FileUnknown } from '../dossiers/acces-dossier.ts';
+import { buyersInAlsaceMoselle, calendarFor, propertyPlaceOf } from '../dossiers/calendrier.ts';
 import { BUYER_WITHDRAWAL_DAYS, DATE_KINDS, buyerWithdrawalLastDay, orderProblem, type DateKind } from '../dossiers/echeancier.ts';
 import type { PieceStore } from '../dossiers/pieces.ts';
 import type { DeliveryReceipt, OutboundChannel, OutboundMessage } from '../envoi/canaux.ts';
@@ -446,7 +447,11 @@ export class RecommandeElectronique {
 
   /** La date de première présentation entre à l'échéancier, avec sa preuve, sans ressaisie [R460]. */
   private async fillSchedule(letter: LetterRow, day: string, proofRef: string): Promise<ScheduleFill> {
-    const done = (filled: boolean, reason: ScheduleFill['reason']): ScheduleFill => ({ filled, reason, day, withdrawalLastDay: filled ? buyerWithdrawalLastDay(day) : null });
+    // Le délai dans le calendrier du bien et du domicile de l'acquéreur notifié (AU085).
+    const file = await this.db.first<{ property_id: string }>('SELECT property_id FROM sale_files WHERE id = ?', [letter.file_id]);
+    const place = file ? await propertyPlaceOf(this.db, file.property_id) : 'inconnu';
+    const { calendar } = calendarFor(place, (await buyersInAlsaceMoselle(this.db, [letter.person_id])).has(letter.person_id));
+    const done = (filled: boolean, reason: ScheduleFill['reason']): ScheduleFill => ({ filled, reason, day, withdrawalLastDay: filled ? buyerWithdrawalLastDay(day, calendar) : null });
     const refuse = async (reason: ScheduleFill['reason']) => {
       await appendEvent(this.journal, { type: 'dossier.recommande_date_non_ecrite', actor: 'system:recommande', subject: `sale_file:${letter.file_id}`, data: { rule: 'R460', letter: letter.id, reason } }, this.now);
       return done(false, reason);

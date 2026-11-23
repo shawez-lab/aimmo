@@ -13,11 +13,12 @@ import {
   type SqlDatabase,
   type Viewer,
 } from '../src/index.ts';
-import { Annonces, FACT_KEYS, FicheBien, MentionsAnnonce, fallbackListing, traceListing, traceSentence, type ListingFacts, type ListingWriter } from '../src/annonces/index.ts';
+import { Annonces, FACT_KEYS, FicheBien, MentionsAnnonce, bindingHolds, fallbackListing, traceListing, traceSentence, type ListingFacts, type ListingWriter } from '../src/annonces/index.ts';
 import { loadMigrations } from './migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from './sqlite.ts';
 import { identiteAuCoffre } from './identite-coffre.ts';
 import { designerTout } from './designation-jeu.ts';
+import { rangerStatut } from './statut-agent-jeu.ts';
 
 // Biens et textes inventés.
 const FACTS: ListingFacts = {
@@ -71,6 +72,111 @@ describe('P03 · annonce sourcée, phrase par phrase', () => {
     expect(codes('Chauffage au gaz.')).toEqual(['fait_sans_source:chauffage au gaz']);
     expect(codes('Au rez-de-chaussée.')).toEqual(['fait_sans_source:rez-de-chaussée']);
     expect(codes('Sans ascenseur.', { ...FACTS, elevator: false })).toEqual([]);
+  });
+
+  it('[R47] AU051 · garage et plain-pied dits sur la fiche : le texte de secours passe, la phrase garde sa source, et la perd avec l’équipement', () => {
+    const rich: ListingFacts = { ...FACTS, kind: 'home', parkingSpaces: null, amenities: ['garage', 'plain_pied'] };
+    const text = fallbackListing(rich);
+    expect(text.body).toContain('Garage et plain-pied.');
+    const r = traceListing(text.title, text.body, rich);
+    expect(r.ok).toBe(true);
+    const sources = r.sentences.flatMap((x) => x.sources).filter((x) => x.value === 'garage' || x.value === 'plain-pied');
+    expect(sources.map((x) => `${String(x.field)}:${x.value}`).sort()).toEqual(['amenities:plain-pied', 'parkingSpaces:garage']);
+    // L'équipement retiré de la fiche : la source rangée ne tient plus, la phrase ne se publie plus.
+    const bare: ListingFacts = { ...rich, amenities: [] };
+    for (const source of sources) expect(bindingHolds(source, bare), source.value).toBe(false);
+    expect(traceListing('Maison à Dijon', 'De plain-pied.', bare).ok).toBe(false);
+    expect(traceListing('Maison à Dijon', 'Avec garage.', bare).ok).toBe(false);
+    // Une place de parking prouve toujours « garage », comme avant.
+    expect(traceListing('Maison à Dijon', 'Avec garage.', FACTS).ok).toBe(true);
+    // L'absence ne se prouve pas.
+    expect(traceListing('Maison à Dijon', 'Sans garage.', rich).ok).toBe(false);
+    expect(traceListing('Maison à Dijon', 'Pas de plain-pied.', rich).ok).toBe(false);
+  });
+
+  it('[R47] AU061 · piscine, cave, cheminée et état du bien se disent quand la fiche les porte, et alors seulement', () => {
+    const rich: ListingFacts = { ...FACTS, amenities: ['piscine', 'cave', 'cheminee'], condition: 'travaux_a_prevoir' };
+    const text = fallbackListing(rich);
+    expect(text.body).toContain('Piscine, cave et cheminée.');
+    expect(text.body).toContain('Travaux à prévoir.');
+    const r = traceListing(text.title, text.body, rich);
+    expect(r.ok).toBe(true);
+    expect(r.sentences.flatMap((s) => s.sources).filter((s) => s.field === 'amenities' || s.field === 'condition').map((s) => `${String(s.field)}:${s.value}`).sort()).toEqual(['amenities:cave', 'amenities:cheminée', 'amenities:piscine', 'condition:travaux à prévoir']);
+    // Sans la fiche, aucun de ces mots n'a de source.
+    expect(traceListing('Appartement à Dijon', 'Avec piscine.', FACTS).ok).toBe(false);
+    expect(traceListing('Appartement à Dijon', 'Refait à neuf.', { ...FACTS, condition: 'travaux_a_prevoir' }).ok).toBe(false);
+    expect(traceListing('Appartement à Dijon', 'Refait à neuf.', { ...FACTS, condition: 'refait_a_neuf' }).ok).toBe(true);
+    expect(traceListing('Appartement à Dijon', 'Logement neuf.', { ...FACTS, condition: 'refait_a_neuf' }).ok).toBe(false);
+    // Une négation ne passe pas pour l'état dit : « sans travaux » est faux pour un bien à rénover.
+    for (const condition of ['a_renover', 'travaux_a_prevoir'] as const) {
+      for (const body of ['Sans travaux.', 'Aucun travaux à prévoir.', 'Pas de travaux.']) expect(traceListing('Appartement à Dijon', body, { ...FACTS, condition }).ok).toBe(false);
+    }
+    expect(traceListing('Appartement à Dijon', 'Sans travaux.', { ...FACTS, condition: 'bon_etat' }).ok).toBe(true);
+    expect(traceListing('Appartement à Dijon', 'Sans travaux.', FACTS).ok).toBe(false);
+    // L'absence d'un équipement ne se prouve pas : « sans piscine » est refusé, même quand la fiche dit une piscine.
+    for (const body of ['Sans piscine.', 'Pas de cave.', 'Sans cheminée ni cave.']) {
+      expect(traceListing('Appartement à Dijon', body, { ...FACTS, amenities: ['piscine', 'cave', 'cheminee'] }).ok).toBe(false);
+      expect(traceListing('Appartement à Dijon', body, FACTS).ok).toBe(false);
+    }
+    // Un état nié ne se prouve pas non plus : « non rénové » est refusé, même sur une fiche « refait à neuf ».
+    for (const body of ['Non rénové.', 'Jamais refait.', 'Pas en bon état.', 'Cuisine pas encore refaite.', 'Pas neuf.']) {
+      for (const condition of ['refait_a_neuf', 'bon_etat', 'neuf', 'a_renover'] as const) {
+        expect(traceListing('Logement à Dijon', body, { ...FACTS, condition }).ok).toBe(false);
+      }
+    }
+    expect(traceListing('Logement à Dijon', 'Rénové.', { ...FACTS, condition: 'refait_a_neuf' }).ok).toBe(true);
+  });
+
+  it('[R47] AU066 · une source rangée reste vraie si son champ dit encore la même chose, même quand un autre champ devient égal', () => {
+    // « 5 étages » relié au nombre d'étages : l'étage du bien corrigé de 3 à 5 ne le rend pas faux.
+    expect(bindingHolds({ field: 'floorsTotal', value: '5' }, { ...FACTS, floor: 5, floorsTotal: 5 })).toBe(true);
+    // « 3e étage » relié à l'étage : l'étage corrigé à 2 le rend faux, même si l'immeuble a 3 étages.
+    expect(bindingHolds({ field: 'floor', value: '3' }, { ...FACTS, floor: 2, floorsTotal: 3 })).toBe(false);
+    expect(bindingHolds({ field: 'outdoor', value: 'balcon' }, { ...FACTS, outdoor: ['balcon'] })).toBe(true);
+    expect(bindingHolds({ field: 'outdoor', value: 'balcon' }, { ...FACTS, outdoor: [] })).toBe(false);
+    expect(bindingHolds({ field: 'city', value: 'Dijon' }, FACTS)).toBe(true);
+    expect(bindingHolds({ field: 'energyClass', value: 'D' }, { ...FACTS, energyClass: 'E' })).toBe(false);
+    // Un nombre en lettres se relit comme le contrôle le lit.
+    expect(bindingHolds({ field: 'rooms', value: 'Trois' }, { ...FACTS, rooms: 3 })).toBe(true);
+    expect(bindingHolds({ field: 'rooms', value: 'trois' }, { ...FACTS, rooms: 4 })).toBe(false);
+    expect(bindingHolds({ field: 'rooms', value: 'beaucoup' }, { ...FACTS, rooms: 3 })).toBe(false);
+  });
+
+  it('[R47] AU063 · une surface dite Carrez ou utile doit être celle de la fiche, jamais une autre de même valeur', () => {
+    const f: ListingFacts = { ...FACTS, carrezM2: 61.35, usableM2: null };
+    expect(traceListing('Logement à Dijon', 'Surface Carrez de 61,35 m².', f).ok).toBe(true);
+    // La surface habitable n'est pas la Carrez : 61,35 m² habitables est faux, et une Carrez égale à l'habitable aussi.
+    expect(traceListing('Logement à Dijon', '61,35 m² habitables.', f).ok).toBe(false);
+    expect(traceListing('Logement à Dijon', `Surface Carrez de ${String(FACTS.surfaceM2).replace('.', ',')} m².`, f).ok).toBe(false);
+    expect(traceListing('Logement à Dijon', 'Surface utile de 61,35 m².', f).ok).toBe(false);
+    // Deux surfaces dans une phrase : chacune la sienne.
+    expect(traceListing('Logement à Dijon', `Logement de ${String(FACTS.surfaceM2).replace('.', ',')} m², surface Carrez de 61,35 m².`, f).ok).toBe(true);
+    // Chaque mesure a son qualificatif : celui d'une autre mesure de la phrase ne déteint pas.
+    const g: ListingFacts = { ...FACTS, surfaceM2: 62, carrezM2: 60, usableM2: null };
+    expect(traceListing('Logement à Dijon', 'Surface Carrez de 60 m² et 60 m² habitables.', g).ok).toBe(false);
+    expect(traceListing('Logement à Dijon', 'Surface Carrez de 60 m² et 62 m² habitables.', g).ok).toBe(true);
+    // Un libellé suivi de deux-points garde son qualificatif.
+    const h: ListingFacts = { ...g, usableM2: 70 };
+    expect(traceListing('Logement à Dijon', 'Surface Carrez : 62 m².', h).ok).toBe(false);
+    expect(traceListing('Logement à Dijon', 'Surface utile : 62 m².', h).ok).toBe(false);
+    expect(traceListing('Logement à Dijon', 'Surface Carrez : 60 m².', h).ok).toBe(true);
+    expect(traceListing('Logement à Dijon', 'Surface utile : 70 m².', h).ok).toBe(true);
+    // Le qualificatif après l'unité, quels que soient les mots qui l'en séparent.
+    for (const [body, ok] of [['62 m² loi Carrez.', false], ['60 m² loi Carrez.', true], ['62 m² (Carrez).', false], ['60 m² (Carrez).', true], ['62 m² de surface utile.', false], ['70 m² de surface utile.', true], ['60 m² Carrez et 62 m² habitables.', true], ['Surface habitable de 60 m² dont surface Carrez de 60 m².', false], ['Surface habitable de 62 m² dont surface Carrez de 60 m².', true], ['70 m² de surface utile.', true]] as const) {
+      expect([body, traceListing('Logement à Dijon', body, h).ok]).toEqual([body, ok]);
+    }
+    // Le texte de secours suit la règle de l'annonce : un logement dit l'habitable puis la Carrez, jamais l'utile.
+    const text = fallbackListing({ ...f, usableM2: 70 });
+    expect(text.body).toContain('Surface Carrez de 61,35 m².');
+    expect(text.body).not.toContain('utile');
+    expect(traceListing(text.title, text.body, { ...f, usableM2: 70 }).ok).toBe(true);
+    // Un local s'annonce d'abord par sa surface utile, au titre comme au texte.
+    const local: ListingFacts = { ...FACTS, kind: 'commercial', surfaceM2: 90, usableM2: 82, carrezM2: null };
+    const shop = fallbackListing(local);
+    expect(shop.title).toContain('82 m² utiles');
+    expect(shop.body.startsWith('Local de 82 m² utiles')).toBe(true);
+    expect(shop.body).toContain('Surface habitable de 90 m².');
+    expect(traceListing(shop.title, shop.body, local).ok).toBe(true);
   });
 
   it('[R46] une adresse exacte ou une voie nommée est refusée', () => {
@@ -196,6 +302,8 @@ async function setup(writer?: ListingWriter, options: { timeoutMs?: number } = {
   await modeles.validate(as('compliance', 'c-1'), v.template.id);
   await controles.setFeeSchedule(direction, { maxRatePercent: 6, minEur: 0 });
   await new RegistreMandats(db, journal, { now }).configure(direction, { prefix: 'T-', firstNumber: 1, width: 3 });
+  // Le statut des agents, rangé par la direction (AU007) [R152].
+  await rangerStatut(db, journal, now, direction, [alex.id, sam.id]);
   const p = await store.createPerson({ networkId: network.id, agentId: alex.id, firstName: 'Léa', lastName: 'Exemple' });
   const b = await store.createProperty({ networkId: network.id, agentId: alex.id, reference: 'REF-T-1', kind: 'home', postalCode: '21000', city: 'Dijon', surfaceM2: 62, rooms: 3, priceEur: 200000 });
   const project = await store.createProject({ networkId: network.id, agentId: alex.id, personId: p.id, kind: 'sell' });
@@ -273,6 +381,17 @@ describeWithSqlite('P03 · brouillon, correction, validation', () => {
     expect(good).toMatchObject({ ok: true, value: { origin: 'agent', seq: 1 } });
   });
 
+  it('[R47] AU066 · un nombre écrit en lettres dans l’annonce validée reste vrai après une nouvelle version de la fiche qui ne le touche pas', async () => {
+    const t = await setup();
+    await t.mentions.setCardNumber(t.direction, 'CPI 2101 2027 000 000 001');
+    await t.signMandate();
+    const d = await t.annonces.correct(t.agent, t.propertyId, { title: 'Trois pièces à Dijon', body: 'Au 3e étage avec ascenseur.' });
+    if (!d.ok) throw new Error(d.code);
+    expect((await t.annonces.validate(t.agent, d.value.id)).ok).toBe(true);
+    await t.fiches.save(t.agent, t.propertyId, { ...SHEET(t.propertyId), risks: { inRiskZone: true } });
+    expect((await t.annonces.publishable(t.network.id, t.propertyId))?.id).toBe(d.value.id);
+  });
+
   it('[R47] rien n’est publiable sans la validation de l’agent du bien ; seul le dernier brouillon, sur la dernière fiche, se valide', async () => {
     const t = await setup();
     await t.mentions.setCardNumber(t.direction, 'CPI 2101 2027 000 000 001');
@@ -292,9 +411,19 @@ describeWithSqlite('P03 · brouillon, correction, validation', () => {
     expect(await t.annonces.validate(t.agent, d2.value.id)).toEqual({ ok: false, rule: 'R47', code: 'already_validated' });
     expect((await t.annonces.publishable(t.network.id, t.propertyId))?.id).toBe(d2.value.id);
     expect(await t.annonces.publishable('autre-reseau', t.propertyId)).toBeNull();
-    // Une nouvelle version de la fiche : plus rien de publiable tant qu'un brouillon n'est pas revalidé.
+    // Une nouvelle version de la fiche qui ne rend aucune phrase fausse : la version validée reste publiable (AU066).
     await t.fiches.save(t.agent, t.propertyId, { ...SHEET(t.propertyId), risks: { inRiskZone: true } });
+    expect((await t.annonces.publishable(t.network.id, t.propertyId))?.id).toBe(d2.value.id);
+    // Un étage corrigé que le nombre d'étages de l'immeuble « explique » encore : la phrase est fausse, retirée.
+    const sheet = SHEET(t.propertyId) as { characteristics: Record<string, unknown> };
+    await t.fiches.save(t.agent, t.propertyId, { ...SHEET(t.propertyId), characteristics: { ...sheet.characteristics, floor: 2, floorsTotal: 3 } });
     expect(await t.annonces.publishable(t.network.id, t.propertyId)).toBeNull();
+    await t.fiches.save(t.agent, t.propertyId, { ...SHEET(t.propertyId), risks: { inRiskZone: true } });
+    expect((await t.annonces.publishable(t.network.id, t.propertyId))?.id).toBe(d2.value.id);
+    // Une correction en cours, pas encore validée, ne la retire pas non plus.
+    const draft = await t.annonces.correct(t.agent, t.propertyId, { title: 'Appartement 3 pièces à Dijon', body: 'Au 3e étage, avec ascenseur.' });
+    expect(draft.ok).toBe(true);
+    expect((await t.annonces.publishable(t.network.id, t.propertyId))?.id).toBe(d2.value.id);
     const d3 = await t.annonces.propose(t.agent, t.propertyId);
     if (!d3.ok) throw new Error(d3.code);
     await t.fiches.save(t.agent, t.propertyId, SHEET(t.propertyId));

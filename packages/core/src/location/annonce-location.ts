@@ -18,18 +18,19 @@
  * dans ce que lit le public [R06].
  *
  * Décidé, lecture prudente : sans dépenses d'énergie estimées dans la fiche du bien (P01), ou avec une classe énergie de
- * la fiche différente de celle de la mise en location, aucune annonce n'est faite ; le complément de loyer, propre aux
- * communes à loyer encadré, n'est pas encore proposé : aucune annonce n'en porte.
+ * la fiche différente de celle de la mise en location, aucune annonce n'est faite. Dans une commune à loyer encadré
+ * (AU015), l'annonce porte la zone, le loyer de référence majoré, le loyer de base et le complément de loyer s'il y en a.
  */
 import type { Viewer } from '../acces/droits.ts';
 import type { PropertyKind } from '../db/types.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { fallbackListing, traceListing, type ListingFacts, type SentenceProblem } from '../annonces/annonce-sourcee.ts';
-import type { PropertySheet } from '../annonces/fiche-bien.ts';
+import { energyPriceText, type PropertySheet } from '../annonces/fiche-bien.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { HonorairesLocation, RentalFees } from './honoraires.ts';
-import type { LocationRefusal, MisesEnLocation, RentalFacts } from './logement.ts';
+import { rentalMandateGate, rentalMandateInForce, type RentalMandateGate } from './mandat-location.ts';
+import { rentCeilingCents, type LocationRefusal, type MisesEnLocation, type RentalFacts } from './logement.ts';
 
 const MAX_TITLE = 120;
 const MAX_BODY = 3000;
@@ -124,13 +125,22 @@ export interface EnergyCost {
   annualCostMinEur: number;
   annualCostMaxEur: number;
   costReferenceYear: number;
+  costReferenceYears?: number[];
 }
 
 /** Les mentions obligatoires, écrites par le code depuis les données contrôlées : rien d'autre [R102, R103]. */
-export function rentalMentions(facts: RentalFacts, fees: Pick<RentalFees, 'tenantCents' | 'tenantInventoryCents' | 'depositCents'>, city: string, energy: EnergyCost): string {
+export function rentalMentions(
+  facts: RentalFacts,
+  fees: Pick<RentalFees, 'tenantCents' | 'tenantInventoryCents' | 'depositCents'>,
+  city: string,
+  energy: EnergyCost,
+  rentControlled = false,
+): string {
   const lines = [
     `Location ${facts.furnished ? 'meublée' : 'vide'}.`,
     `Loyer : ${euros(facts.rentCents + facts.chargesCents)} € par mois charges comprises, dont ${euros(facts.chargesCents)} € de charges ${facts.chargesMode === 'forfait' ? 'forfaitaires' : 'en provision, avec régularisation annuelle'}.`,
+    // Encadrement des loyers : les trois montants, dans les mots de l'arrêté du 21 avril 2022 (AU015).
+    ...(rentControlled && facts.rentControl ? rentControlMentions(facts) : []),
     `Honoraires à la charge du locataire : ${euros(fees.tenantCents + fees.tenantInventoryCents)} € TTC, dont ${euros(fees.tenantInventoryCents)} € pour l'état des lieux.`,
     `Dépôt de garantie : ${euros(fees.depositCents)} €.`,
     `Surface habitable : ${surface(facts.livingAreaHundredths)} m².`,
@@ -139,9 +149,20 @@ export function rentalMentions(facts: RentalFacts, fees: Pick<RentalFees, 'tenan
   ];
   if (facts.energyClass === 'F' || facts.energyClass === 'G') lines.push('Logement à consommation énergétique excessive.');
   lines.push(
-    `Montant estimé des dépenses annuelles d'énergie pour un usage standard : entre ${energy.annualCostMinEur} € et ${energy.annualCostMaxEur} € par an. Prix moyens des énergies indexés au 1er janvier ${energy.costReferenceYear} (abonnements compris).`,
+    `Montant estimé des dépenses annuelles d'énergie pour un usage standard : entre ${energy.annualCostMinEur} € et ${energy.annualCostMaxEur} € par an. ${energyPriceText(energy)}`,
   );
   return lines.join('\n');
+}
+
+/** Les mentions d'une commune à loyer encadré : la zone, le loyer de référence majoré, le loyer de base, le complément s'il y en a un. */
+export function rentControlMentions(facts: RentalFacts): string[] {
+  const rc = facts.rentControl!;
+  return [
+    'Zone soumise à encadrement des loyers.',
+    `Loyer de référence majoré (loyer de base à ne pas dépasser) : ${euros(rentCeilingCents(rc, facts.livingAreaHundredths))} € par mois.`,
+    `Loyer de base : ${euros(facts.rentCents - rc.complementCents)} € par mois.`,
+    ...(rc.complementCents > 0 ? [`Complément de loyer : ${euros(rc.complementCents)} € par mois.`] : []),
+  ];
 }
 
 export interface RentalAd {
@@ -163,6 +184,8 @@ export interface AnnoncesLocationOptions {
   newId?: () => string;
   writer?: RentalAdWriter | undefined;
   timeoutMs?: number;
+  /** AU014 : la porte du mandat de location ; par défaut, celle de la diffusion, sur la même base. */
+  rentalMandate?: RentalMandateGate;
 }
 
 interface Basis {
@@ -211,6 +234,7 @@ const toAd = (r: AdRow): RentalAd => ({
 
 export class AnnoncesLocation {
   private readonly now: () => Date;
+  private readonly gate: RentalMandateGate;
   private readonly newId: () => string;
   private readonly writer: RentalAdWriter | undefined;
   private readonly timeoutMs: number;
@@ -224,6 +248,7 @@ export class AnnoncesLocation {
   ) {
     this.now = options.now ?? (() => new Date());
     this.newId = options.newId ?? (() => crypto.randomUUID());
+    this.gate = options.rentalMandate ?? rentalMandateGate(db, journal, this.now);
     this.writer = options.writer;
     this.timeoutMs = options.timeoutMs ?? AI_TIMEOUT_MS;
   }
@@ -266,8 +291,11 @@ export class AnnoncesLocation {
       energyClass: facts.energyClass,
       climateClass: sheet.energy.climateClass,
       furnished: facts.furnished,
+      carrezM2: c?.carrezM2 ?? null,
+      usableM2: c?.usableM2 ?? null,
     };
-    const mentions = rentalMentions(facts, fees, p.city, sheet.energy);
+    const controlled = await this.listings.rentControlledFor({ id: listingId, network_id: networkId }, facts.leaseStart);
+    const mentions = rentalMentions(facts, fees, p.city, sheet.energy, controlled);
     return { networkId, propertyId: row!.property_id, facts, fees, sheetVersion: Number(sheetRow!.version), adFacts, mentions };
   }
 
@@ -403,6 +431,9 @@ export class AnnoncesLocation {
     const v = await this.db.first<{ text_sha256: string }>('SELECT text_sha256 FROM rental_ad_validations WHERE ad_id = ?', [row.id]);
     if (!v || v.text_sha256 !== (await sha256(`${row.title}\n${row.body}\n${row.mentions}`))) return null;
     if (await this.stillValid(row)) return null;
+    // AU014 : publiable seulement sous un mandat de location en cours sur le logement [R42, R100].
+    const listing = await this.db.first<{ property_id: string }>('SELECT property_id FROM rental_listings WHERE id = ? AND network_id = ?', [listingId, networkId]);
+    if (!listing || !(await rentalMandateInForce(this.gate, networkId, listing.property_id, this.now()))) return null;
     return { title: row.title, body: row.body, mentions: row.mentions };
   }
 }

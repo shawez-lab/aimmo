@@ -90,6 +90,9 @@ describe('A01 · fichiers de l’application', () => {
       });
       docListeners.DOMContentLoaded!();
       await new Promise((r) => setTimeout(r, 0));
+      // AU018 : la visite sans réseau n'est pas sur cet appareil : son script ne se charge pas.
+      for (const e of els['hors-ligne']!.all()) if (e.tagName === 'script') e.listeners.error?.({});
+      await new Promise((r) => setTimeout(r, 0));
       await new Promise((r) => setTimeout(r, 0));
       return { els, storage, calls };
     };
@@ -141,7 +144,7 @@ describe('A01 · fichiers de l’application', () => {
       self: { location: { origin: BASE }, addEventListener: (name: string, fn: (e: unknown) => void) => (listeners[name] = fn) },
       caches: {
         open: async () => ({ addAll: async (urls: string[]) => void stored.push(...urls), put: async (u: string) => void stored.push(`put:${u}`) }),
-        keys: async () => ['aimmo-app-v0', 'aimmo-app-v1'],
+        keys: async () => ['aimmo-app-v0', 'aimmo-app-v1', 'aimmo-app-v2'],
         delete: async (n: string) => void stored.push(`delete:${n}`),
         match: async () => undefined,
       },
@@ -151,7 +154,9 @@ describe('A01 · fichiers de l’application', () => {
     listeners.install!({ waitUntil: (p: Promise<unknown>) => waits.push(p) });
     listeners.activate!({ waitUntil: (p: Promise<unknown>) => waits.push(p) });
     await Promise.all(waits);
-    expect(stored).toEqual([...AGENT_APP_SHELL, 'delete:aimmo-app-v0']);
+    // AU018 : la coquille v2 garde la visite sans réseau ; les anciennes sont effacées.
+    expect(stored).toEqual([...AGENT_APP_SHELL, 'delete:aimmo-app-v0', 'delete:aimmo-app-v1']);
+    expect(AGENT_APP_SHELL).toContain('/app/hors-ligne.js');
     for (const [path, method] of [['/v1/moi', 'GET'], ['/v1/plan-du-jour', 'GET'], ['/app/', 'GET'], ['/app/app.js', 'GET'], ['/app/', 'POST'], ['/ailleurs', 'GET']] as const) {
       listeners.fetch!({ request: { url: `${BASE}${path}`, method }, respondWith: () => responded.push(`${method} ${path}`) });
     }

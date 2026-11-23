@@ -11,22 +11,24 @@
  * Décidé, lecture prudente : le type « logement » du socle répond à une recherche de maison comme d'appartement, tant
  * que la fiche ne les distingue pas ; une valeur du bien inconnue ne remplit pas le critère qui la demande ; le prix
  * rapproché est celui de la fiche de base du bien ; un acquéreur est actif si son projet n'est pas clos et que sa
- * recherche a bougé depuis moins de `activeDays` jours. Un agent ne voit dans la liste que ses propres clients ; la
+ * recherche a bougé, ou a été dite toujours d'actualité, depuis moins de `activeDays` jours. Un agent ne voit dans la liste que ses propres clients ; la
  * direction voit tout le réseau [R16].
  */
 import { shownPrice } from '../biens/prix-publie.ts';
 import type { Acces } from '../acces/acces.ts';
 import { decideAccess, type Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
-import type { Property, PropertyKind } from '../db/types.ts';
+import type { Dwelling, Property, PropertyKind } from '../db/types.ts';
 import type { FicheUnique } from '../fiche/fusion.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { Deadline } from '../qualification/regles.ts';
-import { toVersion, type BuyerFeature, type BuyerPropertyKind, type BuyerSearch, type BuyerSearchRow } from './fiche-acquereur.ts';
+import { areasOfNetwork, insideArea, positionOf, type GeoPoint } from './secteurs.ts';
+import { EMPTY_SEARCH, toVersion, type BuyerFeature, type BuyerPropertyKind, type BuyerSearch, type BuyerSearchRow } from './fiche-acquereur.ts';
+const FEATURE_LABEL: Record<BuyerFeature, string> = { garden: 'jardin', balcony: 'balcon', terrace: 'terrasse', garage: 'garage', parking: 'stationnement', cellar: 'cave', elevator: 'ascenseur', pool: 'piscine', single_storey: 'plain-pied', quiet: 'calme', bright: 'lumineux', view: 'vue', fireplace: 'cheminée', outbuilding: 'dépendance' };
 
 /** Les critères obligatoires, dans l'ordre où ils sont vérifiés et montrés. */
-export const MANDATORY_CRITERIA = ['kind', 'commune', 'budget', 'surface', 'rooms', 'bedrooms'] as const;
+export const MANDATORY_CRITERIA = ['kind', 'commune', 'area', 'budget', 'surface', 'rooms', 'bedrooms', 'floor', 'energy', 'land', 'features'] as const;
 export type MandatoryCriterion = (typeof MANDATORY_CRITERIA)[number];
 
 /** Les tolérances, en réglage du réseau. */
@@ -49,12 +51,20 @@ export const CLOSED_STAGES: readonly string[] = Object.freeze(['lost', 'closed',
 /** Ce que le code sait d'un bien pour le rapprocher : rien sur son vendeur, rien de son adresse. */
 export interface MatchProperty {
   kind: PropertyKind;
+  /** Pour un logement : maison ou appartement ; null tant que ni la fiche ni le bien ne le disent (AU070). */
+  dwelling?: Dwelling | null;
   city: string | null;
   priceEur: number | null;
   surfaceM2: number | null;
   rooms: number | null;
   bedrooms: number | null;
   features: BuyerFeature[];
+  /** La position du bien, géocodée depuis son adresse désignée ; absente tant qu'il n'est pas situé (AU073). */
+  position?: GeoPoint | null;
+  /** Étage (0 : rez-de-chaussée), classe énergie et terrain, lus dans la fiche du bien ; absents s'ils ne sont pas dits (AU072). */
+  floor?: number | null;
+  energyClass?: string | null;
+  landM2?: number | null;
 }
 
 export type CriterionState = 'met' | 'tolerated' | 'unmet';
@@ -63,6 +73,8 @@ export interface CriterionCheck {
   criterion: MandatoryCriterion;
   state: CriterionState;
   reason: string;
+  /** Pour l'étage : la borne jugée, minimum ou maximum, pour citer les mots qui l'ont dite (AU072). */
+  bound?: 'floorMin' | 'floorMax';
 }
 
 export interface BuyerMatch {
@@ -74,6 +86,8 @@ export interface BuyerMatch {
   featuresMet: BuyerFeature[];
   /** Somme des écarts tolérés, en pour cent, pour classer. */
   gap: number;
+  /** Les souhaits d'étage, de classe énergie ou de terrain que le bien remplit, pour classer (AU072). */
+  softMet?: number;
 }
 
 const eur = (n: number): string => `${new Intl.NumberFormat('fr-FR').format(n).replace(/ | /g, ' ')} €`;
@@ -96,6 +110,16 @@ const KINDS_OF_PROPERTY: Record<PropertyKind, readonly BuyerPropertyKind[]> = {
   business: ['commercial'],
 };
 
+/**
+ * Le type cherché que ce bien remplit : un logement dit maison ou appartement ne répond qu'à ce type ; un logement dont
+ * on ne sait pas lequel il est ne remplit qu'une recherche qui accepte les deux, et reste dans la tolérance sinon (AU070).
+ */
+export function kindMet(property: Pick<MatchProperty, 'kind' | 'dwelling'>, wanted: readonly BuyerPropertyKind[]): BuyerPropertyKind | undefined {
+  if (property.kind === 'home' && !property.dwelling) return wanted.includes('house') && wanted.includes('apartment') ? 'house' : undefined;
+  const offered = property.kind === 'home' ? [property.dwelling!] : (KINDS_OF_PROPERTY[property.kind] ?? []);
+  return wanted.find((k) => offered.includes(k));
+}
+
 const same = (a: string, b: string): boolean => a.normalize('NFC').toLocaleLowerCase('fr') === b.normalize('NFC').toLocaleLowerCase('fr');
 
 /** Le rapprochement d'une recherche et d'un bien : une fonction pure, chaque critère avec sa raison [R51]. */
@@ -107,15 +131,23 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
   };
 
   if (search.propertyKinds.length > 0) {
-    const offered = KINDS_OF_PROPERTY[property.kind] ?? [];
-    const hit = search.propertyKinds.find((k) => offered.includes(k));
-    if (hit) add('kind', 'met', `Type cherché : ${KIND_LABEL[hit]}.`);
+    const hit = kindMet(property, search.propertyKinds);
+    if (hit) add('kind', 'met', property.kind === 'home' && !property.dwelling ? 'Type cherché : maison ou appartement.' : `Type cherché : ${KIND_LABEL[hit]}.`);
+    else if (property.kind === 'home' && !property.dwelling && search.propertyKinds.some((k) => k === 'house' || k === 'apartment'))
+      add('kind', 'tolerated', 'Maison ou appartement : pas encore dit sur la fiche du bien.');
     else add('kind', 'unmet', `Type cherché : ${search.propertyKinds.map((k) => KIND_LABEL[k]).join(', ')}.`);
   }
   if (search.communes.length > 0) {
     const city = property.city;
     if (city !== null && search.communes.some((c) => same(c, city))) add('commune', 'met', `Commune cherchée : ${city}.`);
     else add('commune', 'unmet', 'Commune hors de la recherche.');
+  }
+  // AU073 · le secteur privé : un bien hors du secteur, ou pas encore situé, n'est pas proposé.
+  if (search.area) {
+    const at = property.position ?? null;
+    if (at === null) add('area', 'unmet', 'Position du bien inconnue.');
+    else if (insideArea(search.area, at)) add('area', 'met', `Dans le secteur « ${search.area.label} ».`);
+    else add('area', 'unmet', 'Hors du secteur cherché.');
   }
   if (search.budgetMaxEur !== null) {
     const price = property.priceEur;
@@ -126,10 +158,11 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
       // En centièmes de pour cent, pour éviter les arrondis à la limite.
       // La limite se compare sans arrondi ; l'arrondi ne sert qu'à l'affichage.
       const over = Math.round(((price - budget) * 10_000) / budget) / 100;
-      if ((price - budget) * 100 <= tolerances.budgetOverPct * budget + 1e-9) {
+      // Un budget dit infranchissable n'a aucune tolérance (AU115).
+      if (search.budgetStrict !== true && (price - budget) * 100 <= tolerances.budgetOverPct * budget + 1e-9) {
         gap += over;
         add('budget', 'tolerated', `Prix ${over.toLocaleString('fr-FR')} % au-dessus du budget, dans la tolérance de ${tolerances.budgetOverPct} %.`);
-      } else add('budget', 'unmet', 'Prix au-dessus du budget.');
+      } else add('budget', 'unmet', search.budgetStrict === true ? 'Prix au-dessus du budget, que l’acquéreur dit infranchissable.' : 'Prix au-dessus du budget.');
     }
   }
   if (search.surfaceMinM2 !== null) {
@@ -163,12 +196,51 @@ export function matchBuyer(property: MatchProperty, search: BuyerSearch, toleran
     else add('bedrooms', 'unmet', 'Pas assez de chambres.');
   }
 
+  // AU072 · étage, classe énergie et terrain : impératifs, sauf s'ils sont dits souhaits ; une valeur inconnue ne
+  // remplit pas un impératif, et un souhait non rempli n'écarte rien.
+  const soft = search.softCriteria ?? [];
+  let softMet = 0;
+  const judgeOne = (criterion: 'floor' | 'energy' | 'land', isSoft: boolean, ok: boolean | null, met: string, unmet: string, unknown: string, bound?: 'floorMin' | 'floorMax') => {
+    const before = checks.length;
+    if (ok === true) {
+      add(criterion, 'met', met);
+      if (isSoft) softMet += 1;
+    } else if (!isSoft) add(criterion, 'unmet', ok === null ? unknown : unmet);
+    if (bound && checks.length > before) checks[checks.length - 1]!.bound = bound;
+  };
+  // Chaque borne d'étage se juge avec sa propre force.
+  const fMin = search.floorMin ?? null;
+  const fMax = search.floorMax ?? null;
+  const floor = property.floor ?? null;
+  const at = floor === null ? '' : floor === 0 ? 'Rez-de-chaussée' : `${floor === 1 ? '1er' : `${floor}e`} étage`;
+  if (fMin !== null) judgeOne('floor', soft.includes('floorMin'), floor === null ? null : floor >= fMin, `${at}, au-dessus du minimum demandé.`, `${at}, sous l’étage demandé.`, 'Étage du bien inconnu.', 'floorMin');
+  if (fMax !== null) judgeOne('floor', soft.includes('floorMax'), floor === null ? null : floor <= fMax, `${at}, sous le maximum demandé.`, `${at}, au-dessus de l’étage demandé.`, 'Étage du bien inconnu.', 'floorMax');
+  const eMax = search.energyClassMax ?? null;
+  if (eMax !== null) {
+    const cls = property.energyClass ?? null;
+    judgeOne('energy', soft.includes('energy'), cls === null ? null : cls <= eMax, `Classe énergie ${cls} pour ${eMax} au moins.`, `Classe énergie ${cls}, moins bonne que ${eMax}.`, 'Classe énergie du bien inconnue.');
+  }
+  const lMin = search.landMinM2 ?? null;
+  if (lMin !== null) {
+    // Un terrain seul n'a pas de fiche de terrain : sa surface enregistrée est celle du terrain.
+    const land = property.landM2 ?? (property.kind === 'land' ? property.surfaceM2 : null);
+    judgeOne('land', soft.includes('land'), land === null ? null : land >= lMin, `Terrain de ${land} m² pour ${lMin} m² au moins.`, 'Terrain plus petit que demandé.', 'Terrain du bien inconnu.');
+  }
+
+  // Les équipements impératifs sont éliminatoires, chaque absence nommée ; une valeur inconnue ne les remplit pas (AU071).
+  const required = search.requiredFeatures ?? [];
+  if (required.length > 0) {
+    const missing = required.filter((f) => !property.features.includes(f));
+    if (missing.length === 0) add('features', 'met', `Impératifs présents : ${required.map((f) => FEATURE_LABEL[f] ?? f).join(', ')}.`);
+    else add('features', 'unmet', `Impératif absent ou inconnu : ${missing.map((f) => FEATURE_LABEL[f] ?? f).join(', ')}.`);
+  }
   const featuresMet = search.features.filter((f) => property.features.includes(f));
   // Une recherche sans aucun critère sur le bien ne se rapproche de rien : aucune proposition sans raison [R51].
-  if (checks.length === 0) return { status: 'miss', checks, unmet: [], featuresMet, gap: 0 };
-  const unmet = checks.filter((c) => c.state === 'unmet').map((c) => c.criterion);
+  if (checks.length === 0) return { status: 'miss', checks, unmet: [], featuresMet, gap: 0, softMet };
+  // Un critère manqué compte une fois, même jugé sur ses deux bornes (l'étage inconnu, par exemple).
+  const unmet = [...new Set(checks.filter((c) => c.state === 'unmet').map((c) => c.criterion))];
   const status = unmet.length > 0 ? 'miss' : checks.some((c) => c.state === 'tolerated') ? 'tolerated' : 'match';
-  return { status, checks, unmet, featuresMet, gap };
+  return { status, checks, unmet, featuresMet, gap, softMet };
 }
 
 const URGENCY_RANK: Record<Deadline, number> = { now: 0, within_3_months: 1, within_6_months: 2, within_1_year: 3, later: 4 };
@@ -198,6 +270,8 @@ export type RapprochementRefusal = { ok: false; rule: 'R16' | 'R42'; code: strin
 /** La porte de toute diffusion, `Diffusion.canDiffuse` de D05 [R42]. */
 export interface DiffusionGate {
   canDiffuse(networkId: string, propertyId: string, at?: Date): Promise<{ allowed: boolean; reason: string }>;
+  /** AU106 · les biens que `canDiffuse` ouvre à cet instant, lus pour tout le réseau en quelques requêtes. */
+  diffusableProperties?(networkId: string, at?: Date): Promise<Set<string>>;
 }
 
 export interface RapprochementOptions {
@@ -222,7 +296,10 @@ function compareScored(a: Scored, b: Scored): number {
   const strict = Number(a.m.status !== 'match') - Number(b.m.status !== 'match');
   if (strict !== 0) return strict;
   if (a.m.gap !== b.m.gap) return a.m.gap - b.m.gap;
-  if (a.m.featuresMet.length !== b.m.featuresMet.length) return b.m.featuresMet.length - a.m.featuresMet.length;
+  // Les souhaits remplis classent : équipements souhaités, et étage, classe ou terrain souhaités (AU072).
+  const wa = a.m.featuresMet.length + (a.m.softMet ?? 0);
+  const wb = b.m.featuresMet.length + (b.m.softMet ?? 0);
+  if (wa !== wb) return wb - wa;
   const ua = a.search.urgency === null ? 5 : URGENCY_RANK[a.search.urgency];
   const ub = b.search.urgency === null ? 5 : URGENCY_RANK[b.search.urgency];
   if (ua !== ub) return ua - ub;
@@ -232,6 +309,7 @@ function compareScored(a: Scored, b: Scored): number {
 
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 const OUTDOOR_FEATURE: Record<string, BuyerFeature> = { jardin: 'garden', balcon: 'balcony', terrasse: 'terrace' };
+const AMENITY_FEATURE: Record<string, BuyerFeature> = { piscine: 'pool', cave: 'cellar', cheminee: 'fireplace' };
 
 export class Rapprochement {
   private readonly now: () => Date;
@@ -358,19 +436,79 @@ export class Rapprochement {
 
   /** Le bien vu par le rapprochement : sa fiche de base, et sa fiche complète (P01) quand elle existe. */
   async propertyForMatch(p: Property): Promise<MatchProperty> {
-    let bedrooms: number | null = null;
-    const features: BuyerFeature[] = [];
     const sheet = await this.db.first<{ data: string }>('SELECT data FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [p.id]);
-    if (sheet) {
+    return this.matchFrom(p, sheet?.data ?? null, await shownPrice(this.db, p.id, p.price_eur), await positionOf(this.db, p.id));
+  }
+
+  /**
+   * AU106 · la lecture de tous les biens en vente du réseau pour une recherche, en trois requêtes au lieu de trois par
+   * bien : la dernière fiche, le dernier prix publié et la position de l'adresse désignée de chacun. Même résultat que
+   * `propertyForMatch`, bien par bien.
+   */
+  async propertiesForMatch(networkId: string, rows: readonly Property[]): Promise<Map<string, MatchProperty>> {
+    const sheets = new Map(
+      (
+        await this.db.all<{ property_id: string; data: string }>(
+          `SELECT property_id, data FROM (SELECT s.property_id, s.data, ROW_NUMBER() OVER (PARTITION BY s.property_id ORDER BY s.version DESC) AS rn
+             FROM property_sheets s JOIN properties p ON p.id = s.property_id WHERE p.network_id = ? AND p.status = 'available') x WHERE rn = 1`,
+          [networkId],
+        )
+      ).map((r) => [r.property_id, r.data]),
+    );
+    const listings = new Map(
+      (
+        await this.db.all<{ property_id: string; state: string; price_eur: number | null }>(
+          `SELECT property_id, state, price_eur FROM (SELECT v.property_id, v.state, v.price_eur, ROW_NUMBER() OVER (PARTITION BY v.property_id ORDER BY v.seq DESC) AS rn
+             FROM listing_versions v JOIN properties p ON p.id = v.property_id WHERE p.network_id = ? AND p.status = 'available') x WHERE rn = 1`,
+          [networkId],
+        )
+      ).map((r) => [r.property_id, r]),
+    );
+    const positions = new Map(
+      (
+        await this.db.all<{ property_id: string; lat: number; lon: number }>(
+          `SELECT property_id, lat, lon FROM (SELECT pp.property_id, pp.lat, pp.lon, ROW_NUMBER() OVER (PARTITION BY pp.property_id ORDER BY pp.version DESC) AS rn
+             FROM property_positions pp JOIN properties p ON p.id = pp.property_id
+            WHERE p.network_id = ? AND p.status = 'available'
+              AND pp.designation_version = (SELECT MAX(d.version) FROM property_designations d WHERE d.property_id = pp.property_id)) x WHERE rn = 1`,
+          [networkId],
+        )
+      ).map((r) => [r.property_id, { lat: Number(r.lat), lon: Number(r.lon) }]),
+    );
+    const out = new Map<string, MatchProperty>();
+    for (const p of rows) {
+      const v = listings.get(p.id);
+      const price = v && v.state !== 'retiree' && v.price_eur !== null ? Number(v.price_eur) : p.price_eur;
+      out.set(p.id, await this.matchFrom(p, sheets.get(p.id) ?? null, price, positions.get(p.id) ?? null));
+    }
+    return out;
+  }
+
+  private async matchFrom(p: Property, sheetData: string | null, priceEur: number | null, position: GeoPoint | null): Promise<MatchProperty> {
+    let bedrooms: number | null = null;
+    // La fiche du bien, plus récente, l'emporte sur ce qui a été dit à la création ou à l'import (AU070).
+    let dwelling: Dwelling | null = p.kind === 'home' ? (p.dwelling ?? null) : null;
+    let floor: number | null = null;
+    let landM2: number | null = null;
+    let energyClass: string | null = null;
+    const features: BuyerFeature[] = [];
+    if (sheetData !== null) {
       try {
-        const parsed: unknown = JSON.parse(sheet.data);
+        const parsed: unknown = JSON.parse(sheetData);
         const raw = typeof parsed === 'object' && parsed !== null ? (parsed as { characteristics?: unknown }).characteristics : undefined;
         if (typeof raw !== 'object' || raw === null) throw new Error('fiche du bien sans caractéristiques');
-        const c = raw as { bedrooms?: unknown; outdoor?: unknown; elevator?: unknown; parkingSpaces?: unknown };
+        const c = raw as { bedrooms?: unknown; outdoor?: unknown; elevator?: unknown; parkingSpaces?: unknown; dwelling?: unknown; floor?: unknown; landM2?: unknown; amenities?: unknown };
         if (typeof c.bedrooms === 'number') bedrooms = c.bedrooms;
+        if (c.dwelling === 'house' || c.dwelling === 'apartment') dwelling = c.dwelling;
+        if (typeof c.floor === 'number') floor = c.floor;
+        if (typeof c.landM2 === 'number') landM2 = c.landM2;
+        const e = (parsed as { energy?: { energyClass?: unknown } | null }).energy;
+        if (e && typeof e.energyClass === 'string' && /^[A-G]$/.test(e.energyClass)) energyClass = e.energyClass;
         if (Array.isArray(c.outdoor)) for (const o of c.outdoor) if (typeof o === 'string' && OUTDOOR_FEATURE[o]) features.push(OUTDOOR_FEATURE[o]);
         if (c.elevator === true) features.push('elevator');
         if (typeof c.parkingSpaces === 'number' && c.parkingSpaces > 0) features.push('parking');
+        // AU061 · piscine, cave et cheminée dites sur la fiche répondent aux recherches qui les demandent.
+        if (Array.isArray(c.amenities)) for (const a of c.amenities) if (typeof a === 'string' && AMENITY_FEATURE[a]) features.push(AMENITY_FEATURE[a]);
       } catch {
         // Une fiche illisible ne donne rien de plus que la fiche de base ; l'écart est écrit au journal, sans donnée.
         await appendEvent(
@@ -380,7 +518,7 @@ export class Rapprochement {
         );
       }
     }
-    return { kind: p.kind, city: p.city, priceEur: await shownPrice(this.db, p.id, p.price_eur), surfaceM2: p.surface_m2, rooms: p.rooms, bedrooms, features };
+    return { kind: p.kind, dwelling: p.kind === 'home' ? dwelling : null, city: p.city, priceEur, surfaceM2: p.surface_m2, rooms: p.rooms, bedrooms, features, floor, energyClass, landM2, position };
   }
 
   /**
@@ -390,19 +528,41 @@ export class Rapprochement {
   private async candidates(networkId: string): Promise<Candidate[]> {
     const at = this.now();
     const since = new Date(at.getTime() - this.activeDays * 86_400_000).toISOString();
-    const rows = await this.db.all<BuyerSearchRow & { stage: string }>(
-      `SELECT s.*, p.stage FROM buyer_searches s JOIN projects p ON p.id = s.project_id
+    const rows = await this.db.all<BuyerSearchRow & { stage: string; confirmed_at: string | null }>(
+      `SELECT s.*, p.stage, (SELECT max(c.confirmed_at) FROM buyer_search_confirmations c WHERE c.project_id = s.project_id) AS confirmed_at
+       FROM buyer_searches s JOIN projects p ON p.id = s.project_id
        WHERE s.network_id = ? AND p.kind = 'buy'
          AND s.version = (SELECT max(version) FROM buyer_searches WHERE project_id = s.project_id)
        ORDER BY s.created_at DESC, s.project_id`,
       [networkId],
     );
     const nowIso = at.toISOString();
+    // Le secteur privé de chaque recherche, rangé à part, joint à sa recherche (AU073).
+    const areas = await areasOfNetwork(this.db, networkId);
+    const areaSetAt = new Map((await this.db.all<{ project_id: string; at: string }>('SELECT project_id, max(set_at) AS at FROM buyer_search_areas WHERE network_id = ? GROUP BY project_id', [networkId])).map((r) => [r.project_id, r.at]));
     const byRoot = new Map<string, Candidate>();
-    for (const row of rows) {
+    // Un projet dont le seul critère est un secteur, sans recherche rangée : il compte aussi, avec une recherche vide (AU073).
+    const areaOnly = await this.db.all<{ project_id: string; person_id: string; stage: string; set_at: string; confirmed_at: string | null }>(
+      `SELECT a.project_id, p.person_id, p.stage, max(a.set_at) AS set_at,
+         (SELECT max(c.confirmed_at) FROM buyer_search_confirmations c WHERE c.project_id = a.project_id) AS confirmed_at
+       FROM buyer_search_areas a JOIN projects p ON p.id = a.project_id
+       WHERE a.network_id = ? AND p.kind = 'buy' AND NOT EXISTS (SELECT 1 FROM buyer_searches s WHERE s.project_id = a.project_id)
+       GROUP BY a.project_id, p.person_id, p.stage ORDER BY set_at DESC, a.project_id`,
+      [networkId],
+    );
+    const entries: { project_id: string; person_id: string; stage: string; created_at: string; confirmed_at: string | null; search: () => BuyerSearch }[] = [
+      ...rows.map((row) => ({ project_id: row.project_id, person_id: row.person_id, stage: row.stage, created_at: row.created_at, confirmed_at: row.confirmed_at, search: () => toVersion(row).search })),
+      ...areaOnly.map((r) => ({ project_id: r.project_id, person_id: r.person_id, stage: r.stage, created_at: r.set_at, confirmed_at: r.confirmed_at, search: (): BuyerSearch => ({ ...EMPTY_SEARCH, propertyKinds: [], communes: [], features: [], requiredFeatures: [] }) })),
+    ];
+    for (const row of entries) {
       if (CLOSED_STAGES.includes(row.stage)) continue;
-      if (row.created_at < since) continue;
-      const search = toVersion(row).search;
+      // Active si la recherche a bougé, ou si l'acquéreur l'a dite toujours d'actualité, depuis moins de `activeDays` jours (AU074).
+      // Un secteur rangé depuis rafraîchit aussi la recherche (AU073).
+      const movedAt = [row.created_at, row.confirmed_at, areaSetAt.get(row.project_id)].filter((d): d is string => typeof d === 'string').sort().at(-1)!;
+      if (movedAt < since) continue;
+      const search = row.search();
+      const area = areas.get(row.project_id);
+      if (area) search.area = area;
       // Une recherche sans aucun critère sur le bien n'est pas encore une recherche : elle ne compte pas.
       if (
         search.propertyKinds.length === 0 &&
@@ -410,13 +570,19 @@ export class Rapprochement {
         search.budgetMaxEur === null &&
         search.surfaceMinM2 === null &&
         search.roomsMin === null &&
-        search.bedroomsMin === null
+        search.bedroomsMin === null &&
+        (search.requiredFeatures ?? []).length === 0 &&
+        (search.floorMin ?? null) === null &&
+        (search.floorMax ?? null) === null &&
+        (search.energyClassMax ?? null) === null &&
+        (search.landMinM2 ?? null) === null &&
+        !search.area
       ) continue;
       const view = await this.fiche.view(row.person_id);
       const root = view.person.id;
       const known = byRoot.get(root);
       if (known) {
-        known.projects.push({ projectId: row.project_id, search, movedAt: row.created_at });
+        known.projects.push({ projectId: row.project_id, search, movedAt });
         continue;
       }
       const ids = view.members.map((m) => m.id);
@@ -430,7 +596,7 @@ export class Rapprochement {
         memberIds: ids,
         agentIds: view.members.map((m) => m.agent_id),
         firstName: view.members.map((m) => m.first_name).find((n) => n) ?? null,
-        projects: [{ projectId: row.project_id, search, movedAt: row.created_at }],
+        projects: [{ projectId: row.project_id, search, movedAt }],
       });
     }
     return [...byRoot.values()];

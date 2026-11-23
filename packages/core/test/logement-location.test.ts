@@ -6,8 +6,11 @@ import {
   annexValidUntil,
   banDate,
   checkDwelling,
+  decencyOf,
+  territoryOf,
   ownerNoticeText,
   parseFacts,
+  rentCeilingCents,
   requiredAnnexes,
   type RentalFacts,
 } from '../src/location/index.ts';
@@ -28,6 +31,10 @@ const FACTS: RentalFacts = {
   finalEnergyKwh: 210,
   buildYear: 1985,
   electricityOver15: false,
+  mainRoomHundredths: 1_800,
+  ceilingHeightCm: 250,
+  localRules: { reference: 'Règlement sanitaire départemental, art. 40', checkedOn: '2027-01-04', compliant: true },
+  firstLetting: true,
   gas: 'aucune',
   leaseStart: '2027-09-01',
 };
@@ -68,8 +75,9 @@ describe('W01 · règles écrites du contrôle du logement', () => {
 
   it('[R101] moins de 9 m² habitables, ou une annexe manquante, échue ou datée du futur, bloque avec sa raison', () => {
     const today = '2027-07-12';
-    expect(checkDwelling({ ...FACTS, livingAreaHundredths: 899 }, ALL_VALID, today)).toEqual([{ code: 'living_area', livingAreaHundredths: 899 }]);
-    expect(checkDwelling({ ...FACTS, livingAreaHundredths: 900 }, ALL_VALID, today)).toEqual([]);
+    const small = { ...FACTS, livingAreaHundredths: 899, mainRoomHundredths: 899, ceilingHeightCm: 250 };
+    expect(checkDwelling(small, ALL_VALID, today)).toEqual([{ code: 'living_area', livingAreaHundredths: 899, mainRoomHundredths: 899, ceilingHeightCm: 250, habitableVolumeHundredths: null }]);
+    expect(checkDwelling({ ...small, livingAreaHundredths: 900, mainRoomHundredths: 900 }, ALL_VALID, today)).toEqual([]);
     expect(checkDwelling(FACTS, ALL_VALID.filter((a) => a.kind !== 'erp'), today)).toEqual([{ code: 'annex_missing', kind: 'erp' }]);
     // L'état des risques vaut 6 mois : échu avant le début du bail.
     const oldErp = [...ALL_VALID.filter((a) => a.kind !== 'erp'), { kind: 'erp' as const, diagnosedOn: '2027-01-15', validUntil: annexValidUntil('erp', '2027-01-15') }];
@@ -290,5 +298,214 @@ describeWithSqlite('W01 · mise en location contrôlée avant toute annonce', ()
     }
     const columns = await t.db.all<{ name: string }>("SELECT p.name FROM sqlite_master m JOIN pragma_table_info(m.name) p WHERE m.type = 'table' AND m.name LIKE 'rental_%'");
     for (const c of columns) expect(c.name).not.toMatch(/iban|bic|paid|received|deposit_received|encaiss/i);
+  });
+});
+
+describe('AU017 · décence : pièce principale et hauteur, ou volume', () => {
+  const today = '2026-11-18';
+  const base = { ...FACTS, leaseStart: '2027-09-01' };
+  const without = (f: typeof base) => {
+    const { mainRoomHundredths: _r, ceilingHeightCm: _h, ...rest } = f;
+    return rest;
+  };
+  it('[R101] 9 m² sans hauteur ni volume : jamais « louable », la raison dit ce qui manque', () => {
+    const f = { ...without(base), livingAreaHundredths: 900 };
+    expect(decencyOf(f)).toBe('inconnue');
+    const reasons = checkDwelling(f, ALL_VALID, today);
+    expect(reasons).toContainEqual({ code: 'dimensions_missing' });
+    expect(reasons.some((r) => r.code === 'living_area')).toBe(false);
+    // Une hauteur seule ne suffit pas à juger : il faut la pièce principale avec.
+    expect(decencyOf({ ...f, ceilingHeightCm: 250 })).toBe('inconnue');
+  });
+  it('[R101] 9 m² sous 2,20 m : décent ; sous 2,19 m sans volume : non décent', () => {
+    const f = { ...without(base), mainRoomHundredths: 900, ceilingHeightCm: 220 };
+    expect(decencyOf(f)).toBe('oui');
+    expect(decencyOf({ ...f, ceilingHeightCm: 219 })).toBe('non');
+    expect(checkDwelling({ ...f, ceilingHeightCm: 219 }, ALL_VALID, today)[0]).toMatchObject({ code: 'living_area', ceilingHeightCm: 219 });
+    expect(decencyOf({ ...f, mainRoomHundredths: 899 })).toBe('non');
+  });
+  it('[R101] la voie du volume : 20 m³ suffisent même avec une pièce de 8 m², 19,99 m³ non', () => {
+    const f = { ...without(base), mainRoomHundredths: 800, ceilingHeightCm: 250 };
+    expect(decencyOf({ ...f, habitableVolumeHundredths: 2_000 })).toBe('oui');
+    expect(decencyOf({ ...f, habitableVolumeHundredths: 1_999 })).toBe('non');
+    expect(decencyOf({ ...without(base), habitableVolumeHundredths: 2_000 })).toBe('oui');
+  });
+  it('[R101] une pièce principale plus grande que le logement, une hauteur hors bornes : refusées à la saisie', () => {
+    const raw = { ...without(base), chargesMode: 'provision' };
+    expect(parseFacts({ ...raw, mainRoomHundredths: 4_251 })).toEqual({ ok: false, field: 'mainRoomHundredths' });
+    expect(parseFacts({ ...raw, ceilingHeightCm: 99 })).toEqual({ ok: false, field: 'ceilingHeightCm' });
+    expect(parseFacts({ ...raw, habitableVolumeHundredths: 0 })).toEqual({ ok: false, field: 'habitableVolumeHundredths' });
+    expect(parseFacts({ ...raw, mainRoomHundredths: 1_800, ceilingHeightCm: 250, habitableVolumeHundredths: 10_500 })).toMatchObject({ ok: true, value: { mainRoomHundredths: 1_800, ceilingHeightCm: 250, habitableVolumeHundredths: 10_500 } });
+  });
+});
+
+describe('AU017 · la règle locale plus stricte, lue et datée, avant « louable »', () => {
+  const today = '2026-11-18';
+  const { localRules: _l, ...national } = FACTS;
+  it('[R101] le seuil national rempli ne suffit pas : sans règle locale lue, jamais « louable »', () => {
+    expect(decencyOf(national)).toBe('oui');
+    expect(checkDwelling(national, ALL_VALID, today)).toContainEqual({ code: 'local_rules_unchecked' });
+    expect(checkDwelling(FACTS, ALL_VALID, today).some((r) => r.code.startsWith('local_rules'))).toBe(false);
+  });
+  it('[R101] une règle locale non respectée bloque avec sa référence, même au-dessus du seuil national', () => {
+    const f = { ...FACTS, localRules: { reference: 'Règlement sanitaire départemental, art. 40-1', checkedOn: '2027-01-04', compliant: false } };
+    expect(checkDwelling(f, ALL_VALID, today)).toContainEqual({ code: 'local_rules_failed', reference: 'Règlement sanitaire départemental, art. 40-1' });
+  });
+  it('[R101] la règle locale se saisit avec sa référence et son jour, rien d’autre', () => {
+    const raw = { ...national, chargesMode: 'provision' };
+    expect(parseFacts({ ...raw, localRules: { reference: 'RS', checkedOn: '2027-01-04', compliant: true } })).toEqual({ ok: false, field: 'localRules' });
+    expect(parseFacts({ ...raw, localRules: { reference: 'RSD art. 40', checkedOn: 'hier', compliant: true } })).toEqual({ ok: false, field: 'localRules' });
+    expect(parseFacts({ ...raw, localRules: { reference: 'RSD art. 40', checkedOn: '2027-01-04', compliant: true, note: 'x' } })).toEqual({ ok: false, field: 'localRules' });
+    expect(parseFacts({ ...raw, localRules: { reference: ' RSD art. 40 ', checkedOn: '2027-01-04', compliant: true } })).toMatchObject({ ok: true, value: { localRules: { reference: 'RSD art. 40', checkedOn: '2027-01-04', compliant: true } } });
+  });
+});
+
+describe('AU098 · le calendrier énergétique de l’outre-mer', () => {
+  it('[R100] Guadeloupe, Martinique, Guyane, La Réunion, Mayotte : G en 2028, F en 2031, pas de date pour E ; la métropole garde le sien', () => {
+    expect(territoryOf('97100')).toBe('outre_mer');
+    expect(territoryOf('97600')).toBe('outre_mer');
+    expect(territoryOf('97700')).toBe('metropole');
+    expect(territoryOf('20000')).toBe('metropole');
+    expect(territoryOf('21000')).toBe('metropole');
+    expect(banDate('G', 'outre_mer')).toBe('2028-01-01');
+    expect(banDate('F', 'outre_mer')).toBe('2031-01-01');
+    expect(banDate('E', 'outre_mer')).toBeNull();
+    expect(banDate('G')).toBe('2025-01-01');
+    const g = { ...FACTS, energyClass: 'G' as const, finalEnergyKwh: 460, leaseStart: '2027-09-01' };
+    // Un G ultramarin se loue encore en 2027, sans le seuil métropolitain des 450 kWh ; en métropole, il est bloqué.
+    expect(checkDwelling(g, ALL_VALID, '2026-11-18', 'outre_mer').some((r) => r.code === 'energy_class' || r.code === 'final_energy')).toBe(false);
+    expect(checkDwelling(g, ALL_VALID, '2026-11-18').map((r) => r.code)).toEqual(expect.arrayContaining(['energy_class', 'final_energy']));
+    expect(checkDwelling({ ...g, leaseStart: '2028-01-01' }, ALL_VALID, '2026-11-18', 'outre_mer')).toContainEqual({ code: 'energy_class', energyClass: 'G', bannedFrom: '2028-01-01' });
+  });
+});
+
+describeWithSqlite('AU098 · un logement ultramarin contrôlé avec son calendrier', () => {
+  it('[R100] un G de La Réunion se loue pour un bail de 2027, s’annonce, et son échéance dit le 1er janvier 2028', async () => {
+    const t = await setup();
+    const reunion = await t.db.first<{ id: string }>('SELECT id FROM properties WHERE id = ?', [t.home.id]);
+    await t.db.run('UPDATE properties SET postal_code = ? WHERE id = ?', ['97400', reunion!.id]);
+    const id = await t.open({ energyClass: 'G', finalEnergyKwh: 460 });
+    await t.annexes(id);
+    expect(await t.location.check(t.agent, id)).toMatchObject({ ok: true, value: { decision: 'louable', reasons: [], bannedFrom: '2028-01-01' } });
+    expect(await t.location.advertisable(t.network.id, id)).toBe(true);
+    // L'état relu ne dit pas le contrôle périmé : l'écran garde « Préparer l'annonce ».
+    expect(await t.location.status(t.agent, id)).toMatchObject({ ok: true, value: { stale: false } });
+    const notices = await t.location.notices(t.agent, id);
+    expect(notices.ok && notices.value[0]).toMatchObject({ energyClass: 'G', bannedFrom: '2028-01-01' });
+  });
+});
+
+describe('AU016 · le gel des loyers des logements F et G', () => {
+  const today = '2026-11-18';
+  const { firstLetting: _f, ...unknown } = { ...FACTS, energyClass: 'F' as const, finalEnergyKwh: 330, leaseStart: '2027-09-01' };
+  it('[R100] un F sans loyer précédent ni première location n’est jamais louable ; un D n’est pas concerné', () => {
+    expect(checkDwelling(unknown, ALL_VALID, today)).toContainEqual({ code: 'previous_rent_missing' });
+    expect(checkDwelling({ ...unknown, energyClass: 'D' }, ALL_VALID, today).some((r) => r.code === 'previous_rent_missing')).toBe(false);
+    expect(checkDwelling({ ...unknown, firstLetting: true }, ALL_VALID, today).some((r) => r.code === 'previous_rent_missing' || r.code === 'rent_freeze')).toBe(false);
+  });
+  it('[R100] un F reloué plus cher que le dernier loyer est bloqué ; au même loyer ou moins, il passe', () => {
+    expect(checkDwelling({ ...unknown, previousRentCents: FACTS.rentCents - 1 }, ALL_VALID, today)).toContainEqual({ code: 'rent_freeze', previousRentCents: FACTS.rentCents - 1 });
+    expect(checkDwelling({ ...unknown, previousRentCents: FACTS.rentCents }, ALL_VALID, today).some((r) => r.code === 'rent_freeze')).toBe(false);
+    expect(checkDwelling({ ...unknown, energyClass: 'G', previousRentCents: FACTS.rentCents - 1 }, ALL_VALID, today, 'outre_mer')).toContainEqual({ code: 'rent_freeze', previousRentCents: FACTS.rentCents - 1 });
+  });
+  it('[R100] la saisie : un loyer précédent positif, ou la première location, jamais les deux', () => {
+    const raw = { ...unknown, chargesMode: 'provision' };
+    expect(parseFacts({ ...raw, previousRentCents: 0 })).toEqual({ ok: false, field: 'previousRentCents' });
+    expect(parseFacts({ ...raw, firstLetting: true, previousRentCents: 60_000 })).toEqual({ ok: false, field: 'firstLetting' });
+    expect(parseFacts({ ...raw, firstLetting: 'oui' })).toEqual({ ok: false, field: 'firstLetting' });
+    expect(parseFacts({ ...raw, previousRentCents: 60_000 })).toMatchObject({ ok: true, value: { previousRentCents: 60_000 } });
+  });
+});
+
+describeWithSqlite('AU016 · le loyer précédent rangé avec les faits', () => {
+  it('[R100] rangé, relu au contrôle : un F reloué plus cher est bloqué de bout en bout', async () => {
+    const t = await setup();
+    const id = await t.open({ energyClass: 'F', finalEnergyKwh: 330, leaseStart: '2027-12-31', firstLetting: null, previousRentCents: 60_000 });
+    await t.annexes(id);
+    expect(await t.location.check(t.agent, id)).toMatchObject({ ok: true, value: { decision: 'bloque', reasons: [{ code: 'rent_freeze', previousRentCents: 60_000 }] } });
+  });
+});
+
+// Arrêté préfectoral inventé : 20 € de référence, 24 € majoré, par m² et par mois.
+const RC = { decree: 'Arrêté préfectoral inventé n° 0000-00', readOn: '2027-07-01', referenceCentsPerM2: 2_000, majoredCentsPerM2: 2_400, complementCents: 0, complementReason: null };
+
+describe('AU015 · encadrement des loyers, règles écrites', () => {
+  it('[R101] dans une commune encadrée, le loyer de base ne dépasse pas le loyer de référence majoré fois la surface ; au centime près', () => {
+    const today = '2027-07-12';
+    // 42,50 m² × 24 € = 1 020 € par mois.
+    const at = (rentCents: number, complementCents = 0, complementReason: string | null = null) =>
+      checkDwelling({ ...FACTS, rentCents, rentControl: { ...RC, complementCents, complementReason } }, ALL_VALID, today, 'metropole', true);
+    expect(rentCeilingCents(RC, 4_250)).toBe(102_000);
+    expect(at(102_000)).toEqual([]);
+    expect(at(102_001)).toEqual([{ code: 'rent_above_ceiling', baseRentCents: 102_001, ceilingCents: 102_000 }]);
+    // Un complément justifié s'ajoute au loyer de base ; sans justification, il est dit.
+    expect(at(112_000, 10_000, 'Terrasse de 40 m² avec vue dégagée, rare dans le quartier')).toEqual([]);
+    expect(at(112_000, 10_000)).toEqual([{ code: 'complement_unjustified' }]);
+    // Jamais de complément pour un F ou un G.
+    expect(checkDwelling({ ...FACTS, energyClass: 'F', rentControl: { ...RC, complementCents: 1_000, complementReason: 'Terrasse de 40 m² avec vue dégagée' } }, ALL_VALID, today, 'metropole', true)).toEqual([{ code: 'complement_forbidden', energyClass: 'F' }]);
+    // Encadrée sans l'arrêté lu : jamais louable ; hors encadrement, l'arrêté n'est pas demandé.
+    expect(checkDwelling(FACTS, ALL_VALID, today, 'metropole', true)).toEqual([{ code: 'rent_control_missing' }]);
+    expect(checkDwelling(FACTS, ALL_VALID, today, 'metropole', false)).toEqual([]);
+  });
+
+  it('[R101] l’arrêté se saisit avec sa référence, son jour, deux loyers au m² dont le majoré au moins égal ; un complément vient avec sa justification', () => {
+    expect(parseFacts({ ...FACTS, rentControl: RC })).toMatchObject({ ok: true, value: { rentControl: RC } });
+    for (const bad of [
+      { ...RC, majoredCentsPerM2: 1_999 },
+      { ...RC, decree: '' },
+      { ...RC, readOn: '2027-02-30' },
+      { ...RC, complementCents: 0, complementReason: 'Une justification sans complément' },
+      { ...RC, complementCents: 65_000 },
+      { ...RC, inconnu: 1 },
+    ]) expect(parseFacts({ ...FACTS, rentControl: bad })).toEqual({ ok: false, field: 'rentControl' });
+  });
+});
+
+describeWithSqlite('AU015 · encadrement des loyers, à la mise en location', () => {
+  it('[R101] la commune encadrée par une règle rangée : sans l’arrêté, bloqué ; au-dessus du plafond, bloqué ; dans le plafond, louable ; une règle finie ne compte plus', async () => {
+    const t = await setup();
+    const id = await t.open();
+    await t.annexes(id);
+    expect(await t.location.check(t.agent, id)).toMatchObject({ ok: true, value: { decision: 'louable' } });
+    await t.db.run('INSERT INTO rental_listing_communes (listing_id, insee_code, recorded_by, recorded_at) VALUES (?, ?, ?, ?)', [id, '21999', 'agent:a', '2027-07-12T08:00:00.000Z']);
+    const rule = (rid: string, until: string | null, recordedAt: string) =>
+      t.db.run(
+        "INSERT INTO commune_rental_rules (id, network_id, insee_code, rule, effective_from, effective_until, source, source_date, recorded_by, recorded_at) VALUES (?, ?, '21999', 'encadrement_loyers', '2027-01-01', ?, 'Arrêté inventé', '2026-12-01', 'direction:d', ?)",
+        [rid, t.network.id, until, recordedAt],
+      );
+    await rule('r1', null, '2027-01-02T00:00:00.000Z');
+    // La règle rangée rend le dernier contrôle caduc : plus annonçable sans nouveau contrôle.
+    expect(await t.location.advertisable(t.network.id, id)).toBe(false);
+    expect(await t.location.check(t.agent, id)).toMatchObject({ ok: true, value: { decision: 'bloque', reasons: [{ code: 'rent_control_missing' }] } });
+    // 650 € pour 42,50 m² : sous un majoré de 15 € (637,50 €) ? Non : bloqué ; sous 24 € : louable.
+    expect((await t.location.recordFacts(t.agent, id, { ...FACTS, rentControl: { ...RC, majoredCentsPerM2: 1_500, referenceCentsPerM2: 1_250 } })).ok).toBe(true);
+    expect(await t.location.check(t.agent, id)).toMatchObject({ value: { decision: 'bloque', reasons: [{ code: 'rent_above_ceiling', baseRentCents: 65_000, ceilingCents: 63_750 }] } });
+    expect((await t.location.recordFacts(t.agent, id, { ...FACTS, rentControl: RC })).ok).toBe(true);
+    expect(await t.location.check(t.agent, id)).toMatchObject({ value: { decision: 'louable' } });
+    expect(await t.location.advertisable(t.network.id, id)).toBe(true);
+    // La fin de l'encadrement rangée plus tard (au 31 août 2027, avant le bail) : l'arrêté n'est plus demandé.
+    await rule('r2', '2027-08-31', '2027-07-12T09:00:00.000Z');
+    expect(await t.location.rentControlledOn({ id, network_id: t.network.id }, '2027-09-01')).toBe(false);
+    expect(await t.location.rentControlledOn({ id, network_id: t.network.id }, '2027-08-31')).toBe(true);
+  });
+
+  it('[R101] le jour jugé est celui de Paris : une règle qui commence à minuit à Paris vaut déjà quand il est 23 h 30 en temps universel', async () => {
+    const t = await setup();
+    const id = await t.open({ leaseStart: '2027-07-12' });
+    await t.db.run('INSERT INTO rental_listing_communes (listing_id, insee_code, recorded_by, recorded_at) VALUES (?, ?, ?, ?)', [id, '21999', 'agent:a', '2027-07-12T08:00:00.000Z']);
+    await t.db.run(
+      "INSERT INTO commune_rental_rules (id, network_id, insee_code, rule, effective_from, effective_until, source, source_date, recorded_by, recorded_at) VALUES ('r1', ?, '21999', 'encadrement_loyers', '2027-07-14', NULL, 'Arrêté inventé', '2026-12-01', 'direction:d', '2027-07-01T00:00:00.000Z')",
+      [t.network.id],
+    );
+    clock = Date.parse('2027-07-13T21:30:00.000Z');
+    expect(await t.location.rentControlledFor({ id, network_id: t.network.id }, '2027-07-12')).toBe(false);
+    // 23 h 30 en temps universel le 13 : déjà le 14 à Paris.
+    clock = Date.parse('2027-07-13T22:30:00.000Z');
+    expect(await t.location.rentControlledFor({ id, network_id: t.network.id }, '2027-07-12')).toBe(true);
+  });
+
+  it('[R101] l’arrêté et la justification tiennent sur une ligne : le bail les reprend et les relit tels quels', () => {
+    expect(parseFacts({ ...FACTS, rentControl: { ...RC, decree: 'Arrêté\nn° 1' } })).toEqual({ ok: false, field: 'rentControl' });
+    expect(parseFacts({ ...FACTS, rentControl: { ...RC, complementCents: 1_000, complementReason: 'Terrasse de 40 m²\navec vue' } })).toEqual({ ok: false, field: 'rentControl' });
   });
 });

@@ -108,6 +108,8 @@ export interface AccessDetail {
   response: AccessResponse;
   /** Par table, le nombre de lignes qui ne sont qu'à la personne : ni partagées avec une autre, ni en partie masquées. */
   exclusiveRows: Record<string, number>;
+  /** Ces lignes mêmes, telles que la base les garde, pour l'effacement réel (AU020). Jamais rendues à la personne. */
+  exclusiveData?: Record<string, Readonly<Record<string, SqlValue>>[]>;
 }
 
 /**
@@ -120,7 +122,11 @@ async function sharedRow(db: SqlDatabase, entry: Extract<AccessMapEntry, { locat
   if (!entry.sharedIf) return true;
   const value = row[entry.sharedIf.key];
   if (value === null || value === undefined) return false;
-  return (await db.first(`SELECT 1 AS x FROM ${entry.sharedIf.from} WHERE ${entry.sharedIf.column} = ? LIMIT 1`, [value])) !== null;
+  // Partagée dès qu'une des tables qui la désignent la nomme (co-mandants, représentants : AU001, AU059).
+  for (const from of [entry.sharedIf.from, ...(entry.sharedIf.alsoFrom ?? [])]) {
+    if ((await db.first(`SELECT 1 AS x FROM ${from} WHERE ${entry.sharedIf.column} = ? LIMIT 1`, [value])) !== null) return true;
+  }
+  return false;
 }
 
 export async function assembleAccess(
@@ -238,7 +244,7 @@ export async function assembleAccessDetail(
         const children = l.jsonPath || l.startsWith ? await selectJson(table, l, values) : await select(table, l.column, values, l.where ?? {});
         for (const row of children) {
           if (Object.entries(l.startsWith ?? {}).some(([c, start]) => !String(row[c] ?? '').startsWith(start))) continue;
-          if (Object.entries(l.jsonNot ?? {}).some(([field, v]) => jsonField(row, field) === v)) continue;
+          if (Object.entries(l.jsonNot ?? {}).some(([field, v]) => (typeof v === 'string' ? [v] : v).includes(jsonField(row, field) as string))) continue;
           if (Object.entries(l.jsonIs ?? {}).some(([field, v]) => jsonField(row, field) !== v)) continue;
           if (Object.entries(l.except ?? {}).some(([c, values]) => values.includes(String(row[c])))) continue;
           if (Object.entries(l.only ?? {}).some(([c, values]) => !values.includes(String(row[c])))) continue;
@@ -392,8 +398,12 @@ export async function assembleAccessDetail(
   }
   const notIncluded = (Object.keys(EXCLUSION_LABELS) as ExclusionReason[]).map((reason) => ({ reason, text: EXCLUSION_LABELS[reason] }));
   const exclusiveRows: Record<string, number> = {};
-  for (const s of sections) exclusiveRows[s.table] = exclusive.get(s.table)?.size ?? 0;
-  return { response: { personIds: ids, sections, notIncluded }, exclusiveRows };
+  const exclusiveData: Record<string, Readonly<Record<string, SqlValue>>[]> = {};
+  for (const s of sections) {
+    exclusiveRows[s.table] = exclusive.get(s.table)?.size ?? 0;
+    exclusiveData[s.table] = [...(exclusive.get(s.table) ?? [])].map((key) => found.get(s.table)!.get(key)!.row);
+  }
+  return { response: { personIds: ids, sections, notIncluded }, exclusiveRows, exclusiveData };
 }
 
 export interface ErasurePlanLine {
@@ -422,7 +432,15 @@ export const ERASURE_WHY = {
   stop: 'L\'opposition et les exclusions restent, pour ne plus jamais écrire à la personne [R04].',
   identifiers: 'Identifiants gardés sous leur seule empreinte, pour reconnaître la personne et respecter son arrêt [R04].',
   shared: 'Ligne partagée avec une autre personne : pseudonymisée ou gardée, sur décision du responsable.',
+  controlled: 'Fiche du bien en valeurs contrôlées, sans nom, sans adresse et sans texte libre [R46] : gardée avec le bien.',
 } as const;
+
+/**
+ * Les tables gardées d'office par l'effacement parce qu'elles ne portent que des valeurs contrôlées par le code, jamais
+ * de texte libre (AU020b) : seule la fiche du bien, dont `parseSheet` refuse toute clé inconnue [R46]. Une table à texte
+ * libre n'entre jamais ici : son texte est vidé par une voie de la migration, ou elle reste « restante ».
+ */
+export const KEPT_CONTROLLED: ReadonlySet<string> = new Set(['property_sheets']);
 
 /**
  * Le plan d'effacement : chaque table de la réponse d'accès. Une obligation légale garde la table (registre des mandats
@@ -436,7 +454,8 @@ export function erasurePlan(detail: AccessDetail, registre: readonly Traitement[
     const base = { table: s.table, traitement: s.traitement };
     if (basisOf.get(s.traitement) === 'obligation_legale') lines.push({ ...base, rows: s.rows.length, action: 'garder', why: ERASURE_WHY.obligation });
     else if (s.table === 'exclusions') lines.push({ ...base, rows: s.rows.length, action: 'garder', why: ERASURE_WHY.stop });
-    else if (s.table === 'person_identifiers') lines.push({ ...base, rows: s.rows.length, action: 'empreinte', why: ERASURE_WHY.identifiers });
+    else if (s.table === 'person_identifiers' || s.table === 'contact_keys') lines.push({ ...base, rows: s.rows.length, action: 'empreinte', why: ERASURE_WHY.identifiers });
+    else if (KEPT_CONTROLLED.has(s.table)) lines.push({ ...base, rows: s.rows.length, action: 'garder', why: ERASURE_WHY.controlled });
     else {
       const own = Math.min(detail.exclusiveRows[s.table] ?? 0, s.rows.length);
       if (own > 0) lines.push({ ...base, rows: own, action: 'effacer', why: null });

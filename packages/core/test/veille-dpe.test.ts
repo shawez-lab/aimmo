@@ -428,3 +428,22 @@ it('[R288] la source ADEME ne reçoit que le code postal et le jour, demande les
   const failing = new AdemeDiagnosisFeed(async () => ({ ok: false, status: 500, json: async () => null }), base);
   await expect(failing.recent({ postcode: '21240', since: '2026-11-30' })).rejects.toThrow('HTTP 500');
 });
+
+describeWithSqlite('AU098b · la veille d’un secteur de La Réunion', () => {
+  it('[R100] [R290] un G de Saint-Denis porte l’interdiction de 2028 sur la carte et dans la lettre, au futur', async () => {
+    const t = await setup();
+    await t.zone(t.alex.id, 'Saint-Denis');
+    await t.veille.watch(t.agentAlex, { commune: 'Saint-Denis', postcode: '97400' });
+    t.source.set('97400', [row({ etiquette_dpe: 'G', code_postal_ban: '97400', nom_commune_ban: 'Saint-Denis', _geopoint: '-20.88,55.45' })]);
+    await t.veille.run();
+    const map = await t.veille.map(t.agentAlex, { commune: 'Saint-Denis' });
+    if (!map.ok) throw new Error('carte');
+    expect(map.points).toHaveLength(1);
+    expect(map.points[0]!.rentBanFrom).toBe('2028-01-01');
+    const letter = await t.veille.prepareLetter(t.agentAlex, map.points[0]!.diagnosisId);
+    expect(letter).toMatchObject({ ok: true, bannedFrom: '2028-01-01' });
+    if (!letter.ok) return;
+    expect(letter.body).toBe(ownerLetterText('G', '2028-01-01', '2026-12-07'));
+    expect(letter.body).not.toContain('2025');
+  });
+});

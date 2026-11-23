@@ -39,8 +39,8 @@ async function setup() {
     if (!r.ok) throw new Error(r.code);
   }
   const base = [
-    { sha256: await sha256Hex(KEYS.direction), networkId: network.id, role: 'direction', userId: 'direction-1' },
-    { sha256: await sha256Hex(KEYS.agent), networkId: network.id, role: 'agent', userId: agentId },
+    { sha256: await sha256Hex(KEYS.direction), expiresOn: "2099-12-31", networkId: network.id, role: 'direction', userId: 'direction-1' },
+    { sha256: await sha256Hex(KEYS.agent), expiresOn: "2099-12-31", networkId: network.id, role: 'agent', userId: agentId },
   ];
   const config: ApiConfig = { db, apiKeys: JSON.stringify(base), mode: 'essai', now, cles: { rpId: RP, origins: [ORIGIN] } };
   const http = async (who: Who, method: string, path: string, body?: unknown, rawBody?: string): Promise<{ status: number; body: Body }> => {
@@ -58,9 +58,9 @@ async function setup() {
   await store.createAgent({ networkId: pres.licenseeNetworkId, firstName: 'Pia', lastName: 'Prés' });
   config.apiKeys = JSON.stringify([
     ...base,
-    { sha256: await sha256Hex(KEYS.agence), networkId: lac.licenseeNetworkId, role: 'direction', userId: 'direction-lac' },
-    { sha256: await sha256Hex(KEYS.agenceAgent), networkId: lac.licenseeNetworkId, role: 'agent', userId: lacAgent },
-    { sha256: await sha256Hex(KEYS.autre), networkId: pres.licenseeNetworkId, role: 'direction', userId: 'direction-pres' },
+    { sha256: await sha256Hex(KEYS.agence), expiresOn: "2099-12-31", networkId: lac.licenseeNetworkId, role: 'direction', userId: 'direction-lac' },
+    { sha256: await sha256Hex(KEYS.agenceAgent), expiresOn: "2099-12-31", networkId: lac.licenseeNetworkId, role: 'agent', userId: lacAgent },
+    { sha256: await sha256Hex(KEYS.autre), expiresOn: "2099-12-31", networkId: pres.licenseeNetworkId, role: 'direction', userId: 'direction-pres' },
   ]);
   const enroll = async (who: Who, seed: number) => {
     const device = await FakeAuthenticator.create(seed);
@@ -156,7 +156,7 @@ describeWithSqlite('BR17 · route de la reprise des données de l’agence sous 
     const t = await setup();
     const res = await handleRequest(
       new Request('https://aimmo-api.example.test/v1/export/agence', { method: 'POST', headers: { authorization: `Bearer ${KEYS.agence}`, 'content-type': 'application/json' }, body: '{}' }),
-      { db: t.db, apiKeys: JSON.stringify([{ sha256: await sha256Hex(KEYS.agence), networkId: t.lac.licenseeNetworkId, role: 'direction', userId: 'direction-lac' }]), mode: 'essai', now: () => new Date(START), cles: null },
+      { db: t.db, apiKeys: JSON.stringify([{ sha256: await sha256Hex(KEYS.agence), expiresOn: "2099-12-31", networkId: t.lac.licenseeNetworkId, role: 'direction', userId: 'direction-lac' }]), mode: 'essai', now: () => new Date(START), cles: null },
     );
     expect(res.status).toBe(503);
   });

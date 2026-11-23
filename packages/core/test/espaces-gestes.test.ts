@@ -92,7 +92,7 @@ describeWithSqlite('EC10 · gestes du client branchés sur les modules', () => {
     const before = await t.count('SELECT 1 FROM offer_register');
     expect(await t.gestes.writeOffer(v, t.propertyId, { ...OFFER, signedRef: 'offres/0b6f1d2e-7777-4a2b-8c3d-000000000099.pdf' })).toEqual({ ok: false, rule: null, code: 'not_stored', field: 'signedRef' });
     expect(await t.gestes.writeOffer(v, t.propertyId, { ...OFFER, amountEur: 0 })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'amountEur' });
-    expect(await t.gestes.writeOffer(v, t.propertyId, { ...OFFER, validUntil: '2027-06-30' })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'validUntil' });
+    expect(await t.gestes.writeOffer(v, t.propertyId, { ...OFFER, validUntil: '2029-06-30' })).toEqual({ ok: false, rule: null, code: 'invalid', field: 'validUntil' });
     // Une clé déjà prise pour une autre offre : le refus de M09 [R56].
     const key = 'cle-espace-0000000001';
     expect((await t.gestes.writeOffer(v, t.propertyId, { ...OFFER, requestKey: key })).ok).toBe(true);
@@ -223,5 +223,13 @@ describeWithSqlite('EC10 · gestes du client branchés sur les modules', () => {
     expect(panne).toHaveLength(1);
     expect(JSON.stringify(panne)).not.toContain('@');
     expect(panne[0]!.data).toMatchObject({ rule: 'R165', kind: 'offre', error: 'Error' });
+  });
+
+  it('[R702] AU053 · l’agenda relié de l’agent injoignable : la visite n’est pas fixée et le client le sait', async () => {
+    const t = await setup();
+    const b = await t.buyer('Bruno');
+    const down = Object.assign(new Error('agenda injoignable'), { name: 'AgendaUnavailableError' });
+    const broken = new GestesModules({ ...t.deps, visites: { schedule: async () => { throw down; } } as never }, { now: t.now });
+    expect(await broken.bookVisit(await t.viewer(b), t.propertyId, { start: WEDNESDAY_10H })).toEqual({ ok: false, rule: 'R702', code: 'agenda_indisponible' });
   });
 });

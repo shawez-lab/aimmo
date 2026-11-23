@@ -6,7 +6,8 @@
 //   R2 déclaré en juridiction `eu` ; aucune autre liaison qui range des données (KV, Durable Objects, files, index,
 //   Hyperdrive, mesures), dont Cloudflare ne garantit pas la juridiction européenne pour ce compte ;
 // - au déploiement, en plus : chaque base D1 liée existe dans la liste du compte, sous son identifiant, avec la
-//   juridiction `eu`. Un champ absent ou illisible échoue aussi : rien ne passe dans le doute.
+//   juridiction `eu`, et jamais deux liaisons sur la même base (AU025 : le bac à sable a sa base à part). Un champ
+//   absent ou illisible échoue aussi : rien ne passe dans le doute.
 //
 // Lancé par les tests sur le fichier du dépôt, et par le travail de déploiement sur sa copie remplie, avant la mise en
 // ligne : une erreur arrête la mise en ligne.
@@ -23,6 +24,9 @@ export const ALLOWED_TABLES = Object.freeze({
   '[r2_buckets]': ['binding', 'bucket_name', 'jurisdiction'],
 });
 export const D1_PLACEHOLDER = '00000000-0000-0000-0000-000000000000';
+/** AU025 : le gabarit de la base à part des bacs à sable ; chaque gabarit commence par huit zéros, jamais un vrai identifiant. */
+export const SANDBOX_D1_PLACEHOLDER = '00000000-0000-0000-0000-0000000000b5';
+const UNFILLED = /^00000000-0000-0000-0000-/;
 
 function unquote(value) {
   const m = /^"([^"]*)"\s*(#.*)?$/.exec(value.trim());
@@ -110,11 +114,18 @@ export function checkD1(toml, listJson) {
   }
   if (!Array.isArray(list)) return ['liste des bases D1 illisible [R602]'];
   const errors = [];
+  const seen = new Set();
   for (const { name, id } of d1Bindings(toml)) {
-    if (!name || !id || id === D1_PLACEHOLDER) {
+    if (!name || !id || UNFILLED.test(id)) {
       errors.push(`base D1 ${name ?? '?'} sans identifiant rempli [R602]`);
       continue;
     }
+    // Deux liaisons sur une même base : le bac à sable serait la base du réseau [R82].
+    if (seen.has(id)) {
+      errors.push(`base D1 ${name} liée deux fois (${id}) [R602]`);
+      continue;
+    }
+    seen.add(id);
     const found = list.find((d) => d && typeof d === 'object' && d.uuid === id);
     if (!found) errors.push(`base D1 ${name} (${id}) absente de la liste du compte [R602]`);
     else if (found.name !== name) errors.push(`base D1 ${id} nommée ${found.name}, pas ${name} [R602]`);

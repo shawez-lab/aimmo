@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import {
   Acces,
   ControlesSignature,
+  FakeChannel,
   FicheClient,
   FicheUnique,
   Modeles,
@@ -178,7 +179,7 @@ describeWithSqlite('AU001 · le mandat d’un couple ou d’une indivision', () 
     if (!d.ok) throw new Error(d.code);
     const id = d.document.id;
     expect(await t.online.start(t.agent, id, { ...CONSENT, signerId: tiers })).toEqual({ ok: false, rule: null, code: 'bad_signer' });
-    expect(await t.online.progress(t.agent, id)).toEqual({ ok: true, value: { documentId: id, signers: [{ personId: lea, signed: false }, { personId: noe, signed: false }], allSigned: false } });
+    expect(await t.online.progress(t.agent, id)).toEqual({ ok: true, value: { documentId: id, signers: [{ personId: lea, signed: false }, { personId: noe, signed: false }], allSigned: false, allSignedReal: false } });
 
     const first = await t.online.start(t.agent, id, CONSENT);
     if (!first.ok) throw new Error(first.code);
@@ -212,6 +213,47 @@ describeWithSqlite('AU001 · le mandat d’un couple ou d’une indivision', () 
     await expect(t.db.run('UPDATE signature_sessions SET signer_person_id = ?', [tiers])).rejects.toThrow(/figée/);
     // Un autre agent ne lit pas où en est la signature [R16].
     expect(await t.online.progress(t.samViewer, id)).toMatchObject({ ok: false, rule: 'R16' });
+  });
+
+  it('[R41] AU003 : un mandant d’essai et un réel ne font pas un mandat signé ; signé réellement par les deux, chacun reçoit son exemplaire et le dossier', async () => {
+    const t = await setup();
+    const lea = await t.owner('Léa', 'Exemple');
+    const noe = await t.owner('Noé', 'Autre');
+    await t.identify(lea);
+    await t.identify(noe);
+    const d = await t.generate(lea, [noe]);
+    if (!d.ok) throw new Error(d.code);
+    const id = d.document.id;
+    // Léa signe en essai, avant la validation de l'avocat.
+    const essai = await t.online.start(t.agent, id, CONSENT);
+    if (!essai.ok) throw new Error(essai.code);
+    expect((await t.online.sign(t.agent, essai.value.sessionId, { code: (await t.codes())[0]!.code })).ok).toBe(true);
+    expect((await t.online.recordValidation(t.direction, { reference: 'Avis écrit test', validatedOn: new Date(T0 - 86_400_000) })).ok).toBe(true);
+    const mail = new FakeChannel('email');
+    const reel = new SignatureEnLigne(t.db, t.acces, t.journal, { now: t.now, channels: [mail] });
+    const codeOf = (to: string) => /(\d{6})/.exec(mail.sent.filter((m) => m.to === to && m.body.includes('code de signature')).at(-1)!.body)![1]!;
+    // Noé signe en réel : le document n'est pas signé réellement, la signature d'essai de Léa ne compte pas.
+    const s2 = await reel.start(t.agent, id, { ...CONSENT, signerId: noe });
+    if (!s2.ok) throw new Error(s2.code);
+    expect(s2.value.mode).toBe('reel');
+    expect(await reel.sign(t.agent, s2.value.sessionId, { code: codeOf('noé.autre@example.test') })).toMatchObject({ ok: true, value: { realSignature: true, allSigned: false } });
+    expect(await reel.progress(t.agent, id)).toMatchObject({ ok: true, value: { allSigned: true, allSignedReal: false } });
+    expect(await reel.finish(t.agent, id, { source: 'referral' })).toEqual({ ok: false, rule: 'R41', code: 'not_all_signed' });
+    expect(await t.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM signed_documents')).toEqual({ n: 0 });
+    // Léa signe de nouveau, en réel.
+    const s1 = await reel.start(t.agent, id, CONSENT);
+    if (!s1.ok) throw new Error(s1.code);
+    expect(await reel.sign(t.agent, s1.value.sessionId, { code: codeOf('léa.exemple@example.test') })).toMatchObject({ ok: true, value: { realSignature: true, allSigned: true } });
+    // Une instance sans mail réel ne remet rien, ni par la boîte d'essai : les remises restent à envoyer.
+    const done = await t.online.finish(t.agent, id, { source: 'referral' });
+    expect(done).toMatchObject({ ok: true, value: { number: 'T-001', remises: [{ position: 1, sent: false }, { position: 2, sent: false }] } });
+    expect((await enClair(t.db.all<{ id: string; body: string }>('SELECT m.id, m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id'))).some((m) => m.body.includes('dossier de preuve'))).toBe(false);
+    // Par le mail réel : chaque mandant, à sa propre adresse, une seule fois.
+    expect(await reel.finish(t.agent, id)).toMatchObject({ ok: true, value: { remises: [{ position: 1, sent: true }, { position: 2, sent: true }] } });
+    expect(mail.sent.filter((m) => m.body.includes('dossier de preuve vous sont remis')).map((m) => m.to)).toEqual(['léa.exemple@example.test', 'noé.autre@example.test']);
+    const dossier = await reel.dossier(t.agent, id);
+    expect(dossier.ok && dossier.value.dossier).toContain('Mandant 2');
+    expect(dossier.ok && dossier.value.dossier).not.toMatch(/Léa|Noé/);
   });
 
   it('[R16] la fiche du second mandant confiée à un autre agent : ni accord ni code envoyés par l’agent du premier', async () => {

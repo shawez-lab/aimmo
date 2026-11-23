@@ -8,6 +8,7 @@ import {
   NOT_VALIDATED,
   STALE,
   TOO_LONG,
+  TO_CHECK,
   UNCHECKED,
   askLegal,
   checkDraft,
@@ -248,11 +249,27 @@ describe('assistant juridique (HX03)', () => {
     expect(w.seen[0]!.sources.map((s) => s.id)).toEqual(['loi-a-3']);
   });
 
-  it('[R252] la réponse dit si la version citée est jamais vérifiée, trop ancienne ou pas relue par l’avocat', async () => {
-    const a = await askLegal('Quand retirer le panneau ?', { library: LIB, now });
-    expect(a.status === 'reponse' && a.citations[0]!.warnings).toEqual([STALE, NOT_VALIDATED]);
+  it('[R252] AU090 · un texte jamais vérifié, vérifié il y a plus d’un an ou pas relu ne fonde aucune réponse : ses références seules, avec la raison', async () => {
+    const w = writer(() => ({ kind: 'answer', paragraphs: [{ text: 'Le panneau doit être retiré dans les quinze jours après la fin du mandat.', sources: ['loi-b-7'] }] }));
+    const a = await askLegal('Quand retirer le panneau ?', { library: LIB, writer: w, now });
+    expect(a).toMatchObject({ status: 'a_verifier', text: TO_CHECK, notice: LAWYER_NOTICE });
+    expect(a.citations.map((c) => [c.id, c.warnings])).toEqual([['loi-b-7', [STALE, NOT_VALIDATED]]]);
+    // Rien n'est demandé à l'IA, aucun paragraphe n'est écrit.
+    expect(w.seen).toHaveLength(0);
+    expect('paragraphs' in a).toBe(false);
     const never = await askLegal('Quand retirer le panneau ?', { library: [{ ...LIB[1]!, checkedOn: null }], now });
-    expect(never.status === 'reponse' && never.citations[0]!.warnings).toEqual([UNCHECKED, NOT_VALIDATED]);
+    expect(never.status === 'a_verifier' && never.citations[0]!.warnings).toEqual([UNCHECKED, NOT_VALIDATED]);
+    // Vérifié et relu : la réponse revient.
+    const fresh = await askLegal('Quand retirer le panneau ?', { library: [{ ...LIB[1]!, checkedOn: '2026-11-01', validatedBy: 'avocat:essai' }], now });
+    expect(fresh.status === 'reponse' && fresh.citations[0]!.warnings).toEqual([]);
+    // Relu mais vérifié il y a plus d'un an : à revérifier, rien n'en est tiré.
+    const old = await askLegal('Quand retirer le panneau ?', { library: [{ ...LIB[1]!, checkedOn: '2025-10-01', validatedBy: 'avocat:essai' }], now });
+    expect(old.status).toBe('a_verifier');
+    // Une date de vérification à venir ou mal écrite ne prouve rien.
+    for (const checkedOn of ['2099-01-01', '2026-12-09', 'hier', '2026-02-30', '2025-13-01']) {
+      const bad = await askLegal('Quand retirer le panneau ?', { library: [{ ...LIB[1]!, checkedOn, validatedBy: 'avocat:essai' }], now });
+      expect(bad.status === 'a_verifier' && bad.citations[0]!.warnings, checkedOn).toEqual([UNCHECKED]);
+    }
   });
 
   it('[R253] une question sur un litige va toujours à l’avocat, même couverte par un texte', async () => {
@@ -325,8 +342,13 @@ describe('assistant juridique (HX03)', () => {
     expect(coveringSources('Quelle est la durée de validité des diagnostics pour une location ?')).toEqual([]);
   });
 
-  it('[R251] la réponse du code sur la bibliothèque de départ passe son propre contrôle', async () => {
-    const a = await askLegal('Combien de jours l’acquéreur a-t-il pour se rétracter après le compromis ?', { now });
+  it('[R251] AU090 · la bibliothèque de départ, jamais relue par l’avocat (H54), ne donne aucune réponse ; relue, la réponse du code passe son propre contrôle', async () => {
+    const q = 'Combien de jours l’acquéreur a-t-il pour se rétracter après le compromis ?';
+    const before = await askLegal(q, { now });
+    expect(before.status).toBe('a_verifier');
+    expect(before.citations[0]!.warnings).toEqual([UNCHECKED, NOT_VALIDATED]);
+    const reviewed = DEFAULT_LEGAL_LIBRARY.map((s) => ({ ...s, checkedOn: '2026-11-15', validatedBy: 'avocat:essai' }));
+    const a = await askLegal(q, { library: reviewed, now });
     expect(a.status).toBe('reponse');
     if (a.status !== 'reponse') return;
     const facts: LegalFacts = {
@@ -334,7 +356,7 @@ describe('assistant juridique (HX03)', () => {
       sources: DEFAULT_LEGAL_LIBRARY.map(asFact),
     };
     expect(checkDraft({ kind: 'answer', paragraphs: a.paragraphs }, facts).ok).toBe(true);
-    expect(a.citations[0]!.warnings).toEqual([UNCHECKED, NOT_VALIDATED]);
+    expect(a.citations[0]!.warnings).toEqual([]);
     // La date citée est celle du texte qui a donné les 10 jours, pas celle de la loi SRU qui en donnait 7.
     expect(a.citations[0]).toEqual(expect.objectContaining({ id: 'cch-l271-1', wordingDate: '2015-08-06' }));
   });

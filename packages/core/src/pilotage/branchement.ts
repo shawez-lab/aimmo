@@ -25,7 +25,7 @@ import type { EcheancesDocumentsAgent } from './alertes.ts';
 import { Commissions } from './commissions.ts';
 import { Encaissements } from './encaissements.ts';
 import { EngagementsManques } from './engagements-manques.ts';
-import { Factures } from './factures.ts';
+import { Factures, type IdentitesFacturation, type PlateformeFacturation } from './factures.ts';
 import { TableauReseau } from './tableau-reseau.ts';
 
 export const PILOTAGE_HOURLY_JOB = 'pilotage.passage';
@@ -47,7 +47,11 @@ export class SqlEcheancesDocumentsAgent implements EcheancesDocumentsAgent {
 }
 
 /** Le passage de chaque heure : commissions, puis factures (émises seules le jour de l'acte, HX04), puis reversements, pour chaque réseau, dans cet ordre. */
-export function pilotageHourlyJob(db: SqlDatabase, journal: JournalStore, options: { now?: () => Date } = {}): ScheduledJob {
+export function pilotageHourlyJob(
+  db: SqlDatabase,
+  journal: JournalStore,
+  options: { now?: () => Date; facturation?: { plateforme?: PlateformeFacturation; identites?: IdentitesFacturation } } = {},
+): ScheduledJob {
   const now = options.now ?? (() => new Date());
   return {
     name: PILOTAGE_HOURLY_JOB,
@@ -56,13 +60,16 @@ export function pilotageHourlyJob(db: SqlDatabase, journal: JournalStore, option
       const store = new FicheClient(db, { now });
       const acces = new Acces(db, store, new FicheUnique(db, store, { now }), journal, { now });
       const commissions = new Commissions(db, acces, journal, { now });
-      const factures = new Factures(db, acces, journal, { now });
+      // La même plateforme et les mêmes identités que l'API : une facture d'acte n'est jamais émise en essai derrière
+      // une plateforme réelle (AU013).
+      const factures = new Factures(db, acces, journal, { now, ...(options.facturation ?? {}) });
       const encaissements = new Encaissements(db, acces, journal, { now });
       const manques = new EngagementsManques(db, journal, { now });
       for (const n of await db.all<{ id: string }>('SELECT id FROM networks ORDER BY id')) {
         await commissions.sync(n.id);
         await factures.prepare(n.id);
         await factures.issueOnDeed(n.id);
+        await factures.track(n.id);
         await factures.reconcile(n.id);
         await encaissements.run(n.id);
         await manques.syncIfDue(n.id);
@@ -96,7 +103,11 @@ export class ExportQuotidien {
     const board = await this.tableau.of(viewer, { from: day, to: day });
     if (!board.ok) return board;
     const d = board.value;
-    const fees = await this.db.all<{ agent_id: string; eur: number }>('SELECT agent_id, SUM(fee_eur) AS eur FROM sale_commissions WHERE network_id = ? AND due_on = ? GROUP BY agent_id', [viewer.networkId, d.from]);
+    // AU091 · les honoraires de la commission, régularisés s'il le faut ; à défaut de commission calculée, ceux de l'acte.
+    const fees = await this.db.all<{ agent_id: string; eur: number }>(
+      'SELECT k.agent_id, SUM(COALESCE(c.fee_cents / 100.0, k.fee_eur)) AS eur FROM sale_commissions k LEFT JOIN commissions c ON c.file_id = k.file_id WHERE k.network_id = ? AND k.due_on = ? GROUP BY k.agent_id',
+      [viewer.networkId, d.from],
+    );
     const feeOf = new Map(fees.map((f) => [f.agent_id, Number(f.eur)]));
     const lines = [DAILY_EXPORT_HEADER.join(';')];
     let total = 0;

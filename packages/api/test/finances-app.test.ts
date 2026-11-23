@@ -641,6 +641,14 @@ describe('K13 · le chemin de chaque euro (Jamais vu)', () => {
     expect(t.texts()).toContain('Vente annulée par un avoir');
   });
 
+  it('[R69] AU092 · la vente sous grille à paliers dit le cumul de l’année, le palier et son taux', async () => {
+    const t = await agent([view('d-1', { tier: { year: 2027, cumulCents: 2_000_000, tierSeq: 2, fromCents: 1_500_000, rateBp: 6000 } }), view('d-2', {})]);
+    await t.voir();
+    const spaced = t.texts().replace(/\s/g, ' ');
+    expect(spaced).toContain('Grille à paliers : palier 2 (à partir de 15 000,00');
+    expect(spaced).toContain('soit 60 % ; chiffre d’affaires 2027 déjà compté avant cette vente : 20 000,00');
+  });
+
   it('un versement rangé dont l’étape a manqué compte comme versé', async () => {
     const t = await agent([view('d-1', { status: 'facturee', payment: { ...receipt, paidAt: '2026-10-28T15:00:00.000Z', late: false } })]);
     await t.voir();

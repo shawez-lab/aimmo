@@ -163,6 +163,12 @@ describeWithSqlite('K08 · routes et passages de M13', () => {
     expect((await t.call(t.direction, 'GET', '/pilotage/reglages')).body!.data).toHaveProperty('documentNoticeDays');
     expect(await t.call(t.agent, 'GET', '/pilotage/reglages')).toMatchObject({ status: 403, body: { rule: 'R16' } });
     expect(await t.call(t.agent, 'GET', '/pilotage/commissions/a-trancher')).toMatchObject({ status: 403, body: { rule: 'R16' } });
+    // AU091 · la régularisation : la direction seule, un motif, jamais un montant [R678].
+    const path = `/pilotage/commissions/${t.fileId}/regularisation`;
+    expect(await t.call(t.agent, 'POST', path, { reason: 'Avenant de baisse signé.' })).toMatchObject({ status: 403, body: { rule: 'R16' } });
+    expect(await t.call(t.direction, 'POST', path, { reason: 'Avenant de baisse signé.', feeCents: 1 })).toMatchObject({ status: 400, body: { rule: 'R67', code: 'amount_refused' } });
+    expect(await t.call(t.direction, 'POST', path, { motif: 'Avenant de baisse signé.' })).toMatchObject({ status: 400, body: { code: 'invalid_body' } });
+    expect(await t.call(t.direction, 'POST', path, { reason: 'Avenant de baisse signé.' })).toMatchObject({ status: 409, body: { rule: 'R678', code: 'nothing_to_fix' } });
     const planned = await t.call(t.agent, 'GET', '/pilotage/commissions');
     expect(planned.status).toBe(200);
     expect(planned.body!.data.map((c: { fileId: string; status: string }) => [c.fileId, c.status])).toEqual([[t.fileId, 'prevue']]);

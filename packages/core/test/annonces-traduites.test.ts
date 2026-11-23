@@ -108,7 +108,7 @@ describe('HX05 · langue de l’acheteur', () => {
 });
 
 /** La marque de chaque langue dans les textes de l'IA de test, dans son écriture : hors anglais, aucun mot latin inventé. */
-const MARK: Record<ListingLanguage, string> = { en: 'en', ur: 'اردو', hi: 'हिंदी', pa: 'ਪੰਜਾਬੀ', fa: 'فارسی', ar: 'عربي', el: 'ελ' };
+const MARK: Record<ListingLanguage, string> = { en: 'en', de: 'de', es: 'es', it: 'it', nl: 'nl', ur: 'اردو', hi: 'हिंदी', pa: 'ਪੰਜਾਬੀ', fa: 'فارسی', ar: 'عربي', el: 'ελ' };
 
 /** Une IA de test : elle rend les repères tels quels, et garde ce qu'elle a reçu. */
 class FakeTranslator implements ListingTranslator {
@@ -132,11 +132,13 @@ async function setup() {
   const tr = new AnnoncesTraduites(t.db, t.acces, t.journal, { now: t.now, translator: ia, newId: () => `tr-${++n}` });
   const exporter = new ExportPortailsEtrangers(t.db, t.acces, t.journal);
   const french = t.channels.find((c) => c.channel === 'portails')!.received.at(-1)!;
+  // L'agent du bien déclare parler anglais : rien n'est plus ouvert d'office (AU113).
+  if (!(await tr.declareLanguages(t.agent, t.alexId, ['en'])).ok) throw new Error('langues');
   return { ...t, ia, tr, exporter, french };
 }
 
 describeWithSqlite('HX05 · langues de l’agent', () => {
-  it('[R258] l’anglais est toujours ouvert ; une autre langue seulement si l’agent du bien la parle ; seul lui ou la direction la déclare', async () => {
+  it('[R258] AU113 · une langue, l’anglais compris, seulement si l’agent du bien la déclare ; seul lui ou la direction la déclare', async () => {
     const s = await setup();
     expect(await s.tr.languagesFor(s.network.id, s.alexId)).toEqual(['en']);
     expect(await s.tr.propose(s.agent, s.propertyId, 'ur')).toMatchObject({ ok: false, rule: 'R258', code: 'langue_non_parlee' });
@@ -145,11 +147,13 @@ describeWithSqlite('HX05 · langues de l’agent', () => {
     expect(await s.tr.declareLanguages(s.agent, s.alexId, ['ur', 'xx'])).toMatchObject({ ok: false, code: 'bad_languages' });
     expect(await s.tr.declareLanguages(s.agent, s.alexId, ['ar', 'ur', 'el'])).toEqual({ ok: true, value: ['ur', 'ar', 'el'] });
     expect(await s.tr.declareLanguages(s.direction, s.alexId, ['ur', 'ar'])).toEqual({ ok: true, value: ['ur', 'ar'] });
-    expect(await s.tr.languagesFor(s.network.id, s.alexId)).toEqual(['en', 'ur', 'ar']);
+    // Une nouvelle déclaration sans l'anglais le ferme : il n'est plus ouvert d'office.
+    expect(await s.tr.languagesFor(s.network.id, s.alexId)).toEqual(['ur', 'ar']);
+    expect(await s.tr.propose(s.agent, s.propertyId, 'en')).toMatchObject({ ok: false, code: 'langue_non_parlee' });
     expect(await s.tr.propose(s.agent, s.propertyId, 'el')).toMatchObject({ ok: false, code: 'langue_non_parlee' });
     expect((await s.tr.propose(s.agent, s.propertyId, 'ur')).ok).toBe(true);
     // Toutes les déclarations sont gardées.
-    expect((await s.db.all('SELECT seq FROM agent_language_declarations WHERE agent_id = ?', [s.alexId])).length).toBe(2);
+    expect((await s.db.all('SELECT seq FROM agent_language_declarations WHERE agent_id = ?', [s.alexId])).length).toBe(3);
   });
 });
 
@@ -223,7 +227,7 @@ describeWithSqlite('HX05 · traduction par l’IA, puis validation par l’agent
 
   it('[R258] une nouvelle annonce française rend ses traductions caduques ; un agent qui ne parle plus une langue n’y publie plus', async () => {
     const s = await setup();
-    await s.tr.declareLanguages(s.agent, s.alexId, ['ar']);
+    await s.tr.declareLanguages(s.agent, s.alexId, ['en', 'ar']);
     for (const l of ['en', 'ar'] as const) {
       const p = await s.tr.propose(s.agent, s.propertyId, l);
       if (!p.ok) throw new Error(p.code);
@@ -231,20 +235,20 @@ describeWithSqlite('HX05 · traduction par l’IA, puis validation par l’agent
     }
     expect((await s.exporter.listings(s.network.id)).map((l) => l.language)).toEqual(['en', 'ar']);
     await s.tr.declareLanguages(s.agent, s.alexId, []);
-    expect((await s.exporter.listings(s.network.id)).map((l) => l.language)).toEqual(['en']);
-    await s.tr.declareLanguages(s.agent, s.alexId, ['ar']);
-    // L'agent écrit une nouvelle annonce française, pas encore validée : plus rien n'est publiable, ni traduit.
-    const fresh = await s.annonces.propose(s.agent, s.propertyId);
+    // L'anglais n'est plus ouvert d'office : sans langue déclarée, plus rien ne part (AU113).
+    expect((await s.exporter.listings(s.network.id)).map((l) => l.language)).toEqual([]);
+    await s.tr.declareLanguages(s.agent, s.alexId, ['en', 'ar']);
+    // L'agent écrit une nouvelle annonce française, pas encore validée : la version validée reste en ligne, avec ses
+    // traductions, pendant qu'il prépare la révision (AU066).
+    const fresh = await s.annonces.correct(s.agent, s.propertyId, { title: 'Trois pièces à Dijon', body: 'Au 3e étage avec ascenseur.' });
     if (!fresh.ok) throw new Error(fresh.code);
     const before = (await s.tr.read(s.agent, s.propertyId, 'en')) as { ok: true; value: { id: string } };
-    // Tant que le passage n'a pas retiré l'annonce, l'acheteur reçoit ce qui est publié, comme les portails.
-    expect(await s.tr.forBuyer(s.network.id, s.propertyId, 'en')).toMatchObject({ language: 'en' });
     await s.publication.sync(s.network.id, s.propertyId);
-    expect(await s.tr.forBuyer(s.network.id, s.propertyId, 'en')).toBeNull();
-    expect(await s.exporter.listings(s.network.id)).toEqual([]);
-    expect((await s.tr.validate(s.agent, before.value.id)).ok).toBe(false);
-    expect(await s.tr.propose(s.agent, s.propertyId, 'en')).toMatchObject({ ok: false, code: 'no_listing' });
+    expect(await s.tr.forBuyer(s.network.id, s.propertyId, 'en')).toMatchObject({ language: 'en' });
+    expect((await s.exporter.listings(s.network.id)).map((l) => l.language)).toContain('en');
+    // Validée, la révision remplace la version en ligne : la traduction de l'ancienne ne vaut plus.
     expect((await s.annonces.validate(s.agent, fresh.value.id)).ok).toBe(true);
+    expect((await s.tr.validate(s.agent, before.value.id)).ok).toBe(false);
     await s.publication.sync(s.network.id, s.propertyId);
     expect(await s.exporter.listings(s.network.id)).toEqual([]);
     // Validée, la nouvelle annonce : l'ancienne traduction ne vaut plus pour elle.
@@ -255,10 +259,55 @@ describeWithSqlite('HX05 · traduction par l’IA, puis validation par l’agent
   });
 });
 
+describeWithSqlite('AU113 · un relecteur désigné pour une langue que l’agent du bien ne parle pas', () => {
+  it('[R258] la direction désigne un agent qui déclare la langue ; lui seul valide alors cette langue ; retiré, la langue se ferme', async () => {
+    const s = await setup();
+    await s.tr.declareLanguages(s.agent, s.alexId, ['en']);
+    // Sans relecteur, l'arabe reste fermé.
+    expect(await s.tr.propose(s.agent, s.propertyId, 'ar')).toMatchObject({ ok: false, code: 'langue_non_parlee' });
+    // Seule la direction désigne ; le relecteur doit déclarer la langue.
+    expect(await s.tr.designateReviewer(s.agent, s.propertyId, 'ar', s.sam.userId)).toMatchObject({ ok: false, rule: 'R16' });
+    expect(await s.tr.designateReviewer(s.direction, s.propertyId, 'ar', s.sam.userId)).toMatchObject({ ok: false, code: 'langue_non_parlee' });
+    await s.tr.declareLanguages(s.sam, s.sam.userId, ['ar']);
+    expect(await s.tr.designateReviewer(s.direction, s.propertyId, 'ar', s.sam.userId)).toEqual({ ok: true });
+    expect(await s.tr.languagesFor(s.network.id, s.alexId, s.propertyId)).toEqual(['en', 'ar']);
+    const p = await s.tr.propose(s.agent, s.propertyId, 'ar');
+    if (!p.ok) throw new Error(p.code);
+    // L'agent du bien, qui ne parle pas arabe, ne valide pas ; le relecteur, oui.
+    expect(await s.tr.validate(s.agent, p.value.id)).toMatchObject({ ok: false, code: 'langue_non_parlee' });
+    expect(await s.tr.validate(s.sam, p.value.id)).toMatchObject({ ok: true, value: { validated: { by: `agent:${s.sam.userId}` } } });
+    expect((await s.exporter.listings(s.network.id)).map((l) => l.language)).toContain('ar');
+    // Le relecteur, qui n'est pas l'agent du bien, lit la traduction de sa langue, et seulement elle.
+    expect(await s.tr.read(s.sam, s.propertyId, 'ar')).toMatchObject({ ok: true, value: { id: p.value.id } });
+    expect(await s.tr.read(s.sam, s.propertyId, 'en')).toMatchObject({ ok: false });
+    // Cette lecture s'écrit au journal, comme toute lecture d'un bien [R16].
+    expect((await s.journal.all()).filter((e) => e.type === 'bien.lu' && e.actor === `agent:${s.sam.userId}` && (e.data as { view?: string }).view === 'relecteur')).toHaveLength(1);
+    // Remplacé par un autre relecteur : la validation de l'ancien ne vaut plus, rien ne part avant la sienne.
+    const nour = await s.store.createAgent({ networkId: s.network.id, firstName: 'Nour', lastName: 'Relectrice' });
+    const asNour = { role: 'agent', userId: nour.id, networkId: s.network.id } as typeof s.sam;
+    await s.tr.declareLanguages(asNour, nour.id, ['ar']);
+    expect(await s.tr.designateReviewer(s.direction, s.propertyId, 'ar', nour.id)).toEqual({ ok: true });
+    expect((await s.exporter.listings(s.network.id)).map((l) => l.language)).not.toContain('ar');
+    expect(await s.tr.forBuyer(s.network.id, s.propertyId, 'ar')).toBeNull();
+    const again = await s.tr.propose(s.agent, s.propertyId, 'ar');
+    if (!again.ok) throw new Error(again.code);
+    expect((await s.tr.validate(asNour, again.value.id)).ok).toBe(true);
+    expect((await s.exporter.listings(s.network.id)).map((l) => l.language)).toContain('ar');
+    // Le jour de son départ, même avant le passage du planificateur, le relecteur ne lit ni ne valide plus [R86].
+    const today = s.now().toISOString().slice(0, 10);
+    await s.db.run("INSERT INTO agent_departures (id, network_id, agent_id, notice_given_on, leaves_on, reason, notice_months, created_by, created_at) VALUES ('dep-nour', ?, ?, ?, ?, 'demission_agent', 1, 'direction:d', ?)", [s.network.id, nour.id, today, today, s.now().toISOString()]);
+    expect((await s.tr.read(asNour, s.propertyId, 'ar')).ok).toBe(false);
+    expect((await s.tr.forBuyer(s.network.id, s.propertyId, 'ar'))?.language).not.toBe('ar');
+    // Retiré, la langue se ferme et sa traduction ne part plus.
+    expect(await s.tr.designateReviewer(s.direction, s.propertyId, 'ar', null)).toEqual({ ok: true });
+    expect((await s.exporter.listings(s.network.id)).map((l) => l.language)).not.toContain('ar');
+  });
+});
+
 describeWithSqlite('HX05 · portails étrangers et réponse à l’acheteur (Jamais vu)', () => {
   it('[R259] le flux porte chaque traduction validée avec le prix, les mentions et les médias de la version française, au caractère près ; un bien vendu sort', async () => {
     const s = await setup();
-    await s.tr.declareLanguages(s.agent, s.alexId, ['ar']);
+    await s.tr.declareLanguages(s.agent, s.alexId, ['en', 'ar']);
     for (const l of ['ar', 'en'] as const) {
       const p = await s.tr.propose(s.agent, s.propertyId, l);
       if (!p.ok) throw new Error(p.code);
@@ -287,7 +336,7 @@ describeWithSqlite('HX05 · portails étrangers et réponse à l’acheteur (Jam
 
   it('[R259] l’acheteur reçoit l’annonce dans sa langue, sinon en anglais, sinon rien ; jamais une traduction non validée', async () => {
     const s = await setup();
-    await s.tr.declareLanguages(s.agent, s.alexId, ['ur']);
+    await s.tr.declareLanguages(s.agent, s.alexId, ['en', 'ur']);
     const ur = await s.tr.propose(s.agent, s.propertyId, 'ur');
     if (!ur.ok) throw new Error(ur.code);
     expect(await s.tr.forBuyer(s.network.id, s.propertyId, buyerLanguage(null, 'السلام علیکم، کیا یہ دستیاب ہے؟'))).toBeNull();
@@ -312,6 +361,7 @@ describeWithSqlite('HX05 · portails étrangers et réponse à l’acheteur (Jam
     t.setClock(new Date('2027-02-12T10:00:00.000Z'));
     expect((await t.annonces.validate(t.agent, t.draftId)).ok).toBe(true);
     const tr = new AnnoncesTraduites(t.db, t.acces, t.journal, { now: t.now, translator: new FakeTranslator() });
+    await tr.declareLanguages(t.agent, t.alexId, ['en']);
     const p = await tr.propose(t.agent, t.propertyId, 'en');
     if (!p.ok) throw new Error(p.code);
     expect((await tr.validate(t.agent, p.value.id)).ok).toBe(true);
@@ -322,7 +372,7 @@ describeWithSqlite('HX05 · portails étrangers et réponse à l’acheteur (Jam
 
   it('[R257] la base refuse de changer ou d’effacer une traduction, une validation ou une déclaration de langues', async () => {
     const s = await setup();
-    await s.tr.declareLanguages(s.agent, s.alexId, ['ur']);
+    await s.tr.declareLanguages(s.agent, s.alexId, ['en', 'ur']);
     const p = await s.tr.propose(s.agent, s.propertyId, 'en');
     if (!p.ok) throw new Error(p.code);
     await s.tr.validate(s.agent, p.value.id);

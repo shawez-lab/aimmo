@@ -11,6 +11,7 @@
  */
 import type { Viewer } from '../acces/droits.ts';
 import type { ScheduledJob } from '../bascule/planificateur.ts';
+import { expectedRestoreMonth } from './restauration.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -57,6 +58,13 @@ export interface CopyStatus {
   lastFailure: { at: string; reason: CopyFailure } | null;
   /** Les dernières nuits sans copie, la plus récente d'abord. */
   missedNights: string[];
+  /**
+   * AU109 · La preuve que la copie tourne vraiment : une copie réussie depuis la veille à 6 h et un test de restauration
+   * réussi pour le mois attendu. Sans les deux, « non prouvée » : l'allumage (H50) n'est jamais supposé.
+   */
+  activation: 'prouvee' | 'non_prouvee';
+  /** Le dernier test de restauration réussi du mois attendu, ou rien. */
+  exerciseAt: string | null;
 }
 
 export class SuiviCopies {
@@ -90,8 +98,14 @@ export class SuiviCopies {
     );
     const nights = await this.db.all<{ night: string }>('SELECT night FROM base_copy_alerts ORDER BY night DESC LIMIT ?', [SHOWN_NIGHTS]);
     const state: CopyState = lastSuccessAt === null ? 'jamais' : lastSuccessAt >= copyWindowStart(this.now()).toISOString() ? 'a_jour' : 'en_retard';
+    // Le dernier reçu décide : une restauration réussie puis une ratée ne prouve plus rien [R232].
+    const exercise = await this.db.first<{ at: string; outcome: string }>(
+      'SELECT tested_at AS at, outcome FROM base_restore_receipts WHERE month >= ? AND tested_at <= ? ORDER BY tested_at DESC, id DESC LIMIT 1',
+      [expectedRestoreMonth(this.now()), this.now().toISOString()],
+    );
+    const exerciseAt = exercise?.outcome === 'reussie' ? exercise.at : null;
     await appendEvent(this.journal, { type: 'pilotage.lecture', actor, subject, data: { kind: 'base_copies' } }, this.now);
-    return { ok: true, value: { state, lastSuccessAt, lastFailure: failure ?? null, missedNights: nights.map((n) => n.night) } };
+    return { ok: true, value: { state, lastSuccessAt, lastFailure: failure ?? null, missedNights: nights.map((n) => n.night), activation: state === 'a_jour' && exerciseAt !== null ? 'prouvee' : 'non_prouvee', exerciseAt } };
   }
 
   /** Une nuit sans copie réussie donne une alerte, une seule. Rend vrai si elle vient d'être levée. */
