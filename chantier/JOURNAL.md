@@ -1772,3 +1772,6 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-23 19:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 17:53 et 18:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-23 19:55 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-23 20:21 · AU035 · fusionnée (#757) : groupe prouvé de chaque relève lu par la base (migration 4116, table pige_ad_proven_keys en 4065), fermetures et messages du groupe prouvé d'une annonce compatible lus par le doute ; Codex 3 P0 corrigés puis sans remarque ; statuts AU100, X17, X17b remis au format (main rouge) · prochaine : rien de faisable en voie 1 sans humain (B04, C09, SV05, S11)
+- 2026-11-23 20:55 · VOIE 2 : rien de faisable : seuls changements depuis 19:55, AU035 (#757) fusionnée par la voie 1 et SV05 ouverte par la voie 1 (#798) ; X17b (#796) et AU100 (#797) à la voie 3 ; W23 toujours bloquée (H43, tables du socle) ; restent AU068b (H10, voie 3), B04/C09/S11 (humain) ; aucun module non découpé
+- 2026-11-23 20:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 18:55 et 19:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 20:55 · VOIE 2 : aucune tâche, rien, relancé non
