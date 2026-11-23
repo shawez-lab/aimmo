@@ -34,7 +34,7 @@ import type { Viewer } from '../acces/droits.ts';
 import { trialChannels } from '../captation/essai.ts';
 import { FicheClient } from '../db/fiche-client.ts';
 import { runBatch, type SqlDatabase } from '../db/sql.ts';
-import { DESIGN_CSS, THEME_COLOR } from '../design/systeme.ts';
+import { renderPublicPage } from '../design/systeme.ts';
 import { escapeHtml, sha256 } from '../documents/modeles.ts';
 import { CODE_TTL_MINUTES, MAX_CODE_ATTEMPTS, newSignatureCode, sameSignatureHash } from '../documents/signature-en-ligne.ts';
 import { ControleEnvois } from '../envoi/controle.ts';
@@ -144,11 +144,6 @@ function randomToken(): string {
 const parisDateTime = (iso: string): string =>
   new Intl.DateTimeFormat('fr-FR', { timeZone: 'Europe/Paris', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
 
-const COPY_CSS =
-  'main{max-width:40rem;margin:0 auto;padding:var(--e-4)}' +
-  '.preuve{border-top:1px solid var(--trait);margin-top:var(--e-5);padding-top:var(--e-4)}.preuve dt{font-weight:600}.preuve dd{margin:0 0 var(--e-2);overflow-wrap:anywhere}';
-const CSS = DESIGN_CSS + COPY_CSS;
-
 const ENTITIES: Readonly<Record<string, string>> = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'" };
 
 /**
@@ -184,15 +179,17 @@ export function renderSlipCopy(content: string, proof: SlipSignatureProof): stri
   ];
   if (proof.drawingHash) rows.push(['Empreinte du tracé (SHA-256)', proof.drawingHash]);
   rows.push(['Valeur', 'Signature d’essai : sans valeur juridique tant que le dossier de preuve n’est pas validé.']);
-  return (
-    '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
-    `<meta name="theme-color" content="${THEME_COLOR}"><meta name="robots" content="noindex"><title>Votre bon de visite signé</title>` +
-    `<style>${CSS}</style></head><body><main><h1>Votre bon de visite signé</h1>` +
-    slipParagraphs(content).map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('') +
-    `<section class="preuve" aria-label="Preuve de la signature"><h2>Preuve de la signature</h2><dl>` +
-    rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('') +
-    '</dl></section></main></body></html>'
-  );
+  // Le cadre des pages publiques du système de design (AU075b) : la marque, la frise, une carte ; ni script ni rien d'extérieur.
+  return renderPublicPage({
+    title: 'Votre bon de visite signé',
+    kicker: 'Bon de visite',
+    body:
+      '<section aria-label="Le bon de visite">' +
+      slipParagraphs(content).map((p) => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`).join('') +
+      '</section><section class="preuve" aria-label="Preuve de la signature"><h2>Preuve de la signature</h2><dl>' +
+      rows.map(([k, v]) => `<dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd>`).join('') +
+      '</dl></section>',
+  });
 }
 
 export class SignatureBon {

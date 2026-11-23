@@ -6,8 +6,10 @@
  * Sur place : l'agent ouvre la signature (`POST /v1/visites/<id>/bon/signature-en-ligne`), le visiteur reçoit son code
  * sur son téléphone, lit le bon sur l'écran de l'agent (`GET …/bon/a-signer`), tape lui-même son code et trace sa
  * signature s'il le veut (`POST …/bon/signature-sur-place`) ; son exemplaire et sa preuve s'affichent aussitôt
- * (`GET …/bon/exemplaire`), et la preuve lui part par le contrôle central. La signature à distance attend ses pages
- * publiques (voie 1) : l'écran ne la propose pas.
+ * (`GET …/bon/exemplaire`), et la preuve lui part par le contrôle central.
+ * À distance (AU075b) : quand les pages publiques du bon sont servies (`slip.distance` de l'écran de la visite), l'écran
+ * propose « Envoyer le lien pour signer à distance » : le visiteur reçoit le lien et le code, chacun dans son message,
+ * lit et signe sur son téléphone, sans l'agent ; sinon, il ne le propose pas.
  * Tout texte reçu est posé en texte ; chaque refus est dit en mots, jamais par son code ; le code tapé n'est gardé
  * nulle part sur l'appareil.
  */
@@ -35,6 +37,7 @@ export const BON_VISITE_REFUSALS: Readonly<Record<string, string>> = Object.free
   slip_changed: 'Le bon a changé : rouvrez la visite.',
   bad_drawing: 'Le tracé n’a pas pu être lu : effacez-le et recommencez.',
   not_signed: 'Le bon n’est pas encore signé.',
+  distance_not_served: 'La signature à distance n’est pas encore en service : faites signer ici.',
 });
 
 export const BON_VISITE_SCRIPT = `'use strict';
@@ -142,11 +145,18 @@ globalThis.AIMMO_BON_VISITE = function (t) {
       return t.send('/v1/visites/' + encodeURIComponent(id) + '/bon/signature-en-ligne', 'POST', body).then(function (res) {
         if (res.gone) return;
         if (!res.ok) { say(said, res, 'Rien n’est parti.'); return; }
+        if (place === 'distance') { t.clear(box); said.textContent = 'Lien et code envoyés au visiteur, chacun dans son message : il lit et signe sur son téléphone, sans vous. Il reçoit ensuite son exemplaire.'; return; }
         said.textContent = 'Code envoyé au visiteur, valable 10 minutes.';
         signHere(id, box, said);
       });
     }
     box.appendChild(t.button('Signer ici, sur mon téléphone', function () { open('sur_place'); }));
+    // À distance, seulement quand ses pages sont servies : jamais un lien inutilisable.
+    t.send('/v1/visites/' + encodeURIComponent(id), 'GET').then(function (res) {
+      var slip = res.ok && res.body && res.body.data && res.body.data.slip;
+      if (!slip || slip.distance !== true || slip.signed) return;
+      box.appendChild(t.button('Envoyer le lien pour signer à distance', function () { open('distance'); }));
+    });
   }
 };
 `;
