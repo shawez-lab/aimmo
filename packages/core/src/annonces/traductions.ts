@@ -206,7 +206,7 @@ const hasTerm = (text: string, term: string): boolean => {
  * Les voies nommées que les mots entiers ne voient pas : en allemand et en néerlandais, le nom de la voie est soudé
  * (« Lindenstraße », « Kerkstraat ») ; en italien et en espagnol, « via », « corso » ou « plaza » ont d'autres sens et ne
  * désignent une voie que suivis d'un nom propre (« via Roma », « plaza Mayor », pas « plaza de garaje »). Un mot qui
- * finit par la voie, ou ce mot suivi d'une majuscule, est refusé ; « Platz » et « weg » ne sont pas dans la liste, car
+ * finit par la voie et prend la majuscule d'un nom propre, ou ce mot suivi d'une majuscule, est refusé ; « Platz » et « weg » ne sont pas dans la liste, car
  * « Stellplatz » ou « Fußweg » ne nomment rien.
  */
 const STREET_SUFFIXES: Partial<Record<ListingLanguage, readonly string[]>> = {
@@ -225,8 +225,9 @@ function namesAStreet(text: string, language: ListingLanguage): boolean {
   if (language === 'de' && GERMAN_STR.test(text)) return true;
   const suffixes = STREET_SUFFIXES[language];
   if (!suffixes) return false;
-  const words = fold(text).match(/[\p{L}\p{M}]+/gu) ?? [];
-  return words.some((w) => suffixes.some((x) => w.endsWith(x)));
+  // Un nom de voie est un nom propre, qui prend la majuscule : « De deuren slaan open » ne nomme aucune « laan ».
+  const names = text.normalize('NFC').match(/(?<![\p{L}\p{M}])\p{Lu}[\p{L}\p{M}]*/gu) ?? [];
+  return names.some((w) => suffixes.some((x) => fold(w).endsWith(x)));
 }
 
 function publicProblems(source: string, translated: string, language: ListingLanguage): TranslationProblem[] {

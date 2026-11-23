@@ -67,6 +67,8 @@ describe('AU069 · le contrôle d’une traduction vaut pour les quatre langues'
     expect(body('es', 'Con plaza de garaje.')).toEqual([]);
     expect(body('it', 'Luminoso, via dal traffico.')).toEqual([]);
     expect(body('nl', 'Met een ruime tuin.')).toEqual([]);
+    // Un verbe qui finit comme une voie n'en nomme aucune (Codex, P2).
+    expect(body('nl', 'De deuren slaan open naar de tuin.')).toEqual([]);
   });
 });
 
