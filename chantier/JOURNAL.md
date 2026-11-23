@@ -1712,3 +1712,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-23 05:53 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 03:55 et 04:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-23 05:53 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-23 06:06 · AU075b · pages publiques du bon de visite (signer à distance, exemplaire un an), écran de l'agent, R506 ; Codex 1 P0 corrigé puis rien ; vérification verte ; fusionnée (#789, 59346094) · prochaine : AU103b
+- 2026-11-23 06:06 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU103b
