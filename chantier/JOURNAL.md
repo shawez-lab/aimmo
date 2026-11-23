@@ -1750,3 +1750,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-23 14:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 12:55 et 13:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-23 14:55 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-23 15:05 · VOIE 3 : AU014 fusionnée (#792, mandat de location signé et inscrit exigé pour le barème, l'annonce et la diffusion location) ; AU096b (#793) remise sur main, charges forfaitaires du bail mobilité, CI et Codex en attente
+- 2026-11-23 15:30 · VOIE 3 : AU096b fusionnée (#793, bail meublé étudiant et bail mobilité sur leurs propres modèles, sans dépôt et aux charges forfaitaires) ; plus rien de faisable en voie 3 sans humain (AU068b attend H10, AU100 attend H72) ; verrou libéré
