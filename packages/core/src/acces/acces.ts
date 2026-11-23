@@ -2,6 +2,7 @@ import type { FicheClient } from '../db/fiche-client.ts';
 import type { SqlDatabase } from '../db/sql.ts';
 import type { Agent, Person, Property } from '../db/types.ts';
 import type { FicheComplete, FicheUnique } from '../fiche/fusion.ts';
+import { localTime } from '../envoi/horaires.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalEntry, JournalStore } from '../journal/types.ts';
 import {
@@ -61,15 +62,41 @@ export class Acces {
       networkId: person.network_id,
       agentIds: fiche.members.map((member) => member.agent_id),
     });
-    if (!decision.allowed) return this.refused(viewer, 'person', subject, decision.code);
+    // Le binôme d'un agent absent ouvre les fiches de l'absent pendant l'absence déclarée, et seulement alors [R680].
+    const cover = decision.allowed ? null : await this.coverOf(viewer, fiche.members.map((member) => member.agent_id));
+    if (!decision.allowed && !cover) return this.refused(viewer, 'person', subject, decision.code);
 
     await this.write(viewer, 'fiche.lue', personSubject(fiche.person.id), {
       rule: 'R16',
       role: viewer.role,
       requested: subject,
       members: fiche.members.map((member) => personSubject(member.id)),
+      ...(cover ? { cover } : {}),
     });
-    return { ok: true, view: decision.view, value: fiche };
+    return { ok: true, view: decision.allowed ? decision.view : 'full', value: fiche };
+  }
+
+  /**
+   * L'absence qui ouvre la fiche à l'agent, s'il reprend ce jour (heure de Paris) les dossiers de chaque autre agent
+   * qui la suit (J09) ; null sinon [R680]. Rend la référence de l'absence, jamais un nom.
+   */
+  private async coverOf(viewer: Viewer, agentIds: readonly (string | null)[]): Promise<string | null> {
+    if (viewer.role !== 'agent') return null;
+    const others = [...new Set(agentIds.filter((id): id is string => id !== null && id !== viewer.userId))];
+    if (others.length === 0) return null;
+    const day = localTime(this.now(), 'Europe/Paris').date;
+    const refs: string[] = [];
+    for (const absentId of others) {
+      const row = await this.db.first<{ id: string }>(
+        `SELECT x.id FROM agent_absences x
+         WHERE x.network_id = ? AND x.agent_id = ? AND x.cover_agent_id = ? AND x.from_day <= ? AND x.until_day >= ?
+         ORDER BY x.declared_at DESC, x.id DESC LIMIT 1`,
+        [viewer.networkId, absentId, viewer.userId, day, day],
+      );
+      if (!row) return null;
+      refs.push(`agent_absence:${row.id}`);
+    }
+    return refs.join(',');
   }
 
   /** La liste des fiches qu'on a le droit de voir : pour un agent, ses clients seulement. */
