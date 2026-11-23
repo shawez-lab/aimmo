@@ -202,11 +202,39 @@ const hasTerm = (text: string, term: string): boolean => {
   return new RegExp(`(?<![\\p{L}\\p{M}\\p{N}])${escaped}(?![\\p{L}\\p{M}\\p{N}])`, 'u').test(fold(text));
 };
 
+/**
+ * Les voies nommées que les mots entiers ne voient pas : en allemand et en néerlandais, le nom de la voie est soudé
+ * (« Lindenstraße », « Kerkstraat ») ; en italien et en espagnol, « via », « corso » ou « plaza » ont d'autres sens et ne
+ * désignent une voie que suivis d'un nom propre (« via Roma », « plaza Mayor », pas « plaza de garaje »). Un mot qui
+ * finit par la voie, ou ce mot suivi d'une majuscule, est refusé ; « Platz » et « weg » ne sont pas dans la liste, car
+ * « Stellplatz » ou « Fußweg » ne nomment rien.
+ */
+const STREET_SUFFIXES: Partial<Record<ListingLanguage, readonly string[]>> = {
+  de: ['straße', 'strasse', 'allee', 'gasse', 'chaussee', 'damm'],
+  nl: ['straat', 'laan', 'plein', 'steeg', 'gracht', 'kade', 'singel'],
+};
+/** L'abréviation allemande soudée : « Lindenstr. ». */
+const GERMAN_STR = /\p{L}str\.(?!\p{L})/u;
+const STREET_BEFORE_NAME: Partial<Record<ListingLanguage, RegExp>> = {
+  it: /(?<![\p{L}\p{M}])(?:[Vv]ia|[Vv]iale|[Cc]orso|[Pp]iazza|[Pp]iazzale|[Ll]argo|[Vv]icolo|[Ll]ungomare)\s+(?:(?:del|della|dei|degli|delle|di)\s+|d['’]\s*)?\p{Lu}/u,
+  es: /(?<![\p{L}\p{M}])(?:[Cc]alle|[Aa]venida|[Pp]laza|[Pp]aseo|[Cc]amino|[Rr]onda|[Bb]ulevar|[Cc]allejón)\s+(?:(?:de|del|de la|de los|de las)\s+)?\p{Lu}/u,
+};
+function namesAStreet(text: string, language: ListingLanguage): boolean {
+  const before = STREET_BEFORE_NAME[language];
+  if (before?.test(text)) return true;
+  if (language === 'de' && GERMAN_STR.test(text)) return true;
+  const suffixes = STREET_SUFFIXES[language];
+  if (!suffixes) return false;
+  const words = fold(text).match(/[\p{L}\p{M}]+/gu) ?? [];
+  return words.some((w) => suffixes.some((x) => w.endsWith(x)));
+}
+
 function publicProblems(source: string, translated: string, language: ListingLanguage): TranslationProblem[] {
   const out = new Set<TranslationProblem>();
   for (const sentence of sentences(translated)) for (const p of publicTextProblems(sentence)) out.add(p.code as TranslationProblem);
   const terms = PUBLIC_TERMS[language];
   for (const code of ['adresse', 'critere_discriminant', 'mot_interdit'] as const) if (terms[code].some((t) => hasTerm(translated, t))) out.add(code);
+  if (namesAStreet(translated, language)) out.add('adresse');
   // Dans une langue d'une autre écriture, un mot en lettres latines ne peut être qu'un nom repris du français (Dijon) :
   // sinon, refusé.
   if (!LATIN_LANGUAGES.has(language)) {

@@ -36,7 +36,7 @@ describe('AU069 · le contrôle d’une traduction vaut pour les quatre langues'
 
   it('[R257] [R46] une voie nommée, un critère discriminant, un mot interdit, un lien sont refusés dans chacune', () => {
     const body = (l: keyof typeof FIDELE, extra: string) => controlTranslation(FR, { title: FIDELE[l].title, body: `${FIDELE[l].body} ${extra}` }, l).body;
-    expect(body('de', 'Nahe der Lindenstraße und der Gartenstraße, in der Straße des Parks.')).toEqual(['adresse']);
+    expect(body('de', 'In der Straße des Parks.')).toEqual(['adresse']);
     expect(body('de', 'Ideal für eine Familie.')).toEqual(['critere_discriminant']);
     expect(body('de', 'Kostenlose Besichtigung, kostenlos.')).toEqual(['mot_interdit']);
     expect(body('es', 'Cerca de la calle Mayor.')).toEqual(['adresse']);
@@ -47,6 +47,26 @@ describe('AU069 · le contrôle d’une traduction vaut pour les quatre langues'
     expect(body('nl', 'Bij het plein.')).toEqual(['adresse']);
     expect(body('nl', 'Geen kinderen.')).toEqual(['critere_discriminant']);
     expect(body('nl', 'Zie www.voorbeeld.test')).toEqual(['lien_ou_mail']);
+  });
+
+  it('[R257] [R46] une voie soudée (« Lindenstraße », « Kerkstraat ») ou suivie de son nom (« via Roma », « plaza Mayor ») est refusée ; « Stellplatz » ou « plaza de garaje » passent', () => {
+    const body = (l: keyof typeof FIDELE, extra: string) => controlTranslation(FR, { title: FIDELE[l].title, body: `${FIDELE[l].body} ${extra}` }, l).body;
+    expect(body('de', 'In der Lindenstraße.')).toEqual(['adresse']);
+    expect(body('de', 'Nahe Gartenstrasse.')).toEqual(['adresse']);
+    expect(body('de', 'Nahe Lindenstr. und Park.')).toEqual(['adresse']);
+    expect(body('de', 'An der Rosenallee.')).toEqual(['adresse']);
+    expect(body('nl', 'Aan de Kerkstraat.')).toEqual(['adresse']);
+    expect(body('nl', 'Vlak bij het Marktplein.')).toEqual(['adresse']);
+    expect(body('nl', 'Aan de Prinsengracht.')).toEqual(['adresse']);
+    expect(body('it', 'In via Roma.')).toEqual(['adresse']);
+    expect(body('it', 'Vicino a Corso di Porta Nuova.')).toEqual(['adresse']);
+    expect(body('es', 'Junto a la plaza Mayor.')).toEqual(['adresse']);
+    expect(body('es', 'En la calle de Alcalá.')).toEqual(['adresse']);
+    // Ce qui ne nomme aucune voie passe.
+    expect(body('de', 'Mit Stellplatz und Fußweg zum Park.')).toEqual([]);
+    expect(body('es', 'Con plaza de garaje.')).toEqual([]);
+    expect(body('it', 'Luminoso, via dal traffico.')).toEqual([]);
+    expect(body('nl', 'Met een ruime tuin.')).toEqual([]);
   });
 });
 
