@@ -507,6 +507,9 @@ export function checkNote(note: InvestmentNote, text: string, facts: NoteFacts, 
   if (note.sources.length === 0 || note.sources.some((s) => !/Source : .+Hypothèse : .+/.test(s.text))) return { ok: false, rule: 'R126', code: 'sans_sources' };
   // Tout le texte, alertes, sources, hypothèses et mentions compris, passe la liste des tournures interdites.
   if (forbiddenPhrases(text).length > 0) return { ok: false, rule: 'R125', code: 'tournure_interdite' };
+  // AU100 · le financement ne se dit nulle part dans la note, sources et hypothèses comprises ; seul le renvoi fixe au
+  // courtier en parle [R125].
+  if (financingClaims(text.split(PROFESSIONAL_REFERRAL).join(' ')).length > 0) return { ok: false, rule: 'R125', code: 'financement' };
   // Une hypothèse écrite par l'agent ne porte que des nombres du calcul.
   for (const l of facts.lines) {
     if (!isWrittenByHand(l)) continue;

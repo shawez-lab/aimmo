@@ -35,7 +35,7 @@ it('[R125] les promesses et les conseils fiscaux ou financiers personnalisés so
   expect(forbiddenPhrases('Le bien coûte 171 250 € au total.')).toEqual([]);
 });
 
-async function setup(options: { writer?: NoteWriter; energyClass?: string; rentalTarget?: 'none' | 'furnished' | null; csv?: string; financing?: boolean } = {}) {
+async function setup(options: { writer?: NoteWriter; energyClass?: string; rentalTarget?: 'none' | 'furnished' | null; csv?: string; financing?: boolean; worksHypothesis?: string } = {}) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   let clock = Date.parse(AT);
@@ -75,7 +75,7 @@ async function setup(options: { writer?: NoteWriter; energyClass?: string; renta
     marketRentQuery: { inseeCode: '99001', kind: 'apartment' },
     inputs: {
       acquisitionFeesRateBp: src(750, 'barème de l’ancien'),
-      works: src(1_000_000, 'devis estimé'),
+      works: src(1_000_000, options.worksHypothesis ?? 'devis estimé'),
       nonRecoverableCharges: src(60_000, 'déclarées par le vendeur'), recoverableCharges: src(0),
       propertyTax: src(90_000, 'avis déclaré'),
       vacancyMonths: src(1, 'vacance réglée'),
@@ -248,6 +248,10 @@ describeWithSqlite('Y05 · note d’investissement', () => {
     expect(w.value.origin).not.toBe('ia');
     expect(w.value.text).not.toContain('trésorerie');
     expect(financingClaims('Un bien prêt à louer, au loyer de marché.')).toEqual([]);
+    // Ni dans une hypothèse écrite par l'agent, reprise dans les sources : la note est refusée, rien n'est rangé.
+    const hyp = await setup({ financing: true, worksHypothesis: 'La trésorerie après remboursement du prêt est positive, assurance comprise.' });
+    expect(await hyp.notes.draft(hyp.acces, hyp.as('agent', hyp.alex.id), { calculationId: hyp.calcId, projectId: hyp.project.id })).toEqual({ ok: false, rule: 'R125', code: 'financement' });
+    expect(await hyp.db.first<{ n: number }>('SELECT COUNT(*) AS n FROM investment_notes')).toEqual({ n: 0 });
     expect(financingClaims('Votre mensualité de crédit')).toEqual(['mensualite', 'credit']);
   });
 
