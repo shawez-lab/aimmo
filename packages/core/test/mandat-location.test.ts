@@ -82,33 +82,31 @@ describeWithSqlite('AU014 · la location sous mandat de location signé et inscr
     expect((await t.diffusion.canDiffuse(t.network.id, t.home.id, NOW, 'location')).allowed).toBe(false);
   });
 
-  it('[R17] H73 · la table des modèles refaite : aucune ligne perdue ni changée, documents liés intacts, preuve de recopie gardée', async () => {
-    const before = await withMigrationsBefore('4113', async () => {
+  it('[R17] les modèles existants gardent tout et deviennent d’objet « vente » ; l’objet ne change jamais, et seul un mandat simple peut être de location', async () => {
+    const t = await withMigrationsBefore('4113', async () => {
       const t = await setup();
-      const v = await t.modeles.createVersion(t.direction, 'mandat_vente_simple', BODY);
-      if (!v.ok) throw new Error(v.code);
-      await designerTout(t.db);
-      const d = await t.modeles.generate(t.agent, { kind: 'mandat_vente_simple', personId: t.owner.id, propertyId: t.home.id, inputs: { 'honoraires.montant': 400, 'mandat.duree_mois': 12 } });
-      if (!d.ok) throw new Error(d.code);
-      // Avant : la base refuse un modèle de location.
-      await expect(t.modeles.createVersion(t.direction, 'mandat_location', BODY)).rejects.toThrow(/CHECK/);
+      // Avant : un modèle de vente rangé, et aucune place pour un modèle de location.
+      const fields = JSON.stringify(['mandant.nom', 'registre.numero']);
+      await t.db.run("INSERT INTO document_templates (id, network_id, kind, version, status, body, fields, hash, created_by, created_at) VALUES ('tpl-vente', ?, 'mandat_vente_simple', 1, 'essai', ?, ?, 'h', 'direction:direction-1', '2027-01-01T00:00:00.000Z')", [t.network.id, BODY, fields]);
+      await expect(t.db.run("INSERT INTO document_templates (id, network_id, kind, version, status, body, fields, hash, created_by, created_at) VALUES ('tpl-loc', ?, 'mandat_location', 1, 'essai', 'b', '[]', 'h', 'd', 'a')", [t.network.id])).rejects.toThrow(/CHECK/);
       return t;
     });
-    const t = before;
-    const snapshot = () => t.db.all('SELECT * FROM document_templates ORDER BY id');
-    const rows = await snapshot();
-    expect(rows).toHaveLength(1);
-    await t.db.exec('BEGIN');
+    const before = await t.db.all('SELECT id, kind, version, status, body, fields, hash FROM document_templates ORDER BY id');
     expect((await applyMigrations(t.db, loadMigrations()))[0]).toBe('4113_mandat_location');
-    await t.db.exec('COMMIT');
-    expect(await snapshot()).toEqual(rows);
-    expect(await t.db.all('PRAGMA foreign_key_check')).toEqual([]);
-    expect(await t.db.all('SELECT rows_copied, complete FROM document_templates_recopie')).toEqual([{ rows_copied: 1, complete: 1 }]);
-    await expect(t.db.run("INSERT INTO document_templates_recopie (done_at, rows_copied, complete) VALUES ('a', 0, 0)")).rejects.toThrow(/CHECK/);
-    await expect(t.db.run('DELETE FROM document_templates_recopie')).rejects.toThrow();
-    await expect(t.db.run('DELETE FROM document_templates')).rejects.toThrow();
-    await expect(t.db.run("UPDATE document_templates SET body = 'autre'")).rejects.toThrow();
-    // Après : le modèle de location se range.
-    expect(await t.modeles.createVersion(t.direction, 'mandat_location', BODY)).toMatchObject({ ok: true });
+    expect(await t.db.all('SELECT id, kind, version, status, body, fields, hash FROM document_templates ORDER BY id')).toEqual(before);
+    expect(await t.db.all('SELECT purpose FROM document_templates')).toEqual([{ purpose: 'vente' }]);
+    // Après : le modèle de location se range, à la suite des versions du mandat simple, et se relit comme tel.
+    const loc = await t.modeles.createVersion(t.direction, 'mandat_location', BODY);
+    expect(loc).toMatchObject({ ok: true, template: { kind: 'mandat_location', version: 2 } });
+    const listed = await t.modeles.list(t.direction);
+    expect(listed.ok && listed.templates.map((x) => [x.kind, x.version])).toEqual(expect.arrayContaining([['mandat_vente_simple', 1], ['mandat_location', 2]]));
+    await expect(t.db.run("UPDATE document_templates SET purpose = 'vente' WHERE purpose = 'location'")).rejects.toThrow();
+    await expect(t.db.run("INSERT INTO document_templates (id, network_id, kind, version, status, body, fields, hash, created_by, created_at, purpose) VALUES ('x', ?, 'mandat_vente_exclusif', 9, 'essai', 'b', '[]', 'h', 't', 'a', 'location')", [t.network.id])).rejects.toThrow();
+    // Un mandat simple de vente se fait toujours sur son propre modèle, jamais sur celui de la location, et l'inverse.
+    await designerTout(t.db);
+    const sale = await t.modeles.generate(t.agent, { kind: 'mandat_vente_simple', personId: t.owner.id, propertyId: t.home.id });
+    expect(sale.ok && [sale.document.kind, sale.document.templateVersion]).toEqual(['mandat_vente_simple', 1]);
+    const rent = await t.modeles.generate(t.agent, { kind: 'mandat_location', personId: t.owner.id, propertyId: t.home.id, inputs: { 'honoraires.montant': 400, 'mandat.duree_mois': 36 } });
+    expect(rent.ok && [rent.document.kind, rent.document.templateVersion]).toEqual(['mandat_location', 2]);
   });
 });

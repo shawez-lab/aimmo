@@ -10,11 +10,16 @@ export async function signRentalMandate(
   const id = `loc-${++n}-${o.propertyId}`;
   const at = o.signedAt ?? '2026-01-05T09:00:00.000Z';
   const kind = o.kind ?? 'mandat_location';
-  const template = await db.first<{ id: string }>('SELECT id FROM document_templates WHERE network_id = ? AND kind = ? LIMIT 1', [o.networkId, kind]);
-  const templateId = template?.id ?? `tpl-${id}`;
-  if (!template) {
-    await db.run("INSERT INTO document_templates (id, network_id, kind, version, status, body, fields, hash, created_by, created_at) VALUES (?, ?, ?, 1, 'essai', 'x', '[]', 'h', 'test', ?)", [templateId, o.networkId, kind, at]);
-  }
+  const templateId = `tpl-${id}`;
+  // Un modèle de location se range comme un mandat simple d'objet « location » (AU014).
+  const version = Number((await db.first<{ v: number | null }>("SELECT MAX(version) AS v FROM document_templates WHERE network_id = ? AND kind = 'mandat_vente_simple'", [o.networkId]))?.v ?? 0) + 1;
+  await db.run("INSERT INTO document_templates (id, network_id, kind, version, status, body, fields, hash, created_by, created_at, purpose) VALUES (?, ?, 'mandat_vente_simple', ?, 'essai', 'x', '[]', 'h', 'test', ?, ?)", [
+    templateId,
+    o.networkId,
+    version,
+    at,
+    kind === 'mandat_location' ? 'location' : 'vente',
+  ]);
   await db.run(
     `INSERT INTO documents (id, network_id, template_id, template_version, template_hash, kind, mode, status, missing, agent_id, person_id, property_id, content, content_hash, facts, created_by, created_at)
      VALUES (?, ?, ?, 1, 'h', ?, 'reel', 'complet', '[]', ?, ?, ?, 'mandat', 'h', ?, 'test', ?)`,

@@ -344,24 +344,21 @@ describeWithSqlite('S04 · une seule fiche par personne', () => {
   });
 });
 
-/** Les tables refaites par décision de Shawez (H51, H73), chacune dans sa migration, après une recopie vérifiée. */
-const REBUILT: Record<string, string> = { '1760_second_dossier.sql': 'sale_files', '4113_mandat_location.sql': 'document_templates' };
+const SECOND_FILE_DROP = 'DROP TABLE sale_files;';
 
 describe('[R17] le code n’efface aucune donnée', () => {
-  it('[R17] les exceptions H51 et H73 : un seul DROP chacune, sur leur table, après une recopie vérifiée complète, et nulle part ailleurs', () => {
+  it('[R17] l’exception H51 : un seul DROP, sur `sale_files`, après une recopie vérifiée complète, et nulle part ailleurs', () => {
     const exceptions = readdirSync(migrationsDir).filter((f) => /\bDROP\s+TABLE\b/i.test(readFileSync(migrationsDir + f, 'utf8').replace(/^\s*--.*$/gm, '')));
-    expect(exceptions).toEqual(Object.keys(REBUILT));
-    for (const [file, table] of Object.entries(REBUILT)) {
-      const sql = readFileSync(migrationsDir + file, 'utf8').replace(/^\s*--.*$/gm, '');
-      expect(sql.match(/\bDROP\b/gi), file).toHaveLength(1);
-      const drop = sql.indexOf(`DROP TABLE ${table};`);
-      const copy = sql.indexOf(`INSERT INTO ${table}_refaite`);
-      const check = sql.indexOf(`INSERT INTO ${table}_recopie`);
-      expect(copy, file).toBeGreaterThan(-1);
-      expect(check, file).toBeGreaterThan(copy);
-      expect(drop, file).toBeGreaterThan(check);
-      expect(sql, file).toMatch(/complete INTEGER NOT NULL CHECK \(complete = 1\)/);
-    }
+    expect(exceptions).toEqual(['1760_second_dossier.sql']);
+    const sql = readFileSync(migrationsDir + '1760_second_dossier.sql', 'utf8').replace(/^\s*--.*$/gm, '');
+    expect(sql.match(/\bDROP\b/gi)).toHaveLength(1);
+    const drop = sql.indexOf(SECOND_FILE_DROP);
+    const copy = sql.indexOf('INSERT INTO sale_files_refaite');
+    const check = sql.indexOf('INSERT INTO sale_files_recopie');
+    expect(copy).toBeGreaterThan(-1);
+    expect(check).toBeGreaterThan(copy);
+    expect(drop).toBeGreaterThan(check);
+    expect(sql).toMatch(/complete INTEGER NOT NULL CHECK \(complete = 1\)/);
   });
 
   const files = (dir: string): string[] =>
@@ -371,8 +368,8 @@ describe('[R17] le code n’efface aucune donnée', () => {
     const src = fileURLToPath(new URL('../src/', import.meta.url));
     for (const file of [...files(src), ...files(migrationsDir)]) {
       let text = readFileSync(file, 'utf8').replace(/^\s*(--|\/\/|\*).*$/gm, '');
-      // Les exceptions décidées par Shawez (H51, H73) : une table refaite après recopie vérifiée, testée à part.
-      for (const [name, table] of Object.entries(REBUILT)) if (file.endsWith(`/${name}`)) text = text.replace(`DROP TABLE ${table};`, '');
+      // La seule exception, décidée par Shawez (H51) : `sale_files` refaite pour un second dossier, testée à part.
+      if (file.endsWith('/1760_second_dossier.sql')) text = text.replace(SECOND_FILE_DROP, '');
       // La procédure d'effacement que R17 prévoit (AU020) : un seul DELETE, ligne par ligne, dans `eraseForReal`.
       if (file.endsWith('/conformite/effacement-reel.ts')) {
         expect(text.match(/\bDELETE\s+FROM\b/gi), file).toHaveLength(1);
