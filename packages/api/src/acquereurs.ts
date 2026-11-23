@@ -42,6 +42,7 @@
  * n'envoie elle-même : tout envoi passe par le contrôle central des envois, en mode essai [R26].
  */
 import { base64Of, validTile, type TileSource } from './carte.ts';
+import { AgendaUnavailableError, agendaBusyOf, type AgendaDirectory } from './agenda-reel.ts';
 import {
   APPOINTMENT_KINDS,
   AlerteWhatsApp,
@@ -96,6 +97,8 @@ export interface M08Options {
   geocoder?: Geocoder | null;
   /** AU073b · le fournisseur des tuiles de la carte des secteurs (`CARTE_TUILES_URL`) ; absent, la carte n'est pas branchée. */
   tiles?: TileSource | null;
+  /** AU053 · les agendas reliés des agents (H21, H53) : un événement occupé refuse le rendez-vous [R33, R702]. */
+  agendas?: AgendaDirectory | null;
 }
 
 export interface M08Route {
@@ -112,6 +115,7 @@ const json = (status: number, body: unknown): Response =>
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' },
   });
 const failure = (status: number, code: string, message: string): Response => json(status, { ok: false, code, message });
+const agendaClosed = (): Response => json(503, { ok: false, code: 'agenda_indisponible', rule: 'R702', message: 'Votre agenda n’a pas pu être lu : réessayez dans quelques minutes.' });
 const badBody = (): Response => failure(400, 'invalid_body', 'Corps JSON attendu.');
 
 type Outcome = { ok: true; [k: string]: unknown } | { ok: false; rule?: string | null; code: string; [k: string]: unknown };
@@ -173,7 +177,12 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
   const recherche = (s: M08Services) => new FicheAcquereur(s.db, s.journal, { now: s.now });
   const rapprochement = (s: M08Services) => new Rapprochement(s.db, fiche(s), diffusion(s), s.journal, { now: s.now });
   const whatsapp = (s: M08Services) => new AlerteWhatsApp(s.db, s.journal, s.acces, { now: s.now, unsubscribeBase: options.unsubscribeBase ?? null });
-  const visites = (s: M08Services) => new Visites(s.db, s.journal, s.acces, { now: s.now });
+  // AU053 : la visite fixée par l'agent se contrôle sur son agenda relié, comme tout rendez-vous [R33, R702].
+  const rendezVous = (s: M08Services) => {
+    const agenda = agendaBusyOf(s.db, s.journal, options.agendas ?? null, s.now);
+    return new RendezVous(s.db, s.journal, { now: s.now, ...(agenda ? { agenda } : {}) });
+  };
+  const visites = (s: M08Services) => new Visites(s.db, s.journal, s.acces, { now: s.now, rendezVous: rendezVous(s) });
   const securite = (s: M08Services) => new VisiteSecurisee(s.db, s.journal, visites(s), { now: s.now, ...(options.notifier ? { notifier: options.notifier } : {}) });
   const comptes = (s: M08Services) => new ComptesRendus(s.db, s.journal, visites(s), { now: s.now, ...(options.reportWriter ? { writer: options.reportWriter } : {}) });
   const signature = (s: M08Services) => new SignatureBon(s.db, s.journal, visites(s), { now: s.now });
@@ -185,7 +194,14 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
     name,
     handle: async (s, v, p, request) => {
       const body = request.headers.get('content-length') === '0' || !request.body ? {} : await readJson(request);
-      return body ? run(s, v, p, body) : badBody();
+      if (!body) return badBody();
+      try {
+        return await run(s, v, p, body);
+      } catch (error) {
+        // L'agenda relié de l'agent n'a pas pu être lu : rien n'est réservé, l'agent le sait [R702].
+        if (error instanceof AgendaUnavailableError) return agendaClosed();
+        throw error;
+      }
     },
   });
   const get = (name: string, path: string, run: M08Route['handle']): M08Route => ({ method: 'GET', pattern: new RegExp(`^${path}$`), name, handle: run });
@@ -249,8 +265,7 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
       if (typeof start !== 'string' || !INSTANT.test(start) || Number.isNaN(Date.parse(start))) return failure(400, 'invalid_start', 'start : un instant ISO en UTC.');
       const duration = durationOf(body.durationMinutes);
       if (duration === null) return failure(400, 'invalid_duration', durationHelp);
-      const rdv = new RendezVous(s.db, s.journal, { now: s.now });
-      return reply(await rdv.bookAsAgent(v, s.acces, { personId, propertyId: (propertyId as string | null | undefined) ?? null, kind: kind as AppointmentKind, start: new Date(start), ...duration }));
+      return reply(await rendezVous(s).bookAsAgent(v, s.acces, { personId, propertyId: (propertyId as string | null | undefined) ?? null, kind: kind as AppointmentKind, start: new Date(start), ...duration }));
     }),
     get('visites.alertes', '/visites/alertes', async (s, v) => reply(await securite(s).list(v))),
     post('visites.alerte', `/visites/alertes/${ID}`, async (s, v, [a]) => {

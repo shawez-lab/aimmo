@@ -1,4 +1,5 @@
-import { ONLINE_KINDS, ONLINE_SOURCES, ReservationEnLigne, SqlJournalStore, parisInstant, type AppointmentKind, type AppointmentSource, type SqlDatabase } from '@aimmo/core';
+import { ONLINE_KINDS, ONLINE_SOURCES, ReservationEnLigne, SqlJournalStore, parisInstant, type AppointmentKind, type AppointmentSource, type BusySource, type SqlDatabase } from '@aimmo/core';
+import { AgendaUnavailableError } from './agenda-reel.ts';
 import { intakeFromRequest, parseIntakeKeys, sha256Hex } from './auth.ts';
 import { journalError } from './app.ts';
 import { VISITOR, takeSlot } from './assistant.ts';
@@ -34,6 +35,8 @@ export interface BookingConfig {
   limits?: BookingLimits;
   /** Variable `RDV_LINK_BASE` : début du lien pour décaler ou annuler. */
   linkBase?: string | null;
+  /** AU053 · les événements occupés des agendas reliés (H21, H53) ; absent, seuls les rendez-vous d'AIMMO comptent. */
+  agenda?: BusySource | undefined;
   now: () => Date;
 }
 
@@ -62,6 +65,17 @@ async function readBody(request: Request): Promise<Record<string, unknown> | nul
     return null;
   }
 }
+
+/** `null` quand l'agenda relié de l'agent n'a pas pu être lu : rien n'est réservé. */
+async function agendaOrClosed<T>(run: () => Promise<T>): Promise<T | null> {
+  try {
+    return await run();
+  } catch (error) {
+    if (error instanceof AgendaUnavailableError) return null;
+    throw error;
+  }
+}
+const agendaClosed = (): Response => json(503, { ok: false, mode: 'essai', code: 'agenda_indisponible', rule: 'R702', message: 'Agenda de l’agent injoignable : réessayez dans quelques minutes.' });
 
 export async function handleBooking(request: Request, path: string, config: BookingConfig): Promise<Response> {
   if (request.method !== 'POST') return failure(405, 'method_not_allowed', 'Méthode non admise.');
@@ -92,7 +106,7 @@ export async function handleBooking(request: Request, path: string, config: Book
     return failure(429, 'too_many_requests', 'Trop de demandes : réessayez plus tard.');
   }
   const journal = new SqlJournalStore(config.db);
-  const service = new ReservationEnLigne(config.db, journal, { now: config.now, linkBase: config.linkBase ?? null });
+  const service = new ReservationEnLigne(config.db, journal, { now: config.now, linkBase: config.linkBase ?? null, ...(config.agenda ? { agenda: config.agenda } : {}) });
 
   if (!booking) {
     const { from, days } = body;
@@ -101,14 +115,16 @@ export async function handleBooking(request: Request, path: string, config: Book
     const start = parisInstant(from, 0);
     if (!start) return failure(400, 'invalid_from', 'from : une date AAAA-MM-JJ.');
     // Avec le bien, un créneau juste après un rendez-vous au même bien est proposé avec la marge du même lieu (AU055).
-    const result = await service.slots({
+    // Un agenda relié injoignable ferme la réservation : aucun créneau n'est supposé libre [R33, R702].
+    const result = await agendaOrClosed(() => service.slots({
       networkId: intake.networkId,
       agentId,
       kind: kind as AppointmentKind,
       from: start,
       to: new Date(start.getTime() + days * 86_400_000),
       propertyId: (propertyId as string | null | undefined) ?? null,
-    });
+    }));
+    if (result === null) return agendaClosed();
     // Un agent inconnu rend une liste vide, comme un agent sans créneau : rien n'est dit de l'équipe.
     return json(200, { ok: true, mode: 'essai', slots: result.ok ? result.slots : [] });
   }
@@ -122,7 +138,7 @@ export async function handleBooking(request: Request, path: string, config: Book
   if (typeof consentProof !== 'string' || consentProof.trim() === '' || consentProof.length > 300) {
     return failure(400, 'invalid_consent', 'consentProof : ce que la personne a accepté, et où (300 caractères au plus) [R03].');
   }
-  const result = await service.book({
+  const result = await agendaOrClosed(() => service.book({
     networkId: intake.networkId,
     agentId,
     kind: kind as AppointmentKind,
@@ -133,7 +149,8 @@ export async function handleBooking(request: Request, path: string, config: Book
     phone: (phone as string | null | undefined) ?? null,
     consentProof,
     propertyId: (propertyId as string | null | undefined) ?? null,
-  });
+  }));
+  if (result === null) return agendaClosed();
   if (!result.ok) {
     const status = ['not_free', 'taken', 'agenda_busy', 'outside_availability', 'no_availability', 'too_soon', 'bad_time'].includes(result.code) ? 409 : 400;
     return json(status, { ok: false, mode: 'essai', code: result.code, rule: result.rule });

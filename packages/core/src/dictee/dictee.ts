@@ -28,6 +28,10 @@ import { checkReport, redactNames, type ComptesRendus, type VisitReport } from '
 import type { Visites } from '../visites/visites.ts';
 import { DICTATION_KEYS, DICTATION_MAX_CHARS, fieldOf, readDictation, unproposedNames, type DictatedField, type DictatedKey, type DictationDraft, type DictationTarget } from './lecture.ts';
 
+/** AU053 : l'agenda relié de l'agent n'a pas pu être lu (`AgendaUnavailableError` de l'API) : rien n'est réservé [R702]. */
+const agendaDown = (error: unknown): boolean => error instanceof Error && error.name === 'AgendaUnavailableError';
+const AGENDA_DOWN_REFUSAL = { rule: 'R702', code: 'agenda_indisponible' } as const;
+
 /**
  * Ce qu'une validation a déjà rangé quand le créneau est pris entre la vérification et la réservation (RC22) : rien
  * n'est effacé, le refus le dit pour que l'agent ne redicte pas ce qui existe [R261].
@@ -252,7 +256,15 @@ export class Dictee {
     if (start && kind && personId) {
       const existing = await this.bookedFor(viewer, personId, kind, start, bien ? input.requestId : (counterVisit?.property_id ?? null), counterVisit?.project_id ?? null);
       if (!existing) {
-        const free = await this.deps.rendezVous.freeSlotsFor(viewer.userId, kind, new Date(start.getTime() - DAY_MS), new Date(start.getTime() + DAY_MS));
+        let free: Awaited<ReturnType<RendezVous['freeSlotsFor']>>;
+        try {
+          free = await this.deps.rendezVous.freeSlotsFor(viewer.userId, kind, new Date(start.getTime() - DAY_MS), new Date(start.getTime() + DAY_MS));
+        } catch (error) {
+          // AU053 : l'agenda relié de l'agent injoignable : refusé avant d'écrire, en nommant ce qui est déjà rangé [R702].
+          if (!agendaDown(error)) throw error;
+          const earlier = await this.leftBy(viewer, input.requestId, personId, contactState);
+          return { ok: false, rule: 'R702', code: 'agenda_indisponible', ...(earlier ? { kept: earlier } : {}) };
+        }
         if (!free.some((s) => s.start.getTime() === start.getTime())) {
           // Rejouée après un créneau pris entre-temps : refusée avant d'écrire, en nommant ce qui est déjà rangé (RC22).
           const earlier = await this.leftBy(viewer, input.requestId, personId, contactState);
@@ -288,12 +300,25 @@ export class Dictee {
       else {
         if (counterVisit && this.deps.visites) {
           // La contre-visite : même bien, même projet d'achat, avec son bon de visite ; aucune confirmation.
-          const r = await this.deps.visites.schedule(viewer, { propertyId: counterVisit.property_id, projectId: counterVisit.project_id, start, channel: null });
+          let r: Awaited<ReturnType<Visites['schedule']>>;
+          try {
+            r = await this.deps.visites.schedule(viewer, { propertyId: counterVisit.property_id, projectId: counterVisit.project_id, start, channel: null });
+          } catch (error) {
+            if (!agendaDown(error)) throw error;
+            return this.takenMeanwhile(viewer, input.requestId, { personId: null, contact: null, propertyId: null }, kind, start, AGENDA_DOWN_REFUSAL);
+          }
           if (!r.ok) return this.takenMeanwhile(viewer, input.requestId, { personId: null, contact: null, propertyId: null }, kind, start, r);
           booked = r.visit.appointment.id;
         } else {
           // Aucune confirmation ne part : le contact n'a rien demandé par message.
-          const r = await this.deps.rendezVous.book({ networkId: viewer.networkId, agentId: viewer.userId, personId, propertyId, kind, start, source: 'agent', channel: null });
+          let r: Awaited<ReturnType<RendezVous['book']>>;
+          try {
+            r = await this.deps.rendezVous.book({ networkId: viewer.networkId, agentId: viewer.userId, personId, propertyId, kind, start, source: 'agent', channel: null });
+          } catch (error) {
+            // L'agenda tombé entre la vérification et la réservation : la fiche et le bien rangés sont nommés [R261, R702].
+            if (!agendaDown(error)) throw error;
+            return this.takenMeanwhile(viewer, input.requestId, { personId: contact ? personId : null, contact: contactState, propertyId }, kind, start, AGENDA_DOWN_REFUSAL);
+          }
           if (!r.ok) return this.takenMeanwhile(viewer, input.requestId, { personId: contact ? personId : null, contact: contactState, propertyId }, kind, start, r);
           booked = r.appointment.id;
         }

@@ -394,6 +394,9 @@ describeWithSqlite('C07 · Instagram, Facebook et WhatsApp, en mode essai', () =
               // AU043 : la vraie boîte mail de l'agent qui a donné son accord (H55), en lecture seule (`gmail.readonly`,
               // `Mail.Read`) ; aucune adresse n'envoie, ne déplace ni n'efface un mail [R683]. Rien ne part.
               'return { mailboxes: mailboxesFromEnv(env, fetch.bind(globalThis)), files: dossierFilesOf(env.PIECES ? new R2PieceStore(env.PIECES) : null) };',
+              // AU053 : le vrai agenda de l'agent qui l'a relié (H21, H53) : seuls l'heure, le type et un intitulé sans nom
+              // ni coordonnée y sont écrits [R236, R702]. Ce n'est pas un message à une personne ; rien ne part.
+              'return agendasFromEnv(env, fetch.bind(globalThis));',
               // Le fournisseur de pige du réseau (AU034), en GET : seule la date de début part, la clé dans l'en-tête.
               'export function pigeSourceOf(settings: PigeProviderSettings, fetcher: PigeFetcher = fetch.bind(globalThis)): { networkId: string; source: PigeSource } | null {',
               'const reader = env.DVF_BASE_URL ? httpDvfReader(fetch.bind(globalThis), env.DVF_BASE_URL) : null;',
