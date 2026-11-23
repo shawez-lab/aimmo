@@ -19,7 +19,7 @@
  *     chaque rendez-vous est écrit une seule fois dans son agenda [R236]. Une panne est notée et reprise [R13].
  * Aucun jeton, aucun mot de passe ni aucune adresse ne va au journal : le nom de la panne seul.
  */
-import { AgendaHttpError, AgendaSync, AppleAgenda, GoogleAgenda, OutlookAgenda, RendezVous, type AgendaChanges, type AgendaEvent, type AgendaProvider, type AgendaWrite, type BusySource, type FetchFn, type JournalStore, type SqlDatabase } from '@aimmo/core';
+import { AgendaHttpError, AgendaSync, AppleAgenda, GoogleAgenda, OutlookAgenda, RendezVous, agendaConnection, type AgendaChanges, type AgendaEvent, type AgendaProvider, type AgendaWrite, type BusySource, type FetchFn, type JournalStore, type SqlDatabase } from '@aimmo/core';
 import { appendEvent } from '../../core/src/journal/journal.ts';
 
 export const AGENDA_PROVIDERS = ['google', 'outlook', 'apple'] as const;
@@ -116,7 +116,7 @@ const MS_SCOPE = 'offline_access https://graph.microsoft.com/Calendars.ReadWrite
 class AccessTokens {
   private readonly cache = new Map<string, { token: string; until: number }>();
   constructor(
-    private readonly fetch: FetchFn,
+    private readonly http: FetchFn,
     private readonly url: string,
     private readonly client: { id: string; secret: string },
     private readonly scope: string | null,
@@ -132,7 +132,7 @@ class AccessTokens {
     if (!refresh) throw new AgendaHttpError(401);
     const form = new URLSearchParams({ grant_type: 'refresh_token', client_id: this.client.id, client_secret: this.client.secret, refresh_token: refresh });
     if (this.scope) form.set('scope', this.scope);
-    const r = await this.fetch(this.url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString() });
+    const r = await this.http(this.url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString() });
     if (!r.ok) throw new AgendaHttpError(r.status);
     let body: unknown;
     try {
@@ -181,7 +181,7 @@ class AgendaRouter implements AgendaProvider {
 }
 
 /** Les vrais agendas des agents, ou `null` tant que la mise en service n'est pas complète [R702]. */
-export function agendasFromEnv(env: AgendaEnv, fetch: FetchFn, options: { now?: () => Date } = {}): AgendaDirectory | null {
+export function agendasFromEnv(env: AgendaEnv, http: FetchFn, options: { now?: () => Date } = {}): AgendaDirectory | null {
   if (env.AGENDA_MODE !== 'reel') return null;
   const now = options.now ?? (() => new Date());
   const all = parseAgendaConnections(env.AGENDA_JETONS);
@@ -200,19 +200,16 @@ export function agendasFromEnv(env: AgendaEnv, fetch: FetchFn, options: { now?: 
     return c && c.provider !== 'apple' ? c.refresh : null;
   };
   // Les jetons d'accès sont gardés d'un appel à l'autre pendant la vie du Worker.
-  const googleTokens = googleReady ? new AccessTokens(fetch, GOOGLE_TOKEN, { id: gId, secret: gSecret }, null, refresh, now) : null;
-  const outlookTokens = outlookReady ? new AccessTokens(fetch, msToken(tenant), { id: mId, secret: mSecret }, MS_SCOPE, refresh, now) : null;
-  const googleAgenda = googleTokens ? new GoogleAgenda({ fetch, authorization: (a) => googleTokens.of(a) }) : null;
-  const outlookAgenda = outlookTokens ? new OutlookAgenda({ fetch, authorization: (a) => outlookTokens.of(a) }, { now }) : null;
+  const googleTokens = googleReady ? new AccessTokens(http, GOOGLE_TOKEN, { id: gId, secret: gSecret }, null, refresh, now) : null;
+  const outlookTokens = outlookReady ? new AccessTokens(http, msToken(tenant), { id: mId, secret: mSecret }, MS_SCOPE, refresh, now) : null;
+  const googleAgenda = googleTokens ? new GoogleAgenda(agendaConnection(http, (a) => googleTokens.of(a))) : null;
+  const outlookAgenda = outlookTokens ? new OutlookAgenda(agendaConnection(http, (a) => outlookTokens.of(a)), { now }) : null;
   const appleAgenda = new AppleAgenda(
-    {
-      fetch,
-      authorization: async (a) => {
-        const c = connections.get(a);
-        if (c?.provider !== 'apple') throw new AgendaHttpError(401);
-        return basic(c.user, c.password);
-      },
-    },
+    agendaConnection(http, async (a) => {
+      const c = connections.get(a);
+      if (c?.provider !== 'apple') throw new AgendaHttpError(401);
+      return basic(c.user, c.password);
+    }),
     async (a) => {
       const c = connections.get(a);
       if (c?.provider !== 'apple') throw new AgendaHttpError(404);

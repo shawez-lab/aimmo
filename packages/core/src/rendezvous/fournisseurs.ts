@@ -22,6 +22,9 @@ export interface AgendaConnection {
   authorization(agentId: string): Promise<string>;
 }
 
+/** La connexion d'un agent : son appel au service et la valeur de son en-tête d'autorisation (AU053). */
+export const agendaConnection = (http: FetchFn, authorization: (agentId: string) => Promise<string>): AgendaConnection => ({ fetch: http, authorization });
+
 /** Une réponse en erreur du service d'agenda : le statut seul, jamais le corps. */
 export class AgendaHttpError extends Error {
   override readonly name = 'AgendaHttpError';
