@@ -82,7 +82,7 @@ async function setup() {
     const route = routes.find((r) => r.method === method && r.pattern.test(bare))!;
     const params = (route.pattern.exec(bare) ?? []).slice(1);
     const init: RequestInit = body === undefined ? { method } : { method, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) };
-    const s: ConformiteServices = { db: t.db, journal: t.journal, acces: t.acces, stop, vault: null, now: t.now, erasure };
+    const s: ConformiteServices = { db: t.db, journal: t.journal, acces: t.acces, stop, vault: null, now: t.now, erasure: erasure ?? null };
     const response = await route.handle(s, compliance, params, new Request(`https://api.exemple.test/v1${bare}`, init));
     return { status: response.status, body: (await response.json()) as { ok: boolean; rule?: string; code?: string; data?: any } };
   };
@@ -193,6 +193,19 @@ describeWithSqlite('SV05 · l’effacement réel par le Worker, noté au registr
     expect(await t.firstName()).toBe(name);
   });
 
+  it('[R17] un compartiment absent au premier passage : le fichier reste, l’effacement n’est pas dit complet ; refait avec lui, le fichier part', async () => {
+    const t = await setup();
+    const id = await t.request();
+    const b = copiesBucket();
+    const pieces = liveBucket({ [RECORDING]: 'OggS inventé' });
+    const first = await t.call(`/demandes/${id}/effacer`, 'POST', {}, await erasureOf({ ...SETTINGS, ERASURE_MODE: 'reel' }, b.fetchFn));
+    expect(first.body).toMatchObject({ ok: true, data: { receipt: { complete: false, objectsRemaining: 1 } } });
+    expect(pieces.objects.has(RECORDING)).toBe(true);
+    const second = await t.call(`/demandes/${id}/effacer`, 'POST', {}, await erasureOf({ ...SETTINGS, PIECES: pieces, ERASURE_MODE: 'reel' }, b.fetchFn));
+    expect(second.body).toMatchObject({ ok: true, data: { receipt: { complete: true, objectsRemaining: 0, objectsRemoved: { PIECES: 1 } } } });
+    expect(pieces.deleted).toEqual([RECORDING]);
+  });
+
   it('[R17] [R231] de bout en bout : noté sous `effacements/`, effacé, refait sans rien de plus, puis refait après une vraie restauration', async () => {
     const t = await setup();
     const id = await t.request();
@@ -227,14 +240,18 @@ describeWithSqlite('SV05 · l’effacement réel par le Worker, noté au registr
     expect(live.PIECES.objects.has(RECORDING)).toBe(false);
     const snapshot = async () => {
       const tables = await t.db.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'journal' ORDER BY name");
-      const out: Record<string, number> = {};
-      for (const { name } of tables) out[name] = (await t.db.first<{ n: number }>(`SELECT count(*) AS n FROM "${name}"`))!.n;
+      // Le contenu entier de chaque table, pas seulement son nombre de lignes.
+      const out: Record<string, string> = {};
+      for (const { name } of tables) out[name] = JSON.stringify(await t.db.all(`SELECT * FROM "${name}" ORDER BY rowid`));
       return out;
     };
     const before2 = await snapshot();
+    const deletedBefore = Object.fromEntries(OBJECT_STORAGES.map((st) => [st, [...live[st].deleted]]));
     const again = await t.call(`/demandes/${id}/effacer`, 'POST', {}, erasure);
     expect(again.body).toMatchObject({ ok: true, data: { receipt: { complete: true } } });
-    expect(rows(again.body.data.receipt.erased)).toBe(0);
+    for (const part of ['erased', 'pseudonymized', 'hashed', 'stopped'] as const) expect([part, rows(again.body.data.receipt[part])]).toEqual([part, 0]);
+    expect(again.body.data.receipt.objectsRemoved).toEqual({});
+    expect(Object.fromEntries(OBJECT_STORAGES.map((st) => [st, live[st].deleted]))).toEqual(deletedBefore);
     const after2 = await snapshot();
     expect(Object.fromEntries(Object.entries(after2).filter(([k]) => k !== 'person_request_outputs'))).toEqual(Object.fromEntries(Object.entries(before2).filter(([k]) => k !== 'person_request_outputs')));
     expect(live.MEDIA.objects.has('biens/b1/salon.jpg')).toBe(true);

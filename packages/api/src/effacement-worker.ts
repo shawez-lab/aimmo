@@ -13,7 +13,7 @@
  * - le Worker ne touche dans ce compartiment qu'au préfixe `effacements/` : il ne lit, n'écrit ni ne liste jamais les
  *   copies elles-mêmes ;
  * - les fichiers sont retirés de leurs compartiments liés (`MEDIA`, `PIECES`, `COMMERCES`, `COFFRE`). Un compartiment
- *   absent ou qui ne sait pas retirer lève : l'effacement est dit interrompu, jamais fait, et le refaire finira [R17].
+ *   absent ou qui ne sait pas retirer lève : le fichier reste noté à retirer, l'effacement est dit incomplet, jamais fait, et le refaire finira [R17].
  *
  * Un effacement non noté au registre n'est jamais dit fait [R231] : `EffacementReel` note avant d'effacer, et refuse
  * (`ledger_unwritable`) si la note échoue.
