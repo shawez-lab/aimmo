@@ -362,6 +362,64 @@ describe('D12 · écran « Mandat »', () => {
     expect(rien.body().textContent).not.toContain('Signature en ligne');
   });
 
+  it('X17 · la signature en ligne d’essai à l’écran : accord, code d’essai montré, signature dite sans valeur juridique', async () => {
+    const MODE = { 'GET /v1/signature-en-ligne/mode': ok({ mode: 'essai', missing: ['mail_reel', 'validation_avocat'], proofFormat: 'aimmo-preuve-1' }) };
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC] }), ...MODE });
+    await t.open();
+    await t.press('Contrôler avant signature');
+    // Sans accord noté, rien ne part.
+    await t.press('Envoyer le code de signature');
+    expect(t.state()).toBe('Notez comment le mandant a accepté de signer en ligne.');
+    expect(t.posts().filter((c) => c.url.includes('signature-en-ligne'))).toEqual([]);
+    t.input('mandat-accord-d1').value = 'Accord donné au rendez-vous du 10 février.';
+    t.table['POST /v1/documents/d1/signature-en-ligne'] = ok({ sessionId: 's1', expiresAt: '2027-02-10T09:10:00.000Z', mode: 'essai', trialCode: '482913' });
+    await t.press('Envoyer le code de signature');
+    expect(t.posts().at(-1)).toMatchObject({ url: '/v1/documents/d1/signature-en-ligne', body: { consentProof: 'Accord donné au rendez-vous du 10 février.' } });
+    expect(t.state()).toBe('Code préparé pour le mandant (essai, rien n’est parti).');
+    expect(t.body().textContent).toContain('Code d’essai : 482913.');
+    // Un code faux est dit en français, sans code interne.
+    t.input('mandat-code-d1').value = '111111';
+    t.table['POST /v1/signatures/s1'] = no(400, 'wrong_code');
+    await t.press('Signer en ligne');
+    expect(t.state()).toBe('Code faux : vérifiez-le avec le mandant.');
+    t.input('mandat-code-d1').value = ' 482913 ';
+    t.table['POST /v1/signatures/s1'] = ok({ mode: 'essai', realSignature: false, allSigned: true });
+    await t.press('Signer en ligne');
+    expect(t.posts().at(-1)).toMatchObject({ url: '/v1/signatures/s1', body: { code: '482913' } });
+    expect(t.state()).toBe('Signé en essai, sans valeur juridique : aucun mandat n’est inscrit.');
+  });
+
+  it('X17 · en réel, aucun code n’est montré ; signé par tous, le mandat est relu inscrit ; une réponse perdue est dite telle', async () => {
+    const MODE = { 'GET /v1/signature-en-ligne/mode': ok({ mode: 'reel', missing: [], proofFormat: 'aimmo-preuve-1' }) };
+    const two = { ...READ, documents: [DOC], owners: [OWNER, { personId: 'p2', firstName: 'Sam', lastName: 'Exemple' }] };
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok(two), ...MODE });
+    await t.open();
+    await t.press('Contrôler avant signature');
+    t.input('mandat-accord-d1').value = 'Accord écrit du 10 février.';
+    t.input('mandat-signataire-d1').value = 'p2';
+    // La réponse se perd : rien n'est affirmé.
+    await t.press('Envoyer le code de signature');
+    expect(t.state()).toBe('Pas de réponse : le code est peut-être parti. Attendez dix minutes avant de le renvoyer.');
+    t.table['POST /v1/documents/d1/signature-en-ligne'] = ok({ sessionId: 's2', expiresAt: 'x', mode: 'reel' });
+    await t.press('Envoyer le code de signature');
+    expect(t.posts().at(-1)).toMatchObject({ body: { consentProof: 'Accord écrit du 10 février.', signerId: 'p2' } });
+    expect(t.state()).toBe('Code envoyé au mandant par mail : il vaut dix minutes.');
+    expect(t.body().textContent).not.toContain('Code d’essai');
+    t.input('mandat-code-d1').value = '123456';
+    t.table['POST /v1/signatures/s2'] = ok({ mode: 'reel', realSignature: true, allSigned: true, finished: { ok: true } });
+    await t.press('Signer en ligne');
+    expect(t.state()).toBe('Mandat signé en ligne : il est inscrit au registre.');
+  });
+
+  it('X17 [R16] un envoi refusé par les droits est dit tel', async () => {
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC] }), 'GET /v1/signature-en-ligne/mode': ok({ mode: 'essai', missing: ['validation_avocat'], proofFormat: 'aimmo-preuve-1' }), 'POST /v1/documents/d1/signature-en-ligne': no(403, 'not_assigned') });
+    await t.open();
+    await t.press('Contrôler avant signature');
+    t.input('mandat-accord-d1').value = 'Accord.';
+    await t.press('Envoyer le code de signature');
+    expect(t.state()).toBe('Ce mandat n’est pas dans vos droits.');
+  });
+
   it('[R16] une lecture refusée n’est pas montrée comme un bien sans mandat ; quitter l’écran n’y laisse rien', async () => {
     const t = await run({ 'GET /v1/biens/b1/mandat': no(403, 'not_assigned') });
     await t.open();

@@ -253,8 +253,13 @@ export class SignatureEnLigne {
     return `${String(viewer.role)}:${viewer.userId}`;
   }
 
-  /** Ouvre une session de signature pour un document contrôlé et envoie le code au signataire. */
-  async start(viewer: Viewer, documentId: string, input: { consentProof: string; signerId?: string }): Promise<{ ok: true; value: { sessionId: string; expiresAt: string; mode: SignatureMode } } | Refusal | Problem> {
+  /**
+   * Ouvre une session de signature pour un document contrôlé et envoie le code au signataire.
+   * X17 (décision de Shawez du 2026-11-23) : une session d'essai rend aussi son code (`trialCode`), pour que l'agent
+   * essaie le parcours à l'écran ; le code d'essai ne part qu'à la boîte d'essai et la signature reste sans valeur
+   * juridique. Une session réelle ne rend jamais son code : il ne part qu'au signataire [R41].
+   */
+  async start(viewer: Viewer, documentId: string, input: { consentProof: string; signerId?: string }): Promise<{ ok: true; value: { sessionId: string; expiresAt: string; mode: SignatureMode; trialCode?: string } } | Refusal | Problem> {
     if (viewer.role !== 'agent' && viewer.role !== 'direction') {
       await appendEvent(this.journal, { type: 'acces.refuse', actor: this.actor(viewer), subject: `document:${documentId}`, data: { rule: 'R16', role: String(viewer.role), kind: 'online_signature', code: 'role' } }, this.now);
       return { ok: false, rule: 'R16', code: 'role' };
@@ -316,7 +321,7 @@ export class SignatureEnLigne {
     // Refusé (heure, exclusion, arrêt, pas de mail…) : la session reste sans code utilisable et expire.
     if (sent.status !== 'sent') return { ok: false, rule: sent.rule, code: 'send_refused' };
     await appendEvent(this.journal, { type: 'signature.ouverte', actor: this.actor(viewer), subject: `document:${documentId}`, data: { session: id, mode } }, this.now);
-    return { ok: true, value: { sessionId: id, expiresAt, mode } };
+    return { ok: true, value: { sessionId: id, expiresAt, mode, ...(mode === 'essai' ? { trialCode: code } : {}) } };
   }
 
   /**
