@@ -373,6 +373,82 @@ describeWithSqlite('AU045 · le vrai raccordement téléphonique de l’assistan
     expect(await w.db.first('SELECT ended_at IS NOT NULL AS ended FROM voice_assistant_sessions')).toEqual({ ended: 1 });
   });
 
+  it('[R710][R248] deux appelants sur le même créneau : le rendez-vous pris par l’un n’est jamais rendu au passage de main de l’autre', async () => {
+    const w = await world();
+    const other = w.newSid();
+    const booker = w.newSid();
+    await w.ring(other, { From: '+33600000318' });
+    await w.speak(other, 'Oui.');
+    await w.speak(other, 'Je voudrais un rendez-vous.');
+    await w.speak(other, 'Le premier.');
+    await w.ring(booker);
+    await w.speak(booker, 'Oui.');
+    await w.speak(booker, 'Je voudrais un rendez-vous.');
+    await w.speak(booker, 'Le premier.');
+    const pending = await w.db.all<{ call_id: string; state: string }>('SELECT call_id, state FROM voice_assistant_sessions ORDER BY call_id');
+    // Les deux appelants ont le même créneau en attente de confirmation.
+    expect(new Set(pending.map((p) => (JSON.parse(p.state) as { pending: string }).pending)).size).toBe(1);
+    expect(w.said((await w.speak(booker, 'Oui.')).text).join(' ')).toContain('C’est réservé');
+    // L'autre raccroche sans avoir confirmé : son passage de main ne porte aucun rendez-vous.
+    await w.hangUp(other);
+    const handoffs = await w.db.all<{ call_id: string; appointment_start: string | null }>('SELECT call_id, appointment_start FROM voice_assistant_calls ORDER BY call_id');
+    const start = (await w.db.first<{ start_at: string }>('SELECT start_at FROM appointments'))!.start_at;
+    expect(handoffs).toEqual([
+      { call_id: other, appointment_start: null },
+      { call_id: booker, appointment_start: start },
+    ]);
+  });
+
+  it('[R710][R18] HX21 tombe au milieu du rangement : aucun passage de main n’est rangé avant lui, et la reprise le finit', async () => {
+    const w = await world();
+    const sid = w.newSid();
+    await w.ring(sid);
+    await w.speak(sid, 'Oui.');
+    w.hooks.push({
+      match: /^UPDATE calls SET/,
+      run: async () => {
+        throw new Error('panne de la base');
+      },
+    });
+    expect((await w.hangUp(sid)).status).toBe(500);
+    expect(await w.db.first<{ status: string }>('SELECT status FROM calls')).toEqual({ status: 'en_cours' });
+    // Deux minutes plus tard : le tour est libre, HX21 tient encore l'appel. Rien n'est rangé au passage de main.
+    const base = w.now().getTime();
+    expect(await runTelephoniePass({ db: w.db, now: () => new Date(base + 2 * 60_000), linkBase: null })).toBe(0);
+    expect(await w.db.all('SELECT id FROM voice_assistant_calls')).toHaveLength(0);
+    expect(await w.db.first('SELECT ended_at IS NULL AS open FROM voice_assistant_sessions')).toEqual({ open: 1 });
+    // Un quart d'heure plus tard : HX21 est repris, l'appel est rangé, la main passe, l'état est effacé.
+    expect(await runTelephoniePass({ db: w.db, now: () => new Date(base + 17 * 60_000), linkBase: null })).toBe(1);
+    expect(await w.db.first<{ status: string }>('SELECT status FROM calls')).toEqual({ status: 'sans_enregistrement' });
+    expect(await w.db.all<{ call_row_id: string | null }>('SELECT call_row_id FROM voice_assistant_calls')).toEqual([{ call_row_id: expect.any(String) }]);
+    expect(await w.db.first('SELECT state, ended_at IS NOT NULL AS ended FROM voice_assistant_sessions')).toEqual({ state: null, ended: 1 });
+  });
+
+  it('[R710][R18] un passage de main déjà rangé avec un appel inachevé : HX21 est repris avant de rendre la main', async () => {
+    const w = await world();
+    const sid = w.newSid();
+    await w.ring(sid);
+    await w.speak(sid, 'Oui.');
+    w.hooks.push({
+      match: /^UPDATE calls SET/,
+      run: async () => {
+        throw new Error('panne de la base');
+      },
+    });
+    expect((await w.hangUp(sid)).status).toBe(500);
+    // Un passage de main rangé par une version d'avant, alors que HX21 n'avait pas fini.
+    const call = (await w.db.first<{ id: string; network_id: string }>('SELECT id, network_id FROM calls'))!;
+    const session = (await w.db.first<{ agent_id: string }>('SELECT agent_id FROM voice_assistant_sessions'))!;
+    await w.db.run(
+      "INSERT INTO voice_assistant_calls (id, network_id, agent_id, provider, call_id, call_row_id, created_at) VALUES ('ancien', ?, ?, 'twilio', ?, ?, ?)",
+      [call.network_id, session.agent_id, sid, call.id, w.now().toISOString()],
+    );
+    const base = w.now().getTime();
+    expect(await runTelephoniePass({ db: w.db, now: () => new Date(base + 17 * 60_000), linkBase: null })).toBe(1);
+    expect(await w.db.first<{ status: string }>('SELECT status FROM calls')).toEqual({ status: 'sans_enregistrement' });
+    expect(await w.db.first('SELECT ended_at IS NOT NULL AS ended FROM voice_assistant_sessions')).toEqual({ ended: 1 });
+  });
+
   it('[R710][R18] reprise cinq heures plus tard : l’appel est rangé avec l’heure de fin dite par le service', async () => {
     const w = await world();
     const sid = w.newSid();

@@ -24,7 +24,7 @@
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, appendEvent, type SqlDatabase } from '@aimmo/core';
 import { ReservationEnLigne } from '../../core/src/rendezvous/en-ligne.ts';
 import { Appels } from '../../core/src/voix/appels.ts';
-import { AssistantVocal, type AssistantState } from '../../core/src/voix/assistant.ts';
+import { AssistantVocal, bookingProofOf, type AssistantState } from '../../core/src/voix/assistant.ts';
 
 export const TELEPHONIE_PATHS = Object.freeze({ appel: '/telephonie/appel', tour: '/telephonie/tour', fin: '/telephonie/fin' });
 export const TELEPHONIE_PROVIDER = 'twilio';
@@ -181,15 +181,22 @@ const endingOf = async (db: SqlDatabase, callSid: string): Promise<string | null
   (await db.first<{ ended_at: string }>('SELECT ended_at FROM voice_call_endings WHERE provider = ? AND call_id = ?', [TELEPHONIE_PROVIDER, callSid]))?.ended_at ?? null;
 
 /**
- * Un tour a pu réserver puis tomber avant de ranger son état : le rendez-vous pris pendant ce tour, sur le créneau
- * répété à l'appelant, est retrouvé (l'agent n'a qu'un rendez-vous à une heure donnée) et rendu au passage de main [R248].
+ * Un tour a pu réserver puis tomber avant de ranger son état : le rendez-vous pris pendant ce tour est retrouvé par la
+ * preuve d'accord écrite avec lui, qui porte la référence de cet appel (`bookingProofOf`), jamais par le seul créneau,
+ * qu'un autre appelant a pu prendre [R248, R710]. Une réservation refusée a son accord fermé à sa propre date : elle ne
+ * compte pas.
  */
 async function reconcileBooking(db: SqlDatabase, state: AssistantState, since: string): Promise<AssistantState> {
   if (state.booked !== null || state.pending === null || state.phase !== 'confirm') return state;
+  const proof = bookingProofOf(state.provider, state.callId);
   const found = await db.first<{ kind: AssistantState['kind']; start_at: string }>(
-    `SELECT kind, start_at FROM appointments WHERE network_id = ? AND agent_id = ? AND source = 'assistant' AND status = 'booked'
-       AND start_at = ? AND created_at >= ? ORDER BY created_at LIMIT 1`,
-    [state.networkId, state.agentId, state.pending, since],
+    `SELECT a.kind, a.start_at FROM appointments a
+     JOIN consents c ON c.network_id = a.network_id AND c.person_id = a.person_id
+     WHERE a.network_id = ? AND a.agent_id = ? AND a.source = 'assistant' AND a.status = 'booked' AND a.start_at = ? AND a.created_at >= ?
+       AND substr(c.proof, -length(?)) = ? AND c.given_at >= ? AND a.created_at >= c.given_at
+       AND (c.withdrawn_at IS NULL OR c.withdrawn_at <> c.given_at)
+     ORDER BY a.created_at LIMIT 1`,
+    [state.networkId, state.agentId, state.pending, since, proof, proof, since],
   );
   return found ? { ...state, booked: { kind: found.kind, start: found.start_at }, pending: null, phase: 'done' } : state;
 }
