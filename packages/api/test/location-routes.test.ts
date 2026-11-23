@@ -243,7 +243,7 @@ describeWithSqlite('W09 · routes de M15 et parcours de 3 mises en location test
   it('[R16] [R17] W17 : direction et conformité lisent les modèles ; une nouvelle version s’ajoute, le bail garde le dernier validé', async () => {
     const t = await setup();
     const empty = await t.ok(t.dir, 'GET', '/location/modeles-bail');
-    expect(empty).toMatchObject({ canStore: true, canValidate: false, kinds: [{ kind: 'bail_vide', current: null, latest: null }, { kind: 'bail_meuble', current: null, latest: null }] });
+    expect(empty).toMatchObject({ canStore: true, canValidate: false, kinds: [{ kind: 'bail_vide', current: null, latest: null }, { kind: 'bail_meuble', current: null, latest: null }, { kind: 'bail_meuble_etudiant', current: null, latest: null }, { kind: 'bail_mobilite', current: null, latest: null }] });
     expect(await t.ok(t.compliance, 'GET', '/location/modeles-bail')).toMatchObject({ canStore: false, canValidate: true });
     // Un agent ne lit pas, et son refus est au journal ; la route n'est pas prise pour un logement.
     expect(await t.call(t.agent, 'GET', '/location/modeles-bail')).toEqual({ status: 403, body: { ok: false, rule: 'R16', code: 'role' } });

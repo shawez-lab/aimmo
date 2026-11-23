@@ -341,7 +341,7 @@ const ROUTES: LocationRoute[] = [
     name: 'location.bail',
     roles: WRITERS,
     handle: withBody(async (s, v, [id], b) =>
-      reply(await core(s).leases.generate(v, id, { address: b.address, ownerAddress: b.ownerAddress, habitat: b.habitat, equipment: b.equipment, professionalCard: b.professionalCard, noticeRef: b.noticeRef, landlord: b.landlord, variant: b.variant })),
+      reply(await core(s).leases.generate(v, id, { address: b.address, ownerAddress: b.ownerAddress, habitat: b.habitat, equipment: b.equipment, professionalCard: b.professionalCard, noticeRef: b.noticeRef, landlord: b.landlord, variant: b.variant, mobilityMonths: b.mobilityMonths, mobilityReason: b.mobilityReason })),
     ),
   },
   {

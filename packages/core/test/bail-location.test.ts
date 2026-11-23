@@ -324,17 +324,87 @@ describe('AU096 · la durée du bail par la loi, selon le bailleur et la sorte d
 });
 
 describeWithSqlite('AU096 · la qualité du bailleur dite, jamais supposée', () => {
-  it('[R40] sans bailleur dit, aucun bail ; une société fait un bail vide de six ans ; bail mobilité et meublé étudiant refusés avant tout', async () => {
+  it('[R40] sans bailleur dit, aucun bail ; une société fait un bail vide de six ans ; un logement vide n’a ni bail étudiant ni bail mobilité', async () => {
     const t = await setup();
     await t.template();
     const id = await t.ready();
     const { landlord: _l, ...noLandlord } = t.inp(id) as Record<string, unknown>;
     expect(await t.baux.generate(t.agent, id, noLandlord)).toEqual({ ok: false, rule: null, code: 'missing_landlord' });
-    expect(await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'mobilite' })).toEqual({ ok: false, rule: null, code: 'bail_mobilite_refuse' });
-    // Le meublé étudiant n'a pas encore son modèle validé : refusé, jamais fait avec le modèle du meublé ordinaire.
-    expect(await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'etudiant' })).toEqual({ ok: false, rule: null, code: 'bail_etudiant_refuse' });
+    // AU096b : un bail étudiant ou mobilité est meublé ; sur un logement vide, refusé.
+    expect(await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'mobilite', mobilityMonths: 6, mobilityReason: 'stage' })).toEqual({ ok: false, rule: null, code: 'bad_variant' });
+    expect(await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'etudiant' })).toEqual({ ok: false, rule: null, code: 'bad_variant' });
     expect(await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'autre' })).toEqual({ ok: false, rule: null, code: 'bad_variant' });
     const r = await t.baux.generate(t.agent, id, { ...t.inp(id), landlord: 'morale' });
     expect(r.ok && r.value.content).toContain('six ans');
+  });
+});
+
+describeWithSqlite('AU096b · le bail meublé étudiant et le bail mobilité, chacun sur son modèle', () => {
+  const STUDENT = BODY.replace('Bail de {{bail.type}}', 'Bail meublé étudiant de {{bail.type}}');
+  const MOBILITY = `${BODY.replace('Bail de {{bail.type}}', 'Bail mobilité de {{bail.type}}')}\n\nMotif de mobilité du locataire : {{bail.motif_mobilite}}.`;
+
+  it('[R40] un meublé étudiant se fait sur son modèle, neuf mois, jamais sur celui du meublé ordinaire ; sans lui, refus', async () => {
+    const t = await setup();
+    await t.template('bail_meuble');
+    const id = await t.ready({ furnished: true, chargesMode: 'forfait' });
+    // Seul le modèle du meublé ordinaire existe : le meublé étudiant est refusé, jamais fait avec lui.
+    expect(await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'etudiant' })).toEqual({ ok: false, rule: null, code: 'no_template' });
+    const tpl = await t.template('bail_meuble_etudiant', STUDENT);
+    expect(tpl).toMatchObject({ kind: 'bail_meuble_etudiant', version: 2 });
+    // Le modèle étudiant validé par la conformité fait un bail réel ; le meublé ordinaire reste d'essai.
+    expect(await t.baux.validateTemplate(t.compliance, tpl.id)).toEqual({ ok: true, value: true });
+    const r = await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'etudiant' });
+    expect(r).toMatchObject({ ok: true, value: { mode: 'reel', status: 'complet' } });
+    expect(r.ok && r.value.content).toContain('Bail meublé étudiant de location meublée');
+    expect(r.ok && r.value.content).toContain('pour neuf mois');
+    expect(r.ok && r.value.content).toContain('Bail de location meublée consenti à un étudiant');
+    // Le meublé ordinaire garde son modèle et sa durée d'un an.
+    const plain = await t.baux.generate(t.agent, id, t.inp(id));
+    expect(plain).toMatchObject({ ok: true, value: { mode: 'essai' } });
+    expect(plain.ok && plain.value.content).toContain('pour un an');
+    // Un meublé ordinaire validé ne sert jamais au meublé étudiant, et l'étudiant validé jamais au meublé ordinaire.
+    const ordinary = await t.template('bail_meuble');
+    expect(await t.baux.validateTemplate(t.compliance, ordinary.id)).toEqual({ ok: true, value: true });
+    const again = await t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'etudiant' });
+    expect(again.ok && again.value.content).toContain('Bail meublé étudiant de location meublée');
+    const plain2 = await t.baux.generate(t.agent, id, t.inp(id));
+    expect(plain2).toMatchObject({ ok: true, value: { mode: 'reel' } });
+    expect(plain2.ok && plain2.value.content).not.toContain('étudiant');
+    expect(plain.ok && plain.value.content).not.toContain('étudiant');
+  });
+
+  it('[R102] un bail mobilité porte sa durée de un à dix mois et le motif du locataire, sans dépôt de garantie ; sans modèle, refus', async () => {
+    const t = await setup();
+    const id = await t.ready({ furnished: true, chargesMode: 'forfait' });
+    const go = (extra: Record<string, unknown>) => t.baux.generate(t.agent, id, { ...t.inp(id), variant: 'mobilite', ...extra });
+    expect(await go({ mobilityMonths: 6, mobilityReason: 'stage' })).toMatchObject({ ok: false });
+    // Le modèle doit porter le motif ; le motif n'a pas de place dans un autre modèle.
+    expect(await t.baux.createTemplate(t.dir, 'bail_mobilite', BODY)).toEqual({ ok: false, rule: 'R40', code: 'missing_required_field', field: 'bail.motif_mobilite' });
+    expect(await t.baux.createTemplate(t.dir, 'bail_meuble', MOBILITY)).toEqual({ ok: false, rule: 'R40', code: 'unknown_field' });
+    await t.template('bail_mobilite', MOBILITY);
+    expect(await go({ mobilityMonths: 6, mobilityReason: 'stage' })).toEqual({ ok: false, rule: 'R102', code: 'depot_interdit_mobilite' });
+    // Le barème du logement passe sans dépôt de garantie.
+    expect((await t.fees.record(t.agent, id, { ...FEES, depositCents: 0 })).ok).toBe(true);
+    expect(await go({ mobilityMonths: 11, mobilityReason: 'stage' })).toEqual({ ok: false, rule: null, code: 'bad_mobility_months' });
+    expect(await go({ mobilityMonths: 0, mobilityReason: 'stage' })).toEqual({ ok: false, rule: null, code: 'bad_mobility_months' });
+    expect(await go({ mobilityMonths: 6, mobilityReason: 'vacances' })).toEqual({ ok: false, rule: null, code: 'bad_mobility_reason' });
+    expect(await t.baux.generate(t.agent, id, { ...t.inp(id), mobilityMonths: 6 })).toEqual({ ok: false, rule: null, code: 'bad_variant' });
+    // Les charges d’un bail mobilité sont forfaitaires : une provision est refusée.
+    const prov = await t.ready({ furnished: true, chargesMode: 'provision' });
+    expect((await t.fees.record(t.agent, prov, { ...FEES, depositCents: 0 })).ok).toBe(true);
+    expect(await t.baux.generate(t.agent, prov, { ...t.inp(prov), variant: 'mobilite', mobilityMonths: 6, mobilityReason: 'stage' })).toEqual({ ok: false, rule: 'R102', code: 'charges_forfait_mobilite' });
+    const r = await go({ mobilityMonths: 6, mobilityReason: 'stage' });
+    expect(r.ok && r.value.content).toContain('pour 6 mois, non renouvelable ni reconductible');
+    expect(r.ok && r.value.content).toContain('Motif de mobilité du locataire : stage.');
+    expect(r.ok && r.value.content).toContain('dépôt de garantie : aucun : un bail mobilité n’a pas de dépôt de garantie');
+  });
+
+  it('[R17] la variante d’un modèle ne change jamais ; un bail vide n’a pas de variante', async () => {
+    const t = await setup();
+    const tpl = await t.template('bail_mobilite', MOBILITY);
+    await expect(t.db.run("UPDATE rental_lease_templates SET variant = 'standard' WHERE id = ?", [tpl.id])).rejects.toThrow();
+    await expect(
+      t.db.run("INSERT INTO rental_lease_templates (id, network_id, kind, version, status, body, fields, hash, created_by, created_at, variant) VALUES ('x', ?, 'bail_vide', 9, 'essai', 'b', '[]', ?, 't', 'a', 'etudiant')", [t.network.id, 'a'.repeat(64)]),
+    ).rejects.toThrow();
   });
 });

@@ -31,8 +31,34 @@ import type { HonorairesLocation } from './honoraires.ts';
 import { ANNEX_KINDS, dayInFrench, rentCeilingCents, requiredAnnexes, type LocationRefusal, type MisesEnLocation, type RentalFacts } from './logement.ts';
 import { cotenantsOfApplication } from './candidatures.ts';
 
-export const LEASE_KINDS = ['bail_vide', 'bail_meuble'] as const;
+export const LEASE_KINDS = ['bail_vide', 'bail_meuble', 'bail_meuble_etudiant', 'bail_mobilite'] as const;
 export type LeaseKind = (typeof LEASE_KINDS)[number];
+/**
+ * AU096b · Où se range un modèle : sa sorte en base et sa variante. Le meublé étudiant et le bail mobilité sont des
+ * modèles meublés de leur variante ; ni l'un ni l'autre ne prend jamais le modèle du meublé ordinaire.
+ */
+const STORED: Readonly<Record<LeaseKind, { kind: 'bail_vide' | 'bail_meuble'; variant: 'standard' | 'etudiant' | 'mobilite' }>> = {
+  bail_vide: { kind: 'bail_vide', variant: 'standard' },
+  bail_meuble: { kind: 'bail_meuble', variant: 'standard' },
+  bail_meuble_etudiant: { kind: 'bail_meuble', variant: 'etudiant' },
+  bail_mobilite: { kind: 'bail_meuble', variant: 'mobilite' },
+};
+/** Les motifs qui ouvrent un bail mobilité (loi du 23 novembre 2018, article 25-12 de la loi de 1989). */
+export const MOBILITY_REASONS = {
+  formation_professionnelle: 'formation professionnelle',
+  etudes_superieures: 'études supérieures',
+  apprentissage: 'contrat d’apprentissage',
+  stage: 'stage',
+  service_civique: 'engagement volontaire dans le cadre d’un service civique',
+  mutation: 'mutation professionnelle',
+  mission_temporaire: 'mission temporaire dans le cadre de son activité professionnelle',
+} as const;
+const LEASE_TITLES: Record<LeaseKind, string> = {
+  bail_vide: 'Bail de location vide',
+  bail_meuble: 'Bail de location meublée',
+  bail_meuble_etudiant: 'Bail de location meublée consenti à un étudiant',
+  bail_mobilite: 'Bail mobilité',
+};
 
 export const LEASE_FIELDS: Readonly<Record<string, { source: FieldSource; label: string }>> = Object.freeze({
   'bailleur.nom': { source: 'base', label: 'nom du bailleur' },
@@ -56,6 +82,8 @@ export const LEASE_FIELDS: Readonly<Record<string, { source: FieldSource; label:
   'charges.montant': { source: 'base', label: 'montant des charges' },
   'charges.mode': { source: 'base', label: 'mode de règlement des charges' },
   'depot.montant': { source: 'base', label: 'dépôt de garantie' },
+  // AU096b : le motif de mobilité du locataire, dans la liste de la loi ; un bail mobilité le porte toujours.
+  'bail.motif_mobilite': { source: 'saisie', label: 'motif de mobilité du locataire' },
   'honoraires.locataire': { source: 'base', label: 'honoraires à la charge du locataire, état des lieux compris' },
   'honoraires.etat_des_lieux': { source: 'base', label: 'honoraires d’état des lieux à la charge du locataire' },
   'honoraires.bailleur': { source: 'base', label: 'honoraires à la charge du bailleur' },
@@ -231,17 +259,22 @@ export class BauxLocation {
     const fields = templateFields(body);
     if (fields.some((f) => !Object.prototype.hasOwnProperty.call(LEASE_FIELDS, f))) return { ok: false, rule: 'R40', code: 'unknown_field' };
     if (/\{\{|\}\}/.test(body.replace(PLACEHOLDER, ''))) return { ok: false, rule: 'R40', code: 'unknown_field' };
-    const absent = REQUIRED_LEASE_FIELDS.filter((f) => !fields.includes(f));
+    // Un bail mobilité dit le motif du locataire (AU096b) ; un autre modèle ne le porte pas.
+    const required = kind === 'bail_mobilite' ? [...REQUIRED_LEASE_FIELDS, 'bail.motif_mobilite'] : REQUIRED_LEASE_FIELDS;
+    if (kind !== 'bail_mobilite' && fields.includes('bail.motif_mobilite')) return { ok: false, rule: 'R40', code: 'unknown_field' };
+    const absent = required.filter((f) => !fields.includes(f));
     if (absent.length > 0) return { ok: false, rule: 'R40', code: 'missing_required_field', field: absent[0]! };
     const hash = await sha256(JSON.stringify([kind, body, fields]));
     for (let attempt = 0; attempt < 5; attempt++) {
-      const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM rental_lease_templates WHERE network_id = ? AND kind = ?', [viewer.networkId, kind]);
+      // Les versions se comptent par sorte rangée : un meublé, étudiant ou mobilité, partage la suite des meublés.
+      const place = STORED[kind as LeaseKind];
+      const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM rental_lease_templates WHERE network_id = ? AND kind = ?', [viewer.networkId, place.kind]);
       const version = Number(last?.v ?? 0) + 1;
       const id = this.newId();
       const { changes } = await this.db.run(
-        `INSERT INTO rental_lease_templates (id, network_id, kind, version, status, body, fields, hash, created_by, created_at) VALUES (?, ?, ?, ?, 'essai', ?, ?, ?, ?, ?)
+        `INSERT INTO rental_lease_templates (id, network_id, kind, version, status, body, fields, hash, created_by, created_at, variant) VALUES (?, ?, ?, ?, 'essai', ?, ?, ?, ?, ?, ?)
          ON CONFLICT (network_id, kind, version) DO NOTHING`,
-        [id, viewer.networkId, kind, version, body, JSON.stringify(fields), hash, this.actor(viewer), this.now().toISOString()],
+        [id, viewer.networkId, place.kind, version, body, JSON.stringify(fields), hash, this.actor(viewer), this.now().toISOString(), place.variant],
       );
       if (changes !== 1) continue;
       await appendEvent(this.journal, { type: 'location.modele_bail', actor: this.actor(viewer), subject: `lease_template:${id}`, data: { kind, version } }, this.now);
@@ -268,10 +301,10 @@ export class BauxLocation {
   async templates(viewer: Viewer): Promise<LeaseResult<{ canStore: boolean; canValidate: boolean; kinds: LeaseTemplateKind[] }>> {
     if (viewer.role !== 'direction' && viewer.role !== 'compliance') return this.refuse(viewer, null, 'role');
     const kinds: LeaseTemplateKind[] = [];
-    const read = async (kind: string, order: string): Promise<LeaseTemplateView | null> => {
+    const read = async (kind: LeaseKind, order: string): Promise<LeaseTemplateView | null> => {
       const r = await this.db.first<{ id: string; version: number; status: 'essai' | 'valide'; body: string; created_at: string; validated_at: string | null }>(
-        `SELECT id, version, status, body, created_at, validated_at FROM rental_lease_templates WHERE network_id = ? AND kind = ? ORDER BY ${order} LIMIT 1`,
-        [viewer.networkId, kind],
+        `SELECT id, version, status, body, created_at, validated_at FROM rental_lease_templates WHERE network_id = ? AND kind = ? AND variant = ? ORDER BY ${order} LIMIT 1`,
+        [viewer.networkId, STORED[kind].kind, STORED[kind].variant],
       );
       return r ? { id: r.id, version: Number(r.version), status: r.status, body: r.body, createdAt: r.created_at, validatedAt: r.validated_at } : null;
     };
@@ -286,7 +319,7 @@ export class BauxLocation {
   async generate(
     viewer: Viewer,
     listingId: unknown,
-    input: { address?: unknown; ownerAddress?: unknown; habitat?: unknown; equipment?: unknown; professionalCard?: unknown; noticeRef?: unknown; landlord?: unknown; variant?: unknown } = {},
+    input: { address?: unknown; ownerAddress?: unknown; habitat?: unknown; equipment?: unknown; professionalCard?: unknown; noticeRef?: unknown; landlord?: unknown; variant?: unknown; mobilityMonths?: unknown; mobilityReason?: unknown } = {},
   ): Promise<LeaseResult<Lease>> {
     const listing = await this.listings.listing(viewer, listingId, true);
     if ('ok' in listing) return listing;
@@ -326,15 +359,27 @@ export class BauxLocation {
     if (typeof landlord !== 'string' || !Object.prototype.hasOwnProperty.call(LANDLORDS, landlord)) return { ok: false, rule: null, code: 'missing_landlord' };
     const variant = input.variant === undefined || input.variant === null ? 'standard' : input.variant;
     if (typeof variant !== 'string' || !(LEASE_VARIANTS as readonly string[]).includes(variant)) return { ok: false, rule: null, code: 'bad_variant' };
-    if (variant === 'mobilite') return { ok: false, rule: null, code: 'bail_mobilite_refuse' };
-    if (variant === 'etudiant') return { ok: false, rule: null, code: 'bail_etudiant_refuse' };
-    const duration = leaseDuration(facts.furnished, landlord as keyof typeof LANDLORDS, variant as LeaseVariant);
+    // AU096b · le meublé étudiant (neuf mois) et le bail mobilité (un à dix mois, non renouvelable, un motif de la loi,
+    // sans dépôt de garantie) sont meublés ; chacun se fait sur son propre modèle, jamais sur celui du meublé ordinaire.
+    if (variant !== 'standard' && !facts.furnished) return { ok: false, rule: null, code: 'bad_variant' };
+    let mobility: { months: number; reason: string } | null = null;
+    if (variant === 'mobilite') {
+      const months = input.mobilityMonths;
+      if (typeof months !== 'number' || !Number.isInteger(months) || months < 1 || months > 10) return { ok: false, rule: null, code: 'bad_mobility_months' };
+      const reason = input.mobilityReason;
+      if (typeof reason !== 'string' || !Object.prototype.hasOwnProperty.call(MOBILITY_REASONS, reason)) return { ok: false, rule: null, code: 'bad_mobility_reason' };
+      if (fees.depositCents > 0) return { ok: false, rule: 'R102', code: 'depot_interdit_mobilite' };
+      // Article 25-18 de la loi de 1989 : les charges d’un bail mobilité sont forfaitaires.
+      if (facts.chargesMode !== 'forfait') return { ok: false, rule: 'R102', code: 'charges_forfait_mobilite' };
+      mobility = { months, reason: MOBILITY_REASONS[reason as keyof typeof MOBILITY_REASONS] };
+    } else if (input.mobilityMonths !== undefined || input.mobilityReason !== undefined) return { ok: false, rule: null, code: 'bad_variant' };
+    const duration = mobility ? `${mobility.months} mois, non renouvelable ni reconductible` : leaseDuration(facts.furnished, landlord as keyof typeof LANDLORDS, variant as LeaseVariant);
     if (duration === null) return { ok: false, rule: null, code: 'bad_variant' };
-    const kind: LeaseKind = facts.furnished ? 'bail_meuble' : 'bail_vide';
+    const kind: LeaseKind = variant === 'etudiant' ? 'bail_meuble_etudiant' : variant === 'mobilite' ? 'bail_mobilite' : facts.furnished ? 'bail_meuble' : 'bail_vide';
     // Le modèle en vigueur : la dernière version validée ; à défaut, la dernière d'essai, qui ne fait qu'un bail d'essai.
     const template = await this.db.first<TemplateRow>(
-      "SELECT id, kind, version, status, body, fields, hash FROM rental_lease_templates WHERE network_id = ? AND kind = ? ORDER BY status = 'valide' DESC, version DESC LIMIT 1",
-      [listing.networkId, kind],
+      "SELECT id, kind, version, status, body, fields, hash FROM rental_lease_templates WHERE network_id = ? AND kind = ? AND variant = ? ORDER BY status = 'valide' DESC, version DESC LIMIT 1",
+      [listing.networkId, STORED[kind].kind, STORED[kind].variant],
     );
     if (!template) return { ok: false, rule: null, code: 'no_template' };
     const fullName = (p: { first_name: string | null; last_name: string | null } | null) => {
@@ -384,7 +429,8 @@ export class BauxLocation {
       'loyer.encadrement': rentControlText(controlled, facts),
       'charges.montant': `${euros(facts.chargesCents)} € par mois`,
       'charges.mode': facts.chargesMode === 'forfait' ? 'forfait' : 'provision, avec régularisation annuelle',
-      'depot.montant': `${euros(fees.depositCents)} €`,
+      'depot.montant': mobility ? 'aucun : un bail mobilité n’a pas de dépôt de garantie' : `${euros(fees.depositCents)} €`,
+      'bail.motif_mobilite': mobility ? mobility.reason : null,
       'honoraires.locataire': `${euros(fees.tenantCents + fees.tenantInventoryCents)} € TTC`,
       'honoraires.etat_des_lieux': `${euros(fees.tenantInventoryCents)} € TTC`,
       'honoraires.bailleur': `${euros(fees.landlordCents + fees.landlordInventoryCents)} € TTC`,
@@ -401,7 +447,7 @@ export class BauxLocation {
     if (noticeRef === null) missing.push('annexe.notice_information');
     const annexRefs = [...attached, ...(noticeRef ? [{ kind: 'notice_information', ref: noticeRef }] : [])];
     const trial = template.status !== 'valide';
-    const title = kind === 'bail_meuble' ? 'Bail de location meublée' : 'Bail de location vide';
+    const title = LEASE_TITLES[kind];
     const content = renderDocument(template.body, values, { title, trial, fields: LEASE_FIELDS });
     const contentSha = await sha256(content);
     for (let attempt = 0; attempt < 5; attempt++) {

@@ -1640,7 +1640,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   rental_presentations: ['id', 'listing_id', 'network_id', 'version', 'created_at'],
   rental_choices: ['listing_id', 'presentation_id', 'application_id', 'decided_at', 'channel', 'recorded_at'],
   rental_fairness_receipts: ['id', 'presentation_id', 'application_id', 'prepared_at'],
-  rental_lease_templates: ['id', 'network_id', 'kind', 'version', 'status', 'fields', 'hash', 'created_at', 'validated_at'],
+  rental_lease_templates: ['id', 'network_id', 'kind', 'version', 'status', 'fields', 'hash', 'created_at', 'validated_at', 'variant'],
   rental_leases: ['id', 'listing_id', 'network_id', 'version', 'application_id', 'template_id', 'template_version', 'template_hash', 'fees_version', 'mode', 'status', 'missing', 'annexes', 'created_at'],
   rental_inventories: ['id', 'listing_id', 'network_id', 'version', 'lease_id', 'mode', 'status', 'missing', 'keys_given', 'furniture', 'created_at'],
   rental_inventory_signatures: ['id', 'inventory_id', 'party', 'signed_at'],
