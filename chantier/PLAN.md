@@ -7728,7 +7728,8 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Attend : rien.
 
 ### SV05 · L'effacement réel écrit au registre des effacements
-- Statut : à faire
+- Statut : en cours
+- Note de statut : reprise le 2026-11-23 en essai (décision de Shawez du 2026-11-23 : ce qui attend l'avocat se construit en essai, activé plus tard) ; rien d'effacé tant que H29 et H50 ne sont pas faits.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : SV02
 - Cahier : Conformité ; Architecture technique, « Sauvegardes ».
 - Objectif : quand l'effacement réel sera mis en service (H29, `ERASURE_MODE`), il note chaque effacement au registre `recordErasure`, dans le compartiment des copies, et la procédure réelle passe derrière `PersonEraser` ; le stockage S3 de `packages/api/outils/r2-copies.ts` gagne la liste. Rien à faire tant que tout est en essai.
