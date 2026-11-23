@@ -451,6 +451,7 @@ export class AdressePige {
         break;
       } catch (error) {
         const msg = String(error);
+        if (/relève remplacée/.test(msg)) return { ok: false, rule: null, code: 'annonce_remplacee' };
         if (/bien fermé/.test(msg)) return (await this.closed(viewer.networkId, ad.fingerprint)) ?? { ok: false, rule: 'R273', code: 'pas_agence' };
         if (/UNIQUE/i.test(msg) && /pige_propert/.test(msg)) return { ok: false, rule: 'R295', code: 'deja_cree' };
         if (!/UNIQUE/i.test(msg) || attempt >= 3) throw error;

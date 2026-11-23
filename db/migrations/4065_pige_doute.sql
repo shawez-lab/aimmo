@@ -87,18 +87,43 @@ SELECT a.ad_id AS ad_id
  WHERE EXISTS (SELECT 1 FROM pige_no_agency n WHERE n.network_id = a.network_id AND n.fingerprint = a.legacy_fp)
     OR EXISTS (SELECT 1 FROM pige_oppositions o WHERE o.network_id = a.network_id AND o.fingerprint = a.legacy_fp);
 
--- Une relève n'est convertie que si son doute se lit (ses empreintes rangées) et qu'il ne la ferme pas [R672, R295].
+-- Les annonces fermées dans le doute : celles dont une relève du dernier instant rangé l'est. C'est ce que l'annonce dit
+-- aujourd'hui qui compte, jamais une vieille relève ; deux relèves rangées au même instant comptent toutes deux.
+CREATE VIEW IF NOT EXISTS pige_doubt_closed_refs AS
+SELECT k.network_id AS network_id, k.ref_key AS ref_key
+  FROM pige_ad_doubt_keys k
+  JOIN pige_ads o ON o.id = k.ad_id
+  JOIN pige_doubt_closed v ON v.ad_id = k.ad_id
+ WHERE k.exact = 1
+   AND NOT EXISTS (SELECT 1 FROM pige_ad_doubt_keys ck JOIN pige_ads c ON c.id = ck.ad_id
+                    WHERE ck.network_id = k.network_id AND ck.ref_key = k.ref_key AND ck.exact = 1 AND c.collected_at > o.collected_at);
+
+-- Seule la dernière relève rangée d'une annonce se convertit : une plus récente la remplace [R295].
+CREATE TRIGGER IF NOT EXISTS pige_properties_derniere
+BEFORE INSERT ON pige_properties
+WHEN EXISTS (SELECT 1 FROM pige_ad_doubt_keys k JOIN pige_ads n ON n.id = k.ad_id
+               JOIN pige_ad_doubt_keys ok ON ok.network_id = k.network_id AND ok.ref_key = k.ref_key AND ok.exact = 1
+               JOIN pige_ads o ON o.id = ok.ad_id
+              WHERE k.ad_id = NEW.ad_id AND k.exact = 1 AND o.collected_at > n.collected_at)
+BEGIN
+  SELECT RAISE(ABORT, 'pige_properties : relève remplacée');
+END;
+-- Une relève n'est convertie que si son doute se lit (ses empreintes rangées) et qu'il ne ferme pas son annonce
+-- [R672, R295].
 CREATE TRIGGER IF NOT EXISTS pige_properties_doute
 BEFORE INSERT ON pige_properties
 WHEN NOT EXISTS (SELECT 1 FROM pige_ad_doubt_keys k WHERE k.ad_id = NEW.ad_id AND k.network_id = NEW.network_id)
-  OR EXISTS (SELECT 1 FROM pige_doubt_closed v WHERE v.ad_id = NEW.ad_id)
+  OR EXISTS (SELECT 1 FROM pige_ad_doubt_keys k JOIN pige_doubt_closed_refs r ON r.network_id = k.network_id AND r.ref_key = k.ref_key
+              WHERE k.ad_id = NEW.ad_id AND k.exact = 1)
 BEGIN
   SELECT RAISE(ABORT, 'pige_properties : bien fermé dans le doute');
 END;
--- Et aucune clé ne s'attache à un bien converti dont la relève est fermée dans le doute depuis.
+-- Et aucune clé ne s'attache à un bien converti dont l'annonce est fermée dans le doute depuis.
 CREATE TRIGGER IF NOT EXISTS pige_property_keys_doute
 BEFORE INSERT ON pige_property_keys
-WHEN EXISTS (SELECT 1 FROM pige_properties p JOIN pige_doubt_closed v ON v.ad_id = p.ad_id WHERE p.property_id = NEW.property_id)
+WHEN EXISTS (SELECT 1 FROM pige_properties p JOIN pige_ad_doubt_keys k ON k.ad_id = p.ad_id AND k.exact = 1
+               JOIN pige_doubt_closed_refs r ON r.network_id = k.network_id AND r.ref_key = k.ref_key
+              WHERE p.property_id = NEW.property_id)
 BEGIN
   SELECT RAISE(ABORT, 'pige_property_keys : bien fermé dans le doute');
 END;

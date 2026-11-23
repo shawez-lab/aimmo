@@ -380,6 +380,27 @@ describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien cr
     ).rejects.toThrow(/bien fermé dans le doute/);
   });
 
+  it('[R672] [R295] une annonce revue sans pièces et rangée, puis tenue dans le doute, est refusée par la base ; sa vieille relève ne se convertit plus', async () => {
+    const s = await setup({ search: { matching: async () => [] } });
+    const insert = (propertyId: string, adId: string, fp: string) =>
+      s.db.run("INSERT INTO pige_properties (property_id, network_id, source, ad_id, fingerprint, ad_site, ad_kind, published_at, agent_id, created_at) VALUES (?, ?, 'pige', ?, ?, 'Site A', 'house', '2026-12-06', ?, '2026-12-07')", [propertyId, s.network.id, adId, fp, s.alex.id]);
+    const a = s.ad({ rooms: 4 });
+    await s.pige.ingest(s.network.id, [a]);
+    const old = (await s.db.first<{ id: string; fingerprint: string }>('SELECT id, fingerprint FROM pige_ads WHERE source_ref = ?', [String(a.sourceRef)]))!;
+    s.tick(DAY);
+    // Revue sans pièces, aucun bien fermé encore : elle entre.
+    expect(await s.pige.ingest(s.network.id, [{ ...a, rooms: undefined }])).toMatchObject({ added: 1 });
+    const latest = (await s.db.first<{ id: string; fingerprint: string }>('SELECT id, fingerprint FROM pige_ads WHERE source_ref = ? AND rooms IS NULL', [String(a.sourceRef)]))!;
+    const prop = async (reference: string) => s.store.createProperty({ networkId: s.network.id, agentId: s.alex.id, reference, kind: 'home', city: 'Talant', priceEur: 1, surfaceM2: 90, rooms: 4, status: 'draft' });
+    // Sa vieille relève en 4 pièces est remplacée : la base ne la convertit pas.
+    await expect(insert((await prop('DF')).id, old.id, old.fingerprint)).rejects.toThrow(/relève remplacée/);
+    s.tick(DAY);
+    // Un 3 pièces identique fermé : A, qui tait ses pièces, pourrait être lui.
+    await s.pige.ingest(s.network.id, [s.ad({ source: 'Site D', rooms: 3, text: 'Agences s’abstenir' })]);
+    expect(await s.adresses.convert(s.agentAlex, { adId: old.id })).toMatchObject({ ok: false, rule: 'R273' });
+    await expect(insert((await prop('DG')).id, latest.id, latest.fingerprint)).rejects.toThrow(/bien fermé dans le doute/);
+  });
+
   it('[R672] un bien fermé avec ses pièces par une annonce sans référence tient dans le doute, en base, une annonce qui tait les siennes', async () => {
     const s = await setup({ search: { matching: async () => [] } });
     const u = s.ad({ rooms: undefined });
