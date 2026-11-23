@@ -627,7 +627,7 @@ describeWithSqlite('AU041 · capacité déclarée des agents', () => {
 describeWithSqlite('AU040 · un agent absent n’est jamais candidat', () => {
   /** Une absence inventée de `absentId`, reprise par `coverId`, du jour `from` au jour `until` inclus (J09). */
   async function absence(t: Awaited<ReturnType<typeof setup>>, absentId: string, coverId: string, from: string, until: string): Promise<void> {
-    const [a, b] = [absentId, coverId].sort();
+    const [a, b] = absentId < coverId ? [absentId, coverId] : [coverId, absentId];
     const pairId = `pair-${absentId}-${from}`;
     await t.db.run('INSERT INTO agent_pairs (id, network_id, agent_a, agent_b, cover_share_pct, written_by, created_at) VALUES (?, ?, ?, ?, 30, ?, ?)', [
       pairId,
