@@ -2,7 +2,11 @@
  * Annonces dans plusieurs langues, pour les acheteurs et les portails étrangers (Phase 3, HX05) [R257, R258, R259].
  *
  * Chaque annonce française validée par l'agent (P03) peut exister en anglais, et dans chaque langue que l'agent du bien
- * déclare parler, dans une liste fermée : ourdou, hindi, pendjabi (gurmukhi), persan, arabe, grec.
+ * déclare parler, dans une liste fermée : ourdou, hindi, pendjabi (gurmukhi), persan, arabe, grec, et depuis AU069
+ * allemand, espagnol, italien et néerlandais. Chaque langue ne s'ouvre que pour l'agent qui la déclare, ou le relecteur
+ * désigné : le réseau se règle selon les langues de ses agents, avec la même validation et le même contrôle des chiffres.
+ * Les quatre langues nouvelles sont rangées en base sous l'anglais, avec leur langue réelle à côté (migration 4115) ;
+ * le code lit toujours la langue réelle.
  *
  * Décidé, lecture prudente :
  * - L'IA, derrière une interface, ne voit jamais les chiffres ni les lettres de classe énergie : le code les remplace
@@ -35,11 +39,15 @@ import { dpeXml, surfacesXml, type PortalFormat } from './portails.ts';
 import type { ListingPayload } from './publication.ts';
 
 /** Les langues des annonces traduites. Le français est la langue source, jamais traduite. */
-export const LISTING_LANGUAGES = ['en', 'ur', 'hi', 'pa', 'fa', 'ar', 'el'] as const;
+export const LISTING_LANGUAGES = ['en', 'de', 'es', 'it', 'nl', 'ur', 'hi', 'pa', 'fa', 'ar', 'el'] as const;
 export type ListingLanguage = (typeof LISTING_LANGUAGES)[number];
 
 export const LANGUAGE_NAMES: Readonly<Record<ListingLanguage, string>> = {
   en: 'anglais',
+  de: 'allemand',
+  es: 'espagnol',
+  it: 'italien',
+  nl: 'néerlandais',
   ur: 'ourdou',
   hi: 'hindi',
   pa: 'pendjabi',
@@ -53,6 +61,16 @@ export const RIGHT_TO_LEFT: ReadonlySet<ListingLanguage> = new Set(['ur', 'fa', 
 
 export const isListingLanguage = (v: unknown): v is ListingLanguage => typeof v === 'string' && (LISTING_LANGUAGES as readonly string[]).includes(v);
 
+/** Les langues en lettres latines : un mot latin y est permis, sans venir du français. */
+const LATIN_LANGUAGES: ReadonlySet<ListingLanguage> = new Set(['en', 'de', 'es', 'it', 'nl']);
+
+/**
+ * La langue sous laquelle une traduction ou un relecteur est rangé en base (migration 4115) : les quatre langues
+ * ajoutées par AU069 sous l'anglais, leur langue réelle dans `language_code`.
+ */
+const STORED_UNDER: Readonly<Partial<Record<ListingLanguage, 'en'>>> = { de: 'en', es: 'en', it: 'en', nl: 'en' };
+const storedLanguage = (l: ListingLanguage): string => STORED_UNDER[l] ?? l;
+
 /** L'IA qui traduit : elle reçoit le titre et le texte avec des repères à la place des chiffres et des classes. */
 export interface ListingTranslator {
   translate(input: { language: ListingLanguage; title: string; body: string }): Promise<{ title: string; body: string }>;
@@ -64,8 +82,15 @@ export interface ListingTranslator {
 const NUMBER = /\d{1,3}(?:[   ]\d{3})+(?![\d])|\d+(?:[.,]\d+)?/g;
 /** Une lettre de classe énergie ou climat, seule. */
 const CLASS_LETTER = /(?<![\p{L}\p{N}])[A-G](?![\p{L}\p{N}])/gu;
-/** En anglais, « A » en tête de phrase suivi d'un mot en minuscules est l'article, pas une classe. */
-const ENGLISH_ARTICLE = /(?:^|[.!?]\s+)A(?=\s+[a-z])/g;
+/**
+ * En anglais, « A » en tête de phrase suivi d'un mot en minuscules est l'article, pas une classe ; en espagnol et en
+ * italien, « A » et « E » ainsi placés sont une préposition ou « et ».
+ */
+const SENTENCE_WORD: Partial<Record<ListingLanguage, RegExp>> = {
+  en: /(?:^|[.!?]\s+)A(?=\s+\p{Ll})/gu,
+  es: /(?:^|[.!?]\s+)[AE](?=\s+\p{Ll})/gu,
+  it: /(?:^|[.!?]\s+)[AE](?=\s+\p{Ll})/gu,
+};
 const ANY_DIGIT = /\p{Nd}/u;
 const ASCII_DIGIT = /[0-9]/;
 const MARKER = /⟦(\d+)⟧/g;
@@ -76,6 +101,10 @@ const LINK_OR_MAIL = /@|https?:|www\./i;
  * ont d'autres sens et n'y sont pas). C'est une garde de plus : l'IA ne voit aucun chiffre, et l'agent relit.
  */
 const NUMBER_WORDS: Readonly<Record<ListingLanguage, readonly string[]>> = {
+  de: ['zwei', 'drei', 'vier', 'fünf', 'sechs', 'sieben', 'neun', 'zehn', 'elf', 'zwölf', 'zwanzig', 'dreißig', 'vierzig', 'fünfzig', 'hundert', 'tausend', 'million', 'millionen', 'dutzend', 'erste', 'zweite', 'dritte'],
+  es: ['dos', 'tres', 'cuatro', 'cinco', 'seis', 'siete', 'ocho', 'nueve', 'diez', 'once', 'doce', 'veinte', 'treinta', 'cuarenta', 'cincuenta', 'cien', 'ciento', 'mil', 'millón', 'millones', 'docena', 'primero', 'primer', 'segundo', 'tercero', 'tercer'],
+  it: ['due', 'tre', 'quattro', 'cinque', 'sette', 'otto', 'nove', 'dieci', 'undici', 'dodici', 'venti', 'trenta', 'quaranta', 'cinquanta', 'cento', 'mille', 'mila', 'milione', 'milioni', 'dozzina', 'primo', 'terzo'],
+  nl: ['twee', 'drie', 'vier', 'vijf', 'zes', 'zeven', 'negen', 'tien', 'elf', 'twaalf', 'twintig', 'dertig', 'veertig', 'vijftig', 'honderd', 'duizend', 'miljoen', 'dozijn', 'eerste', 'tweede', 'derde'],
   en: ['two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'twenty', 'thirty', 'forty', 'fifty', 'hundred', 'thousand', 'million', 'dozen', 'first', 'second', 'third', 'fourth', 'fifth'],
   el: ['δύο', 'τρία', 'τρεις', 'τέσσερα', 'τέσσερις', 'πέντε', 'έξι', 'επτά', 'εφτά', 'οκτώ', 'οχτώ', 'εννέα', 'εννιά', 'δέκα', 'είκοσι', 'τριάντα', 'εκατό', 'χίλια', 'χιλιάδες', 'εκατομμύριο', 'εκατομμύρια'],
   ar: ['اثنان', 'اثنين', 'اثنتان', 'ثلاث', 'ثلاثة', 'أربع', 'أربعة', 'خمس', 'خمسة', 'ستة', 'سبع', 'سبعة', 'ثمانية', 'تسع', 'تسعة', 'عشرة', 'عشرون', 'عشرين', 'مائة', 'مئة', 'آلاف', 'مليون'],
@@ -113,6 +142,26 @@ const PUBLIC_TERMS: Readonly<Record<ListingLanguage, { adresse: readonly string[
     adresse: ['street', 'st', 'road', 'rd', 'avenue', 'ave', 'lane', 'boulevard', 'blvd', 'alley', 'quay', 'rue'],
     critere_discriminant: ['origin', 'ethnic', 'ethnicity', 'race', 'racial', 'religion', 'religious', 'christian', 'christians', 'muslim', 'muslims', 'jewish', 'jew', 'catholic', 'protestant', 'hindu', 'sikh', 'nationality', 'foreigner', 'foreigners', 'foreign', 'french only', 'disability', 'disabled', 'handicapped', 'no children', 'no kids', 'without children', 'children', 'kids', 'couple', 'couples', 'single', 'singles', 'retired', 'retiree', 'retirees', 'pensioner', 'pensioners', 'family', 'families', 'young', 'senior', 'seniors', 'elderly', 'age', 'aged', 'man', 'men', 'woman', 'women', 'gender', 'sex', 'orientation', 'pregnant', 'pregnancy', 'opinion', 'opinions', 'union', 'surname', 'appearance', 'reserved for', 'exclusively for', 'only for', 'ideal for', 'perfect for', 'french', 'european', 'african', 'asian', 'arab'],
     mot_interdit: ['free', 'ai', 'artificial intelligence', 'chatgpt', 'gpt', 'robot', 'bot', 'algorithm', 'generated', 'automatically'],
+  },
+  de: {
+    adresse: ['straße', 'strasse', 'allee', 'gasse', 'chaussee', 'boulevard', 'rue'],
+    critere_discriminant: ['religion', 'rasse', 'herkunft', 'nationalität', 'ausländer', 'kinder', 'kinderlos', 'familie', 'familien', 'paar', 'paare', 'rentner', 'senioren', 'frauen', 'männer', 'alter', 'geschlecht', 'muslime', 'christen', 'juden', 'ideal für', 'perfekt für', 'nur für'],
+    mot_interdit: ['kostenlos', 'gratis', 'ki', 'künstliche intelligenz', 'roboter', 'algorithmus', 'automatisch'],
+  },
+  es: {
+    adresse: ['calle', 'avenida', 'paseo', 'bulevar', 'callejón', 'rue'],
+    critere_discriminant: ['religión', 'raza', 'origen', 'nacionalidad', 'extranjero', 'extranjeros', 'niños', 'familia', 'familias', 'pareja', 'parejas', 'jubilado', 'jubilados', 'mujeres', 'hombres', 'edad', 'musulmanes', 'cristianos', 'judíos', 'ideal para', 'perfecto para', 'solo para', 'sólo para'],
+    mot_interdit: ['gratis', 'gratuito', 'ia', 'inteligencia artificial', 'robot', 'algoritmo', 'automáticamente'],
+  },
+  it: {
+    adresse: ['viale', 'piazza', 'vicolo', 'lungomare', 'rue'],
+    critere_discriminant: ['religione', 'razza', 'origine', 'nazionalità', 'stranieri', 'straniero', 'bambini', 'famiglia', 'famiglie', 'coppia', 'coppie', 'pensionato', 'pensionati', 'donne', 'uomini', 'età', 'musulmani', 'cristiani', 'ebrei', 'ideale per', 'perfetto per', 'solo per'],
+    mot_interdit: ['gratis', 'gratuito', 'ia', 'intelligenza artificiale', 'robot', 'algoritmo', 'automaticamente'],
+  },
+  nl: {
+    adresse: ['straat', 'laan', 'plein', 'steeg', 'gracht', 'rue'],
+    critere_discriminant: ['religie', 'ras', 'afkomst', 'nationaliteit', 'buitenlanders', 'buitenlander', 'kinderen', 'gezin', 'gezinnen', 'gepensioneerd', 'gepensioneerden', 'vrouwen', 'mannen', 'leeftijd', 'moslims', 'christenen', 'joden', 'ideaal voor', 'perfect voor', 'alleen voor'],
+    mot_interdit: ['gratis', 'ai', 'kunstmatige intelligentie', 'robot', 'algoritme', 'automatisch'],
   },
   el: {
     adresse: ['οδός', 'οδό', 'οδού', 'λεωφόρος', 'λεωφόρο', 'πλατεία', 'στενό'],
@@ -153,13 +202,43 @@ const hasTerm = (text: string, term: string): boolean => {
   return new RegExp(`(?<![\\p{L}\\p{M}\\p{N}])${escaped}(?![\\p{L}\\p{M}\\p{N}])`, 'u').test(fold(text));
 };
 
+/**
+ * Les voies nommées que les mots entiers ne voient pas : en allemand et en néerlandais, le nom de la voie est soudé
+ * (« Lindenstraße », « Kerkstraat ») ; en italien et en espagnol, « via », « corso » ou « plaza » ont d'autres sens et ne
+ * désignent une voie que suivis d'un nom propre (« via Roma », « plaza Mayor », pas « plaza de garaje »). Un mot qui
+ * finit par la voie et prend la majuscule d'un nom propre, ou ce mot suivi d'une majuscule, est refusé ; « Platz » et « weg » ne sont pas dans la liste, car
+ * « Stellplatz » ou « Fußweg » ne nomment rien.
+ */
+const STREET_SUFFIXES: Partial<Record<ListingLanguage, readonly string[]>> = {
+  de: ['straße', 'strasse', 'allee', 'gasse', 'chaussee', 'damm'],
+  nl: ['straat', 'laan', 'plein', 'steeg', 'gracht', 'kade', 'singel'],
+};
+/** L'abréviation allemande soudée : « Lindenstr. ». */
+const GERMAN_STR = /\p{L}str\.(?!\p{L})/u;
+const STREET_BEFORE_NAME: Partial<Record<ListingLanguage, RegExp>> = {
+  it: /(?<![\p{L}\p{M}])(?:[Vv]ia|[Vv]iale|[Cc]orso|[Pp]iazza|[Pp]iazzale|[Ll]argo|[Vv]icolo|[Ll]ungomare)\s+(?:(?:del|della|dei|degli|delle|di)\s+|d['’]\s*)?\p{Lu}/u,
+  es: /(?<![\p{L}\p{M}])(?:[Cc]alle|[Aa]venida|[Pp]laza|[Pp]aseo|[Cc]amino|[Rr]onda|[Bb]ulevar|[Cc]allejón)\s+(?:(?:de|del|de la|de los|de las)\s+)?\p{Lu}/u,
+};
+function namesAStreet(text: string, language: ListingLanguage): boolean {
+  const before = STREET_BEFORE_NAME[language];
+  if (before?.test(text)) return true;
+  if (language === 'de' && GERMAN_STR.test(text)) return true;
+  const suffixes = STREET_SUFFIXES[language];
+  if (!suffixes) return false;
+  // Un nom de voie est un nom propre, qui prend la majuscule : « De deuren slaan open » ne nomme aucune « laan ».
+  const names = text.normalize('NFC').match(/(?<![\p{L}\p{M}])\p{Lu}[\p{L}\p{M}]*/gu) ?? [];
+  return names.some((w) => suffixes.some((x) => fold(w).endsWith(x)));
+}
+
 function publicProblems(source: string, translated: string, language: ListingLanguage): TranslationProblem[] {
   const out = new Set<TranslationProblem>();
   for (const sentence of sentences(translated)) for (const p of publicTextProblems(sentence)) out.add(p.code as TranslationProblem);
   const terms = PUBLIC_TERMS[language];
   for (const code of ['adresse', 'critere_discriminant', 'mot_interdit'] as const) if (terms[code].some((t) => hasTerm(translated, t))) out.add(code);
-  // Hors anglais, un mot en lettres latines ne peut être qu'un nom repris du français (Dijon) : sinon, refusé.
-  if (language !== 'en') {
+  if (namesAStreet(translated, language)) out.add('adresse');
+  // Dans une langue d'une autre écriture, un mot en lettres latines ne peut être qu'un nom repris du français (Dijon) :
+  // sinon, refusé.
+  if (!LATIN_LANGUAGES.has(language)) {
     const known = new Set((fold(source).match(/\p{Script=Latin}+/gu) ?? []));
     if ((fold(translated).match(/\p{Script=Latin}+/gu) ?? []).some((w) => !known.has(w))) out.add('mot_latin_sans_source');
   }
@@ -180,7 +259,8 @@ const numbersOf = (s: string): string[] =>
   });
 /** Les lettres de classe, dans leur ordre : « classe D, climat B » n'est jamais « classe B, climat D ». */
 const classesOf = (s: string, language: ListingLanguage | 'fr'): string[] => {
-  const text = language === 'en' ? s.replace(ENGLISH_ARTICLE, (m) => m.slice(0, -1)) : s;
+  const word = language === 'fr' ? undefined : SENTENCE_WORD[language];
+  const text = word ? s.replace(word, (m) => m.slice(0, -1)) : s;
   return text.match(CLASS_LETTER) ?? [];
 };
 const sameSequence = (a: readonly string[], b: readonly string[]): boolean => a.length === b.length && a.every((x, i) => x === b[i]);
@@ -308,7 +388,9 @@ interface TranslationRow {
   network_id: string;
 }
 
-const SELECT = `SELECT t.id, t.property_id, t.draft_id, t.language, t.seq, t.title, t.body, t.origin, t.created_by, t.created_at, t.network_id,
+/** La langue réelle d'une ligne (migration 4115). */
+const T_LANGUAGE = 'COALESCE(t.language_code, t.language)';
+const SELECT = `SELECT t.id, t.property_id, t.draft_id, ${T_LANGUAGE} AS language, t.seq, t.title, t.body, t.origin, t.created_by, t.created_at, t.network_id,
   v.validated_by, v.validated_at FROM listing_translations t LEFT JOIN listing_translation_validations v ON v.translation_id = t.id`;
 
 const toTranslation = (r: TranslationRow): ListingTranslation => ({
@@ -416,8 +498,9 @@ export class AnnoncesTraduites {
   /** Les relecteurs désignés d'un bien, par langue : seulement ceux qui déclarent toujours la langue et sont en activité. */
   async reviewers(networkId: string, propertyId: string): Promise<Map<ListingLanguage, string>> {
     const rows = await this.db.all<{ language: ListingLanguage; reviewer_agent_id: string | null }>(
-      `SELECT r.language, r.reviewer_agent_id FROM translation_reviewers r
-       WHERE r.network_id = ? AND r.property_id = ? AND r.seq = (SELECT MAX(x.seq) FROM translation_reviewers x WHERE x.property_id = r.property_id AND x.language = r.language)`,
+      `SELECT COALESCE(r.language_code, r.language) AS language, r.reviewer_agent_id FROM translation_reviewers r
+       WHERE r.network_id = ? AND r.property_id = ? AND r.seq = (SELECT MAX(x.seq) FROM translation_reviewers x
+         WHERE x.property_id = r.property_id AND COALESCE(x.language_code, x.language) = COALESCE(r.language_code, r.language))`,
       [networkId, propertyId],
     );
     const out = new Map<ListingLanguage, string>();
@@ -446,9 +529,9 @@ export class AnnoncesTraduites {
     for (let attempt = 0; attempt < 5; attempt++) {
       try {
         await this.db.run(
-          `INSERT INTO translation_reviewers (id, network_id, property_id, language, seq, reviewer_agent_id, designated_by, designated_at)
-           SELECT ?, ?, ?, ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ? FROM translation_reviewers WHERE property_id = ? AND language = ?`,
-          [this.newId(), viewer.networkId, propertyId, language, reviewerAgentId, this.actor(viewer), this.now().toISOString(), propertyId, language],
+          `INSERT INTO translation_reviewers (id, network_id, property_id, language, language_code, seq, reviewer_agent_id, designated_by, designated_at)
+           SELECT ?, ?, ?, ?, ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ? FROM translation_reviewers WHERE property_id = ? AND language = ?`,
+          [this.newId(), viewer.networkId, propertyId, storedLanguage(language), language, reviewerAgentId, this.actor(viewer), this.now().toISOString(), propertyId, storedLanguage(language)],
         );
       } catch (error) {
         if (/UNIQUE/i.test(String(error))) continue;
@@ -478,9 +561,9 @@ export class AnnoncesTraduites {
       const id = this.newId();
       try {
         await this.db.run(
-          `INSERT INTO listing_translations (id, property_id, network_id, draft_id, language, seq, title, body, origin, created_by, created_at)
-           SELECT ?, ?, ?, ?, ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, ? FROM listing_translations WHERE property_id = ? AND language = ?`,
-          [id, propertyId, networkId, draftId, language, text.title, text.body, origin, this.actor(viewer), this.now().toISOString(), propertyId, language],
+          `INSERT INTO listing_translations (id, property_id, network_id, draft_id, language, language_code, seq, title, body, origin, created_by, created_at)
+           SELECT ?, ?, ?, ?, ?, ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, ? FROM listing_translations WHERE property_id = ? AND language = ?`,
+          [id, propertyId, networkId, draftId, storedLanguage(language), language, text.title, text.body, origin, this.actor(viewer), this.now().toISOString(), propertyId, storedLanguage(language)],
         );
       } catch (error) {
         if (/UNIQUE/i.test(String(error))) continue;
@@ -586,7 +669,7 @@ export class AnnoncesTraduites {
       await appendEvent(this.journal, { type: 'bien.lu', actor: this.actor(viewer), subject: `property:${propertyId}`, data: { rule: 'R16', role: 'agent', view: 'relecteur', language: language as string } }, this.now);
     }
     if (!isListingLanguage(language)) return { ok: false, rule: 'R258', code: 'langue_non_parlee' };
-    const row = await this.db.first<TranslationRow>(`${SELECT} WHERE t.property_id = ? AND t.language = ? ORDER BY t.seq DESC LIMIT 1`, [propertyId, language]);
+    const row = await this.db.first<TranslationRow>(`${SELECT} WHERE t.property_id = ? AND ${T_LANGUAGE} = ? ORDER BY t.seq DESC LIMIT 1`, [propertyId, language]);
     return { ok: true, value: row ? toTranslation(row) : null };
   }
 
@@ -613,7 +696,7 @@ export class AnnoncesTraduites {
       if (!(await this.languagesOf(g.networkId, viewer.userId)).includes(t.language)) return { ok: false, rule: 'R258', code: 'langue_non_parlee' };
     }
     if (t.validated) return { ok: false, rule: 'R258', code: 'already_validated' };
-    const latest = await this.db.first<{ id: string }>('SELECT id FROM listing_translations WHERE property_id = ? AND language = ? ORDER BY seq DESC LIMIT 1', [t.propertyId, t.language]);
+    const latest = await this.db.first<{ id: string }>('SELECT id FROM listing_translations WHERE property_id = ? AND COALESCE(language_code, language) = ? ORDER BY seq DESC LIMIT 1', [t.propertyId, t.language]);
     if (latest?.id !== t.id) return { ok: false, rule: 'R258', code: 'not_latest' };
     const draft = await this.source(g.networkId, t.propertyId);
     if (!draft || draft.id !== t.draftId) return { ok: false, rule: 'R258', code: 'stale_listing' };
@@ -634,7 +717,7 @@ export class AnnoncesTraduites {
    * sur ce brouillon français précis, qui passe encore le contrôle, et dans une langue que l'agent du bien parle encore.
    */
   async current(networkId: string, propertyId: string, draft: { id: string; title: string; body: string }, language: ListingLanguage): Promise<ListingTranslation | null> {
-    const row = await this.db.first<TranslationRow>(`${SELECT} WHERE t.property_id = ? AND t.language = ? ORDER BY t.seq DESC LIMIT 1`, [propertyId, language]);
+    const row = await this.db.first<TranslationRow>(`${SELECT} WHERE t.property_id = ? AND ${T_LANGUAGE} = ? ORDER BY t.seq DESC LIMIT 1`, [propertyId, language]);
     if (!row || row.network_id !== networkId) return null;
     const t = toTranslation(row);
     if (!t.validated || t.draftId !== draft.id) return null;
