@@ -1736,3 +1736,26 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-23 11:53 · VOIE 2 : rien de faisable : seul changement depuis 10:55, AU040 fusionnée par la voie 1 (#791), qui passe à AU035 (#757) ; restent AU014/AU096b/AU069 (H73), AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05 (humain), AU035 bloquée chez la voie 1 ; aucun module non découpé
 - 2026-11-23 11:53 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 09:55 et 10:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-23 11:53 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-23 12:40 · VOIE 3 : H73 accordée par Shawez (« je t'autorise de A à Z », 2026-11-23) : AU014, AU096b et AU069 débloquées ; la voie 3 prend AU014 puis AU096b, AU069 reste à la voie 1 (à faire)
+- 2026-11-23 12:55 · VOIE 2 : rien de faisable : seul changement depuis 11:53, H73 accordée (AU014 en cours et AU096b prises par la voie 3, AU069 à la voie 1) ; restent AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05 (humain), AU035 (#757) bloquée chez la voie 1 ; aucun module non découpé
+- 2026-11-23 12:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 10:55 et 11:53 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 12:55 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-23 14:10 · VOIE 3 : AU014 (#792) et AU096b (#793) ouvertes sans refaire de table : une colonne figée (`document_templates.purpose`, `rental_lease_templates.variant`) suffit ; une table refaite demanderait `PRAGMA defer_foreign_keys`, que le contrôle R633 refuse dans une nouvelle migration. Pour AU069 (voie 1), même piste possible : une colonne de langue élargie à côté du CHECK, plutôt qu'une table refaite
+- 2026-11-23 13:55 · VOIE 2 : rien de faisable : seuls changements depuis 12:55, AU014 (#792) et AU096b (#793) ouvertes par la voie 3 ; AU069, débloquée par H73, est confiée à la voie 1 (« Qui : Claude, voie 1 », voie 1 occupée sur AU035 depuis 12:23, AU069 sa suivante) et n'est pas prise pour éviter le doublon ; restent AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05 (humain), AU035 (#757) chez la voie 1 ; aucun module non découpé
+- 2026-11-23 13:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 11:53 et 12:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 13:55 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-23 14:04 · AU035 · doute lisible par la base (migration 4065, vues et déclencheurs), Codex 3 P0 corrigés et le 4e en partie ; reste l'insertion directe d'une annonce reliée sur preuve ; #757 ouverte sans fusion (SECOURS), tâche bloquée · prochaine : AU035, groupe prouvé rangé par relève
+- 2026-11-23 14:06 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU035
+- 2026-11-23 14:55 · VOIE 2 : rien de faisable : seuls changements depuis 13:55, AU035 bloquée chez la voie 1 (#757 ouverte sans fusion), la voie 1 passe à AU069 (en cours, verrou 14:30) ; restent AU014 (#792) et AU096b (#793) à la voie 3, AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05 (humain) ; aucun module non découpé
+- 2026-11-23 14:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 12:55 et 13:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 14:55 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-23 15:05 · VOIE 3 : AU014 fusionnée (#792, mandat de location signé et inscrit exigé pour le barème, l'annonce et la diffusion location) ; AU096b (#793) remise sur main, charges forfaitaires du bail mobilité, CI et Codex en attente
+- 2026-11-23 15:30 · VOIE 3 : AU096b fusionnée (#793, bail meublé étudiant et bail mobilité sur leurs propres modèles, sans dépôt et aux charges forfaitaires) ; plus rien de faisable en voie 3 sans humain (AU068b attend H10, AU100 attend H72) ; verrou libéré
+- 2026-11-23 15:55 · VOIE 2 : rien de faisable : seuls changements depuis 14:55, AU014 (#792) et AU096b (#793) fusionnées par la voie 3, sans tâche qui en dépende ; AU069 (#794) en cours à la voie 1, AU035 (#757) bloquée chez la voie 1 ; restent AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05/S11 (humain ou autre voie) ; aucun module non découpé
+- 2026-11-23 15:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 13:55 et 14:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 15:55 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-23 16:24 · AU069 · fusionnée (#794) : allemand, espagnol, italien, néerlandais pour les annonces, migration 4115 en ajout seul (sans table refaite), Codex 1 P0 et 1 P2 corrigés · prochaine : AU035, groupe prouvé rangé par relève
+- 2026-11-23 16:24 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU035
+- 2026-11-23 16:55 · VOIE 2 : rien de faisable : seul changement depuis 15:55, AU069 (#794) fusionnée par la voie 1, sans tâche qui en dépende ; AU035 (#757) bloquée chez la voie 1 ; restent AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05 (humain) ; aucun module non découpé
+- 2026-11-23 16:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 14:55 et 15:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 16:55 · VOIE 2 : aucune tâche, rien, relancé non

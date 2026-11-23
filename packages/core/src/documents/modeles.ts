@@ -36,7 +36,12 @@ function namesOf(names: (string | null)[]): string | null {
   return all.length <= 1 ? (all[0] ?? null) : `${all.slice(0, -1).join(', ')} et ${all[all.length - 1]}`;
 }
 
-export const DOCUMENT_KINDS = ['mandat_vente_simple', 'mandat_vente_exclusif', 'avenant_mandat'] as const;
+export const DOCUMENT_KINDS = ['mandat_vente_simple', 'mandat_vente_exclusif', 'avenant_mandat', 'mandat_location'] as const;
+/** Les mandats qui se signent et s'inscrivent au registre : de vente, et de location (AU014). */
+export const MANDATE_KINDS: readonly DocumentKind[] = ['mandat_vente_simple', 'mandat_vente_exclusif', 'mandat_location'];
+/** L'objet d'un mandat, lu dans la sorte du document signé (AU014) : un mandat de vente n'ouvre pas la location, ni l'inverse. */
+export type MandateObject = 'vente' | 'location';
+export const mandateObjectOf = (kind: string): MandateObject => (kind === 'mandat_location' ? 'location' : 'vente');
 export type DocumentKind = (typeof DOCUMENT_KINDS)[number];
 
 /** D'où vient la valeur d'un champ : la base, une saisie de l'agent, ou la signature (rempli plus tard). */
@@ -277,6 +282,7 @@ const KIND_TITLE: Record<DocumentKind, string> = {
   mandat_vente_simple: 'Mandat de vente simple',
   mandat_vente_exclusif: 'Mandat de vente exclusif',
   avenant_mandat: 'Avenant au mandat',
+  mandat_location: 'Mandat de location',
 };
 const PROPERTY_KIND: Record<string, string> = { home: 'logement', land: 'terrain', building: 'immeuble', commercial: 'local commercial', business_walls: 'murs commerciaux', business: 'fonds de commerce' };
 const number = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
@@ -285,6 +291,8 @@ interface TemplateRow {
   id: string;
   network_id: string;
   kind: DocumentKind;
+  /** AU014 : `location` pour un mandat de location, rangé comme un mandat simple ; `vente` pour tous les autres. */
+  purpose?: 'vente' | 'location';
   version: number;
   status: 'essai' | 'valide';
   body: string;
@@ -295,9 +303,14 @@ interface TemplateRow {
   validated_at: string | null;
 }
 
+/** La sorte rangée d'un modèle et son objet (AU014) : un mandat de location se range comme un mandat simple d'objet « location ». */
+const stored = (kind: DocumentKind): { kind: DocumentKind; purpose: 'vente' | 'location' } => (kind === 'mandat_location' ? { kind: 'mandat_vente_simple', purpose: 'location' } : { kind, purpose: 'vente' });
+/** La sorte d'un modèle rangé, telle que le code la nomme. */
+const logicalKind = (r: Pick<TemplateRow, 'kind' | 'purpose'>): DocumentKind => (r.purpose === 'location' ? 'mandat_location' : r.kind);
+
 const toTemplate = (r: TemplateRow): TemplateInfo => ({
   id: r.id,
-  kind: r.kind,
+  kind: logicalKind(r),
   version: Number(r.version),
   status: r.status,
   body: r.body,
@@ -351,14 +364,16 @@ export class Modeles {
     if (kind === 'mandat_vente_exclusif' && !body.replace(/\r\n?/g, '\n').split(/\n{2,}/).some((p) => p.startsWith('!! '))) return { ok: false, rule: 'R40', code: 'no_evidence' };
     const hash = await sha256(JSON.stringify([kind, body, fields]));
     for (let attempt = 0; attempt < 5; attempt++) {
-      const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM document_templates WHERE network_id = ? AND kind = ?', [viewer.networkId, kind]);
+      // Les versions se comptent par sorte rangée : un mandat de location et un mandat simple partagent la suite.
+      const place = stored(kind);
+      const last = await this.db.first<{ v: number | null }>('SELECT MAX(version) AS v FROM document_templates WHERE network_id = ? AND kind = ?', [viewer.networkId, place.kind]);
       const version = Number(last?.v ?? 0) + 1;
       const id = this.newId();
       const at = this.now().toISOString();
       const { changes } = await this.db.run(
-        `INSERT INTO document_templates (id, network_id, kind, version, status, body, fields, hash, created_by, created_at) VALUES (?, ?, ?, ?, 'essai', ?, ?, ?, ?, ?)
+        `INSERT INTO document_templates (id, network_id, kind, version, status, body, fields, hash, created_by, created_at, purpose) VALUES (?, ?, ?, ?, 'essai', ?, ?, ?, ?, ?, ?)
          ON CONFLICT (network_id, kind, version) DO NOTHING`,
-        [id, viewer.networkId, kind, version, body, JSON.stringify(fields), hash, this.actor(viewer), at],
+        [id, viewer.networkId, place.kind, version, body, JSON.stringify(fields), hash, this.actor(viewer), at, place.purpose],
       );
       if (changes !== 1) continue;
       await appendEvent(this.journal, { type: 'modele.version', actor: this.actor(viewer), subject: `template:${id}`, data: { kind, version } }, this.now);
@@ -376,7 +391,7 @@ export class Modeles {
     if (row.status !== 'essai') return { ok: false, rule: null, code: 'not_essai' };
     const at = this.now().toISOString();
     await this.db.run(`UPDATE document_templates SET status = 'valide', validated_by = ?, validated_at = ? WHERE id = ? AND status = 'essai'`, [this.actor(viewer), at, templateId]);
-    await appendEvent(this.journal, { type: 'modele.valide', actor: this.actor(viewer), subject: `template:${templateId}`, data: { kind: row.kind, version: Number(row.version) } }, this.now);
+    await appendEvent(this.journal, { type: 'modele.valide', actor: this.actor(viewer), subject: `template:${templateId}`, data: { kind: logicalKind(row), version: Number(row.version) } }, this.now);
     return { ok: true, template: toTemplate((await this.db.first<TemplateRow>('SELECT * FROM document_templates WHERE id = ?', [templateId]))!) };
   }
 
@@ -406,10 +421,13 @@ export class Modeles {
 
     // Le modèle en vigueur : la dernière version validée ; tant qu'aucune ne l'est, la dernière version d'essai, qui ne
     // donne qu'un document d'essai. Une nouvelle version d'essai ne remplace jamais une version validée.
-    const template =
-      (await this.db.first<TemplateRow>(`SELECT * FROM document_templates WHERE network_id = ? AND kind = ? AND status = 'valide' ORDER BY version DESC LIMIT 1`, [viewer.networkId, request.kind])) ??
-      (await this.db.first<TemplateRow>('SELECT * FROM document_templates WHERE network_id = ? AND kind = ? ORDER BY version DESC LIMIT 1', [viewer.networkId, request.kind]));
-    if (!template) return { ok: false, rule: 'R40', code: 'no_template' };
+    const place = stored(request.kind);
+    const found =
+      (await this.db.first<TemplateRow>(`SELECT * FROM document_templates WHERE network_id = ? AND kind = ? AND purpose = ? AND status = 'valide' ORDER BY version DESC LIMIT 1`, [viewer.networkId, place.kind, place.purpose])) ??
+      (await this.db.first<TemplateRow>('SELECT * FROM document_templates WHERE network_id = ? AND kind = ? AND purpose = ? ORDER BY version DESC LIMIT 1', [viewer.networkId, place.kind, place.purpose]));
+    if (!found) return { ok: false, rule: 'R40', code: 'no_template' };
+    // La sorte telle que le code la nomme : un modèle d'objet « location » fait un mandat de location (AU014).
+    const template: TemplateRow = { ...found, kind: logicalKind(found) };
 
     // Un avenant se rattache à un mandat signé, numéroté, en cours, du même mandant et du même bien.
     let linked: { id: string; number: string; facts: DocumentFacts | null } | null = null;
@@ -605,6 +623,9 @@ export class Modeles {
     if (template.kind !== 'avenant_mandat' && supplied.some((k) => k.startsWith('avenant.'))) return { ok: false, rule: 'R40', code: 'bad_input' };
     // Un avenant ne change les conditions que par ses propres champs : les saisies du mandat n'y ont pas cours.
     if (template.kind === 'avenant_mandat' && supplied.some((k) => !k.startsWith('avenant.'))) return { ok: false, rule: 'R40', code: 'bad_input' };
+    // Un mandat de location (AU014) dit les honoraires du bailleur ; ceux du locataire suivent le barème plafonné de la
+    // mise en location (W02), jamais une charge choisie ici.
+    if (template.kind === 'mandat_location' && supplied.includes('honoraires.charge')) return { ok: false, rule: 'R40', code: 'bad_input' };
     // Une annexe (le questionnaire de HX33) s'ajoute au document même : ce qui se signe est ce qu'elle montre, et une
     // annexe d'essai ou incomplète rend le document entier d'essai ou incomplet [R40, R442].
     const extra = annex ? await annex({ priceEur: facts.priceEur, templateValidated: template.status === 'valide' }) : null;
@@ -667,7 +688,7 @@ export class Modeles {
        JOIN signed_documents s ON s.mandate_id = m.id AND s.copy_content IS NOT NULL
        JOIN documents d ON d.id = s.document_id
        LEFT JOIN mandate_register r ON r.mandate_id = m.id AND r.kind = 'inscription'
-       WHERE m.id = ? AND m.network_id = ?`,
+       WHERE m.id = ? AND m.network_id = ? AND d.kind <> 'mandat_location'`,
       [mandateId, networkId],
     );
     if (!row || row.number === null || row.seq === null || row.property_id !== propertyId || !personIds.includes(row.person_id)) return null;

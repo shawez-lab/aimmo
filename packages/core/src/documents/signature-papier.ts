@@ -24,13 +24,13 @@ import { RegistreMandats } from '../mandats/registre.ts';
 import { ControlesSignature, documentPersons, type SignatureCheck } from './controles.ts';
 import { mandateScanPrefix } from './mandat-du-bien.ts';
 import { Diffusion } from './retractation.ts';
-import { escapeHtml, fillSignatureFields, sha256, signatureSpan } from './modeles.ts';
+import { MANDATE_KINDS as MANDATE_KINDS_OF_MODELES, mandateObjectOf, escapeHtml, fillSignatureFields, sha256, signatureSpan } from './modeles.ts';
 
 export const SIGNATURE_PLACES = ['agence', 'hors_agence', 'distance'] as const;
 export type SignaturePlace = (typeof SIGNATURE_PLACES)[number];
 const PLACE_LABEL: Record<SignaturePlace, string> = { agence: 'à l’agence', hors_agence: 'hors de l’agence', distance: 'à distance' };
 const SCAN_REF = /^[A-Za-z0-9/_.-]{1,200}$/;
-const MANDATE_KINDS = ['mandat_vente_simple', 'mandat_vente_exclusif'];
+const MANDATE_KINDS: readonly string[] = MANDATE_KINDS_OF_MODELES;
 
 export interface PaperSignature {
   signedAt: Date;
@@ -159,7 +159,7 @@ export class SignaturePapier {
     // rétracté ou échu, le bien se rouvre. Un document dont le mandat est déjà inscrit finit toujours son enregistrement.
     const ownMandate = `m-${documentId}`;
     if (doc.property_id !== null && !(await this.db.first(`SELECT seq FROM mandate_register WHERE mandate_id = ? AND kind = 'inscription'`, [ownMandate]))) {
-      const other = await new Diffusion(this.db, this.acces, this.journal, { now: this.now }).otherLiveMandate(viewer.networkId, doc.property_id, ownMandate);
+      const other = await new Diffusion(this.db, this.acces, this.journal, { now: this.now }).otherLiveMandate(viewer.networkId, doc.property_id, ownMandate, this.now(), mandateObjectOf(doc.kind));
       if (other !== null) return { ok: false, rule: 'R39', code: 'mandate_in_force' };
     }
 

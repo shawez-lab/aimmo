@@ -200,7 +200,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H26).
 
 ### AU014 · Le parcours de location ne rattache pas son état publiable à un mandat de location signé et inscrit au…
-- Statut : bloquée : H73 (refaire la table des modèles, exception à R17)
+- Statut : fait (2026-11-23)
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A014 (bloquant), endroit : C/location/logement.ts, `create` ; C/location/annonce-location.ts, `publishable`.
 - Constat de l'audit : Le parcours de location ne rattache pas son état publiable à un mandat de location signé et inscrit au registre.
@@ -439,14 +439,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#754, e0df09b0). Fournisseur HTTP (`PIGE_SOURCE_URL`, `PIGE_SOURCE_TOKEN`, `PIGE_NETWORK_ID`), relève à 6 h, table `pige_runs`, `GET /v1/pige/etat`, date et alerte à l'écran ; R671. Codex : 2 P0 et 1 P1 corrigés, puis rien.
 
 ### AU035 · Deux appartements de même surface dans la même commune peuvent être pris pour le même bien, y compris pour…
-- Statut : bloquée : le doute (pièces tues) ne se voit pas en base, les déclencheurs de 1816 ne refusent qu'une empreinte exacte
+- Statut : bloquée : la base ne suit pas les liens prouvés de proche en proche ; une insertion directe dans `pige_properties` seule d'une annonce reliée sur preuve à une annonce tenue dans le doute passe encore
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M01 Attirer ; M02 Capter ; audit A035 (majeur), endroit : C/pige/pige.ts, reconnaissance du bien.
 - Constat de l'audit : Deux appartements de même surface dans la même commune peuvent être pris pour le même bien, y compris pour propager « pas d’agence ».
 - Objectif : Deux annonces distinctes de 65 m² dans la même commune restent distinctes tant qu’aucune preuve suffisante ne permet leur réunion.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
-- Reste : branche `chantier/AU035` gardée, #757 ouverte sans fusion (2026-11-21, voie 1). Fait sur la branche : empreinte avec les pièces quand elles sont dites, empreinte propre à l'annonce sans pièces, parcours sur preuve seulement, doute lu pour fermer (fermetures, messages préparés et remis), description notée d'une annonce fermée revue (migration 4064, table `pige_closed_descriptions`), R672 ; 11 tests [R672]. Codex : 9 P0 corrigés en six tours ; le dernier (juste) reste : une conversion directe en base d'une annonce fermée seulement dans le doute passe, car les déclencheurs de `pige_properties` et `pige_property_keys` ne lisent que l'empreinte exacte. Prochaine approche : rendre le doute lisible par la base, en ajout seul : pour chaque relève, une table de ses empreintes « bien sans pièces » à 1 m² près ; pour chaque fermeture d'une annonce sans pièces, ces empreintes tant que sa dernière description tait ses pièces ; puis les déclencheurs de fermeture (`pige_ads`, `pige_drafts`, `pige_handovers`, `pige_properties`, `pige_property_keys`) joignent ces tables. Repartir de la branche.
+- Reste : branche `chantier/AU035` gardée, #757 ouverte sans fusion (2026-11-21, voie 1). Fait sur la branche : empreinte avec les pièces quand elles sont dites, empreinte propre à l'annonce sans pièces, parcours sur preuve seulement, doute lu pour fermer (fermetures, messages préparés et remis), description notée d'une annonce fermée revue (migration 4064, table `pige_closed_descriptions`), R672 ; 11 tests [R672]. Codex : 9 P0 corrigés en six tours ; le dernier (juste) reste : une conversion directe en base d'une annonce fermée seulement dans le doute passe, car les déclencheurs de `pige_properties` et `pige_property_keys` ne lisent que l'empreinte exacte. Fait (2026-11-23) : doute lisible par la base, migration `4065_pige_doute.sql` en ajout seul : table `pige_ad_doubt_keys` (clé d'annonce, bien sans pièces à 1 m² près, par relève, remplie aussi pour les anciennes), vues `pige_doubt_closed` et `pige_doubt_closed_refs` (dernier instant rangé de l'annonce), déclencheurs `pige_properties_derniere`, `pige_properties_doute`, `pige_property_keys_doute` ; fermeture sans référence avec pièces notée ; 5 tests [R672] de plus. Codex : 3 P0 corrigés (insertion directe, refus récent de l'annonce, dernière relève), le 4e en partie (clé d'une annonce reliée refusée, donc la course pendant `convert` aussi). Reste : insertion directe dans `pige_properties` seule d'une annonce reliée sur preuve à une annonce tenue dans le doute. Prochaine approche : ranger à chaque relève, en ajout seul, le groupe prouvé de l'annonce (clés de `linked()`), lu par le déclencheur de `pige_properties`. Repartir de la branche.
 
 ### AU036 · Valider mes contenus ne les publie pas réellement sur mes réseaux sociaux
 - Statut : fait (2026-11-21)
@@ -808,13 +808,14 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Critères : un test par portail réglé sur sa page rangée ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : H10.
 ### AU069 · Je peux proposer des langues rares pour le réseau français
-- Statut : bloquée : H73 (refaire les tables des traductions pour admettre l'allemand, l'espagnol, l'italien et le néerlandais, exception à R17)
+- Statut : fait (2026-11-23)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A069 (majeur), endroit : C/annonces/traductions.ts, `LISTING_LANGUAGES`.
 - Constat de l'audit : Je peux proposer des langues rares pour le réseau français, mais pas l’allemand, l’espagnol, l’italien ou le néerlandais.
 - Objectif : Ces langues se paramètrent selon les besoins des agents, avec la même validation et les mêmes contrôles de chiffres.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
+- Reste : fusionnée (#794, 14375c69), migration `4115` en ajout seul (colonne `language_code`, sans table refaite : H73 non utilisée), R257 mise à jour. Allemand, espagnol, italien, néerlandais ouverts par la déclaration de l'agent ou un relecteur désigné, même contrôle et même validation ; voies soudées (« Lindenstraße », « Kerkstraat ») ou suivies d'un nom (« via Roma », « plaza Mayor ») refusées. Codex : 1 P0 et 1 P2 corrigés, puis rien. Reste : la langue de l'acheteur n'est devinée de son message que pour les écritures non latines ; pour ces quatre langues, elle vient de sa fiche.
 
 ### AU070 · Une maison et un appartement satisfont indifféremment les deux recherches, car tous deux sont rangés « home »
 - Statut : fait (2026-11-19)
@@ -1110,7 +1111,7 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 
 
 ### AU096b · Les modèles du bail meublé étudiant et du bail mobilité
-- Statut : bloquée : H73 (refaire la table des modèles, exception à R17)
+- Statut : fait (2026-11-23)
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : AU096
 - Cahier : M15 Louer ; audit A096.
 - Objectif : deux sortes de modèles de bail en plus (`bail_meuble_etudiant`, `bail_mobilite`), chacun avec ses champs obligatoires (durée de 9 mois, ou de 1 à 10 mois non renouvelable et motif de mobilité du locataire, sans dépôt de garantie pour la mobilité), validés par la conformité comme les autres ; la table des modèles reconstruite pour les accepter (SQLite : nouvelle table, copie, triggers) ; la génération choisit le modèle de la variante et refuse sans lui.

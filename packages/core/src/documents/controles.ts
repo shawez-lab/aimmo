@@ -288,7 +288,7 @@ export class ControlesSignature {
     lines.push({ check: 'champs', ok: complete, code: complete ? 'complete' : 'missing_fields' });
     lines.push({ check: 'modele', ok: doc.mode === 'reel', code: doc.mode === 'reel' ? 'validated_template' : 'trial_template' });
     const amendment = doc.kind === 'avenant_mandat';
-    lines.push(await this.fees(doc.network_id, doc.facts, amendment, options.signedAt ?? options.identitySignedAt, doc.id));
+    lines.push(doc.kind === 'mandat_location' ? rentalFeeLine(doc.facts) : await this.fees(doc.network_id, doc.facts, amendment, options.signedAt ?? options.identitySignedAt, doc.id));
     lines.push(await this.mandants(persons, doc.property_id));
     lines.push(await this.identities(doc.network_id, persons, at, options.identitySignedAt));
     // Un mandant représenté (AU059) : la procuration est dans le stockage, l'identité du représentant vérifiée, et le
@@ -513,4 +513,19 @@ export class ControlesSignature {
     const row = await this.db.first<{ document_id: string; passed: number; lines: string; checked_at: string }>('SELECT document_id, passed, lines, checked_at FROM document_checks WHERE document_id = ? ORDER BY checked_at DESC, rowid DESC LIMIT 1', [documentId]);
     return row ? { documentId: row.document_id, passed: Number(row.passed) === 1, lines: JSON.parse(row.lines) as CheckLine[], checkedAt: row.checked_at } : null;
   }
+}
+
+/**
+ * AU014 · Les honoraires d'un mandat de location : ceux du bailleur, connus. Ceux du locataire ne s'écrivent pas au
+ * mandat : ils suivent le barème plafonné de la mise en location (W02) [R102].
+ */
+function rentalFeeLine(rawFacts: string | null): CheckLine {
+  let fee: unknown = null;
+  try {
+    fee = rawFacts ? (JSON.parse(rawFacts) as DocumentFacts).feeEur : null;
+  } catch {
+    fee = null;
+  }
+  const ok = typeof fee === 'number' && Number.isInteger(fee) && fee >= 0;
+  return { check: 'honoraires', ok, code: ok ? 'rental_fee_known' : 'fee_or_price_unknown' };
 }
