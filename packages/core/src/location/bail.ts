@@ -369,6 +369,8 @@ export class BauxLocation {
       const reason = input.mobilityReason;
       if (typeof reason !== 'string' || !Object.prototype.hasOwnProperty.call(MOBILITY_REASONS, reason)) return { ok: false, rule: null, code: 'bad_mobility_reason' };
       if (fees.depositCents > 0) return { ok: false, rule: 'R102', code: 'depot_interdit_mobilite' };
+      // Article 25-18 de la loi de 1989 : les charges d’un bail mobilité sont forfaitaires.
+      if (facts.chargesMode !== 'forfait') return { ok: false, rule: 'R102', code: 'charges_forfait_mobilite' };
       mobility = { months, reason: MOBILITY_REASONS[reason as keyof typeof MOBILITY_REASONS] };
     } else if (input.mobilityMonths !== undefined || input.mobilityReason !== undefined) return { ok: false, rule: null, code: 'bad_variant' };
     const duration = mobility ? `${mobility.months} mois, non renouvelable ni reconductible` : leaseDuration(facts.furnished, landlord as keyof typeof LANDLORDS, variant as LeaseVariant);

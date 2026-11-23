@@ -386,6 +386,10 @@ describeWithSqlite('AU096b · le bail meublé étudiant et le bail mobilité, ch
     expect(await go({ mobilityMonths: 0, mobilityReason: 'stage' })).toEqual({ ok: false, rule: null, code: 'bad_mobility_months' });
     expect(await go({ mobilityMonths: 6, mobilityReason: 'vacances' })).toEqual({ ok: false, rule: null, code: 'bad_mobility_reason' });
     expect(await t.baux.generate(t.agent, id, { ...t.inp(id), mobilityMonths: 6 })).toEqual({ ok: false, rule: null, code: 'bad_variant' });
+    // Les charges d’un bail mobilité sont forfaitaires : une provision est refusée.
+    const prov = await t.ready({ furnished: true, chargesMode: 'provision' });
+    expect((await t.fees.record(t.agent, prov, { ...FEES, depositCents: 0 })).ok).toBe(true);
+    expect(await t.baux.generate(t.agent, prov, { ...t.inp(prov), variant: 'mobilite', mobilityMonths: 6, mobilityReason: 'stage' })).toEqual({ ok: false, rule: 'R102', code: 'charges_forfait_mobilite' });
     const r = await go({ mobilityMonths: 6, mobilityReason: 'stage' });
     expect(r.ok && r.value.content).toContain('pour 6 mois, non renouvelable ni reconductible');
     expect(r.ok && r.value.content).toContain('Motif de mobilité du locataire : stage.');
