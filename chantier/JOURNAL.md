@@ -1766,3 +1766,8 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-23 18:55 · VOIE 2 : rien de faisable : changement depuis 17:53, décision de Shawez (18:08) de construire en essai ce qui attend l'avocat ; X17 reprise par la voie 3 (#795), AU100 (H72) aussi voie 3 ; W23 (voie 2, H43) relue à cette lumière mais toujours pas faisable : la question de l'avocat change le contenu (titre de séjour identité ou droit au séjour) et il faudrait refaire `compliance_vault_pieces` et `identity_checks` (socle, garde R17) ; AU035 (#757) chez la voie 1 ; B04/C09/SV05/S11 attendent un humain ; aucun module non découpé
 - 2026-11-23 18:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 16:55 et 17:53 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-23 18:55 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-23 19:20 · VOIE 3 : X17 fusionnée (#795, signature en ligne du mandat à l'écran, en essai) ; X17b ouverte (#796, code d'essai du bail et du bon de visite)
+- 2026-11-23 19:45 · VOIE 3 : AU100 reprise en essai (#797) : trésorerie après prêt pour l'agent seul, jamais dans la note du client (H72)
+- 2026-11-23 19:55 · VOIE 2 : rien de faisable : seuls changements depuis 18:55, X17 (#795) fusionnée, X17b (#796) et AU100 (#797) ouvertes, toutes à la voie 3 ; AU035 (#757) chez la voie 1 ; W23 toujours bloquée (H43, tables du socle) ; restent AU068b (H10, voie 3), B04/C09 (H05 et suivants), SV05 (voie 1, H29) ; aucun module non découpé
+- 2026-11-23 19:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 17:53 et 18:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 19:55 · VOIE 2 : aucune tâche, rien, relancé non

@@ -1154,7 +1154,9 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU100 · Manque
-- Statut : bloquée : la trésorerie après prêt demande des champs de crédit à l'écran Investir, ce que R123 interdit (pas de crédit ni de solvabilité), et une simulation de prêt remise au client peut relever de l'intermédiation en crédit (IOBSP) et de R125 ; avis de l'avocat demandé (H72). Le calcul est prêt sur la branche `voie3/AU100` (annuité testée, rendement inchangé), sans proposition ouverte.
+- Statut : en cours (voie 3)
+- Suivi : en cours (voie 3)
+- Note de statut : en cours (voie 3, #797). Décision de Shawez du 2026-11-23 : construite en essai, gardée pour l'agent, hors de la note du client jusqu'à H72. Avant : bloquée : la trésorerie après prêt demande des champs de crédit à l'écran Investir, ce que R123 interdit (pas de crédit ni de solvabilité), et une simulation de prêt remise au client peut relever de l'intermédiation en crédit (IOBSP) et de R125 ; avis de l'avocat demandé (H72). Le calcul est prêt sur la branche `voie3/AU100` (annuité testée, rendement inchangé), sans proposition ouverte.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A100 (majeur), endroit : C/investir/calcul.ts, `YieldInputs`.
 - Constat de l'audit : Manque : aucun calcul de trésorerie après remboursement du crédit ne complète le rendement pour mon investisseur.
@@ -5861,7 +5863,9 @@ Trouvé le 2026-11-03 par la voie 2, même comparaison, à vérifier route par r
 - Attend : rien.
 
 ### X17 · Signature en ligne, avenant et identité à l'écran
-- Statut : en cours (voie 3, #795). Décision de Shawez du 2026-11-23 : ce qui attend l'avocat est construit et testable en essai, activé plus tard ; elle remplace le critère de D12 qui gardait la signature en ligne hors de l'écran. Avant : bloquée : la signature en ligne attend H24
+- Statut : fait (2026-11-23)
+- Suivi : fait (2026-11-23)
+- Note de statut : fait (2026-11-23, #795). Décision de Shawez du 2026-11-23 : ce qui attend l'avocat est construit et testable en essai, activé plus tard ; elle remplace le critère de D12 qui gardait la signature en ligne hors de l'écran. Avant : bloquée : la signature en ligne attend H24
 - Décidé (2026-11-03), lecture prudente (`SECOURS.md`) : rien n'est livré, le test de D12 (`la signature en ligne n’existe pas sur cet écran tant que l’avocat ne l’a pas validée`) reste tel quel. Le geste écrit puis retiré aurait aussi été une impasse : seul un document au modèle validé passe le contrôle, il aurait noté un accord sur une vraie fiche, et le code resté dans la boîte d'essai n'arrive à personne. La signature d'un avenant est déjà à l'écran (D17). `fiche.identite` ne reçoit aucun geste : le contrôle lit le coffre, jamais cette note [R92], et un bouton « identité vérifiée » laisserait croire que le contrôle passera. À reprendre à H24 et H05, en retirant alors le test de D12.
 - Qui : Claude, voie 1 · Relecture : forte · Dépend de : D08
 - Cahier : M06 ; R16, R201.
@@ -7797,3 +7801,11 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 - Objectif : trouvé par IN15 : dans `.liste`, deux boutons sur un même rang se touchent à la largeur d'un téléphone (« Voir la fiche » et « Rappelé », par exemple). Leur donner un écart, sans changer leur taille.
 - Critères : la règle d'écart est dans la feuille servie (test) ; budget tenu [R201] (test).
 - Attend : rien.
+
+### X17b · Le code d'essai du bail et du bon de visite à l'écran
+- Statut : en cours (voie 3)
+- Suivi : en cours (voie 3)
+- Note de statut : en cours (voie 3, #796)
+- Qui : Claude, voie 3 · Relecture : normale · Dépend de : X17
+- Objectif : décision de Shawez du 2026-11-23, tout se teste en essai. La signature en ligne du bail (W12) et du bon de visite (AU075) n'existent qu'en essai, et leur code restait dans la boîte d'essai : le parcours ne pouvait pas être essayé. Le serveur rend le code d'essai, l'écran le montre.
+- Critères : le code rendu est celui de la boîte d'essai (test) ; il n'est rangé nulle part en clair (test) ; l'écran le dit « rien n'est parti » (test).
