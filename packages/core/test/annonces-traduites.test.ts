@@ -108,7 +108,7 @@ describe('HX05 · langue de l’acheteur', () => {
 });
 
 /** La marque de chaque langue dans les textes de l'IA de test, dans son écriture : hors anglais, aucun mot latin inventé. */
-const MARK: Record<ListingLanguage, string> = { en: 'en', ur: 'اردو', hi: 'हिंदी', pa: 'ਪੰਜਾਬੀ', fa: 'فارسی', ar: 'عربي', el: 'ελ' };
+const MARK: Record<ListingLanguage, string> = { en: 'en', de: 'de', es: 'es', it: 'it', nl: 'nl', ur: 'اردو', hi: 'हिंदी', pa: 'ਪੰਜਾਬੀ', fa: 'فارسی', ar: 'عربي', el: 'ελ' };
 
 /** Une IA de test : elle rend les repères tels quels, et garde ce qu'elle a reçu. */
 class FakeTranslator implements ListingTranslator {
