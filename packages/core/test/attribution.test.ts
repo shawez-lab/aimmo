@@ -703,6 +703,27 @@ describeWithSqlite('AU040 · un agent absent n’est jamais candidat', () => {
     expect((await t.store.getPerson(followed.id))!.agent_id).toBe(t.alex.id);
   });
 
+  it('[R680] le binôme ouvre la fiche gardée par l’absent pendant l’absence, ni avant ni après ; un autre agent jamais', async () => {
+    const t = await setup();
+    const followed = await t.store.createPerson({ networkId: t.network.id, agentId: t.alex.id, firstName: 'Zoé' });
+    await absence(t, t.alex.id, t.sam.id, '2026-12-09', '2026-12-10');
+    let clock = TUESDAY_10H;
+    const acces = new Acces(t.db, t.store, t.fiche, t.journal, { now: () => new Date(clock) });
+    const sam = { role: 'agent' as const, userId: t.sam.id, networkId: t.network.id };
+    expect(await acces.readFiche(sam, followed.id)).toMatchObject({ ok: false, code: 'not_assigned' });
+    clock = TUESDAY_10H + 24 * HOUR;
+    expect(await acces.readFiche(sam, followed.id)).toMatchObject({ ok: true, view: 'full' });
+    expect(await acces.readFiche({ role: 'agent', userId: t.lou.id, networkId: t.network.id }, followed.id)).toMatchObject({ ok: false, code: 'not_assigned' });
+    const read = (await t.journal.all()).filter((e) => e.type === 'fiche.lue');
+    expect(read.at(-1)?.data).toMatchObject({ cover: `agent_absence:abs-${t.alex.id}-2026-12-09` });
+    expect(JSON.stringify(read)).not.toMatch(/Zoé/);
+    clock = TUESDAY_10H + 72 * HOUR;
+    expect(await acces.readFiche(sam, followed.id)).toMatchObject({ ok: false, code: 'not_assigned' });
+    // L'absent garde sa fiche pendant son absence.
+    clock = TUESDAY_10H + 24 * HOUR;
+    expect(await acces.readFiche({ role: 'agent', userId: t.alex.id, networkId: t.network.id }, followed.id)).toMatchObject({ ok: true, view: 'full' });
+  });
+
   it('[R680] la réattribution d’un contact en retard ne va jamais à un agent absent', async () => {
     const t = await setup();
     await t.attribution.addZone(t.network.id, t.alex.id, 'Talant');
