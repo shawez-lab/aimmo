@@ -539,13 +539,14 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Reste : fusionnée (#783, `cd7d61e1`), migration `4108` (ajout seul), R696. Constat confirmé (aucun transcripteur, et `/v1/meta/notifications` n'appelait pas la chaîne des notes vocales). `transcripteur-reel.ts` : audio lu chez Meta (WhatsApp par l'API Graph et `WHATSAPP_MEDIA_TOKEN`, Instagram et Messenger à l'adresse donnée ; serveurs de fichiers de Meta seuls, 25 Mo, délai sur tout le corps), service compatible OpenAI `verbose_json`, confiance des segments (nulle sans eux). Panne : reprise unique liée au message illisible, `GET /v1/notes-vocales/reprises`, `…/<id>/audio`, `POST …/<id>/faite`, agent en activité ou direction. Codex : 1 P2 corrigé (délai), puis rien ; « Vérifier » rouge une fois (cascade interdite par R17), corrigé. Restent : l'écran de la file des reprises ; H52.
 
 ### AU045 · Aucun raccordement téléphonique réel du Worker ne prouve la réception des appels et le renvoi vers…
-- Statut : en cours
+- Statut : en cours (reprise le 2026-11-23, autre approche : référence d'appel écrite avec le rendez-vous, `finish` sans rien ranger tant que l'appel est `en_cours`)
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M03 Qualifier et attribuer ; audit A045 (majeur), endroit : A/worker.ts ; C/voix/appels.ts et assistant.ts.
 - Constat de l'audit : Aucun raccordement téléphonique réel du Worker ne prouve la réception des appels et le renvoi vers l’assistant vocal.
 - Objectif : Un appel sur le numéro déclaré produit le parcours d’accord, la fiche et le relais attendus, vérifiés depuis un téléphone extérieur.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
-- Attend : rien.
+- Attend : rien (mise en service réelle : H78).
+- Reste : branche `chantier/AU045`, proposition #785, vérification verte. Fait : `packages/api/src/telephonie.ts` (Twilio, signature, `/v1/telephonie/appel`, `/tour?n=`, `/fin`), migration `4112` (`voice_assistant_sessions`, `voice_call_endings`), motif de renvoi `conditional`, passage de reprise du quart d'heure, R710, H78, 18 tests. À reprendre : rattacher la réservation à l'appel par une référence écrite avec le rendez-vous ; `AssistantVocal.finish` ne doit rien ranger tant que `Appels.receive` rend `en_cours`.
 
 Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22, la voie 1 étant sur l'attribution)
 
@@ -590,7 +591,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU049b · L'écran de l'avis montre les ventes citées et permet de les écarter
-- Statut : à faire
+- Statut : fait (2026-11-23)
+- Reste : fusionnée (#787, `05f642f2`). La vue rend ventes citées (voie sans numéro, R29), écarts, ajustements (source, motif), version précédente, sorte et état ; une nouvelle version reprend l'état de la précédente. L'écran écarte une vente (motif R692) ou retient un ajustement (R693), un seul recalcul à la fois, et liste les versions précédentes ; validé, il les garde lisibles. Codex 2 P0 corrigés puis rien ; vérification verte.
 - Qui : Claude, voie 1 (socle : `app.ts`) · Relecture : normale · Dépend de : AU049
 - Cahier : M04 Estimer ; suite de l'audit A049.
 - Objectif : `avisView` (`packages/api/src/app.ts`) rend les ventes citées (`cited` avec `id`, mois, surface, prix au m², distance, voie sans numéro), les ventes écartées (`excluded`) et la version précédente (`previous`) ; l'écran de l'avis (`packages/api/app/avis.ts`) propose d'écarter une vente citée avec un motif de la liste de R692, ce qui appelle `POST /v1/biens/{id}/avis` avec `previous` et `exclude`.
@@ -629,7 +631,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU053 · Les adaptateurs Google, Outlook et Apple sont testés sur faux serveurs mais ne sont pas raccordés au…
-- Statut : à faire
+- Statut : fait (2026-11-23)
+- Reste : constat confirmé (adaptateurs construits nulle part dans le Worker). `agenda-reel.ts` : `AGENDA_MODE=reel`, clients OAuth Google / Microsoft, secret `AGENDA_JETONS` (un agenda par agent, Apple en mot de passe d'application) ; un événement occupé refuse le créneau en ligne, le rendez-vous et la visite de l'agent, la dictée et la visite de l'espace client [R33] ; agenda injoignable : 503 `agenda_indisponible`, rien n'est réservé (la dictée nomme ce qui est rangé) ; passage des quarts d'heure dans les deux sens, sans doublon [R236] ; R702. Codex 3 P0 corrigés puis rien ; vérification verte ; fusionnée (#788). Reste : mise en service réelle (H21, H53) ; la tournée de visites (`TourneeRendezVous`) n'est pas branchée dans l'API.
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M05 Rendez-vous ; audit A053 (majeur), endroit : H21/H53 ; A/worker.ts ; C/rendezvous/fournisseurs.ts.
 - Constat de l'audit : Les adaptateurs Google, Outlook et Apple sont testés sur faux serveurs mais ne sont pas raccordés au Worker utilisé.
@@ -638,7 +641,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien (mise en service réelle : H21, H53).
 
 ### AU054 · Le meilleur créneau repose sur une distance à vol d’oiseau majorée
-- Statut : à faire
+- Statut : fait (2026-11-22)
+- Reste : constat confirmé (vol d'oiseau majoré seul, rien ne disait que le temps n'était pas garanti). Service d'itinéraires branchable dans `MeilleursCreneaux` (`RoadTimeSource`, positions seules), créneau `guaranteed` et `sources`, sinon « non garanti, à confirmer » (R701). Codex 1 P0 corrigé (seule une position identique évite le service) puis rien ; vérification verte ; fusionnée (#786). Reste : brancher un vrai service d'itinéraires au Worker (H21 de l'agenda ou nouvelle clé, voie 1, socle) ; la tournée de prospection garde l'estimation.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M05 Rendez-vous ; audit A054 (majeur), endroit : C/rendezvous/trajets.ts.
 - Constat de l'audit : Le meilleur créneau repose sur une distance à vol d’oiseau majorée, sans itinéraire routier réel.
@@ -647,7 +651,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU055 · Les 30 minutes minimales de trajet empêchent d’enchaîner simplement deux visites dans le même immeuble
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-22)
+- Reste : fusionnée (#784, `9799592b`). Constat confirmé (trajet de 30 min partout, même au même bien). `samePlaceMinutes` (10 par défaut, 0 au trajet, pas de 5) ; au même bien connu, la marge ; ailleurs le trajet ; R700. La base tranche : chaque tranche porte son bien (migration 4110, tranches d'avant remplies), le trajet tenu au même bien est partagé et passe, dans l'instruction qui libère, au rendez-vous du bien qui le demande encore, même en train d'être pris ; la marge se revérifie à la prise des tranches. Créneaux proposés (agent et en ligne, bien du réseau seulement), réservation en ligne et meilleur créneau suivent la marge. Codex 3 P0 corrigés (course à l'annulation, découverte en ligne, tranches d'avant) puis rien ; vérification verte. Restent : deux lots distincts d'un même immeuble gardent le trajet entier (la fiche n'a pas d'identifiant d'immeuble) ; la dictée vérifie ses créneaux sans le bien.
 - Qui : Claude, voie 2 · Relecture : normale · Dépend de : rien
 - Cahier : M05 Rendez-vous ; audit A055 (majeur), endroit : C/rendezvous/creneaux.ts, `DEFAULT_SLOT_SETTINGS`.
 - Constat de l'audit : Les 30 minutes minimales de trajet empêchent d’enchaîner simplement deux visites dans le même immeuble.
@@ -868,7 +873,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Reste : fusionnée (#719, f70c5451), migration `4030`, R506 en service. Constat confirmé (seul le bon papier, date et scan, pour une visite sur place). `visites/signature-bon.ts`, `SignatureBon` : sur place, le visiteur lit son bon sur le téléphone de l'agent (rendu en texte, paragraphe par paragraphe, depuis le document rangé), tape le code reçu par SMS ou mail, trace s'il veut ; bon et signature rangés ensemble seulement si la signature est encore ouverte ; exemplaire et preuve affichés aussitôt (et rouvrables), preuve avec l'empreinte du bon envoyée par le contrôle central ; papier en secours, le premier qui signe ferme l'autre. Routes M08 `bon/signature-en-ligne`, `bon/a-signer`, `bon/signature-sur-place`, `bon/exemplaire` ; écran `/app/bon-visite.js` chargé au geste. Jamais vu : l'empreinte SHA-256 du bon signé, au caractère près, remise au visiteur. Codex : 2 P0, puis 1 P1, puis 1 P0 et 1 P2, puis 1 P0, tous corrigés, puis rien (👍). Restent : AU075b (voie 1) ; signature réelle (H24) ; canal réel (H05).
 
 ### AU075b · Les pages publiques du bon de visite : signer à distance et rouvrir son exemplaire
-- Statut : à faire
+- Statut : fait (2026-11-23)
+- Reste : fusionnée (#789, 59346094). `api/src/bon-visite-public.ts` : `/visite/signer/<jeton>` (le bon en texte, un vrai formulaire du code, sans script) et `/visite/exemplaire/<jeton>` (un an, puis 410), servies par `app.ts` avec `BON_VISITE_BASE` (origine seule, `bonVisiteLinkBase`) ; `signUrl`/`copyUrl` donnés à `SignatureBon` ; `slip.distance` à l'écran de la visite, et « Envoyer le lien pour signer à distance » à l'écran du bon ; l'exemplaire passe au cadre `renderPublicPage`. R506 précisée. Jamais vu : signer son bon d'un simple lien, sans compte ni script, et rouvrir un an un exemplaire portant l'empreinte SHA-256 du bon. Codex : 1 P0 (base avec chemin) corrigé, puis rien ; vérification GitHub verte. Restent : `BON_VISITE_BASE` au déploiement ; signature réelle (H24) ; canal réel (H05).
 - Qui : Claude, voie 1 (socle : `app.ts`) · Relecture : normale · Dépend de : AU075
 - Cahier : M08 Acquéreurs et visites ; endroit : packages/api/src/app.ts ; C/visites/signature-bon.ts (`readByLink`, `signByLink`, `copy`, `renderSlipCopy`).
 - Objectif : servir sans clé, sous `/visite/signer/<jeton>` et `/visite/exemplaire/<jeton>`, la lecture et la signature à distance du bon et l'exemplaire signé, puis donner `signUrl` et `copyUrl` à `SignatureBon` dans les routes de M08 ; l'écran propose alors « Envoyer le lien pour signer à distance ».
@@ -1190,7 +1196,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU103b · Brancher le rangement des images entières des visites
-- Statut : à faire
+- Statut : fait (2026-11-23)
+- Reste : fusionnée (#790, 9434ae5d). `config.horsLigne.images` tiré de `env.MEDIA` par `visitImagesOf` (le dépôt du Studio) ; sans `MEDIA`, 503 `depot_indisponible`, l'image reste sur le téléphone [R677]. Codex rien à signaler ; vérification GitHub verte.
 - Qui : Claude, voie 1 (socle : `app.ts`, `worker.ts`) · Relecture : normale · Dépend de : AU103
 - Cahier : Le produit (téléphone, hors connexion) ; audit A103.
 - Objectif : `horsLigneRoutesDef()` (`packages/api/src/app.ts`) passe aux routes hors ligne un `images` tiré de `env.MEDIA.put` (comme `mediaUploads` du Studio), pour que `POST /v1/hors-ligne/photos/...` range réellement l'image entière (R677). Sans `MEDIA`, `images` reste `null` (503, l'image reste sur le téléphone).

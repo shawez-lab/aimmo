@@ -522,6 +522,37 @@ function racing(t: Awaited<ReturnType<typeof setup>>, start: string, kind: 'esti
   return { voix, competing: () => competing };
 }
 
+/** AU053 : l'agenda relié de l'agent répond à la n-ième lecture, puis tombe (`AgendaUnavailableError` de l'API). */
+function agendaFalling(t: Awaited<ReturnType<typeof setup>>, okReads: number) {
+  let reads = 0;
+  const rendezVous = new RendezVous(t.db, t.journal, {
+    now: t.now,
+    agenda: {
+      busy: async () => {
+        if (++reads > okReads) throw Object.assign(new Error('agenda injoignable'), { name: 'AgendaUnavailableError' });
+        return [];
+      },
+    },
+  });
+  return new Dictee(t.db, t.journal, { acces: new Acces(t.db, t.store, t.fiche, t.journal, { now: t.now }), store: t.store, fiche: t.fiche, biens: new NouveauBien(t.db, new Acces(t.db, t.store, t.fiche, t.journal, { now: t.now }), t.journal, { now: t.now }), rendezVous, visites: t.visites, comptes: t.comptes }, { now: t.now });
+}
+
+describeWithSqlite('AU053 · l’agenda relié tombe pendant la dictée', () => {
+  it('[R702] [R261] tombé entre la vérification et la réservation : le refus nomme la fiche et le bien rangés, rien n’est réservé', async () => {
+    const t = await setup();
+    const r = await agendaFalling(t, 1).validate(t.alex, { readAt: t.now().toISOString(), requestId: key(1), dictation: SELLER_DICTATION, keep: KEEP_ALL });
+    expect(r).toMatchObject({ ok: false, rule: 'R702', code: 'agenda_indisponible', kept: { personId: key(1), contact: 'created', propertyId: key(1) } });
+    expect(await t.db.all("SELECT id FROM appointments WHERE status = 'booked'")).toHaveLength(0);
+  });
+
+  it('[R702] tombé dès la vérification : refusé avant d’écrire', async () => {
+    const t = await setup();
+    const r = await agendaFalling(t, 0).validate(t.alex, { readAt: t.now().toISOString(), requestId: key(2), dictation: SELLER_DICTATION, keep: KEEP_ALL });
+    expect(r).toMatchObject({ ok: false, rule: 'R702', code: 'agenda_indisponible' });
+    expect(await t.db.all("SELECT id FROM appointments WHERE status = 'booked'")).toHaveLength(0);
+  });
+});
+
 describeWithSqlite('RC22 · un créneau pris pendant la validation : le refus dit ce qui est rangé', () => {
   const TUESDAY_10H = '2026-12-08T09:00:00.000Z';
 

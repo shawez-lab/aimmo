@@ -3,6 +3,7 @@ import { REGISTRE_GELS_URL, REGISTRE_GELS_USER_AGENT } from './securite.ts';
 import { handleEmail, type InboundEmail } from './courrier.ts';
 import { fromD1, type D1Database } from './d1.ts';
 import { investorFeesRate, runScheduler } from './planificateur.ts';
+import { bonVisiteLinkBase } from './bon-visite-public.ts';
 import { letterUnsubscribeBase } from './marketing-passage.ts';
 import { isQuarterMinute, runNotificationsPass } from './notifications.ts';
 import { R2PieceStore, type R2Like } from './dossiers.ts';
@@ -26,6 +27,7 @@ import { dossierFilesOf, mailboxesFromEnv, runMailboxPass, type BoiteEnv } from 
 import { runTelephoniePass } from './telephonie.ts';
 import { audioSourceFromEnv, transcriberFromEnv, type TranscriptionEnv } from './reprises-vocales.ts';
 import { adsFromEnv, runAdsPass, type AdsEnv } from './publicite-reelle.ts';
+import { agendasFromEnv, runAgendaPass, type AgendaEnv } from './agenda-reel.ts';
 
 /**
  * AU036 : les vrais Facebook et Instagram du réseau. Publier seulement quand tout est rangé (sinon tout reste d'essai) ;
@@ -99,6 +101,8 @@ export interface Env {
   RDV_LINK_BASE?: string;
   /** Début du lien de désinscription des alertes (T03), en https, sans chiffre, terminé par `/alertes/desinscription/`. */
   ALERT_UNSUBSCRIBE_BASE?: string;
+  /** AU075b · début des liens du bon de visite (signer à distance, exemplaire), en https, sans chiffre, terminé par `/` ; absent, aucune signature à distance. */
+  BON_VISITE_BASE?: string;
   /** Début du lien de désinscription de la lettre (BR112), en https, sans chiffre, terminé par `/lettre/desinscription/` ; absent, aucune lettre ne part. */
   LETTRE_DESINSCRIPTION_BASE?: string;
   /**
@@ -156,6 +160,18 @@ export interface Env {
   BOITE_MICROSOFT_TENANT?: string;
   BOITE_JETONS?: string;
   /**
+   * AU053 : `reel` relie les vrais agendas des agents (H21, H53), avec le client OAuth de Google
+   * (`AGENDA_GOOGLE_CLIENT_ID`, `AGENDA_GOOGLE_CLIENT_SECRET`) ou de Microsoft (`AGENDA_MICROSOFT_CLIENT_ID`,
+   * `AGENDA_MICROSOFT_CLIENT_SECRET`, `AGENDA_MICROSOFT_TENANT`) et le secret `AGENDA_JETONS` (`agenda-reel.ts`).
+   */
+  AGENDA_MODE?: AgendaEnv['AGENDA_MODE'];
+  AGENDA_GOOGLE_CLIENT_ID?: string;
+  AGENDA_GOOGLE_CLIENT_SECRET?: string;
+  AGENDA_MICROSOFT_CLIENT_ID?: string;
+  AGENDA_MICROSOFT_CLIENT_SECRET?: string;
+  AGENDA_MICROSOFT_TENANT?: string;
+  AGENDA_JETONS?: string;
+  /**
    * AU044 : `reel` branche le vrai transcripteur des notes vocales (H52), avec `TRANSCRIPTION_URL`, `TRANSCRIPTION_MODEL`
    * et le secret `TRANSCRIPTION_KEY` ; le secret `WHATSAPP_MEDIA_TOKEN` lit les notes WhatsApp (`reprises-vocales.ts`).
    */
@@ -176,6 +192,11 @@ export interface Env {
 /** AU043 : les vraies boîtes des agents, et le rangement de leurs pièces dans `PIECES` ; sinon rien n'est lu [R683]. */
 export function boiteOf(env: Env): { mailboxes: ReturnType<typeof mailboxesFromEnv>; files: ReturnType<typeof dossierFilesOf> } {
   return { mailboxes: mailboxesFromEnv(env, fetch.bind(globalThis)), files: dossierFilesOf(env.PIECES ? new R2PieceStore(env.PIECES) : null) };
+}
+
+/** AU053 : les vrais agendas des agents, seulement quand tout est rangé ; sinon aucun agenda n'est lu [R702]. */
+export function agendasOf(env: Env): ReturnType<typeof agendasFromEnv> {
+  return agendasFromEnv(env, fetch.bind(globalThis));
 }
 
 /** Les réglages du fournisseur de pige (AU034), tels quels : leur forme est contrôlée par la couche métier. */
@@ -238,6 +259,14 @@ export function mediaUploads(bucket: { put?(key: string, value: Uint8Array, opti
 }
 
 /**
+ * AU103b : les images entières des visites rangées dans `MEDIA`, sous `visites/`, par le même dépôt que le Studio ; sans
+ * `MEDIA` (ou sans `put`), `null` : le dépôt répond 503 et l'image reste sur le téléphone, qui la renverra [R677].
+ */
+export function visitImagesOf(env: Pick<Env, 'MEDIA'>): StudioUploadStore | null {
+  return env.MEDIA ? mediaUploads(env.MEDIA) : null;
+}
+
+/**
  * Les fichiers déposés de l'agence sous licence (BR82) : les compartiments des médias, des pièces et des commerces qui
  * savent `head` et `get`, jamais le coffre [R663] ; aucun : `null`, les routes des contenus sont fermées.
  */
@@ -271,7 +300,11 @@ export default {
       intakeKeys: env.INTAKE_KEYS,
       mode: env.MODE,
       appointmentLinkBase: env.RDV_LINK_BASE,
+      // AU053 : un événement occupé de l'agenda relié de l'agent refuse le créneau [R33, R702].
+      agendas: agendasOf(env),
       alertUnsubscribeBase: env.ALERT_UNSUBSCRIBE_BASE,
+      // AU075b : les pages du bon de visite, signé à distance, puis son exemplaire, un an.
+      bonVisiteBase: bonVisiteLinkBase(env.BON_VISITE_BASE),
       ...(env.MEDIA ? { media: env.MEDIA } : {}),
       ...(env.PIECES ? { pieces: new R2PieceStore(env.PIECES) } : {}),
       // M14 (J13) : sans IA branchée (H13), l'entraînement rend les répliques écrites.
@@ -300,6 +333,8 @@ export default {
       // M19 (X10) : photos, originaux, preuves et accords dans `MEDIA`, dont seule l'existence est lue ; absent, fermé.
       // X12 : les fichiers finis rangés tels quels dans `MEDIA` ; sans lui (H25), le dépôt est fermé.
       // AU036 : les vrais Facebook et Instagram du réseau seulement quand tout est rangé (H06, H77) ; sinon, essai.
+      // AU103b : les images entières des visites sans réseau dans `MEDIA` ; absent, elles restent sur le téléphone.
+      horsLigne: { images: visitImagesOf(env) },
       studio: { files: env.MEDIA ? mediaFiles(env.MEDIA) : null, uploads: env.MEDIA ? mediaUploads(env.MEDIA) : null, ...socialSettings(socialOf(env)) },
       // M20 complet (G12) : preuves de coût dans `PIECES` ; géocodeur des lettres seulement avec les données publiques
       // de l'estimation ; sans IA branchée (H13), les textes du code. Rien ne part : mode essai.
@@ -388,6 +423,11 @@ export default {
     {
       const db = fromD1(env.DB);
       await runMailboxPass({ db, journal: new SqlJournalStore(db), now: () => new Date(), ...boiteOf(env) });
+    }
+    // AU053 : les agendas reliés, dans les deux sens ; une panne est écrite au journal et reprise [R13, R236, R702].
+    {
+      const db = fromD1(env.DB);
+      await runAgendaPass({ db, journal: new SqlJournalStore(db), now: () => new Date(), agendas: agendasOf(env) });
     }
   },
   async email(message: InboundEmail, env: Env): Promise<void> {

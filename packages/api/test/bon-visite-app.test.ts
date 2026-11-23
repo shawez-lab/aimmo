@@ -159,7 +159,7 @@ describe('AU075 · le bon signé sans papier, depuis l’écran de la visite', (
     const t = await visit();
     await t.open();
     expect(t.part()!.textContent).toContain('Il voit aussitôt son exemplaire et reçoit la preuve');
-    // La signature à distance attend ses pages publiques : l'écran ne la propose pas.
+    // Sans les pages publiques du bon (`slip.distance` faux), l'écran ne propose pas la signature à distance.
     expect(t.btn('Envoyer le lien pour signer à distance')).toBeUndefined();
     // Sans l'accord coché, aucune preuve d'accord n'est envoyée : la couche métier refuse si aucun accord n'est en cours.
     t.boxes()[0]!.checked = true;
@@ -199,5 +199,22 @@ describe('AU075 · le bon signé sans papier, depuis l’écran de la visite', (
     await w.click(w.btn('Signer ici, sur mon téléphone'));
     await w.click(w.btn('Signer le bon'));
     expect(w.answer()).toBe(BON_VISITE_REFUSALS.wrong_code);
+  });
+  it('[R506] AU075b · pages servies : l’écran propose « Envoyer le lien pour signer à distance », lien et code partent', async () => {
+    const t = await visit({ 'GET /v1/visites/v1': ok({ ...VISIT, slip: { ...VISIT.slip, distance: true } }), 'POST /v1/visites/v1/bon/signature-en-ligne': ok({ sessionId: 's2', place: 'distance', channel: 'sms', codeExpiresAt: 'x', mode: 'essai' }) });
+    await t.open();
+    expect(t.btn('Signer ici, sur mon téléphone')).toBeDefined();
+    t.boxes()[0]!.checked = true;
+    await t.click(t.btn('Envoyer le lien pour signer à distance'));
+    expect(t.posts()[0]).toMatchObject({ url: '/v1/visites/v1/bon/signature-en-ligne', body: { place: 'distance', channel: 'sms', consentProof: expect.stringContaining('Accord du visiteur') } });
+    expect(t.answer()).toContain('Lien et code envoyés au visiteur, chacun dans son message');
+    // Rien n'est demandé au téléphone de l'agent : ni bon à lire, ni code à taper.
+    expect(t.calls.some((c) => c.url.endsWith('/bon/a-signer'))).toBe(false);
+    expect(t.part()!.all().some((e) => e.tagName === 'input' && e.attributes.autocomplete === 'one-time-code')).toBe(false);
+    // Un refus, dit en mots.
+    const u = await visit({ 'GET /v1/visites/v1': ok({ ...VISIT, slip: { ...VISIT.slip, distance: true } }), 'POST /v1/visites/v1/bon/signature-en-ligne': no(409, { ok: false, rule: null, code: 'distance_not_served' }) });
+    await u.open();
+    await u.click(u.btn('Envoyer le lien pour signer à distance'));
+    expect(u.answer()).toBe(BON_VISITE_REFUSALS.distance_not_served);
   });
 });

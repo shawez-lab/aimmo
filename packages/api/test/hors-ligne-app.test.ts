@@ -5,6 +5,8 @@ import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { HORS_LIGNE_DB, HORS_LIGNE_SCRIPT } from '../app/hors-ligne.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL } from '../src/agent-app.ts';
 import { BATCH_LIMIT, MAX_SAISIES_BODY_BYTES, horsLigneRoutes } from '../src/hors-ligne.ts';
+import { handleRequest, sha256Hex, type ApiConfig } from '../src/index.ts';
+import { visitImagesOf, type Env } from '../src/worker.ts';
 import { encodeJpeg } from '../../core/test/jpeg-essai.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
@@ -208,7 +210,11 @@ const settle = async () => {
   for (let i = 0; i < 40; i++) await new Promise((r) => setTimeout(r, 0));
 };
 
-async function setup() {
+/**
+ * `app` : les appels passent par l'adaptateur réel (`handleRequest`), le rangement tiré de `MEDIA` comme dans le Worker
+ * (AU103b) ; sinon, les routes sont appelées directement avec le rangement inventé.
+ */
+async function setup(opts: { app?: Pick<Env, 'MEDIA'> } = {}) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   let clock = MONDAY_9H;
@@ -246,7 +252,27 @@ async function setup() {
     now,
     images: { put: async (key: string, bytes: Uint8Array, type: string) => void media.set(key, { bytes: bytes.slice(), type }) },
   };
+  const keys = new Map<string, string>([agent, agentB, direction].map((v, i) => [v.userId, `test-cle-au103b-${i}-aaaaaaaaaaaaaaaaaaaaaaaaaaaa`]));
+  const roles = [agent, agentB, direction];
+  const config: ApiConfig | null = opts.app
+    ? {
+        db,
+        apiKeys: JSON.stringify(await Promise.all(roles.map(async (v) => ({ sha256: await sha256Hex(keys.get(v.userId)!), networkId: v.networkId, role: v.role, userId: v.userId })))),
+        mode: 'essai',
+        now,
+        horsLigne: { images: visitImagesOf(opts.app) },
+      }
+    : null;
+  /** Les réponses des dépôts d'images, dans l'ordre. */
+  const deposits: { status: number; code: unknown }[] = [];
   const call = async (viewer: Viewer, method: 'GET' | 'POST', url: string, body?: string | Uint8Array, headers: Record<string, string> = {}) => {
+    if (config) {
+      const init: RequestInit = { method, headers: { 'content-type': 'application/json', ...headers, authorization: `Bearer ${keys.get(viewer.userId)}` } };
+      if (body !== undefined) init.body = body;
+      const r = await handleRequest(new Request(`https://api.example.test${url}`, init), config);
+      if (url.startsWith('/v1/hors-ligne/photos/')) deposits.push({ status: r.status, code: ((await r.clone().json()) as { code?: unknown }).code });
+      return r;
+    }
     const path = new URL(url, 'https://api.example.test').pathname.replace(/^\/v1/, '');
     const route = horsLigneRoutes().find((x) => x.method === method && x.pattern.test(path));
     if (!route) throw new Error(`route absente : ${method} ${path}`);
@@ -256,7 +282,7 @@ async function setup() {
     return route.handle(s, viewer, params, new Request(`https://api.example.test${url}`, init));
   };
   const count = async (t: string) => (await db.first<{ n: number }>(`SELECT COUNT(*) AS n FROM ${t}`))!.n;
-  return { db, journal, media, services: s, agent, agentB, direction, visitId, visitStart, call, count, setClock: (t: number) => (clock = t), clock: () => clock };
+  return { db, journal, media, deposits, services: s, agent, agentB, direction, visitId, visitStart, call, count, setClock: (t: number) => (clock = t), clock: () => clock };
 }
 type World = Awaited<ReturnType<typeof setup>>;
 
@@ -1161,6 +1187,50 @@ describeWithSqlite('AU103 · la photo entière, de la caméra au rangement', () 
     expect(await w.count('visit_photo_files')).toBe(1);
     expect(images(idb)).toEqual([]);
     expect(await (again.ctx.AimmoHorsLigne as { uploads: () => Promise<unknown[]> }).uploads()).toEqual([]);
+  });
+
+  it('[R677] AU103b · par l’adaptateur réel de l’application, l’image annoncée est rangée dans `MEDIA` sous `visites/`', async () => {
+    const kept = new Map<string, { bytes: Uint8Array; type: string | undefined }>();
+    const MEDIA = {
+      get: async () => null,
+      put: async (key: string, value: Uint8Array, options?: { httpMetadata?: { contentType?: string } }) => void kept.set(key, { bytes: value.slice(), type: options?.httpMetadata?.contentType }),
+    } as unknown as NonNullable<Env['MEDIA']>;
+    const w = await setup({ app: { MEDIA } });
+    const idb = new Map<string, unknown>();
+    const net = { network: false };
+    const t = await field(w, idb, net);
+    await shoot(t, { luma: dark }, { luma: bright });
+    const [op] = (await t.H.pending()) as { payload: { image: { bytes: number; sha256: string } } }[];
+    net.network = true;
+    await t.online();
+    expect(w.deposits).toEqual([{ status: 200, code: undefined }]);
+    expect(w.media.size).toBe(0);
+    const [[key, stored]] = [...kept.entries()] as [[string, { bytes: Uint8Array; type: string | undefined }]];
+    expect(kept.size).toBe(1);
+    expect(key).toMatch(new RegExp(`^visites/${w.agent.networkId}/${w.visitId}/[0-9a-f]+\\.jpg$`));
+    expect(stored.type).toBe('image/jpeg');
+    expect(stored.bytes.length).toBe(op!.payload.image.bytes);
+    expect(await horsLigne.sha256Hex(stored.bytes)).toBe(op!.payload.image.sha256);
+    expect(await w.db.first('SELECT media_key FROM visit_photo_files')).toEqual({ media_key: key });
+    expect(images(idb)).toEqual([]);
+  });
+
+  it('[R677] AU103b · sans `MEDIA`, l’adaptateur réel répond 503 sans rien écrire ; l’image reste sur le téléphone', async () => {
+    for (const env of [{}, { MEDIA: { get: async () => null } as unknown as NonNullable<Env['MEDIA']> }]) {
+      const w = await setup({ app: env });
+      const idb = new Map<string, unknown>();
+      const net = { network: false };
+      const t = await field(w, idb, net);
+      await shoot(t, { luma: dark }, { luma: bright });
+      net.network = true;
+      await t.online();
+      expect(w.deposits.length).toBeGreaterThan(0);
+      expect(w.deposits.every((d) => d.status === 503 && d.code === 'depot_indisponible')).toBe(true);
+      expect(await w.count('visit_photos')).toBe(1);
+      expect(await w.count('visit_photo_files')).toBe(0);
+      expect(images(idb)).toHaveLength(1);
+      expect(t.find('p', /^1 image entière attend d’être rangée/)).toBeDefined();
+    }
   });
 
   it('[R677] [R16] le dépôt : un autre rôle est refusé avant la lecture du fichier ; un autre type ou un fichier trop lourd ne sont pas lus', async () => {

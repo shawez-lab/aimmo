@@ -1671,3 +1671,49 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-22 17:25 · AU044 · vrai transcripteur des notes vocales branché au Worker, panne rangée illisible avec sa reprise à écouter (R696, migration 4108) ; Codex 1 P2 corrigé puis rien ; vérification verte ; fusionnée (#783, cd7d61e1) · prochaine : AU045
 - 2026-11-22 17:26 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU045
 - 2026-11-22 17:54 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 15:54 par une séance active : AU055, push à 17:44)
+- 2026-11-22 18:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 15:54 par une séance active : AU055 (#784), push à 18:25)
+- 2026-11-22 19:07 · AU055 · deux visites au même bien s'enchaînent avec la marge du même lieu (R700, migration 4110), trajet ailleurs inchangé et tenu par la base ; Codex 3 P0 corrigés puis rien ; vérification verte ; fusionnée (#784, 9799592b) · AU054 réservée à la voie 2 · prochaine : AU054 (voie 2)
+- 2026-11-22 19:07 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 17:54 et 18:53 n'ont rien produit)
+- 2026-11-22 19:07 · VOIE 2 : AU055, 9799592b (main), relancé non
+- 2026-11-22 20:53 · VOIE 2 : rien, rien, relancé non (verrou voie 2 occupé depuis 19:53 par une séance active : AU054 (#786), push à 20:28)
+- 2026-11-22 21:11 · AU054 · temps routier sourcé par un service d'itinéraires branchable (positions seules), sinon créneau dit non garanti, à confirmer (R701) ; Codex 1 P0 corrigé (lieux à quelques mètres) puis rien ; vérification verte ; fusionnée (#786, 8d195536) · prochaine : groupe suivant non commencé (voie 2)
+- 2026-11-22 21:11 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 17:54 et 18:53 n'ont rien produit)
+- 2026-11-22 21:11 · VOIE 2 : AU054, 8d195536 (main), relancé non
+- 2026-11-22 21:50 · AU045 · vrai raccordement Twilio de l'assistant vocal (R710, migration 4112), 18 tests, vérification verte ; Codex 1+1+5 P0 corrigés en trois tours, puis 2 P0 encore (réservation sans référence propre à l'appel, finish du cœur sur appel en_cours) ; bloquée selon SECOURS, branche et #785 gardées · prochaine : AU049b
+- 2026-11-22 21:50 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU049b
+- 2026-11-22 21:54 · VOIE 2 : plus aucune tâche faisable pour la voie 2 : tous les groupes de l'audit et des phases réservés à la voie 2 sont faits ; restent AU049b, AU053 (worker.ts), AU075b, AU103b réservées à la voie 1 (socle), AU014/AU096b/AU069 (H73), AU100 (H72), AU068b (H10), B04/C09 (humain) ; aucun module de la Feuille de route non découpé ; propositions ouvertes #785, #771, #757 bloquées voie 1, laissées
+- 2026-11-22 21:54 · VOIE 2 : rien, rien, relancé non (plus de travail faisable pour la voie 2)
+- 2026-11-22 22:53 · VOIE 2 : rien de faisable : rien de neuf depuis 21:54 (seul commit : AU049b en cours, voie 1) ; restent AU049b, AU053, AU075b, AU103b (voie 1, socle), AU014/AU096b/AU069 (H73), AU100 (H72), AU068b (H10), B04/C09 (humain) ; propositions #785, #771, #757 laissées à la voie 1 ; aucun module non découpé
+- 2026-11-22 22:53 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 20:53 et 21:54 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-22 22:53 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-22 23:53 · VOIE 2 : rien de faisable : rien de neuf depuis 22:53 (voie 1 active sur AU049b, #787) ; restent AU049b, AU053, AU075b, AU103b (voie 1, socle), AU014/AU096b/AU069 (H73), AU100 (H72), AU068b (H10), B04/C09 (humain) ; propositions #787, #785, #771, #757 laissées à la voie 1 ; aucun module non découpé
+- 2026-11-22 23:53 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 21:54 et 22:53 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-22 23:53 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-23 00:53 · VOIE 2 : rien de faisable : rien de neuf depuis 23:53 (aucun commit sur main, voie 1 sur AU049b, #787) ; restent AU049b, AU053, AU075b, AU103b (voie 1, socle), AU014/AU096b/AU069 (H73), AU100 (H72), AU068b (H10), B04/C09 (humain) ; propositions #787, #785, #771, #757 laissées à la voie 1 ; aucun module non découpé
+- 2026-11-23 00:53 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 22:53 et 23:53 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 00:53 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-23 00:35 · AU049b · écran de l'avis : ventes citées sans numéro de voie, écarter avec motif, ajustement motivé, versions précédentes listées (R692, R693, R29) ; Codex 2 P0 corrigés puis rien ; vérification verte ; fusionnée (#787, 05f642f2) · prochaine : AU053
+- 2026-11-23 00:37 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU053
+- 2026-11-23 01:53 · VOIE 2 : rien de faisable : seul changement depuis 00:53, AU049b fusionnée par la voie 1 (#787), qui passe à AU053 (en cours) ; restent AU053, AU075b, AU103b (voie 1, socle `app.ts`/`worker.ts`), AU014/AU096b/AU069 (H73), AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05 (humain), AU040 (#771) et AU045 (#785) bloquées chez la voie 1 ; aucun module non découpé
+- 2026-11-23 01:53 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 23:53 et 00:53 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 01:53 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-23 02:53 · VOIE 2 : rien de faisable : rien de neuf depuis 01:53 (aucun commit de code sur main ; voie 1 sur AU053, #788) ; restent AU053, AU075b, AU103b (voie 1, socle), AU014/AU096b/AU069 (H73), AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05 (humain), AU035 (#757), AU040 (#771) et AU045 (#785) bloquées chez la voie 1 ; aucun module non découpé
+- 2026-11-23 02:53 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 00:53 et 01:53 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 02:53 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-23 03:52 · AU053 · agendas Google, Outlook et Apple branchés au Worker (réservation en ligne, rendez-vous et visites de l'agent, dictée, espace client, passage des quarts d'heure, R702) ; Codex 3 P0 corrigés puis rien ; vérification verte ; fusionnée (#788, bec161dc) · prochaine : AU075b
+- 2026-11-23 03:54 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU075b
+- 2026-11-23 03:55 · VOIE 2 : rien de faisable : seul changement depuis 02:53, AU053 fusionnée par la voie 1 (#788), qui passe à AU075b ; restent AU075b, AU103b (voie 1, socle `app.ts`/`worker.ts`), AU014/AU096b/AU069 (H73), AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05 (humain), AU035 (#757), AU040 (#771) et AU045 (#785) bloquées chez la voie 1 ; aucun module non découpé
+- 2026-11-23 03:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 01:53 et 02:53 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 03:55 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-23 04:55 · VOIE 2 : rien de faisable : rien de neuf depuis 03:55 (seul commit : verrou de la voie 1, AU075b en cours) ; restent AU075b, AU103b (voie 1, socle), AU014/AU096b/AU069 (H73), AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05 (humain), AU035 (#757), AU040 (#771) et AU045 (#785) bloquées chez la voie 1 ; aucun module non découpé
+- 2026-11-23 04:55 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 02:53 et 03:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 04:55 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-23 05:53 · VOIE 2 : rien de faisable : rien de neuf depuis 04:55 (aucun commit sur main ; voie 1 sur AU075b) ; restent AU075b, AU103b (voie 1, socle), AU014/AU096b/AU069 (H73), AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05 (humain), AU035 (#757), AU040 (#771) et AU045 (#785) bloquées chez la voie 1 ; aucun module non découpé
+- 2026-11-23 05:53 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 03:55 et 04:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 05:53 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-23 06:06 · AU075b · pages publiques du bon de visite (signer à distance, exemplaire un an), écran de l'agent, R506 ; Codex 1 P0 corrigé puis rien ; vérification verte ; fusionnée (#789, 59346094) · prochaine : AU103b
+- 2026-11-23 06:06 · voie 1 : relance de la séance suivante refusée par le contrôle des permissions ; reprise au prochain passage planifié avec AU103b
+- 2026-11-23 06:53 · VOIE 2 : rien de faisable : seul changement depuis 05:53, AU075b fusionnée par la voie 1 (#789), qui passe à AU103b (en cours, socle `app.ts`/`worker.ts`) ; restent AU014/AU096b/AU069 (H73), AU100 (H72), AU068b (H10, voie 3), B04/C09/SV05 (humain), AU035 (#757), AU040 (#771) et AU045 (#785) bloquées chez la voie 1 ; aucun module non découpé
+- 2026-11-23 06:53 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 04:55 et 05:53 n'ont rien produit) et question 3 (aucune tâche à cette séance)
+- 2026-11-23 06:53 · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-23 07:05 · AU103b · images entières des visites rangées dans MEDIA par le Worker (R677), 503 sans MEDIA ; Codex rien ; vérification verte ; fusionnée (#790, 9434ae5d) · prochaine : rien de faisable pour la voie 1 (AU068b voie 3/H10 ; S11, B04, C09, SV05 humain ; AU035, AU040, AU045 bloquées)

@@ -1203,7 +1203,7 @@ export const COLONNES_SANS_DONNEE_PERSONNELLE: Readonly<Record<string, readonly 
   valuation_follow_ups: ['status', 'rule', 'message_id', 'mode', 'updated_at'],
   agent_availabilities: ['network_id', 'availability', 'updated_at'],
   appointments: ['id', 'network_id', 'property_id', 'kind', 'start_at', 'end_at', 'status', 'token_hash', 'source', 'replaces_id', 'created_at', 'updated_at', 'cancelled_at', 'confirmation_status', 'confirmation_channel', 'group_id'],
-  appointment_holds: ['layer', 'unit', 'appointment_id', 'released_at'],
+  appointment_holds: ['layer', 'unit', 'appointment_id', 'released_at', 'property_id'],
   appointment_calendar: ['appointment_id', 'event_id', 'synced_status', 'synced_start', 'state', 'last_error', 'updated_at'],
   agenda_cursors: ['cursor', 'updated_at'],
   appointment_reminders: ['appointment_id', 'kind', 'status', 'rule', 'message_id', 'mode', 'updated_at'],

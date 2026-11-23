@@ -41,7 +41,9 @@
  * Chaque route passe par les droits de la couche métier, qui écrit chaque refus au journal [R16]. Aucune route
  * n'envoie elle-même : tout envoi passe par le contrôle central des envois, en mode essai [R26].
  */
+import { slipLinks } from './bon-visite-public.ts';
 import { base64Of, validTile, type TileSource } from './carte.ts';
+import { AgendaUnavailableError, agendaBusyOf, type AgendaDirectory } from './agenda-reel.ts';
 import {
   APPOINTMENT_KINDS,
   AlerteWhatsApp,
@@ -96,6 +98,10 @@ export interface M08Options {
   geocoder?: Geocoder | null;
   /** AU073b · le fournisseur des tuiles de la carte des secteurs (`CARTE_TUILES_URL`) ; absent, la carte n'est pas branchée. */
   tiles?: TileSource | null;
+  /** AU075b · le début des liens du bon de visite (`BON_VISITE_BASE`) ; absent, la signature à distance est refusée. */
+  slipLinkBase?: string | null;
+  /** AU053 · les agendas reliés des agents (H21, H53) : un événement occupé refuse le rendez-vous [R33, R702]. */
+  agendas?: AgendaDirectory | null;
 }
 
 export interface M08Route {
@@ -112,6 +118,7 @@ const json = (status: number, body: unknown): Response =>
     headers: { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' },
   });
 const failure = (status: number, code: string, message: string): Response => json(status, { ok: false, code, message });
+const agendaClosed = (): Response => json(503, { ok: false, code: 'agenda_indisponible', rule: 'R702', message: 'Votre agenda n’a pas pu être lu : réessayez dans quelques minutes.' });
 const badBody = (): Response => failure(400, 'invalid_body', 'Corps JSON attendu.');
 
 type Outcome = { ok: true; [k: string]: unknown } | { ok: false; rule?: string | null; code: string; [k: string]: unknown };
@@ -173,10 +180,16 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
   const recherche = (s: M08Services) => new FicheAcquereur(s.db, s.journal, { now: s.now });
   const rapprochement = (s: M08Services) => new Rapprochement(s.db, fiche(s), diffusion(s), s.journal, { now: s.now });
   const whatsapp = (s: M08Services) => new AlerteWhatsApp(s.db, s.journal, s.acces, { now: s.now, unsubscribeBase: options.unsubscribeBase ?? null });
-  const visites = (s: M08Services) => new Visites(s.db, s.journal, s.acces, { now: s.now });
+  // AU053 : la visite fixée par l'agent se contrôle sur son agenda relié, comme tout rendez-vous [R33, R702].
+  const rendezVous = (s: M08Services) => {
+    const agenda = agendaBusyOf(s.db, s.journal, options.agendas ?? null, s.now);
+    return new RendezVous(s.db, s.journal, { now: s.now, ...(agenda ? { agenda } : {}) });
+  };
+  const visites = (s: M08Services) => new Visites(s.db, s.journal, s.acces, { now: s.now, rendezVous: rendezVous(s) });
   const securite = (s: M08Services) => new VisiteSecurisee(s.db, s.journal, visites(s), { now: s.now, ...(options.notifier ? { notifier: options.notifier } : {}) });
   const comptes = (s: M08Services) => new ComptesRendus(s.db, s.journal, visites(s), { now: s.now, ...(options.reportWriter ? { writer: options.reportWriter } : {}) });
-  const signature = (s: M08Services) => new SignatureBon(s.db, s.journal, visites(s), { now: s.now });
+  const links = options.slipLinkBase ? slipLinks(options.slipLinkBase) : {};
+  const signature = (s: M08Services) => new SignatureBon(s.db, s.journal, visites(s), { now: s.now, ...links });
   const points = (s: M08Services) => new PointSemaine(s.db, s.journal, s.acces, { now: s.now });
   const secteurs = (s: M08Services) => new Secteurs(s.db, s.acces, s.journal, options.geocoder ?? null, { now: s.now });
   const post = (name: string, path: string, run: (s: M08Services, v: Viewer, p: string[], body: Record<string, unknown>) => Promise<Response>): M08Route => ({
@@ -185,7 +198,14 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
     name,
     handle: async (s, v, p, request) => {
       const body = request.headers.get('content-length') === '0' || !request.body ? {} : await readJson(request);
-      return body ? run(s, v, p, body) : badBody();
+      if (!body) return badBody();
+      try {
+        return await run(s, v, p, body);
+      } catch (error) {
+        // L'agenda relié de l'agent n'a pas pu être lu : rien n'est réservé, l'agent le sait [R702].
+        if (error instanceof AgendaUnavailableError) return agendaClosed();
+        throw error;
+      }
     },
   });
   const get = (name: string, path: string, run: M08Route['handle']): M08Route => ({ method: 'GET', pattern: new RegExp(`^${path}$`), name, handle: run });
@@ -249,8 +269,7 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
       if (typeof start !== 'string' || !INSTANT.test(start) || Number.isNaN(Date.parse(start))) return failure(400, 'invalid_start', 'start : un instant ISO en UTC.');
       const duration = durationOf(body.durationMinutes);
       if (duration === null) return failure(400, 'invalid_duration', durationHelp);
-      const rdv = new RendezVous(s.db, s.journal, { now: s.now });
-      return reply(await rdv.bookAsAgent(v, s.acces, { personId, propertyId: (propertyId as string | null | undefined) ?? null, kind: kind as AppointmentKind, start: new Date(start), ...duration }));
+      return reply(await rendezVous(s).bookAsAgent(v, s.acces, { personId, propertyId: (propertyId as string | null | undefined) ?? null, kind: kind as AppointmentKind, start: new Date(start), ...duration }));
     }),
     get('visites.alertes', '/visites/alertes', async (s, v) => reply(await securite(s).list(v))),
     post('visites.alerte', `/visites/alertes/${ID}`, async (s, v, [a]) => {
@@ -267,7 +286,7 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
     get('visites.visite', `/visites/${ID}`, async (s, v, [a]) => {
       const access = await visites(s).accessVisit(v, a!);
       if (!access.ok) return reply(access);
-      const screen = await visitScreen(s, fiche(s), a!);
+      const screen = await visitScreen(s, fiche(s), a!, Boolean(options.slipLinkBase));
       // Le bien est relu sous les droits du lecteur : un bien vendu ou retiré d'un autre agent ne se montre plus [R16].
       const property = await s.acces.readProperty(v, screen.property.id);
       return reply({ ok: true, value: property.ok ? screen : { ...screen, property: null } });
@@ -340,7 +359,7 @@ export function m08Routes(options: M08Options = {}): M08Route[] {
 }
 
 /** Ce que montre l'écran d'une visite ; appelé seulement après le contrôle des droits [R16]. Ni nom de famille ni coordonnée. */
-async function visitScreen(s: M08Services, fiche: FicheUnique, appointmentId: string) {
+async function visitScreen(s: M08Services, fiche: FicheUnique, appointmentId: string, distance: boolean) {
   const v = (await s.db.first<{ start_at: string; end_at: string; status: string; property_id: string; project_id: string; person_id: string; reference: string; city: string | null }>(
     `SELECT a.start_at, a.end_at, a.status, vi.property_id, vi.project_id, vi.person_id, p.reference, p.city
      FROM visits vi JOIN appointments a ON a.id = vi.appointment_id JOIN properties p ON p.id = vi.property_id WHERE vi.appointment_id = ?`,
@@ -370,7 +389,7 @@ async function visitScreen(s: M08Services, fiche: FicheUnique, appointmentId: st
     property: { id: v.property_id, reference: v.reference, city: v.city },
     projectId: v.project_id,
     visitor: { firstName },
-    slip: slip ? { status: slip.status, mode: slip.mode, signed: slip.signed_at !== null, online: online ? { status: online.status, place: online.place, copy: online.copy_status } : null } : null,
+    slip: slip ? { status: slip.status, mode: slip.mode, signed: slip.signed_at !== null, distance, online: online ? { status: online.status, place: online.place, copy: online.copy_status } : null } : null,
     safety: confirmed ? 'confirmee' : safety?.code_hash ? 'code_envoye' : 'a_confirmer',
     report: report
       ? { status: report.status, source: report.source, report: report.report ? (JSON.parse(report.report) as VisitReport) : null, delivery: report.delivery_status }
