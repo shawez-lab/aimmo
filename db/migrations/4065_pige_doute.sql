@@ -25,6 +25,32 @@ END;
 CREATE TRIGGER IF NOT EXISTS pige_ad_doubt_keys_fige BEFORE UPDATE ON pige_ad_doubt_keys BEGIN SELECT RAISE(ABORT, 'pige_ad_doubt_keys : rien ne change'); END;
 CREATE TRIGGER IF NOT EXISTS pige_ad_doubt_keys_garde BEFORE DELETE ON pige_ad_doubt_keys BEGIN SELECT RAISE(ABORT, 'pige_ad_doubt_keys : rien ne s''efface'); END;
 
+-- Le groupe prouvé de chaque relève : la clé d'annonce de chaque annonce reliée sur preuve au moment où elle est rangée,
+-- la sienne comprise, et si le parcours était complet. Des empreintes seulement. Table nouvelle, en ajout seul.
+CREATE TABLE IF NOT EXISTS pige_ad_proven_keys (
+  network_id TEXT NOT NULL REFERENCES networks (id) ON DELETE RESTRICT,
+  ad_id TEXT NOT NULL REFERENCES pige_ads (id) ON DELETE RESTRICT,
+  ref_key TEXT NOT NULL CHECK (length(ref_key) = 64),
+  complete INTEGER NOT NULL CHECK (complete IN (0, 1)),
+  PRIMARY KEY (ad_id, ref_key)
+);
+CREATE INDEX IF NOT EXISTS pige_ad_proven_keys_ref ON pige_ad_proven_keys (network_id, ref_key);
+CREATE TRIGGER IF NOT EXISTS pige_ad_proven_keys_releve
+BEFORE INSERT ON pige_ad_proven_keys
+WHEN NOT EXISTS (SELECT 1 FROM pige_ads a WHERE a.id = NEW.ad_id AND a.network_id = NEW.network_id)
+BEGIN
+  SELECT RAISE(ABORT, 'pige_ad_proven_keys : relève inconnue');
+END;
+CREATE TRIGGER IF NOT EXISTS pige_ad_proven_keys_fige BEFORE UPDATE ON pige_ad_proven_keys BEGIN SELECT RAISE(ABORT, 'pige_ad_proven_keys : rien ne change'); END;
+CREATE TRIGGER IF NOT EXISTS pige_ad_proven_keys_garde BEFORE DELETE ON pige_ad_proven_keys BEGIN SELECT RAISE(ABORT, 'pige_ad_proven_keys : rien ne s''efface'); END;
+
+-- Le groupe d'une annonce : toute annonce rangée dans un même groupe qu'elle, par l'une ou l'autre de leurs relèves. Un
+-- lien prouvé plus tard par une troisième annonce est rangé avec la relève de celle-ci, qui nomme les deux.
+CREATE VIEW IF NOT EXISTS pige_proven_peers AS
+SELECT DISTINCT m.network_id AS network_id, m.ref_key AS ref_key, g.ref_key AS peer_key, g.complete AS complete
+  FROM pige_ad_proven_keys m
+  JOIN pige_ad_proven_keys g ON g.ad_id = m.ad_id;
+
 -- Les relèves fermées dans le doute : celles dont une autre annonce, qui pourrait être leur bien, est fermée.
 -- Une autre annonce B pourrait être le bien de la relève A quand l'empreinte sans pièces de B est à 1 m² près celle de A,
 -- et que l'une des deux tait ses pièces :
@@ -50,7 +76,17 @@ SELECT a.ad_id AS ad_id
                  WHERE bk.network_id = d.network_id AND bk.ref_key = d.ref_key)
      OR EXISTS (SELECT 1 FROM pige_ad_doubt_keys bk JOIN pige_ads b ON b.id = bk.ad_id
                   JOIN pige_oppositions o ON o.network_id = b.network_id AND o.fingerprint = b.fingerprint
-                 WHERE bk.network_id = d.network_id AND bk.ref_key = d.ref_key))
+                 WHERE bk.network_id = d.network_id AND bk.ref_key = d.ref_key)
+     -- Et le groupe prouvé de B, sans ses doutes : une fermeture rangée sur une annonce reliée à B sur preuve.
+     OR EXISTS (SELECT 1 FROM pige_proven_peers p WHERE p.network_id = d.network_id AND p.ref_key = d.ref_key
+                  AND (EXISTS (SELECT 1 FROM pige_no_agency n WHERE n.network_id = p.network_id AND n.fingerprint = p.peer_key)
+                    OR EXISTS (SELECT 1 FROM pige_oppositions o WHERE o.network_id = p.network_id AND o.fingerprint = p.peer_key)
+                    OR EXISTS (SELECT 1 FROM pige_ad_doubt_keys ck JOIN pige_ads c ON c.id = ck.ad_id
+                                 JOIN pige_no_agency n ON n.network_id = c.network_id AND n.fingerprint = c.fingerprint
+                                WHERE ck.network_id = p.network_id AND ck.ref_key = p.peer_key AND ck.exact = 1)
+                    OR EXISTS (SELECT 1 FROM pige_ad_doubt_keys ck JOIN pige_ads c ON c.id = ck.ad_id
+                                 JOIN pige_oppositions o ON o.network_id = c.network_id AND o.fingerprint = c.fingerprint
+                                WHERE ck.network_id = p.network_id AND ck.ref_key = p.peer_key AND ck.exact = 1))))
 UNION ALL
 SELECT a.ad_id AS ad_id
   FROM pige_ad_doubt_keys a
@@ -70,7 +106,17 @@ SELECT a.ad_id AS ad_id
                  WHERE ck.network_id = bk.network_id AND ck.ref_key = bk.ref_key)
      OR EXISTS (SELECT 1 FROM pige_ad_doubt_keys ck JOIN pige_ads c ON c.id = ck.ad_id
                   JOIN pige_oppositions o ON o.network_id = c.network_id AND o.fingerprint = c.fingerprint
-                 WHERE ck.network_id = bk.network_id AND ck.ref_key = bk.ref_key))
+                 WHERE ck.network_id = bk.network_id AND ck.ref_key = bk.ref_key)
+     -- Et le groupe prouvé de B, sans ses doutes.
+     OR EXISTS (SELECT 1 FROM pige_proven_peers p WHERE p.network_id = bk.network_id AND p.ref_key = bk.ref_key
+                  AND (EXISTS (SELECT 1 FROM pige_no_agency n WHERE n.network_id = p.network_id AND n.fingerprint = p.peer_key)
+                    OR EXISTS (SELECT 1 FROM pige_oppositions o WHERE o.network_id = p.network_id AND o.fingerprint = p.peer_key)
+                    OR EXISTS (SELECT 1 FROM pige_ad_doubt_keys ck JOIN pige_ads c ON c.id = ck.ad_id
+                                 JOIN pige_no_agency n ON n.network_id = c.network_id AND n.fingerprint = c.fingerprint
+                                WHERE ck.network_id = p.network_id AND ck.ref_key = p.peer_key AND ck.exact = 1)
+                    OR EXISTS (SELECT 1 FROM pige_ad_doubt_keys ck JOIN pige_ads c ON c.id = ck.ad_id
+                                 JOIN pige_oppositions o ON o.network_id = c.network_id AND o.fingerprint = c.fingerprint
+                                WHERE ck.network_id = p.network_id AND ck.ref_key = p.peer_key AND ck.exact = 1))))
 UNION ALL
 -- L'annonce elle-même revue et refusée depuis sa dernière relève rangée : ce qu'elle dit aujourd'hui l'a fermée, ses
 -- vieilles relèves ne rouvrent rien.

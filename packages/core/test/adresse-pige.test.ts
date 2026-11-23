@@ -465,6 +465,26 @@ describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien cr
     ).rejects.toThrow(/bien fermé/);
   });
 
+  it('[R672] [R295] une fermeture rangée sur le groupe prouvé d’une annonce compatible tient, en base, le bien qu’elle pourrait être', async () => {
+    const s = await setup({ search: { matching: async () => [] } });
+    const a = s.ad({ rooms: 4 });
+    const b = s.ad({ source: 'Site B', rooms: 4 });
+    await s.pige.ingest(s.network.id, [a, b]);
+    s.tick(DAY);
+    // A passe à 80 m², B à 100 m² sans pièces : toujours un seul bien sur preuve. C, 100 m² et 3 pièces, pourrait être B.
+    const c = s.ad({ source: 'Site C', surfaceM2: 100, rooms: 3 });
+    await s.pige.ingest(s.network.id, [{ ...a, surfaceM2: 80 }, { ...b, surfaceM2: 100, rooms: undefined }, c]);
+    s.tick(DAY);
+    // Le bien de A, 80 m² et 4 pièces, fermé par une annonce sans référence lisible.
+    await s.pige.ingest(s.network.id, [{ kind: 'house', commune: 'Talant', postalCode: '21240', surfaceM2: 80, rooms: 4, noAgency: true } as RawAd]);
+    const adC = (await s.db.first<{ id: string; fingerprint: string }>('SELECT id, fingerprint FROM pige_ads WHERE source_ref = ?', [String(c.sourceRef)]))!;
+    expect(await s.adresses.convert(s.agentAlex, { adId: adC.id })).toMatchObject({ ok: false, rule: 'R273' });
+    const prop = await s.store.createProperty({ networkId: s.network.id, agentId: s.alex.id, reference: 'DM', kind: 'home', city: 'Talant', priceEur: 1, surfaceM2: 100, rooms: 3, status: 'draft' });
+    await expect(
+      s.db.run("INSERT INTO pige_properties (property_id, network_id, source, ad_id, fingerprint, ad_site, ad_kind, published_at, agent_id, created_at) VALUES (?, ?, 'pige', ?, ?, 'Site C', 'house', '2026-12-06', ?, '2026-12-07')", [prop.id, s.network.id, adC.id, adC.fingerprint, s.alex.id]),
+    ).rejects.toThrow(/bien fermé dans le doute/);
+  });
+
   it('[R672] un bien fermé avec ses pièces par une annonce sans référence tient dans le doute, en base, une annonce qui tait les siennes', async () => {
     const s = await setup({ search: { matching: async () => [] } });
     const u = s.ad({ rooms: undefined });
