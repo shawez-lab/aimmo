@@ -697,3 +697,19 @@ Le lien `…/app/#invitation=<jeton>` ouvre l'application, qui échange le jeton
 
 - `POST /v1/attirer/google/agents/<agent>/informations` (AU037) : la direction seule envoie à la fiche Google de l'agent son nom, son téléphone et son site, seulement s'ils ont changé (`data.changed`). En réel, `200` avec l'accusé de Google, gardé et relu sur l'écran (`link.info`) ; un échec rend `400` avec `code: "echec"`, `error` (`connexion`, `droits`, `fiche_introuvable`, `refuse_google`, `limite`, `panne`, `accuse_absent`) et `action` (`reconnecter`, `relier`, `corriger`, `reessayer`, `verifier`). Les mêmes `error` et `action` sont rendus par l'envoi d'un texte (`POST …/textes/<id>/publier`) et la lecture des avis ; une publication dont la réponse s'est perdue rend `code: "a_verifier"`. L'écran (`GET …/google/agents/<agent>`, `GET …/google/moi`) rend `link` (`essai`, `sans_service`, `pret`, `a_reconnecter`, `a_relier`) et, pour chaque texte, `ackRef`, `url`, `error` et `action`. En essai, rien ne part [R26, R154].
 - `GET` et `POST /v1/attirer/mentions-site` (RS05) : la direction lit et règle les mentions légales du site. Le corps du `POST` associe chaque champ à son texte (300 caractères au plus) ; un texte vide retire la mention. Rien n'est effacé [R17, R221].
+
+## Raccordement téléphonique de l'assistant vocal (AU045)
+
+L'agent garde son seul numéro. Il règle chez son opérateur un renvoi conditionnel (non-réponse, occupation, absence de réseau ; en France `**61*`, `**67*`, `**62*` suivis du numéro du service et de `#`) vers un numéro acheté chez Twilio, qui n'est jamais donné aux clients. Il déclare son propre numéro et allume sa ligne (HX22).
+
+Dans la console Twilio, sur ce numéro :
+
+- « A call comes in » : Webhook, `POST https://<adresse du Worker>/v1/telephonie/appel` ;
+- « Call status changes » : `POST https://<adresse du Worker>/v1/telephonie/fin`.
+
+`/v1/telephonie/tour` est donné par le Worker lui-même à chaque écoute. Dans le Worker `aimmo-api` : la variable `TELEPHONIE_MODE` = `reel`, la variable `TWILIO_ACCOUNT_SID` (`AC` puis 32 caractères) et le secret `TWILIO_AUTH_TOKEN` (le jeton du compte, jamais collé ailleurs). Sans les trois, ces adresses répondent 503. Une requête sans la bonne signature `X-Twilio-Signature`, ou d'un autre compte, répond 403 [R710].
+
+Ce qui se passe : la mention de l'assistant, puis l'annonce de l'enregistrement et la demande d'accord [R246, R242] ; la reconnaissance de la parole est celle de Twilio (`<Gather input="speech" language="fr-FR">`) ; les réponses sont les phrases fixes de l'assistant ; un rendez-vous n'est réservé que sur un créneau proposé et confirmé [R248]. À la fin, l'appel est rangé dans la fiche de l'appelant (retrouvée ou créée par son numéro ; aucune pour un numéro masqué) et la main passe à l'agent [R18]. Aucun enregistrement n'est demandé à Twilio : l'appel est rangé « sans enregistrement ».
+
+Vérifier depuis un téléphone extérieur : appeler le numéro de l'agent, laisser sonner sans décrocher ; l'assistant doit se présenter, demander l'accord, proposer des créneaux ; après l'appel, la fiche de l'appelant montre l'appel reçu et le rendez-vous.
+

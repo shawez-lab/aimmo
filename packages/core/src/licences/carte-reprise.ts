@@ -106,7 +106,7 @@ export const TABLES_RESEAU: readonly string[] = `
   viager_calculations video_montages video_text_checks   
   virtual_stagings virtual_tour_contacts virtual_tours visit_dossiers visit_field_notes visit_photo_files visit_photos visit_reports
   visit_safety visit_energy_audit_handovers visit_shot_skips visit_slip_signatures visit_slip_templates visit_slips visit_tasks visits vitrine_screens
-  voice_assistant_calls voice_assistant_lines voice_note_recoveries voice_notes weekly_points
+  voice_assistant_calls voice_assistant_lines voice_assistant_sessions voice_note_recoveries voice_notes weekly_points
 `.trim().split(/\s+/);
 
 /** Les autres tables : un chemin vers une table reprise, ou la raison de les laisser. */
@@ -172,6 +172,7 @@ export const CARTE_REPRISE_AUTRES: Readonly<Record<string, EntreeReprise>> = {
   life_table_rows: { via: [['table_id', 'life_tables', 'id']] },
   listing_pushes: { via: [['version_id', 'listing_versions', 'id']] },
   listing_version_media_sheets: { via: [['version_id', 'listing_versions', 'id']] },
+  voice_call_endings: { hors: 'technique', why: 'Fin d\'un appel dite par le service téléphonique : son identifiant et l\'heure, aucun réseau ni numéro (AU045).' },
   portal_sync_leases: { hors: 'technique', why: 'Bail de quelques minutes posé pendant un passage vers les portails : un jeton, aucune donnée.' },
   listing_sync_leases: { hors: 'technique', why: 'Bail de quelques minutes posé pendant une synchronisation des annonces : un jeton, aucune donnée.' },
   mailbox_attachment_links: { via: [['attachment_id', 'mailbox_attachments', 'id'], ['mail_id', 'mailbox_mails', 'id']] },
@@ -272,6 +273,7 @@ export const COLONNES_MASQUEES: Readonly<Record<string, readonly string[]>> = {
   gbp_reviews: ['author_token_hashes'],
   listing_sync_leases: ['token'],
   portal_sync_leases: ['token'],
+  voice_assistant_sessions: ['lease_token'],
   newsletter_unsubscribe_tokens: ['token_hash'],
   owner_booklet_links: ['token_hash'],
   partner_prospect_mails: ['optout_token_sha256'],
@@ -374,7 +376,7 @@ export const ORDRE_REPRISE: readonly string[] = `
   social_visual_checks social_posts valuation_market_snapshots valuation_reports video_montages video_text_checks
   properties public_sites quiz_attestations quiz_attempts reprise_depot_morceaux reprise_depots sandbox_steps
   sandbox_runs social_calendar_rules sponsorships training_turns training_sessions vitrine_screen_switches
-  vitrine_screens voice_assistant_lines agents alert_unsubscribe_tokens assistant_calls assistant_sessions
+  vitrine_screens voice_assistant_sessions voice_assistant_lines agents alert_unsubscribe_tokens assistant_calls assistant_sessions
   automation_daily_messages automation_rollouts automation_tasks automation_runs automation_switches
   automation_simulations automation_scenarios bank_lines business_nda_templates business_safeguard_communes
   business_valuation_scales card_holders agent_title_settings client_date_texts commission_grid_tiers commission_grids commune_rental_rules complaint_settings
