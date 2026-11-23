@@ -352,7 +352,7 @@ describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien cr
     const a = s.ad({ rooms: 4 });
     await s.pige.ingest(s.network.id, [a]);
     await s.pige.ingest(s.network.id, [s.ad({ source: 'Site B', rooms: undefined, text: 'Agences s’abstenir' })]);
-    const ad = await adOf(a.sourceRef);
+    const ad = await adOf(String(a.sourceRef));
     expect(await s.adresses.convert(s.agentAlex, { adId: ad.id })).toMatchObject({ ok: false, rule: 'R273' });
     // Écrite directement, ou arrivée entre le contrôle et l'écriture : la base refuse aussi.
     await expect(insert((await prop('DA')).id, ad.id, ad.fingerprint)).rejects.toThrow(/bien fermé dans le doute/);
@@ -366,7 +366,7 @@ describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien cr
     const s = await setup({ search: { matching: async () => [] } });
     const u = s.ad({ rooms: undefined });
     await s.pige.ingest(s.network.id, [u]);
-    const ad = (await s.db.first<{ id: string; fingerprint: string }>('SELECT id, fingerprint FROM pige_ads WHERE source_ref = ?', [u.sourceRef]))!;
+    const ad = (await s.db.first<{ id: string; fingerprint: string }>('SELECT id, fingerprint FROM pige_ads WHERE source_ref = ?', [String(u.sourceRef)]))!;
     s.tick(DAY);
     await s.pige.ingest(s.network.id, [{ kind: 'house', commune: 'Talant', postalCode: '21240', surfaceM2: 91, rooms: 3, noAgency: true } as RawAd]);
     expect(await s.adresses.convert(s.agentAlex, { adId: ad.id })).toMatchObject({ ok: false, rule: 'R273' });
@@ -385,13 +385,13 @@ describeWithSqlite('HX18 · Adresse probable d’une annonce de pige, et bien cr
     const other = s.ad({ source: 'Site C', surfaceM2: 120, rooms: 5 });
     await s.pige.ingest(s.network.id, [four, unknown, other]);
     const idOf = async (sourceRef: string) => (await s.db.first<{ id: string; fingerprint: string }>('SELECT id, fingerprint FROM pige_ads WHERE source_ref = ?', [sourceRef]))!;
-    await s.pige.oppose(s.agentAlex, (await idOf(unknown.sourceRef)).id);
-    const f = await idOf(four.sourceRef);
+    await s.pige.oppose(s.agentAlex, (await idOf(String(unknown.sourceRef))).id);
+    const f = await idOf(String(four.sourceRef));
     expect(await s.adresses.convert(s.agentAlex, { adId: f.id })).toMatchObject({ ok: false });
     const p1 = await s.store.createProperty({ networkId: s.network.id, agentId: s.alex.id, reference: 'DC', kind: 'home', city: 'Talant', priceEur: 1, surfaceM2: 90, rooms: 4, status: 'draft' });
     await expect(insert(p1.id, f.id, f.fingerprint)).rejects.toThrow(/bien fermé/);
     // Un bien d'une autre surface n'est pas dans le doute : converti.
-    const o = await idOf(other.sourceRef);
+    const o = await idOf(String(other.sourceRef));
     expect(await s.adresses.convert(s.agentAlex, { adId: o.id })).toMatchObject({ ok: true });
   });
 
