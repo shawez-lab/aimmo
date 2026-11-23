@@ -17,7 +17,7 @@ const WEDNESDAY_14H = '2027-03-03T13:00:00.000Z';
 const WEEK = { weekly: [1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, from: '09:00', to: '19:00' })) };
 const TEMPLATE = 'Bon de visite : {{visiteur.nom}} visite {{bien.reference}} le {{visite.date}}.';
 
-async function setup(agendas: AgendaDirectory | null = null) {
+async function setup(agendas: AgendaDirectory | null = null, bonVisiteBase: string | null = null) {
   const t = await setupAnnonce();
   const ids: Record<Who, { role: string; userId: string; networkId: string }> = {
     alex: { role: 'agent', userId: t.alexId, networkId: t.network.id },
@@ -30,7 +30,7 @@ async function setup(agendas: AgendaDirectory | null = null) {
   const call = async (who: Who, method: 'GET' | 'POST', path: string, body?: unknown) => {
     const init: RequestInit = { method, headers: { authorization: `Bearer ${KEYS[who]}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) } };
     if (body !== undefined) init.body = JSON.stringify(body);
-    const r = await handleRequest(new Request(`${BASE}/v1${path}`, init), { db: t.db, apiKeys, mode: 'essai', alertUnsubscribeBase: UNSUBSCRIBE, now: t.now, agendas });
+    const r = await handleRequest(new Request(`${BASE}/v1${path}`, init), { db: t.db, apiKeys, mode: 'essai', alertUnsubscribeBase: UNSUBSCRIBE, now: t.now, agendas, bonVisiteBase });
     return { status: r.status, body: (await r.json()) as { ok: boolean; data?: any; code?: string; rule?: string | null } };
   };
   // Le vendeur accepte le suivi de sa vente par mail ; l'acquéreur d'Alex, ses alertes sur WhatsApp.
@@ -47,7 +47,11 @@ async function setup(agendas: AgendaDirectory | null = null) {
     return /(\d{6})/.exec(m!.body)![1]!;
   };
   const toSeller = () => db.all<{ body: string }>('SELECT m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? ORDER BY m.occurred_at, m.rowid', [t.personId]);
-  return { ...t, call, buyer, project, sms, toSeller };
+  // AU075b · une page publique, sans clé : ce que reçoit le navigateur du visiteur.
+  const open = (method: 'GET' | 'POST', path: string, form?: string) =>
+    handleRequest(new Request(`${BASE}${path}`, { method, ...(form === undefined ? {} : { headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: form }) }), { db: t.db, apiKeys, mode: 'essai', alertUnsubscribeBase: UNSUBSCRIBE, now: t.now, agendas, bonVisiteBase });
+  const toBuyer = async () => enClair(db.all<{ id: string; channel: string; body: string }>('SELECT m.id, m.channel, m.body FROM messages m JOIN trial_outbox o ON o.message_id = m.id WHERE m.person_id = ? ORDER BY m.occurred_at, m.rowid', [buyer.id]));
+  return { ...t, call, open, buyer, project, sms, toSeller, toBuyer };
 }
 
 describeWithSqlite('T08 · routes de M08', () => {
@@ -287,6 +291,109 @@ describeWithSqlite('T08 · routes de M08', () => {
     expect(contre.status).toBe(200);
     const a = contre.body.data.visit.appointment;
     expect((Date.parse(a.end_at) - Date.parse(a.start_at)) / 60_000).toBe(20);
+  });
+});
+
+describeWithSqlite('AU075b · les pages publiques du bon de visite', () => {
+  const SLIPS = 'https://aimmo.example.test/';
+  async function visitWithSlip(bonVisiteBase: string | null) {
+    const t = await setup(null, bonVisiteBase);
+    t.setClock(TUESDAY_10H);
+    expect((await t.call('direction', 'POST', '/visites/modeles', { body: TEMPLATE })).status).toBe(200);
+    const visit = await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: t.project.id, start: WEDNESDAY_14H });
+    return { t, id: visit.body.data.visit.appointment.id as string };
+  }
+
+  it('[R506] sans page servie : rien sous /visite/, pas de signature à distance, l’écran ne la propose pas', async () => {
+    const { t, id } = await visitWithSlip(null);
+    expect((await t.call('alex', 'GET', `/visites/${id}`)).body.data.slip).toMatchObject({ distance: false });
+    t.setClock(new Date('2027-03-03T15:00:00.000Z'));
+    expect((await t.call('alex', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'distance', consentProof: 'accord' })).body).toMatchObject({ ok: false, code: 'distance_not_served' });
+    const none = await t.open('GET', `/visite/signer/${'a'.repeat(64)}`);
+    expect(none.status).toBe(404);
+    expect(await none.text()).not.toContain('<form');
+  });
+
+  it('[R506] [R40] page servie : lien et code partent chacun dans son message, le visiteur lit et signe par la page, sans script', async () => {
+    const { t, id } = await visitWithSlip(SLIPS);
+    expect((await t.call('alex', 'GET', `/visites/${id}`)).body.data.slip).toMatchObject({ distance: true, signed: false });
+    // Après la visite, l'agent envoie le lien.
+    t.setClock(new Date('2027-03-03T15:00:00.000Z'));
+    const opened = await t.call('alex', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'distance', channel: 'sms', consentProof: 'accord du visiteur, noté par l’agent' });
+    expect(opened.body).toMatchObject({ ok: true, data: { place: 'distance', channel: 'sms', mode: 'essai' } });
+    const sent = await t.toBuyer();
+    const linkMessage = sent.find((m) => m.body.includes('/visite/signer/'))!;
+    const token = /https:\/\/aimmo\.example\.test\/visite\/signer\/([0-9a-f]{64})/.exec(linkMessage.body)![1]!;
+    const codeMessage = sent.find((m) => m.id !== linkMessage.id && /\b\d{6}\b/.test(m.body))!;
+    const code = /\b(\d{6})\b/.exec(codeMessage.body)![1]!;
+    // Le lien et le code ne sont jamais dans le même message.
+    expect(linkMessage.body).not.toContain(code);
+    expect(codeMessage.body).not.toContain(token);
+
+    // La page à lire : le bon, le champ du code, le système de design, aucun script, rien d'extérieur.
+    const page = await t.open('GET', `/visite/signer/${token}`);
+    expect(page.status).toBe(200);
+    expect(page.headers.get('content-security-policy')).toMatch(/default-src 'none'/);
+    expect(page.headers.get('cache-control')).toBe('no-store');
+    const html = await page.text();
+    expect(html).toContain('REF-T-1');
+    expect(html).toContain(`<form method="post" action="/visite/signer/${token}">`);
+    expect(html).toContain('autocomplete="one-time-code"');
+    expect(html).toContain('class="marque">AIMMO');
+    expect(html).not.toMatch(/<script/i);
+    expect(html).not.toMatch(/https?:\/\/(?!aimmo\.example\.test)/);
+    // Le bon est celui du visiteur, avec son nom ; jamais son téléphone ni rien d'autre de sa fiche.
+    expect(html).not.toMatch(/33600000001|00 00 00 01/);
+
+    // Un code faux : redit en mots, la page reste à signer.
+    const wrong = await t.open('POST', `/visite/signer/${token}`, 'code=000000');
+    expect(wrong.status).toBe(422);
+    expect(await wrong.text()).toContain('Code faux');
+    // Le bon code : signé, sans l'agent ; l'écran de l'agent le voit.
+    const done = await t.open('POST', `/visite/signer/${token}`, `code=${code}`);
+    expect(done.status).toBe(200);
+    const doneHtml = await done.text();
+    expect(doneHtml).toContain('Votre bon de visite est signé');
+    expect(doneHtml).not.toMatch(/<script/i);
+    expect((await t.call('alex', 'GET', `/visites/${id}`)).body.data.slip).toMatchObject({ signed: true, online: { status: 'signee', place: 'distance', copy: 'remis' } });
+    // Le lien ne sert plus.
+    expect((await t.open('GET', `/visite/signer/${token}`)).status).toBe(409);
+    expect((await t.open('POST', `/visite/signer/${token}`, `code=${code}`)).status).toBe(409);
+    // Un jeton mal formé ou inconnu : un seul refus, sans rien dire.
+    expect((await t.open('GET', '/visite/signer/pas-un-jeton')).status).toBe(404);
+    expect((await t.open('GET', `/visite/signer/${'b'.repeat(64)}`)).status).toBe(404);
+  });
+
+  it('[R506] le lien de l’exemplaire part avec la preuve et l’ouvre pendant un an, puis plus', async () => {
+    const { t, id } = await visitWithSlip(SLIPS);
+    t.setClock(new Date('2027-03-03T15:00:00.000Z'));
+    await t.call('alex', 'POST', `/visites/${id}/bon/signature-en-ligne`, { place: 'distance', channel: 'sms', consentProof: 'accord du visiteur, noté par l’agent' });
+    const before = await t.toBuyer();
+    const token = /\/visite\/signer\/([0-9a-f]{64})/.exec(before.find((m) => m.body.includes('/visite/signer/'))!.body)![1]!;
+    const code = /\b(\d{6})\b/.exec(before.find((m) => !m.body.includes('/visite/') && /\b\d{6}\b/.test(m.body))!.body)![1]!;
+    expect((await t.open('POST', `/visite/signer/${token}`, `code=${code}`)).status).toBe(200);
+    // La preuve part avec le lien de l'exemplaire et l'empreinte du bon.
+    const proof = (await t.toBuyer()).find((m) => m.body.includes('/visite/exemplaire/'))!;
+    expect(proof.body).toMatch(/Empreinte du bon signé : [0-9a-f]{64}/);
+    const copyToken = /https:\/\/aimmo\.example\.test\/visite\/exemplaire\/([0-9a-f]{64})/.exec(proof.body)![1]!;
+    const hash = /Empreinte du bon signé : ([0-9a-f]{64})/.exec(proof.body)![1]!;
+    // L'exemplaire : le bon tel qu'il a été signé, sa preuve, sans script.
+    const copy = await t.open('GET', `/visite/exemplaire/${copyToken}`);
+    expect(copy.status).toBe(200);
+    expect(copy.headers.get('content-security-policy')).toMatch(/default-src 'none'/);
+    const html = await copy.text();
+    expect(html).toContain('REF-T-1');
+    expect(html).toContain(hash);
+    expect(html).toContain('à distance, par le lien reçu');
+    expect(html).not.toMatch(/<script/i);
+    // Onze mois plus tard, il s'ouvre encore ; passé un an, plus.
+    t.setClock(new Date('2028-02-03T15:00:00.000Z'));
+    expect((await t.open('GET', `/visite/exemplaire/${copyToken}`)).status).toBe(200);
+    t.setClock(new Date('2028-03-04T15:00:00.000Z'));
+    expect((await t.open('GET', `/visite/exemplaire/${copyToken}`)).status).toBe(410);
+    // Le lien de signature n'ouvre pas l'exemplaire, ni l'inverse.
+    expect((await t.open('GET', `/visite/exemplaire/${token}`)).status).toBe(404);
+    expect((await t.open('POST', `/visite/exemplaire/${copyToken}`, 'code=1')).status).toBe(405);
   });
 });
 
