@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
-import { ALERT_PURPOSE, PointSemaine, RendezVous, SELLER_UPDATE_PURPOSE, verifyChain } from '@aimmo/core';
+import { ALERT_PURPOSE, FakeAgenda, PointSemaine, RendezVous, SELLER_UPDATE_PURPOSE, verifyChain } from '@aimmo/core';
+import type { AgendaDirectory } from '../src/agenda-reel.ts';
 import { handleRequest } from '../src/app.ts';
 import { sha256Hex } from '../src/index.ts';
 import { setupAnnonce } from '../../core/test/annonces-jeu.ts';
@@ -16,7 +17,7 @@ const WEDNESDAY_14H = '2027-03-03T13:00:00.000Z';
 const WEEK = { weekly: [1, 2, 3, 4, 5, 6].map((weekday) => ({ weekday, from: '09:00', to: '19:00' })) };
 const TEMPLATE = 'Bon de visite : {{visiteur.nom}} visite {{bien.reference}} le {{visite.date}}.';
 
-async function setup() {
+async function setup(agendas: AgendaDirectory | null = null) {
   const t = await setupAnnonce();
   const ids: Record<Who, { role: string; userId: string; networkId: string }> = {
     alex: { role: 'agent', userId: t.alexId, networkId: t.network.id },
@@ -29,7 +30,7 @@ async function setup() {
   const call = async (who: Who, method: 'GET' | 'POST', path: string, body?: unknown) => {
     const init: RequestInit = { method, headers: { authorization: `Bearer ${KEYS[who]}`, ...(body === undefined ? {} : { 'content-type': 'application/json' }) } };
     if (body !== undefined) init.body = JSON.stringify(body);
-    const r = await handleRequest(new Request(`${BASE}/v1${path}`, init), { db: t.db, apiKeys, mode: 'essai', alertUnsubscribeBase: UNSUBSCRIBE, now: t.now });
+    const r = await handleRequest(new Request(`${BASE}/v1${path}`, init), { db: t.db, apiKeys, mode: 'essai', alertUnsubscribeBase: UNSUBSCRIBE, now: t.now, agendas });
     return { status: r.status, body: (await r.json()) as { ok: boolean; data?: any; code?: string; rule?: string | null } };
   };
   // Le vendeur accepte le suivi de sa vente par mail ; l'acquéreur d'Alex, ses alertes sur WhatsApp.
@@ -225,6 +226,32 @@ describeWithSqlite('T08 · routes de M08', () => {
     const joined = await t.call('alex', 'POST', '/visites', { propertyId: t.propertyId, projectId: project.id, start: WEDNESDAY_14H, joinVisit: leadId });
     expect(joined.status).toBe(200);
     expect(joined.body.data.visit.appointment).toMatchObject({ person_id: leo.id, group_id: leadId, status: 'booked' });
+  });
+
+  it('[R33] [R702] AU053 · une visite fixée par l’agent se contrôle sur son agenda relié ; injoignable, rien n’est fixé', async () => {
+    const fake = new FakeAgenda();
+    let alexId = '';
+    const agendas: AgendaDirectory = { provider: fake, of: (a) => (a === alexId ? 'google' : null), agents: () => [alexId] };
+    const t = await setup(agendas);
+    alexId = t.alexId;
+    t.setClock(TUESDAY_10H);
+    await t.call('direction', 'POST', '/visites/modeles', { body: TEMPLATE });
+    // Un événement privé de l'agent, mercredi de 13 h 30 à 15 h : la visite de 14 h est refusée.
+    fake.agentEdit(t.alexId, { start: new Date('2027-03-03T12:30:00.000Z'), end: new Date('2027-03-03T14:00:00.000Z') });
+    const ask = { propertyId: t.propertyId, projectId: t.project.id, start: WEDNESDAY_14H };
+    const busy = await t.call('alex', 'POST', '/visites', ask);
+    expect(busy.body).toMatchObject({ ok: false, rule: 'R33' });
+    // Le rendez-vous de l'agent pour son client, de même.
+    expect((await t.call('alex', 'POST', '/rendez-vous', { personId: t.buyer.id, kind: 'appel', start: WEDNESDAY_14H })).body).toMatchObject({ ok: false, rule: 'R33' });
+    // L'agenda injoignable : 503, aucune visite fixée.
+    fake.failWith = new Error('panne');
+    const down = await t.call('alex', 'POST', '/visites', { ...ask, start: '2027-03-04T13:00:00.000Z' });
+    expect(down.status).toBe(503);
+    expect(down.body).toMatchObject({ ok: false, code: 'agenda_indisponible', rule: 'R702' });
+    expect(await t.db.all("SELECT id FROM appointments WHERE status = 'booked' AND kind = 'visite'")).toHaveLength(0);
+    // Revenu, et l'heure libre : la visite est fixée.
+    fake.failWith = null;
+    expect((await t.call('alex', 'POST', '/visites', { ...ask, start: '2027-03-04T13:00:00.000Z' })).status).toBe(200);
   });
 
   it('[R32] AU056 · POST /rendez-vous : l’agent fixe un rendez-vous chez le notaire de 90 minutes, le conflit se contrôle sur 90 minutes', async () => {

@@ -113,6 +113,7 @@ import { scoreAdresseRoutes, type ScoreAdresseRoute } from './score-adresse.ts';
 import { tourneeRoutes, type TourneeRoute } from './tournee.ts';
 import { boiteRoutes, type BoiteRoute, type MailboxDirectory } from './boite.ts';
 import { agendaBusyOf, type AgendaDirectory } from './agenda-reel.ts';
+import { RendezVous as RendezVousAgenda } from '../../core/src/rendezvous/reservation.ts';
 import { reprisesVocalesRoutes, type ReprisesRoute } from './reprises-vocales.ts';
 import type { AudioSource } from '../../core/src/voix/transcripteur-reel.ts';
 import type { DossierFileStore } from '../../core/src/automatismes/boite-mail.ts';
@@ -1881,12 +1882,12 @@ function biensDeFicheRoutes(): RouteDef[] {
 }
 
 /** La création à la voix (BR100) : l'agent seul, le rôle contrôlé avant le corps [R16]. */
-function dicteeRoutesDef(reportWriter: ReportWriter | null): RouteDef[] {
+function dicteeRoutesDef(reportWriter: ReportWriter | null, agendas: AgendaDirectory | null): RouteDef[] {
   return dicteeRoutes().map((r: DicteeRoute) => ({
     method: r.method,
     pattern: r.pattern,
     name: r.name,
-    handle: (s, viewer, params, request) => r.handle({ db: s.db, acces: s.acces, journal: s.journal, now: s.now, reportWriter }, viewer, params, request),
+    handle: (s, viewer, params, request) => r.handle({ db: s.db, acces: s.acces, journal: s.journal, now: s.now, reportWriter, agendas }, viewer, params, request),
   }));
 }
 
@@ -2105,12 +2106,18 @@ export function espaceBase(raw: string | undefined): string | null {
 /** Sans stockage des pièces, aucune offre signée n'est reconnue : l'offre écrite depuis l'espace est refusée. */
 const NO_SIGNED_OFFERS = { has: async (): Promise<boolean> => false };
 
+/** AU053 : les événements occupés de l'agenda relié de l'agent, pour un rendez-vous pris hors de la réservation en ligne. */
+function agendaOption(db: SqlDatabase, journal: JournalStore, agendas: AgendaDirectory | null, now: () => Date) {
+  const agenda = agendaBusyOf(db, journal, agendas, now);
+  return agenda ? { agenda } : {};
+}
+
 /**
  * Les services des espaces sur ceux du socle (EC07) : les lecteurs SQL de EC08, EC09 et EC11, les gestes de EC10
  * passés aux modules qui les tiennent [R165], l'identité lue au coffre par son seul état, le rendement par la seule
  * porte des notes validées de M17 [R163]. `null` si l'espace n'est pas configuré.
  */
-function espacesServices(db: SqlDatabase, journal: JournalStore, acces: Acces, now: () => Date, config: Pick<ApiConfig, 'espaces' | 'estimation' | 'pieces'>): EspacesServices | null {
+function espacesServices(db: SqlDatabase, journal: JournalStore, acces: Acces, now: () => Date, config: Pick<ApiConfig, 'espaces' | 'estimation' | 'pieces' | 'agendas'>): EspacesServices | null {
   const networkId = config.espaces?.networkId?.trim();
   const baseUrl = espaceBase(config.espaces?.baseUrl);
   if (!networkId || !baseUrl) return null;
@@ -2136,7 +2143,8 @@ function espacesServices(db: SqlDatabase, journal: JournalStore, acces: Acces, n
         journal,
         fiche,
         consents: store,
-        visites: new Visites(db, journal, acces, { now }),
+        // AU053 : la visite demandée depuis l'espace se contrôle sur l'agenda relié de l'agent [R33, R702].
+        visites: new Visites(db, journal, acces, { now, rendezVous: new RendezVousAgenda(db, journal, { now, ...agendaOption(db, journal, config.agendas ?? null, now) }) }),
         offres: new m09core.RegistreOffres(db, acces, journal, { now }),
         financement: new m10core.FinancementDossier(db, acces, journal, { now }),
         signedOffers: config.pieces ?? NO_SIGNED_OFFERS,
@@ -2688,7 +2696,7 @@ export async function handleRequest(request: Request, config: ApiConfig): Promis
     ...m20Routes(config.gagner),
     ...accordsFicheRoutes(),
     ...biensDeFicheRoutes(),
-    ...dicteeRoutesDef(config.reportWriter ?? null),
+    ...dicteeRoutesDef(config.reportWriter ?? null, config.agendas ?? null),
     ...appelsFicheRoutes(),
     ...notificationsRoutesDef(),
     ...horsLigneRoutesDef(),
