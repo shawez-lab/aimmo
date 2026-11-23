@@ -200,7 +200,7 @@ Audit de ChatGPT, joué en agent immobilier très exigeant, sur le commit `b51e1
 - Attend : rien (mise en service réelle : H26).
 
 ### AU014 · Le parcours de location ne rattache pas son état publiable à un mandat de location signé et inscrit au…
-- Statut : bloquée : H73 (refaire la table des modèles, exception à R17)
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Cahier : M15 Louer ; M16 Commerces ; M17 Investir ; audit A014 (bloquant), endroit : C/location/logement.ts, `create` ; C/location/annonce-location.ts, `publishable`.
 - Constat de l'audit : Le parcours de location ne rattache pas son état publiable à un mandat de location signé et inscrit au registre.
@@ -808,7 +808,7 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Critères : un test par portail réglé sur sa page rangée ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : H10.
 ### AU069 · Je peux proposer des langues rares pour le réseau français
-- Statut : bloquée : H73 (refaire les tables des traductions pour admettre l'allemand, l'espagnol, l'italien et le néerlandais, exception à R17)
+- Statut : à faire
 - Qui : Claude, voie 1 · Relecture : normale · Dépend de : rien
 - Cahier : M07 Commercialiser ; audit A069 (majeur), endroit : C/annonces/traductions.ts, `LISTING_LANGUAGES`.
 - Constat de l'audit : Je peux proposer des langues rares pour le réseau français, mais pas l’allemand, l’espagnol, l’italien ou le néerlandais.
@@ -1110,7 +1110,7 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 
 
 ### AU096b · Les modèles du bail meublé étudiant et du bail mobilité
-- Statut : bloquée : H73 (refaire la table des modèles, exception à R17)
+- Statut : à faire
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : AU096
 - Cahier : M15 Louer ; audit A096.
 - Objectif : deux sortes de modèles de bail en plus (`bail_meuble_etudiant`, `bail_mobilite`), chacun avec ses champs obligatoires (durée de 9 mois, ou de 1 à 10 mois non renouvelable et motif de mobilité du locataire, sans dépôt de garantie pour la mobilité), validés par la conformité comme les autres ; la table des modèles reconstruite pour les accepter (SQLite : nouvelle table, copie, triggers) ; la génération choisit le modèle de la variante et refuse sans lui.
