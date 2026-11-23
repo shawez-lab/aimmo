@@ -807,7 +807,9 @@ globalThis.AIMMO_LOUER = function (t) {
         louerAct(base + '/bail/signatures', co ? { party: party, personId: co.personId, consentProof: text } : { party: party, consentProof: text }, 'Le code n’est pas envoyé.', '', true).then(function (r) {
           if (!r || !ID.test(r.sessionId)) return;
           signing[key] = r.sessionId;
-          openLocation(louerId, $('louer-titre').textContent, 'Code préparé pour ' + name + ' (mode essai) : saisissez-le quand il vous le dit.');
+          // X17b · en essai, le serveur rend le code, posé ici pour essayer le parcours : rien n'est parti.
+          var trial = typeof r.trialCode === 'string' && /^[0-9]{6}$/.test(r.trialCode) ? ' Code d’essai : ' + r.trialCode + ' (rien n’est parti).' : '';
+          openLocation(louerId, $('louer-titre').textContent, 'Code préparé pour ' + name + ' (mode essai) : saisissez-le quand il vous le dit.' + trial);
         });
       }));
       return box;

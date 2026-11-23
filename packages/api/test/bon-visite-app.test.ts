@@ -41,7 +41,7 @@ const BASE: Record<string, Answer> = {
   'GET /v1/rendez-vous/jour': ok(RDV),
   'GET /v1/usage/matin': ok(null),
   'GET /v1/visites/v1': ok(VISIT),
-  'POST /v1/visites/v1/bon/signature-en-ligne': ok({ sessionId: 's1', place: 'sur_place', channel: 'sms', codeExpiresAt: '2027-03-03T12:50:00.000Z', mode: 'essai' }),
+  'POST /v1/visites/v1/bon/signature-en-ligne': ok({ sessionId: 's1', place: 'sur_place', channel: 'sms', codeExpiresAt: '2027-03-03T12:50:00.000Z', mode: 'essai', trialCode: '482913' }),
   'GET /v1/visites/v1/bon/a-signer': ok({ paragraphs: PARAGRAPHS, slipHash: 'f'.repeat(64), codeExpiresAt: '2027-03-03T12:50:00.000Z', mode: 'essai' }),
   'POST /v1/visites/v1/bon/signature-sur-place': ok({ copy: 'remis', copyLink: false, proof: { method: 'code', realSignature: false } }),
 };
@@ -165,6 +165,8 @@ describe('AU075 · le bon signé sans papier, depuis l’écran de la visite', (
     t.boxes()[0]!.checked = true;
     await t.click(t.btn('Signer ici, sur mon téléphone'));
     expect(t.posts()[0]).toMatchObject({ url: '/v1/visites/v1/bon/signature-en-ligne', body: { place: 'sur_place', channel: 'sms', consentProof: expect.stringContaining('Accord du visiteur') } });
+    // X17b · en essai, le code rendu par le serveur est montré pour essayer le parcours.
+    expect(t.part()!.textContent).toContain('Essai, rien n’est parti : code d’essai 482913.');
     // Le bon est posé en texte, jamais en HTML.
     expect(t.part()!.textContent).toContain(CONTENT);
     expect(t.part()!.all().some((e) => e.tagName === 'img')).toBe(false);

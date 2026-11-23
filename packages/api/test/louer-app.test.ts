@@ -582,10 +582,12 @@ describe('W11 · écran « Louer » de l’application', () => {
     expect(t.state()).toBe('Notez comment la partie a accepté de signer en ligne.');
     expect(t.posts()).toHaveLength(0);
     t.input('Comment le locataire a accepté de signer en ligne').value = 'Accord donné au rendez-vous du 12 juillet.';
-    t.table['POST /v1/location/l1/bail/signatures'] = ok({ sessionId: 's1', leaseId: 'bl1', contentSha256: 'c'.repeat(64), expiresAt: '2027-07-12T09:15:00.000Z', mode: 'essai' });
+    t.table['POST /v1/location/l1/bail/signatures'] = ok({ sessionId: 's1', leaseId: 'bl1', contentSha256: 'c'.repeat(64), expiresAt: '2027-07-12T09:15:00.000Z', mode: 'essai', trialCode: '123456' });
     await t.click(t.byText('Envoyer le code de signature au locataire'));
     expect(t.posts()[0]).toMatchObject({ url: '/v1/location/l1/bail/signatures', body: JSON.stringify({ party: 'locataire', consentProof: 'Accord donné au rendez-vous du 12 juillet.' }) });
     expect(t.state()).toContain('Code préparé pour le locataire (mode essai)');
+    // X17b · en essai, le code rendu par le serveur est montré pour essayer le parcours.
+    expect(t.state()).toContain('Code d’essai : 123456 (rien n’est parti).');
     t.input('Code reçu par le locataire').value = ' 123456 ';
     t.table['POST /v1/location/signatures-bail/s1'] = ok({ party: 'locataire', bothSigned: true });
     await t.click(t.byText('Signer pour le locataire'));
