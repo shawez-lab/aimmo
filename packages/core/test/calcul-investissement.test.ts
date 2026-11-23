@@ -220,6 +220,13 @@ describeWithSqlite('Y03 · calcul d’investissement rangé', () => {
     const forged = await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-2', inputs: { ...c, marketRent: null, price: src(5_000_000, 'bien:p-2', 'prix affiché') } });
     if (!forged.ok) throw new Error(forged.code);
     expect(forged.value.inputs.price!.source).toBe(`saisi:agent:${t.alex.id}`);
+    // AU100 · un financement saisi avec une source et une date inventées : il porte le nom de l'agent et le jour du calcul.
+    const loan = { value: { loanCents: 4_000_000, annualRateBp: 360, months: 240, insuranceMonthlyCents: 1_000 }, source: 'bien:fake', asOf: '2001-01-01', hypothesis: 'offre déclarée' };
+    const financed = await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-2', inputs: { ...c, marketRent: null, financing: loan } });
+    if (!financed.ok) throw new Error(financed.code);
+    expect(financed.value.inputs.financing).toMatchObject({ source: `saisi:agent:${t.alex.id}`, hypothesis: 'offre déclarée' });
+    expect(financed.value.inputs.financing!.asOf).not.toBe('2001-01-01');
+    for (const l of financed.value.result.status === 'complet' ? financed.value.result.lines.filter((x) => x.key.startsWith('loan') && x.source !== 'calcul') : []) expect(l.source).toBe(`saisi:agent:${t.alex.id}`);
     // Un loyer de marché saisi est refusé, même avec une source « ANIL » ou une commune connue : seule la base le donne.
     for (const marketRentQuery of [undefined, { inseeCode: '99001', kind: 'apartment' }]) {
       expect(await t.calculs.compute(t.acces, t.as('agent', t.alex.id), { propertyId: 'p-2', marketRentQuery, inputs: c })).toMatchObject({ ok: false, rule: 'R122', code: 'loyer_saisi', field: 'marketRent' });

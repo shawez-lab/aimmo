@@ -417,6 +417,8 @@ export class CalculInvestissement {
       const v = inputs[key];
       if (v !== null) (inputs as unknown as Record<string, unknown>)[key] = { ...v, source: `saisi:${actor}`, asOf: createdAt.slice(0, 10) };
     }
+    // AU100 · le financement aussi : saisi par l'agent, il porte son nom et le jour du calcul, jamais une source inventée [R121].
+    if (inputs.financing) inputs.financing = { ...inputs.financing, source: `saisi:${actor}`, asOf: createdAt.slice(0, 10) };
     // Le prix et la surface du bien viennent de sa fiche quand elle les porte.
     if (property !== null) {
       if (property.price_eur !== null && property.price_eur > 0 && inputs.price === null) {
