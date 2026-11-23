@@ -427,6 +427,8 @@ export class AdressePige {
     const energy = await this.energyOf(ad.id);
     const at = this.now().toISOString();
     const propertyId = this.newId();
+    // La base lit le doute de la relève avant de la convertir : ses empreintes doivent y être [R672].
+    await this.pige.fillDoubtKeys(viewer.networkId);
     let reference = this.newReference();
     for (let attempt = 1; ; attempt += 1) {
       try {
@@ -449,6 +451,7 @@ export class AdressePige {
         break;
       } catch (error) {
         const msg = String(error);
+        if (/relève remplacée/.test(msg)) return { ok: false, rule: null, code: 'annonce_remplacee' };
         if (/bien fermé/.test(msg)) return (await this.closed(viewer.networkId, ad.fingerprint)) ?? { ok: false, rule: 'R273', code: 'pas_agence' };
         if (/UNIQUE/i.test(msg) && /pige_propert/.test(msg)) return { ok: false, rule: 'R295', code: 'deja_cree' };
         if (!/UNIQUE/i.test(msg) || attempt >= 3) throw error;
