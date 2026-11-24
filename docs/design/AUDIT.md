@@ -11,7 +11,7 @@ Ce qui coûte le plus à l'agent et au client aujourd'hui, et ce que la refonte 
 3. **Un bien n'a ni nom, ni photo, ni écran à lui** : il s'appelle « B-E6B8BB51 » sur six écrans séparés. La refonte lui donne une fiche unique, avec sa photo, son adresse, son prix et ses étapes en onglets (DS013, DS019, DS023).
 4. **Aucune action ne domine** : jusqu'à neuf boutons pleins par écran, tous bordeaux. La refonte garde un seul bouton plein par écran, dans la zone du pouce (DS022, DS070).
 5. **La fiche d'un client fait cinq écrans**, avec treize champs toujours ouverts et aucune synthèse en tête. La refonte ouvre sur qui est la personne, ce qu'elle veut et le prochain geste (DS010, DS038).
-6. **L'espace du vendeur montre des valeurs internes** (« available », « signe ») et colle la source de chaque chiffre dans la phrase. Son seul bouton plein est « Me déconnecter ». La refonte en fait un suivi de vente lisible, avec la prochaine étape et le contact de l'agent (DS078 à DS082).
+6. **L'espace du vendeur montre des valeurs internes** (« signe », « prevue ») et colle la source de chaque chiffre dans la phrase. Son seul bouton plein est « Me déconnecter ». La refonte en fait un suivi de vente lisible, avec la prochaine étape et le contact de l'agent (DS078 à DS082).
 7. **Le site public est une liste de liens**, et la page d'un bien n'a ni galerie, ni faits clés, ni bouton pour visiter. La refonte en fait une vitrine à la hauteur d'un bien de prestige, en français et en anglais (DS071, DS072, DS073).
 8. **Sur ordinateur, tout tient dans une colonne de 608 px** au milieu d'un écran de 1 440. La refonte donne une vraie mise en page large : liste à gauche, détail à droite (DS033).
 9. **La marque change de visage** : titres dans la police de repli de chaque appareil, bordeaux qui vire au rose en sombre, aucune image nulle part. La refonte fixe une voix typographique, une palette tenue dans les deux modes et la place de la photo (DS015, DS017, DS019).
@@ -405,12 +405,14 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : dossier de présentation — `packages/core/src/mandats/gagner/dossier-presentation.ts` l. 364
 - Preuve : `site-candidature-estimation-dossier.jpg` : « vente la plus récente : 2027-03, avis validé le 2027-10-07 », et « 2027-03 » dans le tableau.
 - Solution : « mars 2027 », « 7 octobre 2027 ».
+- Suite : corrigé le 2026-11-24 (#802) : toutes les dates du document, et l'accord « 1 mandat signé ». Avant et après : `captures/avant-apres/DS056-dossier-de-presentation.jpg`.
 
 #### DS057 · L'identifiant d'un agent dans un libellé
 - Gravité : majeur · Catégorie : microcopie · Effort : S
 - Où : grille des commissions — `packages/api/app/finances.ts` l. 964
 - Preuve : « Taux propre à l'agent acf2c1b2-2d19-49c6-b889-ea38885db2be, en % ».
 - Solution : le prénom et le nom de l'agent.
+- Suite : corrigé le 2026-11-24 (#802) : le prénom et le nom, dans l'ordre des noms. Avant et après : `captures/avant-apres/DS057-grille-des-commissions.jpg`.
 
 ### L. Formulaires
 
@@ -545,10 +547,12 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 ### R. Espaces des clients
 
 #### DS078 · L'espace du vendeur montre des valeurs internes
-- Gravité : bloquant · Catégorie : espace client · Effort : S
+- Gravité : majeur · Catégorie : espace client · Effort : S
 - Où : `packages/api/src/espaces.ts` l. 253 à 256
-- Preuve : `espace-client.jpg` : « Statut : available », « Mandat de vente · signe ». Le code écrit `shown(b.status)` et `shown(d.signature)` : la valeur de la base, telle quelle.
-- Solution : chaque valeur a son mot français : « En vente », « Signé », « À signer ». Un test par valeur.
+- Preuve : `espace-client.jpg` : « Mandat de vente · signe ». Le code écrit `shown(d.signature)` : la valeur de la base, telle quelle. Même chose pour l'état d'une visite (`prevue`, `annulee`), l'état d'une pièce de l'acquéreur (`deposee`) et la sorte d'un bien proposé (`home`).
+- Correction du constat (2026-11-24) : « Statut : available », lisible sur la capture, venait du jeu de test des routes, pas du produit : la vraie source disait déjà « en vente ». La gravité passe de bloquant à majeur.
+- Solution : chaque valeur a son mot français : « signé », « à signer », « prévue ». Un test par valeur.
+- Suite : corrigé le 2026-11-24 (#801), dans la vue, donc aussi dans le relevé prouvé. Avant et après : `captures/avant-apres/DS078-espace-du-vendeur.jpg`.
 
 #### DS079 · La source de chaque chiffre coupe la phrase
 - Gravité : bloquant · Catégorie : espace client · Effort : M
