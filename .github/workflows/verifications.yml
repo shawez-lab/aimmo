@@ -16,7 +16,7 @@ jobs:
       cancel-in-progress: true
     runs-on: ubuntu-latest
     # Marge d'au moins 30 % sur la durée mesurée (X28) : `scripts/controle-verifications.mjs` y veille.
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
