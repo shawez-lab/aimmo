@@ -8234,12 +8234,13 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS052 · La mention de l'assistant dit « de Alex » et « réponse immédiate » hors de propos
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS052 (majeur, mails et SMS, effort S), endroit : `packages/core/src/envoi/controle.ts` l. 168
 - Constat de l’audit : la demande d'avis, envoyée quatre mois après la vente, commence par « Réponse immédiate de l'assistant IA de Alex, qui vous recontacte personnellement. »
 - Objectif : « d'Alex ». Et une mention qui dit vrai pour un message qui n'est pas une réponse. C'est un texte réglé par une règle : à changer avec son test.
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+- Suivi : proposition #803 pour l’élision (« d’Alex »). Les mots « Réponse immédiate… » sont la formule acceptée par Shawez le 2026-10-24 : ils ne changent pas sans lui ; cette partie reste ouverte.
 
 ### DS053 · Une référence interne dans un mot de remerciement
 - Statut : à faire
@@ -8248,6 +8249,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Constat de l’audit : « …la vente de votre bien à Dijon, référence B-CCD5185A. »
 - Objectif : « votre appartement de la rue … ». La référence n'apprend rien au client.
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+- Suivi : « votre bien à Dijon, référence … » est la convention de tous les messages (remerciement, relances, carnet, demande d’avis), chacune avec son test. À changer pour tous d’un coup, avec la famille des mails de l’étape 5, quand le bien aura un nom lisible (DS023).
 
 ### DS054 · Des libellés de bouton qui ne disent rien seuls
 - Statut : à faire
@@ -8264,6 +8266,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Constat de l’audit : « Plan ouvert avant midi : 0 jour(s) sur 7. », « 05/06 non · 06/06 non · 07/06 non… ».
 - Objectif : sept pastilles, une par jour, et « Aucun jour cette semaine ».
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+- Suivi : « Ma semaine » est dans la coquille, dont le budget est plein (48 446 octets sur 49 152) : à faire avec la refonte de la journée de l’agent, après DS069.
 
 ### DS056 · Des dates au format des machines dans un document remis au vendeur
 - Statut : en cours (voie 3)
@@ -8378,6 +8381,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Constat de l’audit : la section `#reseau` fait 16 457 des 33 722 caractères de la page d'accueil de l'application.
 - Objectif : la console de la direction dans son propre fichier, chargé pour la direction seule.
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+- Suivi : à faire en tête de l’étape 5, avec la nouvelle coquille : les écrans de la direction lisent leurs éléments au chargement, et une centaine de tests s’appuient sur la page entière. DS063, DS064, DS065 et DS066 viennent juste après, dans la place libérée.
 
 ### DS070 · Les gestes sont hors de portée du pouce
 - Statut : à faire
