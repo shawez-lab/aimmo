@@ -7815,7 +7815,7 @@ Décidé, lecture prudente : la restauration à un instant passé est celle de D
 
 Voie : 3
 
-Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (8 bloquants, 44 majeurs, 32 mineurs, 3 de finition). Consigne : `chantier/taches/DS00.md`. Preuves, captures et sources : `docs/design/AUDIT.md`. Une tâche par point ; une proposition peut en fermer plusieurs, par famille d’écrans. Les tâches qui dépendent de DS000 attendent le choix de la direction de design par Shawez ; sans réponse le 2026-11-25 à 1 h, la direction recommandée est prise, sans changer de règle.
+Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (7 bloquants, 45 majeurs, 32 mineurs, 3 de finition ; DS078 est passé de bloquant à majeur le 2026-11-24, voir sa ligne de suivi). Consigne : `chantier/taches/DS00.md`. Preuves, captures et sources : `docs/design/AUDIT.md`. Une tâche par point ; une proposition peut en fermer plusieurs, par famille d’écrans. Les tâches qui dépendent de DS000 attendent le choix de la direction de design par Shawez ; sans réponse le 2026-11-25 à 1 h, la direction recommandée est prise, sans changer de règle.
 
 ### DS000 · Choisir la direction de design
 - Statut : en cours (voie 3)
@@ -8450,7 +8450,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 ### DS078 · L'espace du vendeur montre des valeurs internes
 - Statut : fait (2026-11-24)
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
-- Audit : `docs/design/AUDIT.md`, DS078 (bloquant, espace client, effort S), endroit : `packages/api/src/espaces.ts` l. 253 à 256
+- Audit : `docs/design/AUDIT.md`, DS078 (majeur, espace client, effort S), endroit : `packages/api/src/espaces.ts` l. 253 à 256
 - Constat de l’audit : `espace-client.jpg` : « Statut : available », « Mandat de vente · signe ». Le code écrit `shown(b.status)` et `shown(d.signature)` : la valeur de la base, telle quelle.
 - Objectif : chaque valeur a son mot français : « En vente », « Signé », « À signer ». Un test par valeur.
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
