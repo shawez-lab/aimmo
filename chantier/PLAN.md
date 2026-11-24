@@ -8269,7 +8269,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Suivi : « Ma semaine » est dans la coquille, dont le budget est plein (48 446 octets sur 49 152) : à faire avec la refonte de la journée de l’agent, après DS069.
 
 ### DS056 · Des dates au format des machines dans un document remis au vendeur
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-24)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS056 (majeur, microcopie, impression, effort S), endroit : dossier de présentation — `packages/core/src/mandats/gagner/dossier-presentation.ts` l. 364
 - Constat de l’audit : `site-candidature-estimation-dossier.jpg` : « vente la plus récente : 2027-03, avis validé le 2027-10-07 », et « 2027-03 » dans le tableau.
@@ -8278,7 +8278,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Suivi : proposition #802.
 
 ### DS057 · L'identifiant d'un agent dans un libellé
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-24)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS057 (majeur, microcopie, effort S), endroit : grille des commissions — `packages/api/app/finances.ts` l. 964
 - Constat de l’audit : « Taux propre à l'agent acf2c1b2-2d19-49c6-b889-ea38885db2be, en % ».
