@@ -8266,20 +8266,22 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS056 · Des dates au format des machines dans un document remis au vendeur
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS056 (majeur, microcopie, impression, effort S), endroit : dossier de présentation — `packages/core/src/mandats/gagner/dossier-presentation.ts` l. 364
 - Constat de l’audit : `site-candidature-estimation-dossier.jpg` : « vente la plus récente : 2027-03, avis validé le 2027-10-07 », et « 2027-03 » dans le tableau.
 - Objectif : « mars 2027 », « 7 octobre 2027 ».
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+- Suivi : proposition #802.
 
 ### DS057 · L'identifiant d'un agent dans un libellé
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS057 (majeur, microcopie, effort S), endroit : grille des commissions — `packages/api/app/finances.ts` l. 964
 - Constat de l’audit : « Taux propre à l'agent acf2c1b2-2d19-49c6-b889-ea38885db2be, en % ».
 - Objectif : le prénom et le nom de l'agent.
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+- Suivi : proposition #802.
 
 ### DS058 · L'erreur s'écrit loin du champ
 - Statut : à faire
@@ -8448,6 +8450,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Constat de l’audit : `espace-client.jpg` : « Statut : available », « Mandat de vente · signe ». Le code écrit `shown(b.status)` et `shown(d.signature)` : la valeur de la base, telle quelle.
 - Objectif : chaque valeur a son mot français : « En vente », « Signé », « À signer ». Un test par valeur.
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+- Suivi : proposition #801. « Statut : available » venait du jeu de test des routes, pas du produit (la vraie source disait déjà « en vente »). Les vrais codes montrés étaient ceux des visites, des signatures, des pièces de l’acquéreur et de la sorte du bien : corrigés dans la vue, donc aussi dans le relevé prouvé.
 
 ### DS079 · La source de chaque chiffre coupe la phrase
 - Statut : à faire
