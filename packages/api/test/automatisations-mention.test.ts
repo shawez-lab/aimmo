@@ -191,6 +191,21 @@ describeWithSqlite('B04b · la mention de l’assistant, alignée sur le texte d
     }
   });
 
+  it('[R06] DS052 · pour un agent dont le prénom s’élide, la mention exacte est « d’Alex » ; l’ancienne écriture « de Alex » reste reçue', async () => {
+    const body = 'Bonjour Léa, je passe voir votre bien demain, comme prévu.';
+    for (const written of ['d’Alex', 'de Alex']) {
+      const w = await world();
+      await w.db.run("UPDATE agents SET first_name = 'Alex' WHERE id = ?", [w.agent.id]);
+      const text = `${SUBJECT}\n\nRéponse immédiate de l’assistant IA ${written}, qui vous recontacte personnellement.\n\n${body}`;
+      expect(await w.send('visite-1', text), written).toMatchObject({ status: 'would_send', mentionMissing: false });
+      expect(await w.rows()).toHaveLength(1);
+    }
+    // Le prénom d'un autre, même élidé, n'est pas la mention de cet agent.
+    const w = await world();
+    await w.db.run("UPDATE agents SET first_name = 'Alex' WHERE id = ?", [w.agent.id]);
+    expect(await w.send('visite-1', `${SUBJECT}\n\nRéponse immédiate de l’assistant IA d’Inès, qui vous recontacte personnellement.\n\n${body}`)).toMatchObject({ status: 'refused', rule: 'R06' });
+  });
+
   it('[R05] le même texte, avec ou sans la mention, ne compte que pour un', async () => {
     const w = await world();
     await w.send('visite-1', withMention('comme prévu'));

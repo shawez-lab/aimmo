@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   ControleEnvois,
+  DEFAULT_CONTROLE_SETTINGS,
   DecisionEnvoi,
   FakeChannel,
   FicheClient,
@@ -11,6 +12,7 @@ import {
   applyMigrations,
   checkText,
   fromSyncSqlite,
+  mentionFor,
   numbersIn,
   type Channel,
   type SendOrder,
@@ -288,6 +290,28 @@ describeWithSqlite('S06 · contrôle central des envois', () => {
     const first = await go(reply('Bonjour Léa, merci pour votre message, votre agent vous rappelle.', TUE_1000));
     expect(first).toMatchObject({ status: 'sent', withMention: true });
     expect(first.body).toMatch(/^Réponse immédiate de l’assistant IA de Paul, qui vous recontacte personnellement\.\n\nBonjour Léa/);
+    const second = await go(reply('Il vous propose demain matin.', new Date(TUE_1000.getTime() + 60_000)));
+    expect(second).toMatchObject({ status: 'sent', withMention: false });
+    expect(second.body).toBe('Il vous propose demain matin.');
+    expect((await journal.list(person.id)).map((r) => r.with_mention)).toEqual([1, 0]);
+  });
+
+  it('[R06] DS052 · devant une voyelle ou un h, la mention dit « d’Alex », jamais « de Alex » ; elle reste reconnue ensuite', async () => {
+    const WITH = DEFAULT_CONTROLE_SETTINGS.mentionWithAgent;
+    expect(mentionFor(WITH, 'Paul')).toBe('Réponse immédiate de l’assistant IA de Paul, qui vous recontacte personnellement.');
+    for (const prenom of ['Alex', 'Inès', 'Élise', 'Hugo', 'Yann', 'olivier']) expect(mentionFor(WITH, prenom)).toBe(`Réponse immédiate de l’assistant IA d’${prenom}, qui vous recontacte personnellement.`);
+    for (const prenom of ['Paul', 'Léa', 'Jean-Alex', 'Marion']) expect(mentionFor(WITH, prenom)).toContain(`IA de ${prenom},`);
+    // Un gabarit réglé autrement garde son prénom, sans élision forcée.
+    expect(mentionFor('{prenom} vous répond avec son assistant IA.', 'Alex')).toBe('Alex vous répond avec son assistant IA.');
+    // Dans un vrai envoi : la mention élidée part au premier message, et le suivant n'en porte plus.
+    const { go, db, store, network, agent, person, order, journal } = await setup();
+    await db.run("UPDATE agents SET first_name = 'Alex' WHERE id = ?", [agent.id]);
+    await store.recordMessage({ networkId: network.id, personId: person.id, channel: 'email', conversationId: 'm1', direction: 'in', authorKind: 'person', body: 'Bonjour, je cherche une maison.', occurredAt: new Date(TUE_1000.getTime() - 5 * 60_000) });
+    const reply = (text: string, at: Date) => order({ kind: 'reply', subject: undefined, conversationId: 'm1', at, fallbackTexts: [text] });
+    const first = await go(reply('Bonjour Léa, merci pour votre message, votre agent vous rappelle.', TUE_1000));
+    expect(first).toMatchObject({ status: 'sent', withMention: true });
+    expect(first.body).toMatch(/^Réponse immédiate de l’assistant IA d’Alex, qui vous recontacte personnellement\.\n\nBonjour Léa/);
+    expect(first.body).not.toContain('de Alex');
     const second = await go(reply('Il vous propose demain matin.', new Date(TUE_1000.getTime() + 60_000)));
     expect(second).toMatchObject({ status: 'sent', withMention: false });
     expect(second.body).toBe('Il vous propose demain matin.');
