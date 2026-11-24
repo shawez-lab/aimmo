@@ -4,49 +4,50 @@
  * `DESIGN_CSS` et n'ajoute que des règles de mise en page qui lisent ces jetons (`var(--…)`), jamais une couleur ni
  * une police à lui. Le contrôle est dans `audit.ts`, et chaque écran y passe dans les tests.
  *
- * L'identité : les toits vernissés de Bourgogne. Un papier chaud, une encre presque noire, un bordeaux « lie de vin »
- * pour agir, un jaune moutarde de Dijon pour souligner, et le losange des tuiles comme seul motif : devant les titres,
- * dans la marque et en frise sous l'en-tête. Titres en romain de livre (polices du système, rien à télécharger),
- * texte en police du système, chiffres alignés. Téléphone d'abord : cibles de 48 px, une colonne, rien de caché.
+ * L'identité : une maison de vente (direction « Maison », `docs/design/DIRECTIONS.md`). Une pierre blanche, une encre
+ * presque noire qui est aussi la couleur d'action, un trait de laiton qui ne porte jamais de texte. Les titres, les prix
+ * et les grands chiffres dans le caractère à empattements de l'appareil, en graisse normale ; le texte dans sa police
+ * courante. Pas de carte : des filets fins et des angles presque droits. Téléphone d'abord : cibles de 48 px, une
+ * colonne, rien de caché.
  */
 
 /** Les couleurs, en clair et en sombre. Les paires texte/fond sont contrôlées au contraste dans les tests. */
 export const PALETTE = Object.freeze({
   clair: Object.freeze({
-    papier: '#f6f1e7',
-    surface: '#fffcf5',
-    encre: '#1d1915',
-    doux: '#5e5549',
-    trait: '#e4dac8',
-    accent: '#7c1f32',
-    surAccent: '#fffcf5',
-    accentDoux: '#f4e4e2',
-    moutarde: '#d6a019',
-    surMoutarde: '#1d1915',
-    tuile: '#2f5d47',
+    papier: '#fbfaf8',
+    surface: '#ffffff',
+    encre: '#16130f',
+    doux: '#615a50',
+    trait: '#e7e2d9',
+    accent: '#16130f',
+    surAccent: '#ffffff',
+    accentDoux: '#f1ede5',
+    moutarde: '#b08a3c',
+    surMoutarde: '#16130f',
+    tuile: '#2c5a43',
     succes: '#24613f',
     danger: '#a3231b',
     surDanger: '#ffffff',
-    dangerDoux: '#fbe6e2',
-    anneau: '#7c1f32',
+    dangerDoux: '#fbe9e6',
+    anneau: '#16130f',
   }),
   sombre: Object.freeze({
-    papier: '#15120f',
-    surface: '#1f1b17',
-    encre: '#f3ece1',
-    doux: '#b9ae9e',
-    trait: '#3a332c',
-    accent: '#f0a6b0',
-    surAccent: '#2a0c13',
-    accentDoux: '#3b1f24',
-    moutarde: '#e8b43c',
-    surMoutarde: '#1d1915',
-    tuile: '#7fbf9e',
+    papier: '#131210',
+    surface: '#1b1a17',
+    encre: '#f4f0e8',
+    doux: '#b3aa9c',
+    trait: '#2e2b26',
+    accent: '#f4f0e8',
+    surAccent: '#16130f',
+    accentDoux: '#24221e',
+    moutarde: '#d2b06a',
+    surMoutarde: '#16130f',
+    tuile: '#9fceb3',
     succes: '#8ad3a8',
     danger: '#ff9d90',
     surDanger: '#2b0905',
     dangerDoux: '#3d1b16',
-    anneau: '#e8b43c',
+    anneau: '#f4f0e8',
   }),
 });
 
@@ -72,6 +73,7 @@ export const PAIRES_TEXTE: readonly (readonly [Teinte, Teinte])[] = Object.freez
   ['danger', 'dangerDoux'],
   ['surDanger', 'danger'],
   ['tuile', 'surface'],
+  ['doux', 'accentDoux'],
 ]);
 
 /** Les traits qui doivent se voir (anneau de focus, bord d'un champ) : 3 au moins contre le papier et la surface. */
@@ -80,6 +82,9 @@ export const PAIRES_TRAIT: readonly (readonly [Teinte, Teinte])[] = Object.freez
   ['anneau', 'surface'],
   ['doux', 'surface'],
   ['accent', 'papier'],
+  // Le laiton ne porte jamais de texte : il doit se voir comme un trait.
+  ['moutarde', 'papier'],
+  ['moutarde', 'surface'],
 ]);
 
 const VARS: Readonly<Record<Teinte, string>> = Object.freeze({
@@ -106,7 +111,7 @@ const colors = (t: Readonly<Record<Teinte, string>>): string =>
 
 /** Polices : celles du système, rien à télécharger. */
 export const POLICES = Object.freeze({
-  titre: '"Iowan Old Style","Charter","Palatino Linotype","Book Antiqua",Georgia,serif',
+  titre: 'ui-serif,"Iowan Old Style","Charter","Palatino Linotype","Book Antiqua",Georgia,serif',
   texte: 'system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif',
 });
 
@@ -114,14 +119,14 @@ export const POLICES = Object.freeze({
 const JETONS = [
   `--police-titre:${POLICES.titre}`,
   `--police-texte:${POLICES.texte}`,
-  '--t-xs:.8125rem;--t-s:.9375rem;--t-m:1.0625rem;--t-l:1.25rem;--t-xl:1.625rem;--t-xxl:clamp(2rem,8vw,2.75rem)',
+  '--t-xs:.8125rem;--t-s:.90625rem;--t-m:1rem;--t-l:1.25rem;--t-xl:1.5rem;--t-xxl:clamp(2.125rem,8.7vw,2.875rem)',
   '--e-1:4px;--e-2:8px;--e-3:12px;--e-4:16px;--e-5:24px;--e-6:32px;--e-7:48px;--e-8:72px',
-  '--r-s:6px;--r-m:12px;--r-l:20px;--r-rond:999px',
+  '--r-s:2px;--r-m:2px;--r-l:2px;--r-rond:999px',
   '--cible:48px;--colonne:38rem',
-  '--ombre:0 1px 0 var(--trait),0 12px 28px -20px rgba(29,25,21,.45)',
+  '--ombre:none',
   '--m-vite:120ms;--m-normal:220ms;--m-courbe:cubic-bezier(.2,.7,.2,1)',
-  // Le losange des tuiles vernissées : la frise sous l'en-tête.
-  '--frise:repeating-linear-gradient(135deg,var(--accent) 0 6px,var(--moutarde) 6px 12px,var(--tuile) 12px 18px,var(--encre) 18px 24px)',
+  // Le filet sous l'en-tête : un trait, rien de plus.
+  '--frise:var(--trait)',
 ].join(';');
 
 /**
@@ -131,59 +136,59 @@ const JETONS = [
  */
 export const DESIGN_CSS =
   `:root{color-scheme:light dark;${colors(PALETTE.clair)};${JETONS}}` +
-  `@media (prefers-color-scheme:dark){:root{${colors(PALETTE.sombre)};--ombre:0 1px 0 var(--trait)}}` +
+  `@media (prefers-color-scheme:dark){:root{${colors(PALETTE.sombre)}}}` +
   '*,*::before,*::after{box-sizing:border-box}' +
   'html{-webkit-text-size-adjust:100%;text-size-adjust:100%}' +
-  'body{margin:0;background:var(--papier);color:var(--encre);font:400 var(--t-m)/1.55 var(--police-texte);-webkit-font-smoothing:antialiased;font-feature-settings:"kern"}' +
-  'h1,h2,h3,h4{font-family:var(--police-titre);font-weight:600;line-height:1.15;letter-spacing:-.01em;margin:0 0 var(--e-3);text-wrap:balance}' +
-  'h1{font-size:var(--t-xxl)}h2{font-size:var(--t-xl)}h3{font-size:var(--t-l)}h4{font-size:var(--t-m);font-family:var(--police-texte);letter-spacing:0}' +
+  'body{margin:0;background:var(--papier);color:var(--encre);font:400 var(--t-m)/1.5 var(--police-texte);-webkit-font-smoothing:antialiased;font-feature-settings:"kern"}' +
+  'h1,h2,h3,h4{font-family:var(--police-titre);font-weight:400;line-height:1.12;letter-spacing:-.012em;margin:0 0 var(--e-3);text-wrap:balance}' +
+  'h1{font-size:var(--t-xxl)}h2{font-size:var(--t-xl)}h3{font-size:var(--t-l)}h4{font-size:var(--t-m);font-family:var(--police-texte);font-weight:600;letter-spacing:0}' +
   'p{margin:0 0 var(--e-3)}' +
-  'a{color:var(--accent);text-underline-offset:.2em;text-decoration-thickness:1px}a:hover{text-decoration-thickness:2px}' +
-  'strong{font-weight:650}' +
+  'a{color:var(--accent);text-underline-offset:.25em;text-decoration-thickness:1px;text-decoration-color:var(--moutarde)}a:hover{text-decoration-thickness:2px}' +
+  'strong{font-weight:600}' +
   'img{max-width:100%;height:auto;display:block}' +
   '.doux,.etat{color:var(--doux);font-size:var(--t-s)}' +
   '.etat:empty{display:none}' +
-  // La marque : le nom en capitales espacées, précédé du losange moutarde.
-  '.marque{display:flex;align-items:center;gap:var(--e-2);margin:0;font:700 var(--t-s)/1 var(--police-texte);letter-spacing:.18em;text-transform:uppercase;color:var(--encre)}' +
-  '.marque::before{content:"";width:12px;height:12px;flex:none;background:var(--moutarde);transform:rotate(45deg);border-radius:2px}' +
-  '.frise{height:6px;background:var(--frise);border:0;margin:0}' +
-  // Les boutons : bordeaux plein pour l'action, filaire pour la seconde, texte pour revenir.
-  'button,.appel{display:inline-flex;align-items:center;justify-content:center;gap:var(--e-2);min-height:var(--cible);padding:var(--e-3) var(--e-5);margin:var(--e-3) 0 0;border:0;border-radius:var(--r-m);background:var(--accent);color:var(--sur-accent);font:600 var(--t-m)/1.2 var(--police-texte);text-align:center;text-decoration:none;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}' +
+  // La marque : le nom seul, dans le caractère des titres, en capitales espacées.
+  '.marque{display:flex;align-items:center;gap:var(--e-2);margin:0;font:400 1.1875rem/1 var(--police-titre);letter-spacing:.2em;text-transform:uppercase;color:var(--encre)}' +
+  '.frise{height:1px;background:var(--frise);border:0;margin:0}' +
+  // Les boutons : encre pleine pour l'action, au trait pour la seconde, texte pour revenir.
+  'button,.appel{display:inline-flex;align-items:center;justify-content:center;gap:var(--e-2);min-height:var(--cible);padding:var(--e-3) var(--e-5);margin:var(--e-3) 0 0;border:0;border-radius:var(--r-m);background:var(--accent);color:var(--sur-accent);font:500 var(--t-m)/1.2 var(--police-texte);letter-spacing:.01em;text-align:center;text-decoration:none;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation}' +
   'button:disabled{opacity:.55;cursor:not-allowed}' +
-  'button.secondaire,button.second{background:transparent;color:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent)}' +
-  'button.retour,button.discret{background:transparent;color:var(--accent);padding-left:0;padding-right:0;font-weight:600}' +
-  'button.retour::before{content:"←";font-weight:400}' +
+  'button.secondaire,button.second{background:transparent;color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}' +
+  'button.retour,button.discret{background:transparent;color:var(--accent);padding-left:0;padding-right:0;font-weight:500;text-decoration:underline;text-decoration-color:var(--moutarde);text-decoration-thickness:1px;text-underline-offset:.3em}' +
+  'button.retour{color:var(--doux);text-decoration:none}button.retour::before{content:"‹";font-size:1.4em;line-height:.8;font-weight:400}' +
   'button.danger,.danger{width:100%;background:var(--danger);color:var(--sur-danger);font-weight:700}' +
   // Les champs.
   'label{display:block;font-weight:600;margin:var(--e-4) 0 var(--e-2)}' +
-  'input,select,textarea{display:block;width:100%;min-height:var(--cible);padding:var(--e-3) var(--e-4);font:inherit;color:var(--encre);background:var(--surface);border:1.5px solid var(--doux);border-radius:var(--r-m)}' +
+  'input,select,textarea{display:block;width:100%;min-height:var(--cible);padding:var(--e-3) var(--e-4);font:inherit;color:var(--encre);background:var(--surface);border:1px solid var(--doux);border-radius:var(--r-m)}' +
   'textarea{min-height:7rem;resize:vertical}' +
   'input[type=checkbox],input[type=radio]{width:24px;height:24px;min-height:0;padding:0;accent-color:var(--accent);flex:none}' +
   'input[type=file]{padding:var(--e-2)}' +
   'fieldset{border:0;margin:0 0 var(--e-4);padding:0}legend{font-weight:600;margin-bottom:var(--e-2);padding:0}' +
   '.case{display:flex;align-items:center;gap:var(--e-3);min-height:var(--cible);margin:var(--e-2) 0;font-weight:400}' +
   // Le focus se voit toujours, au clavier.
-  ':focus-visible{outline:3px solid var(--anneau);outline-offset:3px;border-radius:var(--r-s)}' +
+  ':focus-visible{outline:2px solid var(--anneau);outline-offset:3px;border-radius:var(--r-s)}' +
   // Les cartes, listes et pastilles.
-  '.bloc,.carte{background:var(--surface);border:1px solid var(--trait);border-radius:var(--r-l);padding:var(--e-5) var(--e-4);margin:var(--e-4) 0 0;box-shadow:var(--ombre)}' +
-  '.bloc>h3::before,.titre-losange::before{content:"";display:inline-block;width:.5em;height:.5em;margin:0 .5em .12em 0;background:var(--moutarde);transform:rotate(45deg);border-radius:1px}' +
+  // Un bloc n'est pas une carte : un filet au-dessus, de l'air, rien d'autre. La carte reste le cadre d'une page courte.
+  '.bloc{border-top:1px solid var(--trait);padding:var(--e-5) 0 var(--e-2);margin:var(--e-5) 0 0}' +
+  '.carte{background:var(--surface);border:1px solid var(--trait);border-radius:var(--r-l);padding:var(--e-5) var(--e-4);margin:var(--e-4) 0 0}' +
   '.liste{list-style:none;margin:0;padding:0}' +
   '.liste>li{padding:var(--e-4) 0;border-top:1px solid var(--trait);overflow-wrap:anywhere}' +
   '.liste>li:first-child{border-top:0;padding-top:var(--e-2)}' +
   '.liste p{margin:var(--e-1) 0 0}' +
-  '.pastille{display:inline-flex;align-items:center;min-height:28px;padding:var(--e-1) var(--e-3);border-radius:var(--r-rond);background:var(--accent-doux);color:var(--accent);font-weight:650;font-size:var(--t-s)}' +
+  '.pastille{display:inline-flex;align-items:center;min-height:28px;padding:var(--e-1) var(--e-3);border-radius:var(--r-rond);background:var(--accent-doux);color:var(--encre);font-weight:500;font-size:var(--t-s)}' +
   '.alerte{padding:var(--e-3) var(--e-4);border-radius:var(--r-m);background:var(--danger-doux);color:var(--encre);box-shadow:inset 4px 0 0 var(--danger)}' +
   '.retard{color:var(--danger);font-weight:600}' +
-  '.fait{color:var(--succes);font-weight:650}' +
+  '.fait{color:var(--succes);font-weight:600}' +
   // Une échelle de choix (une note de 1 à 5) : de grandes cases, la choisie en bordeaux.
   '.notes{display:flex;gap:var(--e-2)}' +
-  '.notes label{flex:1;display:flex;align-items:center;justify-content:center;min-height:56px;margin:0;border:1.5px solid var(--doux);border-radius:var(--r-m);background:var(--surface);font:600 var(--t-l)/1 var(--police-titre);cursor:pointer}' +
+  '.notes label{flex:1;display:flex;align-items:center;justify-content:center;min-height:56px;margin:0;border:1px solid var(--doux);border-radius:var(--r-m);background:var(--surface);font:400 var(--t-xl)/1 var(--police-titre);cursor:pointer}' +
   '.notes input{position:absolute;opacity:0;width:1px;height:1px}' +
   '.notes label:has(input:checked){background:var(--accent);border-color:var(--accent);color:var(--sur-accent)}' +
-  '.notes label:has(input:focus-visible){outline:3px solid var(--anneau);outline-offset:3px}' +
+  '.notes label:has(input:focus-visible){outline:2px solid var(--anneau);outline-offset:3px}' +
   // Repli pour les navigateurs sans `:has` : le chiffre choisi et le focus se voient quand même.
   '.notes input:checked+span{color:var(--accent);text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:.25em}' +
-  '.notes input:focus-visible+span{outline:3px solid var(--anneau);outline-offset:6px}' +
+  '.notes input:focus-visible+span{outline:2px solid var(--anneau);outline-offset:6px}' +
   '.notes label:has(input:checked) span{color:var(--sur-accent)}' +
   '.chiffres,.valeur,.prix{font-variant-numeric:tabular-nums lining-nums}' +
   // Les mouvements : courts, et aucun pour qui les a coupés.
@@ -202,7 +207,7 @@ export const LIEN_CSS = '.lien{display:inline-flex;align-items:center;min-height
 /** La couleur de la barre du navigateur, celle du papier clair. */
 export const THEME_COLOR = PALETTE.clair.papier;
 
-/** L'icône d'AIMMO : le losange moutarde sur bordeaux, et la maison en papier. */
+/** L'icône d'AIMMO : la maison en papier sur l'encre, et son losange de laiton. */
 export const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="${PALETTE.clair.accent}"/><path d="M14 33 32 17l18 16v17H38V39H26v11H14z" fill="${PALETTE.clair.surface}"/><path d="m32 6 5 5-5 5-5-5z" fill="${PALETTE.clair.moutarde}"/></svg>`;
 
 /**
