@@ -4,8 +4,10 @@
 // Plus longue vérification réussie, mesurée sur les 40 dernières le 2026-11-22 : 31,9 minutes, et des vérifications
 // arrêtées par le délai de 35 minutes encore en cours ce jour-là (AU039, AU038, AU091b, main) : 32 minutes retenues.
 // Avant : 25 minutes le 2026-11-19.
+// Relevé le 2026-11-24 : sur les 14 dernières vérifications réussies, la plus longue a pris 44 minutes (puis 43, 38),
+// et deux vérifications (#799, #800, sans code changé) ont été arrêtées par le délai de 45 minutes : 44 minutes retenues.
 // À relever quand la suite grandit ; le délai doit garder 30 % de marge au-dessus.
-export const DUREE_MESUREE_MINUTES = 32;
+export const DUREE_MESUREE_MINUTES = 44;
 const DELAI_MINIMUM = Math.ceil(DUREE_MESUREE_MINUTES * 1.3);
 
 const COMMANDES = [
