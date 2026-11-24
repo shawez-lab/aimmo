@@ -15,6 +15,7 @@
  * qu'une phrase d'accueil, derrière une interface, sans aucune donnée ; refusée, la phrase du code la remplace.
  */
 import type { Viewer } from '../../acces/droits.ts';
+import { frenchDate, frenchMonth } from '../../attirer/page-prix.ts';
 import type { SqlDatabase, SqlValue } from '../../db/sql.ts';
 import { DESIGN_CSS } from '../../design/systeme.ts';
 import { checkText, plain } from '../../envoi/texte.ts';
@@ -356,23 +357,25 @@ export class DossierPresentation {
 }
 
 const pct = (rate: number): string => `${Math.round(rate * 100)} %`;
+/** « 1 mandat signé », « 3 mandats signés » : le nombre et son accord. */
+const count = (n: number, one: string, many: string): string => `${n} ${n > 1 ? many : one}`;
 const euros = (n: number): string => `${new Intl.NumberFormat('fr-FR').format(n).replace(/[  ]/g, ' ')} €`;
 
 /** Le dossier, lisible sur téléphone et imprimable : la base du système de design, puis des règles de jetons [R201]. */
 export function renderDossier(d: Dossier, agentName: string): string {
   const sales = d.sales
-    ? `<section><h2>Les ventes du quartier</h2><p class="doux">Source : ${escape(d.sales.source ?? 'non précisée')}, vente la plus récente : ${escape(d.sales.latestUsedSale ?? 'non précisée')}, avis validé le ${escape(d.sales.validatedOn)}.${d.sales.recentMissing ? ' Les ventes les plus récentes ne sont pas encore publiées.' : ''}${d.sales.dvfNotCovered ? ' Le département n’est pas couvert par les ventes publiques : ce sont les ventes connues de l’agence.' : ''}</p><table><caption>Ventes comparables</caption><thead><tr><th scope="col">Mois</th><th scope="col">Surface</th><th scope="col">Prix au m²</th><th scope="col">Distance</th></tr></thead><tbody>${d.sales.items
-        .map((s) => `<tr><td>${escape(s.month)}</td><td>${s.surfaceM2} m²</td><td>${euros(s.pricePerM2)}</td><td>${s.distanceM} m</td></tr>`)
+    ? `<section><h2>Les ventes du quartier</h2><p class="doux">Source : ${escape(d.sales.source ?? 'non précisée')}, vente la plus récente : ${escape(d.sales.latestUsedSale ? frenchMonth(d.sales.latestUsedSale) : 'non précisée')}, avis validé le ${escape(frenchDate(d.sales.validatedOn))}.${d.sales.recentMissing ? ' Les ventes les plus récentes ne sont pas encore publiées.' : ''}${d.sales.dvfNotCovered ? ' Le département n’est pas couvert par les ventes publiques : ce sont les ventes connues de l’agence.' : ''}</p><table><caption>Ventes comparables</caption><thead><tr><th scope="col">Mois</th><th scope="col">Surface</th><th scope="col">Prix au m²</th><th scope="col">Distance</th></tr></thead><tbody>${d.sales.items
+        .map((s) => `<tr><td>${escape(frenchMonth(s.month))}</td><td>${s.surfaceM2} m²</td><td>${euros(s.pricePerM2)}</td><td>${s.distanceM} m</td></tr>`)
         .join('')}</tbody></table></section>`
     : '<section><h2>Les ventes du quartier</h2><p>Pas encore d’avis de valeur validé pour ce bien.</p></section>';
   const commitments = d.commitments
     .map(
       (c) =>
         `<li><h3>${escape(c.label)}</h3><p class="taux">${c.rate === null ? 'Aucun cas sur la période' : `Tenu ${c.kept} fois sur ${c.total}, soit ${pct(c.rate)}`}</p><p class="doux">${escape(c.rule)} Délai : ${c.delayHours} h. Version ${c.version}.</p>` +
-        `<p class="doux">Le détail, cas par cas :</p><ul class="preuve">${c.proof.map((p) => `<li>${escape(p.day)} : ${p.kept ? 'tenu' : 'non tenu'}</li>`).join('')}</ul></li>`,
+        `<p class="doux">Le détail, cas par cas :</p><ul class="preuve">${c.proof.map((p) => `<li>${escape(frenchDate(p.day))} : ${p.kept ? 'tenu' : 'non tenu'}</li>`).join('')}</ul></li>`,
     )
     .join('');
-  const reviews = d.reviews.count === 0 ? '<p>Aucun avis sur la période.</p>' : `<p>${d.reviews.count} avis, note moyenne ${String(d.reviews.average).replace('.', ',')} sur 5.</p><ul class="avis">${d.reviews.answers.map((a) => `<li>${escape(a.day)} : ${a.score} sur 5</li>`).join('')}</ul>`;
+  const reviews = d.reviews.count === 0 ? '<p>Aucun avis sur la période.</p>' : `<p>${d.reviews.count} avis, note moyenne ${String(d.reviews.average).replace('.', ',')} sur 5.</p><ul class="avis">${d.reviews.answers.map((a) => `<li>${escape(frenchDate(a.day))} : ${a.score} sur 5</li>`).join('')}</ul>`;
   const link = d.reviews.link ? `<p><a href="${escape(d.reviews.link)}" rel="noopener">Tous les avis publics</a></p>` : '';
   return `<!doctype html>
 <html lang="fr">
@@ -386,9 +389,9 @@ export function renderDossier(d: Dossier, agentName: string): string {
 <body><header class="tete"><p class="marque">AIMMO</p><span class="doux">${escape(agentName)}, agent immobilier</span></header><main><h1>Dossier de présentation</h1><p>${escape(d.welcome)}</p>
 ${sales}
 <section><h2>Le plan de vente</h2><ul>${d.plan.map((p) => `<li>${escape(p)}</li>`).join('')}</ul></section>
-<section><h2>Mes engagements, et ce que j’ai réellement tenu</h2><p class="doux">Du ${escape(d.period.from)} au ${escape(d.period.to)}, recalculé depuis la base AIMMO.</p><ul class="engagements">${commitments}</ul></section>
+<section><h2>Mes engagements, et ce que j’ai réellement tenu</h2><p class="doux">Du ${escape(frenchDate(d.period.from))} au ${escape(frenchDate(d.period.to))}, recalculé depuis la base AIMMO.</p><ul class="engagements">${commitments}</ul></section>
 <section><h2>Les avis de mes clients</h2><p class="doux">${escape(d.reviews.source)}.</p>${reviews}${link}</section>
-<section><h2>Mes résultats</h2><p class="doux">${escape(d.results.source)}.</p><ul><li>${d.results.mandates} mandats signés</li><li>${d.results.sales} ventes conclues</li><li>${d.results.estimationsHonored} rendez-vous d’estimation tenus</li></ul></section>
+<section><h2>Mes résultats</h2><p class="doux">${escape(d.results.source)}.</p><ul><li>${count(d.results.mandates, 'mandat signé', 'mandats signés')}</li><li>${count(d.results.sales, 'vente conclue', 'ventes conclues')}</li><li>${count(d.results.estimationsHonored, 'rendez-vous d’estimation tenu', 'rendez-vous d’estimation tenus')}</li></ul></section>
 </main></body>
 </html>`;
 }

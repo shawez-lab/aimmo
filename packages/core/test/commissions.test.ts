@@ -226,7 +226,13 @@ describeWithSqlite('K01 · cycle de la commission', () => {
     // Un écran resté sur une version d'avant est refusé : aucun taux ne se perd.
     expect(await c.setGrid(t.direction, { validFrom: '2027-07-01', defaultRateBp: 6000, expectedVersion: 2 })).toMatchObject({ code: 'stale_grid' });
     expect(await c.setGrid(t.direction, { validFrom: '2027-07-01', defaultRateBp: 6000, expectedVersion: 3 })).toMatchObject({ ok: true, version: 4 });
-    expect(live.ok && live.value.agents.find((a) => a.agentId === t.alexId)).toEqual({ agentId: t.alexId, rateBp: 7500 });
+    // DS057 : chaque agent arrive avec son prénom et son nom, dans l'ordre des noms ; l'écran ne montre jamais un identifiant.
+    const alex = (await t.db.first<{ first_name: string; last_name: string }>('SELECT first_name, last_name FROM agents WHERE id = ?', [t.alexId]))!;
+    expect(live.ok && live.value.agents.find((a) => a.agentId === t.alexId)).toEqual({ agentId: t.alexId, name: `${alex.first_name} ${alex.last_name}`, rateBp: 7500 });
+    if (!live.ok) throw new Error('grille');
+    const names = live.value.agents.map((a) => a.name);
+    expect(names.every((n) => typeof n === 'string' && n.length > 0)).toBe(true);
+    expect(names).toEqual([...names].sort((x, y) => x!.localeCompare(y!, 'fr')));
   });
 
   it('[R63] un écart à l’acte reste à trancher', async () => {

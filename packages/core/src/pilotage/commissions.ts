@@ -294,7 +294,7 @@ export class Commissions {
    * sa dernière version vue pour ne rien écraser à l'aveugle. Même règle que `gridAt` : le jour le plus récent l'emporte,
    * puis la version la plus récente.
    */
-  async currentGrid(viewer: Viewer): Promise<{ ok: true; value: { version: number | null; inForce: GridLine | null; upcoming: GridLine[]; agents: { agentId: string; rateBp: number | null }[] } } | CommissionRefusal> {
+  async currentGrid(viewer: Viewer): Promise<{ ok: true; value: { version: number | null; inForce: GridLine | null; upcoming: GridLine[]; agents: { agentId: string; name: string | null; rateBp: number | null }[] } } | CommissionRefusal> {
     if (viewer.role !== 'direction') return this.refuse(viewer, 'commission_grid_read', 'role');
     const all = await this.db.all<{ id: string; version: number; valid_from: string; default_rate_bp: number; agent_rates: string }>(
       'SELECT id, version, valid_from, default_rate_bp, agent_rates FROM commission_grids WHERE network_id = ? ORDER BY valid_from DESC, version DESC',
@@ -312,15 +312,20 @@ export class Commissions {
     // À venir : pour chaque jour, seule la dernière version comptera ; du plus proche au plus lointain.
     const upcoming = all.filter((x, i) => x.valid_from > today && all.findIndex((y) => y.valid_from === x.valid_from) === i).reverse().map(line);
     const rates = g ? (JSON.parse(g.agent_rates) as Record<string, number>) : {};
-    const active = await this.db.all<{ id: string }>("SELECT id FROM agents WHERE network_id = ? AND status = 'active' ORDER BY id", [viewer.networkId]);
-    const ids = [...new Set([...active.map((a) => a.id), ...Object.keys(rates)])].sort();
+    const known = await this.db.all<{ id: string; first_name: string | null; last_name: string | null; status: string }>('SELECT id, first_name, last_name, status FROM agents WHERE network_id = ? ORDER BY id', [viewer.networkId]);
+    // L'écran nomme un agent par son prénom et son nom, jamais par son identifiant ; un agent d'un autre réseau n'a pas de nom ici.
+    const names = new Map(known.map((a) => [a.id, `${a.first_name ?? ''} ${a.last_name ?? ''}`.trim() || null]));
+    const ids = [...new Set([...known.filter((a) => a.status === 'active').map((a) => a.id), ...Object.keys(rates)])].sort(
+      // Dans l'ordre des noms ; un agent sans nom vient à la fin, par son identifiant.
+      (a, b) => (names.get(a) ? 0 : 1) - (names.get(b) ? 0 : 1) || (names.get(a) ?? '').localeCompare(names.get(b) ?? '', 'fr') || a.localeCompare(b),
+    );
     return {
       ok: true,
       value: {
         version: all.length ? Math.max(...all.map((x) => x.version)) : null,
         inForce: g ? line(g) : null,
         upcoming,
-        agents: ids.map((agentId) => ({ agentId, rateBp: Object.hasOwn(rates, agentId) ? rates[agentId]! : null })),
+        agents: ids.map((agentId) => ({ agentId, name: names.get(agentId) ?? null, rateBp: Object.hasOwn(rates, agentId) ? rates[agentId]! : null })),
       },
     };
   }

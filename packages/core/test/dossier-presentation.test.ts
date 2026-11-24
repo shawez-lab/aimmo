@@ -122,6 +122,9 @@ describeWithSqlite('G07 · dossier de présentation pour chaque rendez-vous de m
     // La preuve est visible à l'écran comme à l'impression.
     expect(html).not.toContain('<details');
     expect(html.match(/<ul class="preuve">/g)).toHaveLength(1);
+    // DS056 : dans la preuve aussi, les jours se lisent comme on les dit ; aucune date au format de la base dans le document.
+    expect(html).toMatch(/<ul class="preuve"><li>\d{1,2}(?:er)? [a-zéû]+ \d{4} : (?:tenu|non tenu)<\/li>/);
+    expect(html.replace(/<style>[\s\S]*?<\/style>/g, '')).not.toMatch(/\d{4}-\d{2}/);
     expect(htmlProblems(html)).toEqual([]);
   });
 
@@ -221,6 +224,19 @@ describeWithSqlite('G07 · dossier de présentation pour chaque rendez-vous de m
     expect(d.value.sales).toEqual({ source: 'DVF test', latestUsedSale: '2027-03', recentMissing: true, dvfNotCovered: false, validatedOn: '2027-10-07', items: [{ month: '2027-03', surfaceM2: 85, pricePerM2: 2900, distanceM: 200 }] });
     // La date des données est dite entière : les ventes récentes manquent encore [R28].
     expect(renderDossier(d.value, 'Alex Essai')).toContain('Les ventes les plus récentes ne sont pas encore publiées.');
+    // DS056 : les dates se lisent comme on les dit, jamais au format de la base.
+    const lisible = renderDossier(d.value, 'Alex Essai');
+    expect(lisible).toContain('vente la plus récente : mars 2027, avis validé le 7 octobre 2027.');
+    expect(lisible).toContain('<tr><td>mars 2027</td><td>85 m²</td>');
+    expect(lisible.replace(/<style>[\s\S]*?<\/style>/g, '')).not.toMatch(/\d{4}-\d{2}/);
+    expect(lisible).toContain('Du 12 octobre 2026 au 12 octobre 2027, recalculé depuis la base AIMMO.');
+    expect(lisible).toContain('<li>16 décembre 2026 : 5 sur 5</li>');
+    // Le nombre s'accorde : « 1 mandat signé », jamais « 1 mandats signés ».
+    expect(lisible).toContain('<li>1 mandat signé</li><li>1 vente conclue</li><li>0 rendez-vous d’estimation tenu</li>');
+    expect(renderDossier({ ...d.value, results: { ...d.value.results, mandates: 3, sales: 2, estimationsHonored: 4 } }, 'Alex Essai')).toContain('<li>3 mandats signés</li><li>2 ventes conclues</li><li>4 rendez-vous d’estimation tenus</li>');
+    // Le premier du mois, et une vente la plus récente inconnue.
+    const autre = renderDossier({ ...d.value, sales: { ...d.value.sales!, latestUsedSale: null, validatedOn: '2027-11-01' } }, 'Alex Essai');
+    expect(autre).toContain('vente la plus récente : non précisée, avis validé le 1er novembre 2027.');
     // Tous les avis des 12 derniers mois, la mauvaise note comprise, dans l'ordre des dates ; jamais le commentaire.
     expect(d.value.reviews).toMatchObject({ count: 3, average: 3.7, answers: [{ score: 5 }, { score: 2 }, { score: 4 }] });
     expect(d.value.results).toMatchObject({ mandates: 1, sales: 1, estimationsHonored: 0 });

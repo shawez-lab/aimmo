@@ -679,7 +679,7 @@ describe('K12 · grille, alertes, factures et avoirs', () => {
   const GRID = 'GET /v1/pilotage/grille';
   const SETTINGS = 'GET /v1/pilotage/reglages';
   const INVOICES = 'GET /v1/pilotage/factures';
-  const grid = { version: 2, inForce: { version: 2, validFrom: '2026-09-01', defaultRateBp: 7000 }, upcoming: [] as object[], agents: [{ agentId: 'alex', rateBp: 7500 }, { agentId: 'sam', rateBp: null }] };
+  const grid = { version: 2, inForce: { version: 2, validFrom: '2026-09-01', defaultRateBp: 7000 }, upcoming: [] as object[], agents: [{ agentId: 'alex', name: 'Alex Essai', rateBp: 7500 }, { agentId: 'sam', name: 'Sam Essai', rateBp: null }] };
   const set = { aiMonthlyBudgetCents: 10000, aiAlertBp: 7000, dropAlertBp: 3000, documentNoticeDays: 30 };
   const invoice = (id: string, label: string, kind: string, corrects: string | null = null) => ({
     id,
@@ -708,6 +708,21 @@ describe('K12 · grille, alertes, factures et avoirs', () => {
     const said = (host: string) => of(host).filter((e) => e.tagName === 'p').map((e) => e.textContent).join(' | ');
     return { ...t, open, of, inputs, press, said };
   }
+
+  it('DS057 · un taux propre nomme son agent par son prénom et son nom, jamais par son identifiant', async () => {
+    const id = 'acf2c1b2-2d19-49c6-b889-ea38885db2be';
+    const t = await direct({ [GRID]: ok({ ...grid, agents: [{ agentId: id, name: 'Alex Essai', rateBp: 7500 }, { agentId: 'b7d0a1c4-0000-4000-8000-000000000001', name: null, rateBp: null }] }), 'POST /v1/pilotage/grille': ok({ version: 3 }) });
+    await t.open('grille-voir');
+    const labels = t.of('grille-corps').filter((e) => e.tagName === 'label').map((e) => e.textContent);
+    expect(labels).toContain('Taux propre à Alex Essai, en % (vide : le taux commun)');
+    expect(labels).toContain('Taux propre à un agent dont le nom manque, en % (vide : le taux commun)');
+    expect(t.of('grille-corps').map((e) => e.textContent).join(' ')).not.toMatch(/acf2c1b2|b7d0a1c4/);
+    // L'identifiant reste ce qui part au serveur.
+    const [from] = t.inputs();
+    from!.value = '2027-01-01';
+    await t.press('grille-corps', 'Ranger cette version');
+    expect(JSON.parse(t.bodies().at(-1)!).agents).toEqual([{ agentId: id, rateBp: 7500 }]);
+  });
 
   it('[R17] une nouvelle version part de la dernière : aucun taux propre ne se perd en silence', async () => {
     const t = await direct({ 'POST /v1/pilotage/grille': ok({ version: 3 }) });
