@@ -127,6 +127,12 @@ const LOAN_STEPS: Record<string, string> = {
 
 const VISIT_STATES: Record<string, string> = { booked: 'prévue', honored: 'faite', cancelled: 'annulée', absent: 'manquée' };
 
+/** La sorte du bien, dite à l'acquéreur en français, jamais le code de la base [R163]. */
+const PROPERTY_KIND_WORDS: Readonly<Record<string, string>> = { home: 'Maison ou appartement', land: 'Terrain', building: 'Immeuble', commercial: 'Local commercial', business_walls: 'Murs commerciaux', business: 'Fonds de commerce' };
+
+/** Le mot français de la sorte d'un bien ; une sorte inconnue de la liste devient « Bien », jamais le code. */
+export const propertyKindWord = (code: string): string => (Object.hasOwn(PROPERTY_KIND_WORDS, code) ? PROPERTY_KIND_WORDS[code]! : 'Bien');
+
 const TENANT_STATES = {
   incomplete: 'incomplète : pièces à compléter',
   waiting: 'complète, en attente du choix du propriétaire',
@@ -197,7 +203,7 @@ export class SqlSourcesAcquereur implements SourcesAcquereur {
         propertyId: p.id,
         reference: p.reference,
         city: p.city ?? 'non communiquée',
-        kind: p.kind,
+        kind: propertyKindWord(p.kind),
         surfaceM2: p.surface_m2,
         rooms: p.rooms,
         priceEur: version.price_eur,

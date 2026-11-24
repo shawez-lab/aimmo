@@ -393,7 +393,7 @@ describeWithSqlite('AU001 · le mandat d’un couple ou d’une indivision', () 
     expect(forNoe.value.map((b) => b.reference)).toEqual(['REF-T-1']);
     const mandat = forNoe.value[0]!.documents.filter((x) => x.kind === 'mandat_vente_simple');
     expect(mandat).toHaveLength(1);
-    expect(mandat[0]!.signature.value).toBe('signe');
+    expect(mandat[0]!.signature.value).toBe('signé');
     expect(mandat[0]!.number).toMatchObject({ value: 'T-001', source: 'registre des mandats' });
     // Rien de l'autre mandant : ni son document à elle seule, ni son rendez-vous, ni son nom, ni sa fiche [R16].
     expect(forNoe.value[0]!.appointments).toEqual([]);

@@ -155,7 +155,8 @@ export interface VueDocument {
   title: string;
   kind: string;
   addedAt: Fait<string>;
-  signature: Fait<'sans' | 'a_signer' | 'signe'>;
+  /** « signé », « à signer » ou « pas à signer » : le mot, jamais le code. */
+  signature: Fait<string>;
   number: Fait<string>;
 }
 
@@ -202,6 +203,14 @@ const SOURCES = {
 const LIBELLES: Record<string, string> = { title: 'Document', kind: 'Rendez-vous', reference: 'Bien', city: 'non communiquée' };
 
 export const absent = <T>(): Fait<T> => ({ value: null, label: NON_COMMUNIQUE });
+
+/** L'état d'une visite, dit au vendeur en français, jamais le code des sources [R163]. */
+export const VISIT_STATE_WORDS: Readonly<Record<SellerVisit['state'], string>> = Object.freeze({ prevue: 'prévue', faite: 'faite', annulee: 'annulée' });
+/** Où en est la signature d'un document, en français, jamais le code des sources [R163]. */
+export const SIGNATURE_WORDS: Readonly<Record<SellerDocument['signature'], string>> = Object.freeze({ sans: 'pas à signer', a_signer: 'à signer', signe: 'signé' });
+/** Le mot français d'un code ; un code que la liste ne connaît pas n'est jamais montré tel quel : il est « non communiqué ». */
+export const wordOfCode = (words: Readonly<Record<string, string>>, code: string | null | undefined): string | null =>
+  typeof code === 'string' && Object.hasOwn(words, code) ? words[code]! : null;
 export const fait = <T>(value: T | null | undefined, source: string, at: string | null | undefined): Fait<T> =>
   value === null || value === undefined || !at ? absent<T>() : { value, source, at };
 
@@ -315,7 +324,7 @@ export class EspaceVendeur {
       price: fait(p.askingPriceEur, SOURCES.mandat, p.mandateSignedAt),
       visits: byDate(visits, (v) => v.at).map((v) => ({
         at: fait(v.at, SOURCES.agenda, v.at),
-        state: fait(v.state, SOURCES.agenda, v.at),
+        state: fait(wordOfCode(VISIT_STATE_WORDS, v.state), SOURCES.agenda, v.at),
         report: v.report ? safeText(v.report.text, SOURCES.compteRendu, v.report.validatedAt) : absent(),
         interest: v.report ? safeText(v.report.interest, SOURCES.compteRendu, v.report.validatedAt) : absent(),
       })),
@@ -332,7 +341,7 @@ export class EspaceVendeur {
         title: d.title,
         kind: d.kind,
         addedAt: fait(d.addedAt, SOURCES.dossier, d.addedAt),
-        signature: fait(d.signature, SOURCES.dossier, d.signature === 'signe' ? d.signedAt : d.addedAt),
+        signature: fait(wordOfCode(SIGNATURE_WORDS, d.signature), SOURCES.dossier, d.signature === 'signe' ? d.signedAt : d.addedAt),
         number: fait(d.number ?? null, SOURCES.registre, d.signedAt),
       })),
       appointments: byDate(appointments, (a) => a.at).map((a) => ({ at: fait(a.at, SOURCES.agenda, a.at), kind: a.kind, state: fait(a.state, SOURCES.agenda, a.at) })),

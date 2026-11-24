@@ -22,7 +22,7 @@ import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
 import type { ClientViewer } from './entree.ts';
 import { retain } from './proprietaire.ts';
-import { NON_COMMUNIQUE, absent, fait, type Fait, type SourcePerson } from './vendeur.ts';
+import { NON_COMMUNIQUE, absent, fait, wordOfCode, type Fait, type SourcePerson } from './vendeur.ts';
 
 export interface ProposedProperty {
   propertyId: string;
@@ -57,6 +57,9 @@ export interface BuyerOffer {
   state: string | null;
   stateAt: string;
 }
+
+/** Où en est une pièce du dossier, dit à l'acquéreur en français, jamais le code des sources [R163]. */
+export const PIECE_STATE_WORDS: Readonly<Record<BuyerFile['pieces'][number]['state'], string>> = Object.freeze({ manquante: 'manquante', deposee: 'déposée', validee: 'validée' });
 
 export interface BuyerFile {
   fileId: string;
@@ -227,7 +230,7 @@ export class EspaceAcquereur {
       offers: byDate(offers, (o) => o.receivedAt).map((o) => ({ propertyId: o.propertyId, receivedAt: fait(o.receivedAt, SOURCES.offres, o.receivedAt), amount: fait(o.amountEur, SOURCES.offres, o.receivedAt), state: fait(o.state, SOURCES.offres, o.stateAt) })),
       files: files.map((f) => ({
         propertyId: f.propertyId,
-        pieces: f.pieces.map((x) => ({ kind: x.kind, state: fait(x.state, SOURCES.dossier, x.at) })),
+        pieces: f.pieces.map((x) => ({ kind: x.kind, state: fait(wordOfCode(PIECE_STATE_WORDS, x.state), SOURCES.dossier, x.at) })),
         loan: f.loan ? fait(f.loan.state, SOURCES.financement, f.loan.at) : absent(),
         deedDate: f.deed ? fait(f.deed.date, SOURCES.echeancier, f.deed.computedAt) : absent(),
         deedHolds: f.deed ? fait([...f.deed.holds], SOURCES.echeancier, f.deed.computedAt) : absent(),
