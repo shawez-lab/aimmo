@@ -139,7 +139,34 @@ describe('EC02 · espace du vendeur', () => {
     walk(r.value);
     // Visites, offres, documents dans l'ordre des dates, sans tri par une note.
     expect(r.value.visits.map((v) => v.at.value)).toEqual(['2027-06-01T10:00:00.000Z', '2027-06-05T14:00:00.000Z', '2027-06-10T09:00:00.000Z']);
-    expect(r.value.documents.map((d) => [d.title, d.signature.value])).toEqual([['Mandat de vente', 'signe'], ['Avenant de prix', 'a_signer']]);
+    expect(r.value.documents.map((d) => [d.title, d.signature.value])).toEqual([['Mandat de vente', 'signé'], ['Avenant de prix', 'à signer']]);
+  });
+
+  it('[R163] l’état d’une visite et la signature d’un document sont écrits en français, jamais avec le code des sources (DS078)', async () => {
+    const base = sources();
+    const vue = async (over: Partial<SourcesVendeur>) => {
+      const r = await new EspaceVendeur({ ...base, ...over }, new MemoryJournalStore(), { now: () => NOW }).bien(viewer(), 'b1');
+      if (!r.ok) throw new Error('vue');
+      return r.value;
+    };
+    // Une valeur, un mot.
+    for (const [code, mot] of [['prevue', 'prévue'], ['faite', 'faite'], ['annulee', 'annulée']] as const) {
+      const v = await vue({ visitsOf: async () => [{ id: 'v1', at: '2027-06-10T09:00:00.000Z', state: code, report: null, visitor: null }] });
+      expect(v.visits[0]!.state).toEqual({ value: mot, source: 'agenda du bien', at: '2027-06-10T09:00:00.000Z' });
+    }
+    for (const [code, mot] of [['sans', 'pas à signer'], ['a_signer', 'à signer'], ['signe', 'signé']] as const) {
+      const v = await vue({ documentsOf: async () => [{ id: 'd1', title: 'Mandat de vente', kind: 'mandat', addedAt: '2027-05-01T10:00:00.000Z', signature: code, signedAt: code === 'signe' ? '2027-05-01T10:30:00.000Z' : null }] });
+      expect(v.documents[0]!.signature).toMatchObject({ value: mot, source: 'dossier de vente' });
+    }
+    // Un code que la liste ne connaît pas n'est jamais montré tel quel.
+    const inconnu = await vue({
+      visitsOf: async () => [{ id: 'v1', at: '2027-06-10T09:00:00.000Z', state: 'no_show' as never, report: null, visitor: null }],
+      documentsOf: async () => [{ id: 'd1', title: 'Mandat de vente', kind: 'mandat', addedAt: '2027-05-01T10:00:00.000Z', signature: 'pending' as never, signedAt: null }],
+    });
+    expect(inconnu.visits[0]!.state).toEqual({ value: null, label: NON_COMMUNIQUE });
+    expect(inconnu.documents[0]!.signature).toEqual({ value: null, label: NON_COMMUNIQUE });
+    // Aucun des codes ne sort de la vue du jeu de base.
+    expect(JSON.stringify((await vue({})).visits.map((x) => x.state.value).concat((await vue({})).documents.map((d) => d.signature.value)))).not.toMatch(/prevue|annulee|a_signer|"signe"|"sans"/);
   });
 
   it('[R13] chaque lecture et chaque refus vont au journal, sans donnée personnelle', async () => {

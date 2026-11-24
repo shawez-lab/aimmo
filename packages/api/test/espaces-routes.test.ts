@@ -29,7 +29,7 @@ async function setup(options: { keys?: boolean } = {}) {
   const refs = new Map<string, string>();
   const visitor = (n: number) => ({ personId: `visiteur-${n}`, firstName: `Visiteurnom${n}`, lastName: 'Inventé', emails: [`visiteur${n}@example.test`], phones: [] });
   const vendeur: SourcesVendeur = {
-    sellerPropertiesOf: async (_n, personId) => (sides.get(personId)?.includes('vendeur') ? [{ propertyId: `bien-${refs.get(personId)}`, reference: refs.get(personId)!, city: 'Dijon', status: 'available', statusAt: '2027-05-02T09:00:00.000Z', askingPriceEur: 245_000, mandateSignedAt: '2027-05-01T10:00:00.000Z' }] : []),
+    sellerPropertiesOf: async (_n, personId) => (sides.get(personId)?.includes('vendeur') ? [{ propertyId: `bien-${refs.get(personId)}`, reference: refs.get(personId)!, city: 'Dijon', status: 'en vente', statusAt: '2027-05-02T09:00:00.000Z', askingPriceEur: 245_000, mandateSignedAt: '2027-05-01T10:00:00.000Z' }] : []),
     visitsOf: async (_n, propertyId) => [{ id: `v-${propertyId}`, at: '2027-06-05T14:00:00.000Z', state: 'faite', report: { text: 'Lumineux, réserve sur la cuisine.', interest: 'intéressé', validatedAt: '2027-06-05T18:00:00.000Z' }, visitor: visitor(Number(propertyId.slice(-1))) }],
     offersOf: async () => [],
     documentsOf: async () => [{ id: 'd1', title: 'Mandat de vente', kind: 'mandat', addedAt: '2027-05-01T10:00:00.000Z', signature: 'signe', signedAt: '2027-05-01T10:30:00.000Z' }],
@@ -221,6 +221,20 @@ describeWithSqlite('EC06 · routes et page de l’espace', () => {
     const other = await read({ role: 'agent', userId: bea.id, networkId: t.network.id }, p.id);
     expect(other.body).toMatchObject({ ok: false, rule: 'R16' });
     expect([403, 404]).toContain(other.status);
+  });
+
+  it('[R163] la page du vendeur écrit les états en français, jamais un code de la base (DS078)', async () => {
+    const t = await setup();
+    const c = await t.client('vendeur');
+    const cookie = await t.enter(c.token);
+    const home = await t.pub('GET', ESPACE_PATH, { cookie });
+    expect(home.status).toBe(200);
+    // Le constat de l'audit, « Statut : available » et « Mandat de vente · signe », ne se reproduit plus.
+    expect(home.text).toContain('<dt>Statut</dt><dd>en vente ');
+    expect(home.text).toContain('Mandat de vente · signé ');
+    expect(home.text).toMatch(/5 juin 2027 à 16 h 00 <small[^>]*>[^<]*<\/small> · faite /);
+    const words = home.text.replace(/<[^>]+>/g, ' ');
+    for (const code of ['available', 'under_offer', 'prevue', 'annulee', 'a_signer', 'signe', 'deposee', 'validee']) expect(words, code).not.toMatch(new RegExp(`(^|[^\\p{L}_])${code}([^\\p{L}_]|$)`, 'u'));
   });
 
   it('[R161] une donnée des sources est toujours échappée dans la page', async () => {

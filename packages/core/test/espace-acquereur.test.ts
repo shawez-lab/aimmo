@@ -12,7 +12,7 @@ function proposed(id: string, over: Partial<ProposedProperty> = {}): ProposedPro
   return { propertyId: id, reference: `B-${id}`, city: 'Dijon', kind: 'appartement', surfaceM2: 64, rooms: 3, priceEur: 210_000, energyClass: 'C', publishedAt: '2027-05-20T08:00:00.000Z', proposedAt: '2027-06-01T08:00:00.000Z', diffusable: true, sellers: [VENDEUSE], ...over };
 }
 
-async function setup(over: Partial<{ proposed: ProposedProperty[]; investor: boolean; hypotheses: string[]; offerState: string; holds: string[] }> = {}) {
+async function setup(over: Partial<{ proposed: ProposedProperty[]; investor: boolean; hypotheses: string[]; offerState: string; holds: string[]; pieceState: 'manquante' | 'deposee' | 'validee' }> = {}) {
   const db: SqlDatabase = fromSyncSqlite(openMemoryDatabase());
   await applyMigrations(db, loadMigrations());
   await db.run("INSERT INTO networks (id, name, created_at) VALUES ('n1', 'Réseau test', '2027-01-01T00:00:00.000Z')");
@@ -23,7 +23,7 @@ async function setup(over: Partial<{ proposed: ProposedProperty[]; investor: boo
     proposedOf: async (_n, personId) => (personId === 'p-acq' ? (over.proposed ?? [proposed('b1'), proposed('b2', { diffusable: false }), proposed('b3', { priceEur: null, publishedAt: '2027-05-25T08:00:00.000Z' })]) : []),
     visitsOf: async () => [{ id: 'v1', propertyId: 'b1', at: '2027-06-10T09:00:00.000Z', state: 'prevue' }],
     offersOf: async () => [{ id: 'o1', propertyId: 'b4', receivedAt: '2027-06-06T11:00:00.000Z', amountEur: 205_000, state: over.offerState ?? 'transmise au vendeur', stateAt: '2027-06-06T11:05:00.000Z' }],
-    filesOf: async (_n, personId) => (personId === 'p-acq' ? [{ fileId: 'f1', propertyId: 'b2', pieces: [{ kind: 'offre de prêt', state: 'manquante', at: '2027-06-07T08:00:00.000Z' }], loan: { state: 'demandé', at: '2027-06-07T08:00:00.000Z' }, deed: { date: '2027-09-15', holds: over.holds ?? ['offre de prêt'], computedAt: '2027-06-08T06:00:00.000Z' } }] : []),
+    filesOf: async (_n, personId) => (personId === 'p-acq' ? [{ fileId: 'f1', propertyId: 'b2', pieces: [{ kind: 'offre de prêt', state: over.pieceState ?? 'manquante', at: '2027-06-07T08:00:00.000Z' }], loan: { state: 'demandé', at: '2027-06-07T08:00:00.000Z' }, deed: { date: '2027-09-15', holds: over.holds ?? ['offre de prêt'], computedAt: '2027-06-08T06:00:00.000Z' } }] : []),
     investorOf: async (_n, _p, propertyId) => ({ propertyId, grossYieldBp: 512, netYieldBp: 398, hypotheses: over.hypotheses ?? ['loyer de marché de la commune, Carte des loyers 2026', 'vacance d’un mois par an'], constraints: ['classe énergie C : location permise'], computedAt: '2027-06-02T08:00:00.000Z' }),
     sellersOf: async (_n, ids) => (calls.push(`vendeurs:${ids.join(',')}`), ids.includes('b4') || ids.includes('b2') ? [{ personId: 'p-vendeur-b4', firstName: 'Gaspard', lastName: 'Ancienvendeur', emails: [], phones: [] }] : []),
     tenantApplicationsOf: async () => [{ rentalId: 'r1', propertyId: 'b9', reference: 'L-9', city: 'Dijon', receivedAt: '2027-06-03T08:00:00.000Z', complete: true, state: 'présenté au propriétaire', stateAt: '2027-06-04T08:00:00.000Z' }],
@@ -62,6 +62,20 @@ describeWithSqlite('EC04 · espace de l’acquéreur', () => {
     // Un acquéreur seul ne voit pas les chiffres d'investisseur ni de candidature.
     expect(r.value.properties[0]!.investor).toBeNull();
     expect(r.value.rentals).toEqual([]);
+  });
+
+  it('[R163] l’état d’une pièce du dossier est écrit en français, jamais avec le code des sources (DS078)', async () => {
+    for (const [code, mot] of [['manquante', 'manquante'], ['deposee', 'déposée'], ['validee', 'validée']] as const) {
+      const t = await setup({ pieceState: code });
+      const r = await t.espace.vue(viewer());
+      if (!r.ok) throw new Error('vue');
+      expect(r.value.files[0]!.pieces).toEqual([{ kind: 'offre de prêt', state: { value: mot, source: 'dossier de vente', at: '2027-06-07T08:00:00.000Z' } }]);
+    }
+    // Un code que la liste ne connaît pas n'est jamais montré tel quel.
+    const t = await setup({ pieceState: 'en_attente' as never });
+    const r = await t.espace.vue(viewer());
+    if (!r.ok) throw new Error('vue');
+    expect(r.value.files[0]!.pieces[0]!.state).toEqual({ value: null, label: NON_COMMUNIQUE });
   });
 
   it('[R161] un texte qui cite le vendeur est retenu', async () => {

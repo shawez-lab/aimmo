@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { FicheUnique } from '../src/index.ts';
-import { EspaceAcquereur, SqlClientParties, SqlSourcesAcquereur, type ClientViewer, type GestesAcquereur, type InvestorNoteGate } from '../src/espaces/index.ts';
+import { EspaceAcquereur, SqlClientParties, SqlSourcesAcquereur, propertyKindWord, type ClientViewer, type GestesAcquereur, type InvestorNoteGate } from '../src/espaces/index.ts';
 import type { DiffusionGate } from '../src/acquereurs/rapprochement.ts';
 import { setupDossier } from './dossiers-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
@@ -75,7 +75,7 @@ describeWithSqlite('EC11 · lecteurs SQL de l’espace de l’acquéreur', () =>
     await t.alert(t.buyerId);
     const raw = await t.sources.proposedOf(t.network.id, t.buyerId);
     expect(raw).toHaveLength(1);
-    expect(raw[0]).toMatchObject({ propertyId: t.propertyId, reference: 'REF-T-1', city: 'Dijon', kind: 'home', surfaceM2: 62, rooms: 3, energyClass: 'D', diffusable: true });
+    expect(raw[0]).toMatchObject({ propertyId: t.propertyId, reference: 'REF-T-1', city: 'Dijon', kind: 'Maison ou appartement', surfaceM2: 62, rooms: 3, energyClass: 'D', diffusable: true });
     expect(raw[0]!.priceEur).toBeGreaterThan(0);
     expect(raw[0]!.sellers.map((s) => s.personId)).toContain(t.personId);
     const v = await t.espace.vue(await t.viewer(t.buyerId));
@@ -87,6 +87,13 @@ describeWithSqlite('EC11 · lecteurs SQL de l’espace de l’acquéreur', () =>
     const other = await t.person('Odile', 'Attente');
     await t.alert(other, t.propertyId, 'waiting');
     expect(await t.sources.proposedOf(t.network.id, other)).toEqual([]);
+  });
+
+  it('[R163] la sorte d’un bien proposé est écrite en français, jamais avec le code de la base (DS078)', () => {
+    // Une valeur, un mot : les six sortes de bien de la base.
+    expect(['home', 'land', 'building', 'commercial', 'business_walls', 'business'].map(propertyKindWord)).toEqual(['Maison ou appartement', 'Terrain', 'Immeuble', 'Local commercial', 'Murs commerciaux', 'Fonds de commerce']);
+    // Une sorte que la liste ne connaît pas, ou un nom hérité d'Object, n'est jamais montré tel quel.
+    for (const code of ['villa', '', 'constructor', 'toString']) expect(propertyKindWord(code)).toBe('Bien');
   });
 
   it('[R42] un bien que la porte de diffusion refuse, ou dont l’annonce est retirée, n’est plus montré', async () => {

@@ -235,8 +235,8 @@ describeWithSqlite('EC08 · lecteurs SQL de l’espace du vendeur', () => {
     if (!v.ok) throw new Error(v.code);
     const docs = v.value[0]!.documents;
     expect(docs.map((d) => d.title)).toEqual(['Mandat de vente simple', 'Titre de propriété']);
-    expect(docs[0]!.signature).toMatchObject({ value: 'signe' });
-    expect(docs[1]!.signature).toMatchObject({ value: 'sans', source: 'dossier de vente' });
+    expect(docs[0]!.signature).toMatchObject({ value: 'signé' });
+    expect(docs[1]!.signature).toMatchObject({ value: 'pas à signer', source: 'dossier de vente' });
     expect(JSON.stringify(v.value)).not.toMatch(/acquéreur remplie|renseignements de l/);
   });
 
