@@ -961,7 +961,7 @@ globalThis.AIMMO_FINANCES = function (t) {
     var rate = field(box, 'Part de l’agent, en %', 'text');
     rate.value = force ? percent(force.defaultRateBp) : '';
     var rows = (g.agents || []).map(function (a) {
-      var i = field(box, 'Taux propre à l’agent ' + a.agentId + ', en % (vide : le taux commun)', 'text');
+      var i = field(box, 'Taux propre à ' + (a.name || 'un agent dont le nom manque') + ', en % (vide : le taux commun)', 'text');
       i.value = percent(a.rateBp);
       return { agentId: a.agentId, input: i };
     });
