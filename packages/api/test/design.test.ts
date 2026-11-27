@@ -1,9 +1,10 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { renderSlipSignPage } from '../src/bon-visite-public.ts';
 import { renderSlipCopy } from '../../core/src/visites/signature-bon.ts';
-import { DESIGN_CSS, PAIRES_TEXTE, PAIRES_TRAIT, PALETTE, PRINT_DESIGN_CSS, renderPublicPage, renderValuationPrint, type Teinte } from '@aimmo/core';
+import { DESIGN_CSS, LIEN_CSS, PAIRES_TEXTE, PAIRES_TRAIT, PALETTE, PRINT_DESIGN_CSS, renderPublicPage, renderValuationPrint, type Teinte } from '@aimmo/core';
 import { renderLegalNotice, renderPrivacyPage, withLegalLinks } from '../../core/src/attirer/mentions-site.ts';
 import { renderEstimationPage } from '../../core/src/attirer/page-estimation.ts';
 import { renderSiteHome } from '../../core/src/attirer/accueil-site.ts';
@@ -39,6 +40,56 @@ const LISTING: PageInput = {
   agent: { firstName: 'Alex', lastName: 'Exemple', phone: '03 00 00 00 00', email: 'alex@exemple.test' },
   photos: [{ ref: 'biens/b1/0b6f1d2e-1111-4a2b-8c3d-000000000001.jpg', kind: 'photo', overlay: 'Aménagement virtuel' }],
 };
+
+/**
+ * DS077 · les liens isolés mesurés dans Chromium, à la largeur d'un téléphone. Un lien est isolé quand il n'est pas pris
+ * dans une phrase : son parent ne porte pas d'autre texte que lui. Un lien dans une phrase suit la ligne (exception
+ * « en ligne » des cibles tactiles). Un lien seul sur sa ligne, au-dessus d'un paragraphe, reste isolé. Chromium n'est pas une dépendance du dépôt : la mesure tourne là où Playwright et
+ * son navigateur sont installés, et se signale sautée ailleurs.
+ */
+type Navigateur = { newPage(o?: object): Promise<any>; close(): Promise<void> };
+async function lancer(): Promise<Navigateur | null> {
+  try {
+    const { chromium } = createRequire(import.meta.url)('playwright') as { chromium: { launch(): Promise<Navigateur> } };
+    return await chromium.launch();
+  } catch {
+    return null;
+  }
+}
+const navigateur = await lancer();
+
+/** Les liens isolés de moins de 44 px de haut (ou de large), sur un téléphone de 390 px. */
+async function petitsLiens(html: string): Promise<string[]> {
+  const page = await navigateur!.newPage({ viewport: { width: 390, height: 844 } });
+  try {
+    await page.setContent(html, { waitUntil: 'load' });
+    return await page.evaluate(() => {
+      // Exécuté dans la page : le document y existe.
+      const w = globalThis as any;
+      const isole = (a: any): boolean => {
+        const parent = a.parentElement;
+        if (!parent) return true;
+        // Seul compte le texte qui partage la ligne du lien : les nœuds de texte et les éléments en ligne autour de lui.
+        let autre = '';
+        for (const n of Array.from(parent.childNodes) as any[]) {
+          if (n === a) continue;
+          if (n.nodeType === 3 || (n.nodeType === 1 && w.getComputedStyle(n).display.startsWith('inline'))) autre += n.textContent ?? '';
+        }
+        return autre.replace(/[\s·|,;:–—()•]/g, '') === '';
+      };
+      const out: string[] = [];
+      for (const a of Array.from(w.document.querySelectorAll('a[href]')) as any[]) {
+        const r = a.getBoundingClientRect();
+        if (r.width === 0 && r.height === 0) continue;
+        if (!isole(a)) continue;
+        if (r.height < 44 || r.width < 44) out.push(`${(a.textContent ?? '').trim().slice(0, 40)} (${Math.round(r.width)}×${Math.round(r.height)})`);
+      }
+      return out;
+    });
+  } finally {
+    await page.close();
+  }
+}
 
 const text = async (r: Response | null): Promise<string> => {
   expect(r).not.toBeNull();
@@ -170,6 +221,18 @@ describe('Z03 · système de design d’AIMMO', () => {
       expect(ligne.split(/\.\s/).length, 'une seule phrase').toBe(1);
     }
   });
+
+  it.skipIf(navigateur === null)('[R201] DS077 · sur téléphone, tout lien isolé fait 44 px au moins', async () => {
+    for (const s of await screens()) {
+      if (s.js || s.print) continue;
+      expect(await petitsLiens(s.html), s.name).toEqual([]);
+    }
+    // La mesure attrape ce qu'elle doit attraper : un lien seul trop bas, pas un lien pris dans une phrase.
+    const page = (corps: string) => `<!doctype html><html lang="fr"><head><style>${DESIGN_CSS}${LIEN_CSS}</style></head><body>${corps}</body></html>`;
+    expect(await petitsLiens(page('<p><a href="/x">Seul</a></p>'))).toHaveLength(1);
+    expect(await petitsLiens(page('<p>Lire <a href="/x">la suite</a> du texte.</p>'))).toEqual([]);
+    expect(await petitsLiens(page('<p><a class="lien" href="/x">Seul</a></p>'))).toEqual([]);
+  }, 60_000);
 
   it('[R201] chaque écran tient son budget de performance, sans rien d’extérieur', async () => {
     for (const s of await screens()) expect(budgetProblems(s, s.budget), s.name).toEqual([]);

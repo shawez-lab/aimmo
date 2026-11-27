@@ -78,7 +78,7 @@ export function renderEstimationPage(input: EstimationPageInput): string {
   const closed = '<p>L’estimation en ligne n’est pas encore ouverte.</p>';
   return (
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="index"><meta name="theme-color" content="${THEME_COLOR}"><title>Estimer mon logement</title><style>${CSS}</style></head>` +
-    `<body><header class="tete"><p class="marque">AIMMO</p><a href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div><main><h1>Estimer mon logement</h1>` +
+    `<body><header class="tete"><p class="marque">AIMMO</p><a class="lien" href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div><main><h1>Estimer mon logement</h1>` +
     `<p>La fourchette des prix au mètre carré dans votre commune, d’après les ventes réelles.</p>` +
     (input.error ? `<p class="reponse" role="alert">${escapeHtml(ERRORS[input.error])}</p>` : '') +
     (input.result ? answer(input.result) : '') +

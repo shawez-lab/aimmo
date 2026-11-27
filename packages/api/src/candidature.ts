@@ -14,7 +14,7 @@
  * Les communes ouvertes au recrutement par la direction (HX68, BR37) sont dites par leur nom seul, triées, sans aucun
  * chiffre ni promesse [R628] ; aucune ouverte, ou une lecture qui échoue : la section n'est pas là, la page sert quand même.
  */
-import { appendEvent, DESIGN_CSS, SqlJournalStore, THEME_COLOR, type SqlDatabase } from '@aimmo/core';
+import { appendEvent, DESIGN_CSS, LIEN_CSS, SqlJournalStore, THEME_COLOR, type SqlDatabase } from '@aimmo/core';
 import { CANDIDATE_EXPERIENCES, CANDIDATE_SOURCES, CANDIDATE_STATUSES, Candidatures, CommunesAPourvoir, checkRecruitingText } from '../../core/src/reseau/index.ts';
 
 export const CANDIDATURE_PATH = '/rejoindre';
@@ -151,7 +151,7 @@ export function pageProblems(): string[] {
 }
 
 /** La page suit le système de design d'AIMMO (Z03) : sa base, puis sa mise en page, en jetons seulement [R201]. */
-const STYLE = DESIGN_CSS + `
+const STYLE = DESIGN_CSS + LIEN_CSS + `
 main{max-width:var(--colonne);margin:0 auto;padding:var(--e-5) var(--e-4) var(--e-8)}
 main>.marque{margin:0 0 var(--e-4);line-height:1.4;letter-spacing:.12em;font-size:var(--t-xs);align-items:flex-start}
 main>.frise{margin:0 0 var(--e-7);border-radius:var(--r-rond)}
@@ -257,7 +257,7 @@ export function candidaturePage(values: FormValues = {}, error: { message: strin
   return `<p class="marque">${escape(t.kicker)}</p><div class="frise" aria-hidden="true"></div>
 <h1>${escape(t.title)}</h1>
 <p class="chapeau">${escape(t.lede)}</p>
-<p><a href="#candidater">Déposer ma candidature</a></p>
+<p><a class="lien" href="#candidater">Déposer ma candidature</a></p>
 <h2><small>Ce que vous trouvez</small>Le métier, sans l’administratif</h2>
 <dl class="offre">${t.finds.map(([k, v]) => `<div><dt>${escape(k)}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl>
 <h2><small>Ce que vous payez</small>Rien pour travailler avec le système</h2>

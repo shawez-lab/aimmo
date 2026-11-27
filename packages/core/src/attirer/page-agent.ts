@@ -13,7 +13,7 @@
  */
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
-import { DESIGN_CSS, THEME_COLOR } from '../design/systeme.ts';
+import { DESIGN_CSS, LIEN_CSS, THEME_COLOR } from '../design/systeme.ts';
 import { escapeHtml } from '../documents/modeles.ts';
 import { euros } from '../annonces/mentions.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -81,6 +81,7 @@ export function normalizeRsac(value: string): string | null {
 
 const CSS =
   DESIGN_CSS +
+  LIEN_CSS +
   `.tete{display:flex;justify-content:space-between;align-items:center;gap:var(--e-4);padding:var(--e-4)}
 main{max-width:46rem;margin:0 auto;padding:0 var(--e-4) var(--e-8)}
 .qui{margin:var(--e-6) 0 var(--e-5);border-bottom:2px solid var(--accent);padding-bottom:var(--e-5)}
@@ -107,7 +108,7 @@ export function renderAgentPage(input: AgentPageInput, check?: { at: Date; more:
   const quality = input.title ?? DEFAULT_PROFESSIONAL_TITLE;
   const title = `${name}, ${quality}`;
   const head = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="index"><meta name="theme-color" content="${THEME_COLOR}"><title>${escapeHtml(title)}</title><style>${CSS}</style></head>`;
-  const brand = `<header class="tete"><p class="marque">AIMMO</p><a href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div>`;
+  const brand = `<header class="tete"><p class="marque">AIMMO</p><a class="lien" href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div>`;
   const contact: string[] = [];
   if (input.phone && PHONE.test(input.phone)) contact.push(`<a href="tel:${escapeHtml(input.phone.replace(/[ .]/g, ''))}">Appeler ${escapeHtml(input.phone)}</a>`);
   if (input.email && EMAIL.test(input.email)) contact.push(`<a href="mailto:${escapeHtml(input.email)}">Écrire à ${escapeHtml(input.firstName)}</a>`);

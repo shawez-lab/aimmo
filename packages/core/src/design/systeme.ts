@@ -193,6 +193,12 @@ export const DESIGN_CSS =
   '[hidden]{display:none!important}' +
   '.visuellement-cache{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}';
 
+/**
+ * Un lien seul sur sa ligne se touche du doigt : `.lien` lui donne la cible d'un bouton [DS077]. Hors de la base, pour
+ * ne rien coûter à l'application de l'agent : chaque page publique qui en a besoin l'ajoute après la base.
+ */
+export const LIEN_CSS = '.lien{display:inline-flex;align-items:center;min-height:var(--cible);min-width:var(--cible)}';
+
 /** La couleur de la barre du navigateur, celle du papier clair. */
 export const THEME_COLOR = PALETTE.clair.papier;
 

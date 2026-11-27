@@ -17,7 +17,7 @@
 import type { Viewer } from '../../acces/droits.ts';
 import { frenchDate, frenchMonth } from '../../attirer/page-prix.ts';
 import type { SqlDatabase, SqlValue } from '../../db/sql.ts';
-import { DESIGN_CSS } from '../../design/systeme.ts';
+import { DESIGN_CSS, LIEN_CSS } from '../../design/systeme.ts';
 import { checkText, plain } from '../../envoi/texte.ts';
 import { localTime } from '../../envoi/horaires.ts';
 import { appendEvent } from '../../journal/journal.ts';
@@ -376,7 +376,7 @@ export function renderDossier(d: Dossier, agentName: string): string {
     )
     .join('');
   const reviews = d.reviews.count === 0 ? '<p>Aucun avis sur la période.</p>' : `<p>${d.reviews.count} avis, note moyenne ${String(d.reviews.average).replace('.', ',')} sur 5.</p><ul class="avis">${d.reviews.answers.map((a) => `<li>${escape(frenchDate(a.day))} : ${a.score} sur 5</li>`).join('')}</ul>`;
-  const link = d.reviews.link ? `<p><a href="${escape(d.reviews.link)}" rel="noopener">Tous les avis publics</a></p>` : '';
+  const link = d.reviews.link ? `<p><a class="lien" href="${escape(d.reviews.link)}" rel="noopener">Tous les avis publics</a></p>` : '';
   return `<!doctype html>
 <html lang="fr">
 <head>
@@ -399,6 +399,7 @@ ${sales}
 /** La feuille du dossier : la base du système, téléphone d'abord, et l'impression. */
 export const DOSSIER_CSS =
   DESIGN_CSS +
+  LIEN_CSS +
   `.tete{display:flex;align-items:center;justify-content:space-between;gap:var(--e-4);padding:var(--e-4)}
 main{max-width:var(--colonne);margin:0 auto;padding:var(--e-4) var(--e-4) var(--e-8)}
 section{margin-top:var(--e-6)}
