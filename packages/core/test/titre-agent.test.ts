@@ -115,10 +115,10 @@ describeWithSqlite('AU012 · réglage du titre par la direction', () => {
   it('[R07] la page du bien et la page de l’agent lisent le titre réglé par la direction ; sans réglage, rien ne change', async () => {
     const { qualite, pages, bien, db } = await setup();
     expect((await bien.inputFor('net-1', 'b1'))?.agent?.title).toBe('agent immobilier');
-    expect(await bien.page('net-1', 'b1')).toContain('<strong>Camille Exemple</strong>, agent immobilier</p>');
+    expect(await bien.page('net-1', 'b1')).toContain('<p class="nom">Camille Exemple</p><p class="doux">agent immobilier</p>');
     expect(await qualite.setTitle(direction, 'agent commercial en immobilier')).toEqual({ ok: true, value: 'agent commercial en immobilier' });
     const listing = await bien.page('net-1', 'b1');
-    expect(listing).toContain('<strong>Camille Exemple</strong>, agent commercial en immobilier</p>');
+    expect(listing).toContain('<p class="nom">Camille Exemple</p><p class="doux">agent commercial en immobilier</p>');
     expect(listing).not.toMatch(/agent immobilier/i);
     const page = await pages.page('net-1', 'ag-1', OPEN);
     expect(page.ok).toBe(true);

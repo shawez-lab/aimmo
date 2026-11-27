@@ -519,6 +519,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : `packages/core/src/annonces/page-bien.ts`
 - Preuve : `site-accueil-et-bien-telephone.jpg`, `site-accueil-et-bien-ordinateur.jpg`. Une seule photo, en vignette sur ordinateur. Pas de galerie, pas de faits clés (surface, pièces, étage), pas de bouton « Visiter ». Le contact de l'agent est un numéro et une adresse en liens nus.
 - Solution : photo plein cadre et galerie, faits clés en une ligne, prix et honoraires lisibles, un bouton « Demander une visite » ancré, l'agent avec son visage, la carte du quartier sans l'adresse exacte.
+- Suite : corrigé le 2026-11-27 pour ce que la version publiée porte : la galerie ouvre la page (la première photo en grand, les suivantes au doigt sur téléphone, en mosaïque de hauteur bornée sur ordinateur), l'état, le titre, le prix, les faits en une ligne (surfaces du site et classes du diagnostic), puis l'agent avec deux vrais boutons, « Demander une visite » et « Appeler », qui restent au pied de l'écran sur téléphone. Sans script, rien de caché [R43]. Restent, faute de donnée dans la version publiée : le nombre de pièces et l'étage dans les faits, le visage de l'agent, la carte du quartier. Avant et après : `captures/avant-apres/DS072-page-du-bien.jpg`.
 
 #### DS073 · Aucune page en anglais
 - Gravité : majeur · Catégorie : international · Effort : L

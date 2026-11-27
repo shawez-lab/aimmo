@@ -6,9 +6,10 @@
  * retirée ne montre plus rien du bien. Aucune adresse, aucun nom du vendeur : la version publiée n'en porte pas [R46].
  * Tout texte est échappé.
  *
- * Le dessin suit le système de design d'AIMMO (Z03), avec une mise en page de catalogue :
- * prix en grands chiffres, état comme un tampon, mentions lisibles et non cachées. Téléphone d'abord ; la fiche
- * imprimable a exactement deux pages A4, la première porte toujours le prix et les mentions.
+ * Le dessin suit le système de design d'AIMMO (Z03). La page vend le bien (DS072) : la photo d'abord et en grand, une
+ * galerie qui se feuillette, l'état, le titre, le prix en grands chiffres, les faits en une ligne, le texte, les mentions
+ * lisibles et jamais cachées, puis l'agent et ses deux gestes. Téléphone d'abord, sans script ; la fiche imprimable a
+ * exactement deux pages A4, la première porte toujours le prix et les mentions.
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -21,7 +22,8 @@ import { DEFAULT_PROFESSIONAL_TITLE, professionalTitle, type ProfessionalTitle }
 import { TextesPortails } from '../diffusion/textes.ts';
 import type { PublishedMedia } from './medias.ts';
 import { energyLabels } from './etiquettes.ts';
-import { euros } from './mentions.ts';
+import { SURFACE_DISPLAY, SURFACE_LABEL } from './fiche-bien.ts';
+import { energyClassesOf, euros } from './mentions.ts';
 import type { ListingPayload, ListingState } from './publication.ts';
 
 export interface AgentCard {
@@ -48,26 +50,42 @@ const EMAIL = /^[^\s@<>"']{1,64}@[A-Za-z0-9.-]{1,60}\.[A-Za-z]{2,}$/;
 
 const mediaUrl = (ref: string): string => `/medias/${ref.split('/').map(encodeURIComponent).join('/')}`;
 
-/** La page du bien : la base du système de design d'AIMMO (Z03), puis la mise en page de catalogue, en jetons [R201]. */
+/**
+ * La page du bien : la base du système de design d'AIMMO (Z03), puis sa mise en page, en jetons [R201]. DS072 : la photo
+ * d'abord et en grand, une galerie qui se feuillette du doigt, les faits en une ligne, le prix, le texte, les mentions
+ * lisibles et jamais cachées, puis l'agent et ses deux gestes, qui restent au pied de l'écran sur téléphone.
+ */
 const CSS =
   DESIGN_CSS +
   ETIQUETTES_CSS +
   LIEN_CSS +
   `.tete{display:flex;justify-content:space-between;align-items:center;gap:var(--e-4);padding:var(--e-4)}
-.ref{font-size:var(--t-xs);letter-spacing:.12em;text-transform:uppercase;color:var(--doux)}
-main{max-width:56rem;margin:0 auto;padding:0 var(--e-4) var(--e-8)}
-h1{margin:var(--e-6) 0 var(--e-3);max-width:24ch}
-.etat{display:inline-block;padding:var(--e-1) var(--e-3);border:2px solid var(--accent);color:var(--accent);font-weight:700;font-size:var(--t-xs);letter-spacing:.12em;text-transform:uppercase;border-radius:var(--r-s);transform:rotate(-2deg)}
-.prix{font:600 clamp(2.4rem,11vw,3.6rem)/1 var(--police-titre);margin:var(--e-4) 0 var(--e-2);color:var(--accent);letter-spacing:-.02em}
-.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(14rem,1fr));gap:var(--e-2);margin:var(--e-5) calc(-1 * var(--e-4));padding:0;list-style:none}
-.photos li{position:relative;margin:0}.photos img{width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--trait)}
-.virtuel{position:absolute;left:var(--e-2);bottom:var(--e-2);background:var(--encre);color:var(--papier);font-size:var(--t-xs);font-weight:700;padding:2px var(--e-2);border-radius:var(--r-s);letter-spacing:.04em}
+.ref{margin:0;font-size:var(--t-xs);color:var(--doux)}
+main{max-width:72rem;margin:0 auto;padding:0 var(--e-4) var(--e-6)}
+.photos{display:flex;gap:var(--e-2);margin:0 calc(-1 * var(--e-4));padding:0 var(--e-4);list-style:none;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding:0 var(--e-4)}
+.photos li{position:relative;flex:0 0 88%;margin:0;scroll-snap-align:start}.photos li:only-child{flex-basis:100%}
+.photos img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--trait)}
+.virtuel{position:absolute;left:var(--e-2);top:var(--e-2);background:var(--encre);color:var(--papier);font-size:var(--t-xs);font-weight:700;padding:2px var(--e-2);border-radius:var(--r-s);letter-spacing:.04em}
 .legende{display:block;font-size:var(--t-xs);color:var(--doux);padding-top:var(--e-1)}
+.etat{display:inline-block;margin-top:var(--e-5);padding:2px var(--e-2);border:1px solid var(--encre);border-radius:var(--r-s);font-size:var(--t-xs);font-weight:500;letter-spacing:.04em}
+h1{margin:var(--e-3) 0 var(--e-2);max-width:22ch}
+.prix{font:400 clamp(2.2rem,10vw,3.2rem)/1 var(--police-titre);margin:var(--e-3) 0;letter-spacing:-.02em}
+.faits{display:flex;flex-wrap:wrap;gap:var(--e-3) var(--e-6);margin:var(--e-5) 0;padding:var(--e-4) 0;border-top:1px solid var(--trait);border-bottom:1px solid var(--trait)}
+.faits dt{font-size:var(--t-xs);color:var(--doux)}.faits dd{margin:0;font:400 var(--t-xl)/1.2 var(--police-titre)}
 .texte{white-space:pre-line;font-size:var(--t-l);line-height:1.6;max-width:38rem}
-.mentions{background:var(--surface);border-radius:var(--r-m);box-shadow:inset 4px 0 0 var(--moutarde);padding:var(--e-4) var(--e-5);margin:var(--e-6) 0;font-size:var(--t-s);white-space:pre-line;max-width:38rem}
+.mentions{border-top:1px solid var(--trait);padding-top:var(--e-4);margin:var(--e-6) 0;font-size:var(--t-s);white-space:pre-line;max-width:38rem}
 .agent{border-top:1px solid var(--trait);padding-top:var(--e-5);margin-top:var(--e-6)}.agent a{font-weight:600}
+.agent .nom{margin:0;font:400 var(--t-xl)/1.2 var(--police-titre)}
+.contact{display:contents}
+.gestes{position:sticky;bottom:0;display:flex;gap:var(--e-2);margin:var(--e-5) calc(-1 * var(--e-4)) calc(-1 * var(--e-6));padding:var(--e-3) var(--e-4) max(var(--e-3),env(safe-area-inset-bottom));background:var(--papier);border-top:1px solid var(--trait)}
+.gestes .appel{flex:1 1 0;margin:0}.gestes .second{flex:0 1 auto;background:transparent;color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 .retire{margin:var(--e-7) 0;font-size:var(--t-l);color:var(--doux)}
-@media (min-width:48rem){.photos{margin-left:0;margin-right:0}.photos img{border-radius:var(--r-m)}}`;
+@media (min-width:60rem){.photos{display:grid;grid-auto-flow:column;grid-template-rows:1fr 1fr;grid-auto-columns:calc(25% - var(--e-2) * .75);height:min(64vh,36rem);margin:var(--e-4) 0 0;padding:0 0 var(--e-2);scroll-snap-type:x proximity;scroll-padding:0}
+.photos li{display:flex;flex-direction:column;min-height:0}.photos img{flex:1 1 0;min-height:0;aspect-ratio:auto}
+.photos li:first-child{grid-row:span 2;grid-column:span 2}.photos li:only-child{grid-column:span 4}
+.corps{display:grid;grid-template-columns:minmax(0,1fr) 20rem;gap:var(--e-8);align-items:start}
+.contact{display:block;position:sticky;top:var(--e-5);margin-top:var(--e-5)}.contact .agent{margin-top:0}
+.gestes{position:static;flex-direction:column;margin:var(--e-4) 0 0;padding:0;border:0}.gestes .appel{flex:none}}`;
 
 /** La fiche imprimable : les jetons du papier, deux pages A4 exactement. */
 const PRINT_CSS =
@@ -85,17 +103,19 @@ h1{font-size:20pt;line-height:1.15;margin:8mm 0 3mm}.prix{font-size:30pt;font-we
 .photos img{width:100%;height:44mm;object-fit:cover}.etiquettes{grid-template-columns:1fr 1fr;gap:6mm;margin:0 0 5mm;font-size:8pt}.virtuel{position:absolute;left:2mm;bottom:2mm;background:var(--encre);color:var(--papier);font:700 7pt var(--police-texte);padding:1mm 2mm}.legende{display:block;font:7pt var(--police-texte);padding-top:1mm}
 .page+.page{padding-bottom:42mm}.texte{margin:6mm 0}.agent{position:absolute;left:16mm;right:16mm;bottom:14mm;border-top:1pt solid var(--accent);padding-top:3mm;font-size:9.5pt}`;
 
-function photoList(photos: PageInput['photos'], limit: number): string {
+function photoList(photos: PageInput['photos'], limit: number, hero = false): string {
   const items = photos
     .filter((p) => p.kind === 'photo')
     .slice(0, limit)
-    .map((p) => {
+    .map((p, i) => {
       // Une photo d'aménagement virtuel porte la mention sur l'image elle-même [R48].
       const virtual = p.overlay ? `<span class="virtuel">${escapeHtml(p.overlay)}</span>` : '';
       // La légende des portails [R478], quand la version publiée en a une : texte de remplacement et légende visible (AU114).
       const alt = p.caption ?? (p.overlay ? 'Photo du bien, aménagement virtuel' : 'Photo du bien');
       const caption = p.caption ? `<span class="legende">${escapeHtml(p.caption)}</span>` : '';
-      return `<li><img src="${escapeHtml(mediaUrl(p.ref))}" alt="${escapeHtml(alt)}" loading="lazy" decoding="async">${virtual}${caption}</li>`;
+      // DS072 · sur la page, la première photo est le visage du bien : elle n'attend pas le défilement.
+      const load = hero && i === 0 ? 'fetchpriority="high"' : 'loading="lazy"';
+      return `<li><img src="${escapeHtml(mediaUrl(p.ref))}" alt="${escapeHtml(alt)}" ${load} decoding="async">${virtual}${caption}</li>`;
     });
   return items.length > 0 ? `<ul class="photos">${items.join('')}</ul>` : '';
 }
@@ -109,6 +129,43 @@ export function agentBlock(agent: AgentCard | null): string {
   return `<section class="agent" aria-label="Votre agent">${parts.join('')}</section>`;
 }
 
+const M2 = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
+
+/**
+ * DS072 · Les faits du bien en une ligne, lus dans la version publiée seule : les surfaces que le site affiche (AU063) et
+ * les deux classes du diagnostic, telles que les mentions les disent [R43]. Rien n'est déduit ni arrondi ; sans eux, rien.
+ */
+export function keyFacts(p: ListingPayload): string {
+  const facts: [string, string][] = (p.surfaces ?? [])
+    .filter((x) => SURFACE_DISPLAY.site.includes(x.kind))
+    .map((x) => [SURFACE_LABEL[x.kind].replace(/^s/, 'S'), `${M2.format(x.m2)}\u00a0m²`]);
+  const classes = energyClassesOf(p.mentions);
+  if (classes) facts.push(['Classe énergie', classes.energy], ['Classe climat', classes.climate]);
+  return facts.length > 0 ? `<dl class="faits">${facts.map(([k, v]) => `<div><dt>${escapeHtml(k)}</dt><dd>${escapeHtml(v)}</dd></div>`).join('')}</dl>` : '';
+}
+
+/**
+ * DS072 · L'agent et ses deux gestes : écrire pour une visite, appeler. Les gestes sont de vrais boutons, au pied de
+ * l'écran sur téléphone ; le numéro et l'adresse restent écrits en clair. Un bien qui n'est plus « en vente » ne propose
+ * plus de visite. Sans coordonnées réglées, aucun geste.
+ */
+function contactBlock(agent: AgentCard | null, p: ListingPayload): string {
+  if (!agent) return '';
+  const phone = agent.phone && PHONE.test(agent.phone) ? agent.phone : null;
+  const email = agent.email && EMAIL.test(agent.email) ? agent.email : null;
+  const lines = [`<p class="nom">${escapeHtml(`${agent.firstName} ${agent.lastName}`)}</p>`, `<p class="doux">${escapeHtml(agent.title ?? DEFAULT_PROFESSIONAL_TITLE)}</p>`];
+  if (phone) lines.push(`<p><a class="lien" href="tel:${escapeHtml(phone.replace(/[ .]/g, ''))}">${escapeHtml(phone)}</a></p>`);
+  if (email) lines.push(`<p><a class="lien" href="mailto:${escapeHtml(email)}">${escapeHtml(email)}</a></p>`);
+  const visit = p.state === 'en_vente';
+  const subject = encodeURIComponent(`${visit ? 'Demande de visite' : 'Votre annonce'}, réf. ${p.reference}`);
+  const gestures = [
+    ...(email ? [`<a class="appel${visit || !phone ? '' : ' second'}" href="mailto:${escapeHtml(email)}?subject=${subject}">${visit ? 'Demander une visite' : 'Écrire à l’agent'}</a>`] : []),
+    ...(phone ? [`<a class="appel${email && visit ? ' second' : ''}" href="tel:${escapeHtml(phone.replace(/[ .]/g, ''))}">Appeler</a>`] : []),
+  ];
+  const bar = gestures.length > 0 ? `<p class="gestes">${gestures.join('')}</p>` : '';
+  return `<div class="contact"><section class="agent" aria-label="Votre agent">${lines.join('')}</section>${bar}</div>`;
+}
+
 /** La page publique du bien, depuis la version publiée. Une annonce retirée ne montre plus rien du bien. */
 export function renderListingPage(input: PageInput): string {
   const p = input.payload;
@@ -120,15 +177,17 @@ export function renderListingPage(input: PageInput): string {
   }
   return (
     `${head}<body>${brand}<main>` +
-    `<h1>${escapeHtml(p.title ?? '')}</h1>` +
+    photoList(input.photos, 40, true) +
+    `<div class="corps"><div>` +
     `<p><span class="etat">${STATE_LABEL[p.state]}</span></p>` +
+    `<h1>${escapeHtml(p.title ?? '')}</h1>` +
     `<p class="prix">${escapeHtml(euros(p.priceEur))}</p>` +
-    photoList(input.photos, 40) +
+    keyFacts(p) +
     `<p class="texte">${escapeHtml(p.body)}</p>` +
     `<section class="mentions" aria-label="Informations obligatoires">${escapeHtml(p.mentions)}</section>` +
     // Les deux étiquettes du DPE en couleur, de la même version que les mentions (AU006) [R43].
     energyLabels(p.mentions) +
-    agentBlock(input.agent) +
+    `</div>${contactBlock(input.agent, p)}</div>` +
     `</main></body></html>`
   );
 }
