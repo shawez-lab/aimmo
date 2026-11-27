@@ -1823,3 +1823,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-27 11:08 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 09:53 et 10:53 n'ont rien produit)
 - 2026-11-27 11:08 · VOIE 2 : DS087, 9fe346a3, relancé non
 - 2026-11-27 11:23 · voie 1 · DS077 fusionnée (#808 : sur téléphone, tout lien seul sur sa ligne fait 48 px, mesuré dans Chromium à 390 px sur le jeu de capture ; la règle `.lien` est hors de la base pour tenir le budget de l'application ; Codex sans remarque) ; prise à la voie 3, verrou figé depuis le 23 · prochaine : DS086
+- 2026-11-27 11:23 · voie 1 · relance de la séance suivante refusée par le contrôle des permissions (fire_trigger), un essai ; la voie 1 repart à son prochain horaire
