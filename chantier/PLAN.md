@@ -8545,6 +8545,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS085 · Les mails sont du texte brut, sans signature
 - Statut : à faire
+- Suivi : regardé le 2026-11-27 : aucun vrai canal de mail n'est branché, et un message qui part n'a qu'un corps en texte (`OutboundMessage.body`) ; un gabarit en HTML n'aurait personne pour le porter. À faire avec le branchement du canal de mail : un habillage pur (texte et HTML, marque, bouton, signature de l'agent), posé après le contrôle central, qui ne change pas.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS085 (majeur, mails et SMS, effort L), endroit : `packages/core/src/envoi/`
 - Constat de l’audit : les quatre mails du parcours : un paragraphe, un lien écrit en entier, aucune signature.
