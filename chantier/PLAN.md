@@ -8413,7 +8413,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS072 · La page d'un bien ne vend pas le bien
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : proposition #813 (`packages/core/src/annonces/page-bien.ts` : galerie, faits en une ligne, deux gestes de l'agent). Restent, faute de donnée dans la version publiée : pièces et étage, visage de l'agent, carte du quartier.
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS072 (bloquant, site public, effort L), endroit : `packages/core/src/annonces/page-bien.ts`
 - Constat de l’audit : `site-accueil-et-bien-telephone.jpg`, `site-accueil-et-bien-ordinateur.jpg`. Une seule photo, en vignette sur ordinateur. Pas de galerie, pas de faits clés (surface, pièces, étage), pas de bouton « Visiter ». Le contact de l'agent est un numéro et une adresse en liens nus.
