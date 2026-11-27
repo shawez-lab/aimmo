@@ -20,11 +20,7 @@ const shortKey = (k: string): string => k.split('.').map((x) => x.slice(0, 4)).j
 const LEASE_LABELS = { ...Object.fromEntries(Object.entries(LEASE_FIELDS).map(([k, v]) => [shortKey(k), v.label])), [shortKey('annexe.notice_information')]: 'notice d’information' };
 const CHANNEL_LABELS: Record<(typeof CHOICE_CHANNELS)[number], string> = { oral: 'De vive voix', ecrit: 'Par écrit', mail: 'Par mail', sms: 'Par SMS', whatsapp: 'Par WhatsApp' };
 
-export const LOUER_HOME_HTML = `<section class="bloc" aria-labelledby="titre-louer-accueil">
-<h3 id="titre-louer-accueil">Mes locations</h3>
-<p class="etat">Du contrôle du logement à l’état des lieux signé, étape par étape. Aucun loyer ni dépôt ne passe par AIMMO.</p>
-<button id="louer-ouvrir" type="button" class="secondaire">Ouvrir mes mises en location</button>
-</section>
+export const LOUER_HOME_HTML = `<button id="louer-ouvrir" type="button" class="secondaire rangee">Mes locations</button>
 `;
 
 /** L'entrée des modèles de bail (W17) : sur l'écran du réseau pour la direction, sur celui de la conformité pour la validation. */
@@ -42,7 +38,7 @@ export const LOUER_MODELES_CONFORMITE_HTML = modelesEntry('louer-modeles-c', 'Va
 export const LOUER_HTML = `<section id="louer" hidden>
 <button id="louer-retour" type="button" class="retour">Retour</button>
 <h2 id="louer-titre">Louer</h2>
-<p class="doux">Les dossiers complets sont montrés au propriétaire dans leur ordre d’arrivée, sans note ni tri : il choisit.</p>
+<p class="doux">Les dossiers complets sont montrés au propriétaire dans leur ordre d’arrivée, sans note ni tri : il choisit. Aucun loyer ni dépôt ne passe par AIMMO.</p>
 <p id="louer-etat" class="etat" role="status"></p>
 <div id="louer-corps"></div>
 </section>

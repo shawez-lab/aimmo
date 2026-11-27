@@ -113,7 +113,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : accueil
 - Preuve : remises, panneaux, clés, notifications, actualités, intégration, Fiche Google, locations, investisseurs, commerces : dix blocs sur 23, chacun avec une phrase d'explication permanente.
 - Solution : un onglet « Outils », en grille, sans phrase permanente.
-- Suite : en partie le 2026-11-27 : les outils ont quitté la journée pour l'onglet « Outils », qui passe de 5,3 à 2,2 écrans sur le parcours de démonstration. Reste : la grille sans phrase permanente.
+- Suite : corrigé le 2026-11-27 : les outils ont quitté la journée (de 5,3 à 2,2 écrans sur le parcours de démonstration) pour l'onglet « Outils », un index d'une rangée par outil, en trois groupes, sans phrase permanente : 1,6 écran. La phrase des locations qui portait un engagement est sur l'écran des locations. Avant et après : `captures/avant-apres/DS011-outils.jpg`.
 
 #### DS012 · Des cartes vides, réduites à un bouton
 - Gravité : mineur · Catégorie : composants · Effort : S

@@ -123,7 +123,7 @@ describe('BR50 · « Mes clés à rendre » sur l’accueil de l’agent', () =>
     expect(t.calls.some((c) => c.url.startsWith('/v1/trousseaux'))).toBe(false);
     // DS011 · le bloc est dans l'écran « Outils » de l'agent, plus sur sa journée.
     const outils = HTML.slice(HTML.indexOf('<section id="outils"'));
-    expect(outils.slice(0, outils.indexOf('<section id=', 10))).toContain('<h3 id="titre-cles-rendre">Mes clés à rendre</h3>');
+    expect(outils.slice(0, outils.indexOf('<section id=', 10))).toContain('<button id="cles-rendre-ouvrir" type="button" class="secondaire rangee">Mes clés à rendre</button>');
   });
 
   it('[R272] [R665] chaque trousseau : le texte du serveur, l’heure du retour, « en retard » une fois passée, dans l’ordre reçu', async () => {

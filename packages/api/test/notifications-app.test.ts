@@ -104,7 +104,7 @@ describe('BR67 · « Mes notifications » sur l’accueil de l’agent', () => {
     expect(t.calls.some((c) => c.url.startsWith('/v1/notifications'))).toBe(false);
     // DS011 · le bloc est dans l'écran « Outils » de l'agent, plus sur sa journée.
     const outils = HTML.slice(HTML.indexOf('<section id="outils"'));
-    expect(outils.slice(0, outils.indexOf('<section id=', 10))).toContain('<h3 id="titre-notifications">Mes notifications</h3>');
+    expect(outils.slice(0, outils.indexOf('<section id=', 10))).toContain('<button id="notifications-ouvrir" type="button" class="secondaire rangee">Mes notifications</button>');
     await t.open();
     expect(t.status()).toBe('');
     // Un second geste relit tout sans recharger le script.

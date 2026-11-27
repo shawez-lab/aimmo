@@ -58,7 +58,15 @@ const ROLES: Record<string, string> = { agent: 'Agent', direction: 'Direction', 
 /** Les trois endroits du bloc : la journée de l'agent, l'écran du réseau, l'écran de la conformité. */
 export type ClesPlace = 'accueil' | 'reseau' | 'conformite';
 
-export const clesEntryHtml = (p: ClesPlace): string => `<section class="bloc" aria-labelledby="titre-cles-${p}">
+/** L'entrée des clés : une rangée de l'écran « Outils » pour l'agent (DS011), un bloc sur l'écran du réseau et sur celui de la conformité. */
+export const clesEntryHtml = (p: ClesPlace): string =>
+  p === 'accueil'
+    ? `<button id="cles-accueil-voir" type="button" class="secondaire rangee">Clés de mes appareils</button>
+<p id="cles-accueil-etat" class="etat" role="status"></p>
+<div id="cles-accueil-corps"></div>
+<p class="doux">L’empreinte, le visage ou le code de l’appareil protège chaque clé. Elle ne quitte jamais l’appareil.</p>
+`
+    : `<section class="bloc" aria-labelledby="titre-cles-${p}">
 <h3 id="titre-cles-${p}">Clés de mes appareils</h3>
 <p class="doux">L’empreinte, le visage ou le code de l’appareil protège chaque clé. Elle ne quitte jamais l’appareil.</p>
 <button id="cles-${p}-voir" type="button" class="secondaire">Voir mes clés</button>

@@ -173,6 +173,28 @@ describe('DS011 · les outils ont leur écran, la journée garde la journée', (
     expect(HTML).not.toContain('chiffres-retour');
   });
 
+  it('l’écran « Outils » est un index : trois groupes, une rangée par outil, à son nom, sans phrase permanente', () => {
+    const groups = [...TOOLS.matchAll(/<h3>([^<]+)<\/h3>([\s\S]*?)(?=<h3>|<\/section>\n$)/g)].map((m) => [m[1], [...m[2]!.matchAll(/<button id="[a-z-]+" type="button" class="secondaire rangee"(?: aria-label="[^"]+")?>([^<]+)<\/button>/g)].map((b) => b[1])]);
+    expect(groups).toEqual([
+      ['Mes dossiers', ['Gagner des mandats', 'Mes locations', 'Mes commerces', 'Mes investisseurs', 'Mes partenaires']],
+      // « Mes remises négociées » et « Mes panneaux » s'y posent avec la journée, dans `remises-accueil`.
+      ['Au quotidien', ['Mes clés à rendre', 'Fiche Google', 'Mes actualités', 'Déjà vues']],
+      ['Mon compte', ['Mon dossier', 'Académie', 'Mes notifications', 'Clés de mes appareils']],
+    ]);
+    // Aucun bouton hors de ces rangées, aucun bloc, aucune phrase toujours affichée : seuls des états, vides au départ.
+    expect(TOOLS.match(/<button\b/g)).toHaveLength(13);
+    expect(TOOLS).not.toContain('class="bloc"');
+    expect([...TOOLS.matchAll(/<p\b[^>]*>([^<]*)<\/p>/g)].filter((m) => m[1] !== '').map((m) => m[0])).toEqual(['<p class="doux">L’empreinte, le visage ou le code de l’appareil protège chaque clé. Elle ne quitte jamais l’appareil.</p>']);
+    // « Déjà vues » garde le nom que ses messages citent [R269] ; seul, il se dit en entier à qui ne voit pas la rangée du dessus.
+    expect(TOOLS).toContain('<button id="actualites-vues" type="button" class="secondaire rangee" aria-label="Actualités déjà vues">Déjà vues</button>');
+    // Cette phrase-là ne se montre qu'avec les clés, une fois ouvertes.
+    expect(CSS).toContain('#cles-accueil-corps:empty + .doux { display: none; }');
+    // Une rangée a la hauteur d'une cible et se lit comme une ligne : pas de cadre, un filet, un chevron.
+    expect(CSS).toMatch(/button\.rangee, #remises-accueil > \.bloc > button \{[^}]*min-height: calc\(var\(--cible\) \+ var\(--e-2\)\);[^}]*border-top: 1px solid var\(--trait\);[^}]*box-shadow: none;/);
+    // L'engagement que portait l'entrée des locations est gardé, sur l'écran des locations.
+    expect(between(HTML, '<section id="louer"', '<div id="louer-corps">')).toContain('Aucun loyer ni dépôt ne passe par AIMMO.');
+  });
+
   it('le lien d’une notification ouvre l’écran des outils, là où « Mes notifications » se lit', async () => {
     const a = await run('agent', { hash: '#envoi=abc' });
     expect(a.els.outils!.hidden).toBe(false);
@@ -266,6 +288,11 @@ describe('DS005 · dans Chromium', () => {
       expect(marks[1]).toBe('none');
       await page.click('#outils-ouvrir');
       await page.waitForSelector('#outils:not([hidden])');
+      // DS011 · l'index des outils tient en deux écrans de téléphone, chaque rangée fait 48 px au moins.
+      expect(await page.evaluate(() => (globalThis as any).document.documentElement.scrollHeight)).toBeLessThanOrEqual(2 * 844);
+      const rows = await page.evaluate(() => [...(globalThis as any).document.querySelectorAll('#outils button')].map((b: any) => b.getBoundingClientRect().height));
+      expect(rows.length).toBeGreaterThanOrEqual(15);
+      expect(Math.min(...rows)).toBeGreaterThanOrEqual(48);
       // « Se déconnecter », dernier élément de l'écran : une fois la page défilée jusqu'au bout, il est au-dessus de la barre.
       await page.evaluate(() => (globalThis as any).scrollTo(0, (globalThis as any).document.documentElement.scrollHeight));
       const out = await box(page, '#sortir');

@@ -214,7 +214,7 @@ describe('CE11 · écran « Commerces » de l’application', () => {
   it('[R201] l’application, avec l’écran « Commerces », passe le contrôle d’accessibilité', () => {
     expect(htmlProblems(HTML)).toEqual([]);
     expect(HTML).toContain('id="commerces"');
-    expect(HTML).toContain('<h3 id="titre-commerces-accueil">Mes commerces</h3>');
+    expect(HTML).toContain('<button id="commerces-ouvrir" type="button" class="secondaire rangee">Mes commerces</button>');
   });
 });
 

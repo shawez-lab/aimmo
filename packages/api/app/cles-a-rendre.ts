@@ -11,7 +11,7 @@
  */
 
 export const CLES_A_RENDRE_REFUSALS: Readonly<Record<string, string>> = Object.freeze({
-  role: 'Les clés à rendre se lisent sur l’accueil d’un agent : la direction tient l’armoire depuis la fiche du bien.',
+  role: 'Les clés à rendre se lisent dans les outils d’un agent : la direction tient l’armoire depuis la fiche du bien.',
   pas_son_bien: 'Le retour de ce trousseau se note par l’agent du bien ou la direction : rapportez-le à l’agence, ils le noteront.',
   pas_responsable: 'Ce trousseau n’est plus sous votre responsabilité : la direction note son retour.',
   network: 'Ce bien n’est pas dans votre réseau.',
@@ -29,13 +29,9 @@ export const CLES_A_RENDRE_CUT = 'Vous avez changé d’écran avant la réponse
 /** Le second appui demandé avant « Perdu » : un trousseau perdu ne sort plus [R271]. */
 export const CLES_A_RENDRE_CONFIRM = 'Un trousseau perdu ne sort plus jamais de l’armoire. Appuyez sur « Confirmer : perdu » pour le noter.';
 
-export const CLES_A_RENDRE_HOME_HTML = `<section class="bloc" aria-labelledby="titre-cles-rendre">
-<h3 id="titre-cles-rendre">Mes clés à rendre</h3>
-<p class="etat">Chaque trousseau que vous avez, ou que vous avez remis à un partenaire, avec l’heure de son retour.</p>
-<button id="cles-rendre-ouvrir" type="button" class="secondaire">Voir mes clés à rendre</button>
+export const CLES_A_RENDRE_HOME_HTML = `<button id="cles-rendre-ouvrir" type="button" class="secondaire rangee">Mes clés à rendre</button>
 <p id="cles-rendre-etat" class="etat" role="status"></p>
 <div id="cles-rendre-corps"></div>
-</section>
 `;
 
 /** Le chargeur, dans l'application : le script n'arrive qu'au premier geste, jamais gardé sur l'appareil. */

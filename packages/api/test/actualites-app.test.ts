@@ -115,7 +115,7 @@ describe('BR49 · « Mes actualités » sur l’accueil de l’agent', () => {
     // Le bloc ne demande rien au serveur avant le geste.
     // DS011 · le bloc est dans l'écran « Outils » de l'agent, plus sur sa journée.
     const outils = HTML.slice(HTML.indexOf('<section id="outils"'));
-    expect(outils.slice(0, outils.indexOf('<section id=', 10))).toContain('<h3 id="titre-actualites">Mes actualités</h3>');
+    expect(outils.slice(0, outils.indexOf('<section id=', 10))).toContain('<button id="actualites-ouvrir" type="button" class="secondaire rangee">Mes actualités</button>');
     await t.click('actualites-vues');
     expect(t.reads('/v1/actualites')).toBe(0);
     expect(t.reads('/v1/actualites/deja-vues')).toBe(1);

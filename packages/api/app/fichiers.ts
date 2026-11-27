@@ -180,13 +180,12 @@ ${A_TENIR_HOME_HTML}<section class="bloc" aria-labelledby="titre-plan">
 </section>
 <section id="outils" hidden>
 <h2 id="outils-titre">Outils</h2>
-${GAGNER_HOME_HTML}${LOUER_HOME_HTML}${COMMERCES_HOME_HTML}${INVESTIR_HOME_HTML}<section class="bloc" aria-labelledby="titre-partenaires-accueil">
-<h3 id="titre-partenaires-accueil">Mes partenaires</h3>
-<p class="etat">Proposez au client des professionnels tirés au sort, notez son choix, suivez leurs réponses.</p>
-<button id="partenaires-ouvrir" type="button" class="secondaire">Ouvrir mes mises en relation</button>
-</section>
+<h3>Mes dossiers</h3>
+${GAGNER_HOME_HTML}${LOUER_HOME_HTML}${COMMERCES_HOME_HTML}${INVESTIR_HOME_HTML}<button id="partenaires-ouvrir" type="button" class="secondaire rangee">Mes partenaires</button>
+<h3>Au quotidien</h3>
 ${CLES_A_RENDRE_HOME_HTML}<div id="remises-accueil"></div>
-${FICHE_GOOGLE_HOME_HTML}${ACTUALITES_HOME_HTML}${INTEGRATION_HOME_HTML}${NOTIFICATIONS_HOME_HTML}${clesEntryHtml('accueil')}</section>
+${FICHE_GOOGLE_HOME_HTML}${ACTUALITES_HOME_HTML}<h3>Mon compte</h3>
+${INTEGRATION_HOME_HTML}${NOTIFICATIONS_HOME_HTML}${clesEntryHtml('accueil')}</section>
 <section id="fiche" hidden>
 <button id="retour" type="button">Retour à ma journée</button>
 <h2 id="fiche-nom"></h2>
@@ -268,6 +267,13 @@ body { min-height: 100dvh; }
 .onglets:not([hidden]) ~ main { padding-bottom: calc(var(--e-8) + var(--cible) + var(--e-2) + env(safe-area-inset-bottom)); }
 .onglets:not([hidden]) ~ main #note { bottom: calc(var(--cible) + var(--e-5) + env(safe-area-inset-bottom)); }
 #sortir { margin-top: var(--e-7); }
+#outils > h3 { margin: var(--e-6) 0 var(--e-2); font: 500 var(--t-s)/1.3 var(--police-texte); letter-spacing: 0; color: var(--doux); }
+button.rangee, #remises-accueil > .bloc > button { width: 100%; justify-content: space-between; min-height: calc(var(--cible) + var(--e-2)); margin: 0; padding: var(--e-3) 0; border-top: 1px solid var(--trait); border-radius: 0; box-shadow: none; color: var(--encre); text-align: left; }
+button.rangee::after, #remises-accueil > .bloc > button::after { content: "›"; color: var(--doux); font-size: 1.4em; line-height: .8; font-weight: 400; }
+#remises-accueil > .bloc { margin: 0; padding: 0; border: 0; }
+#outils > .etat { margin: 0 0 var(--e-3); }
+#actualites-vues { padding-left: var(--e-5); }
+#cles-accueil-corps:empty + .doux { display: none; }
 @media (min-width: 64rem) {
 .onglets { z-index: 1; top: 0; right: auto; width: 12rem; flex-direction: column; gap: var(--e-1); padding: var(--e-8) var(--e-4) 0; background: var(--papier); border-top: 0; border-right: 1px solid var(--trait); }
 .onglets button { flex: none; flex-direction: row; justify-content: flex-start; gap: var(--e-3); min-height: var(--cible); padding: 0 var(--e-3); font-size: var(--t-m); }

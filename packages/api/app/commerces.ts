@@ -118,11 +118,7 @@ const SHEET_LABELS = {
 const SCALE_LABELS = { revenue_pct: 'Part du chiffre d’affaires, en %', ebitda_multiple: 'Multiple de l’excédent brut', rent_yield: 'Rendement du loyer, en %' };
 const KIND_LABELS = { business: 'Fonds de commerce', business_walls: 'Murs commerciaux', commercial: 'Local professionnel' };
 
-export const COMMERCES_HOME_HTML = `<section class="bloc" aria-labelledby="titre-commerces-accueil">
-<h3 id="titre-commerces-accueil">Mes commerces</h3>
-<p class="etat">Estimation, présentation anonyme, demandes des repreneurs, dossier protégé et étapes de la cession.</p>
-<button id="commerces-ouvrir" type="button" class="secondaire">Ouvrir mes commerces</button>
-</section>
+export const COMMERCES_HOME_HTML = `<button id="commerces-ouvrir" type="button" class="secondaire rangee">Mes commerces</button>
 `;
 
 export const COMMERCES_HTML = `<section id="commerces" hidden>
