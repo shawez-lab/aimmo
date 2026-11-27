@@ -76,7 +76,7 @@ export function renderSiteHome(input: SiteHomeInput): string {
   return (
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="index"><meta name="theme-color" content="${THEME_COLOR}"><title>${escapeHtml(title)}</title><style>${CSS}</style></head>` +
     `<body><header class="tete"><p class="marque">AIMMO</p></header><div class="frise" aria-hidden="true"></div><main><h1>${escapeHtml(title)}</h1>${who}${publicSearchEntry()}` +
-    `<h2>Les derniers biens</h2><p class="controle">Mandats vérifiés le ${when(input.checkedAt)}. Un bien sans mandat en vigueur à cette heure n'apparaît pas ici.</p>${list}` +
+    `<h2>Les derniers biens</h2>${list}<p class="controle">Mandats vérifiés le ${when(input.checkedAt)} : seuls les biens sous mandat en vigueur sont montrés.</p>` +
     `<h2>Sur ce site</h2><ul class="chemins">${paths.map((p) => `<li><a href="${escapeHtml(p.path)}">${escapeHtml(p.label)}</a><span class="doux">${escapeHtml(p.text)}</span></li>`).join('')}</ul>` +
     `<p class="doux">Annonces des agents immobiliers du réseau AIMMO. Les adresses exactes ne sont jamais publiées.</p></main></body></html>`
   );

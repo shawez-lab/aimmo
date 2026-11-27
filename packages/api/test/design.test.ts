@@ -157,6 +157,20 @@ describe('Z03 · système de design d’AIMMO', () => {
     }
   });
 
+  it('[R201] DS076 · sur l’accueil, les biens d’abord, la garantie des mandats en une ligne dessous', () => {
+    const listing = { propertyId: 'p1', agentId: null, city: 'Dijon', state: 'en_vente' as const, versionId: 'v1', title: 'Appartement T3', priceEur: 250000, day: '2027-01-01', mentions: 'Honoraires à la charge du vendeur.', photo: null, propertyStatus: 'available' };
+    for (const listings of [[], [listing]]) {
+      const html = renderSiteHome({ kind: 'reseau', recruiting: false, agent: null, listings, checkedAt: new Date(0) });
+      const section = /<h2>Les derniers biens<\/h2>([\s\S]*?)<h2>/.exec(html)?.[1] ?? '';
+      const garantie = section.indexOf('Mandats vérifiés le');
+      expect(garantie, 'la garantie reste écrite').toBeGreaterThan(0);
+      // Rien de la garantie avant les biens (ou le mot qui dit qu'il n'y en a pas).
+      expect(section.slice(0, garantie)).toMatch(/^(<ul class="biens">[\s\S]*<\/ul>|<p class="doux">Aucun bien en vente en ce moment\.<\/p>)<p class="controle">$/);
+      const ligne = /<p class="controle">([^<]*)<\/p>/.exec(section)?.[1] ?? '';
+      expect(ligne.split(/\.\s/).length, 'une seule phrase').toBe(1);
+    }
+  });
+
   it('[R201] chaque écran tient son budget de performance, sans rien d’extérieur', async () => {
     for (const s of await screens()) expect(budgetProblems(s, s.budget), s.name).toEqual([]);
   });
