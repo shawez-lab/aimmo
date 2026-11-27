@@ -16,32 +16,32 @@ export const PALETTE = Object.freeze({
   clair: Object.freeze({
     papier: '#fbfaf8',
     surface: '#ffffff',
-    encre: '#16130f',
+    encre: '#1a1612',
     doux: '#615a50',
     trait: '#e7e2d9',
-    accent: '#16130f',
+    accent: '#1a1612',
     surAccent: '#ffffff',
     accentDoux: '#f1ede5',
     moutarde: '#b08a3c',
-    surMoutarde: '#16130f',
+    surMoutarde: '#1a1612',
     tuile: '#2c5a43',
     succes: '#24613f',
     danger: '#a3231b',
     surDanger: '#ffffff',
     dangerDoux: '#fbe9e6',
-    anneau: '#16130f',
+    anneau: '#1a1612',
   }),
   sombre: Object.freeze({
-    papier: '#131210',
+    papier: '#0f0e0c',
     surface: '#1b1a17',
     encre: '#f4f0e8',
     doux: '#b3aa9c',
     trait: '#2e2b26',
     accent: '#f4f0e8',
-    surAccent: '#16130f',
-    accentDoux: '#24221e',
+    surAccent: '#1a1612',
+    accentDoux: '#2a2620',
     moutarde: '#d2b06a',
-    surMoutarde: '#16130f',
+    surMoutarde: '#1a1612',
     tuile: '#9fceb3',
     succes: '#8ad3a8',
     danger: '#ff9d90',
@@ -167,7 +167,7 @@ export const DESIGN_CSS =
   'fieldset{border:0;margin:0 0 var(--e-4);padding:0}legend{font-weight:600;margin-bottom:var(--e-2);padding:0}' +
   '.case{display:flex;align-items:center;gap:var(--e-3);min-height:var(--cible);margin:var(--e-2) 0;font-weight:400}' +
   // Le focus se voit toujours, au clavier.
-  ':focus-visible{outline:2px solid var(--anneau);outline-offset:3px;border-radius:var(--r-s)}' +
+  ':focus-visible{outline:3px solid var(--anneau);outline-offset:3px;border-radius:var(--r-s)}' +
   // Les cartes, listes et pastilles.
   // Un bloc n'est pas une carte : un filet au-dessus, de l'air, rien d'autre. La carte reste le cadre d'une page courte.
   '.bloc{border-top:1px solid var(--trait);padding:var(--e-5) 0 var(--e-2);margin:var(--e-5) 0 0}' +
@@ -185,10 +185,10 @@ export const DESIGN_CSS =
   '.notes label{flex:1;display:flex;align-items:center;justify-content:center;min-height:56px;margin:0;border:1px solid var(--doux);border-radius:var(--r-m);background:var(--surface);font:400 var(--t-xl)/1 var(--police-titre);cursor:pointer}' +
   '.notes input{position:absolute;opacity:0;width:1px;height:1px}' +
   '.notes label:has(input:checked){background:var(--accent);border-color:var(--accent);color:var(--sur-accent)}' +
-  '.notes label:has(input:focus-visible){outline:2px solid var(--anneau);outline-offset:3px}' +
+  '.notes label:has(input:focus-visible){outline:3px solid var(--anneau);outline-offset:3px}' +
   // Repli pour les navigateurs sans `:has` : le chiffre choisi et le focus se voient quand même.
   '.notes input:checked+span{color:var(--accent);text-decoration:underline;text-decoration-thickness:3px;text-underline-offset:.25em}' +
-  '.notes input:focus-visible+span{outline:2px solid var(--anneau);outline-offset:6px}' +
+  '.notes input:focus-visible+span{outline:3px solid var(--anneau);outline-offset:6px}' +
   '.notes label:has(input:checked) span{color:var(--sur-accent)}' +
   '.chiffres,.valeur,.prix{font-variant-numeric:tabular-nums lining-nums}' +
   // Les mouvements : courts, et aucun pour qui les a coupés.
