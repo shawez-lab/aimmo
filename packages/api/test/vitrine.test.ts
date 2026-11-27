@@ -39,6 +39,17 @@ describeWithSqlite('P10 · branchement de M07 dans le socle', () => {
     expect(check.status).toBe(200);
     expect(await check.json()).toMatchObject({ ok: true, data: { complete: true, publishedPriceEur: 210000 } });
     expect(await (await t.fetchAs('alex', 'GET', '/v1/annonces')).json()).toMatchObject({ ok: true, data: [{ id: t.propertyId, reference: 'REF-T-1', city: 'Dijon', state: null }] });
+    // DS023 · de quoi nommer le bien : son genre, ses pièces, maison ou appartement ; la fiche, plus récente, l'emporte (AU070).
+    expect(await (await t.fetchAs('alex', 'GET', '/v1/annonces')).json()).toMatchObject({ data: [{ kind: 'home', rooms: 3, dwelling: 'house' }] });
+    const sheet = await t.db.first<{ data: string; version: number }>('SELECT data, version FROM property_sheets WHERE property_id = ? ORDER BY version DESC LIMIT 1', [t.propertyId]);
+    const said = JSON.parse(sheet!.data) as { characteristics: Record<string, unknown> };
+    said.characteristics.dwelling = 'apartment';
+    await t.db.run('INSERT INTO property_sheets (id, property_id, network_id, version, data, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)', ['fiche-ds023', t.propertyId, t.network.id, sheet!.version + 1, JSON.stringify(said), 'essai', '2027-01-01T00:00:00.000Z']);
+    expect(await (await t.fetchAs('alex', 'GET', '/v1/annonces')).json()).toMatchObject({ data: [{ kind: 'home', rooms: 3, dwelling: 'apartment' }] });
+    // Un terrain n'est ni l'un ni l'autre, quoi qu'on ait rangé.
+    await t.db.run("UPDATE properties SET kind = 'land' WHERE id = ?", [t.propertyId]);
+    expect(await (await t.fetchAs('alex', 'GET', '/v1/annonces')).json()).toMatchObject({ data: [{ kind: 'land', dwelling: null }] });
+    await t.db.run("UPDATE properties SET kind = 'home' WHERE id = ?", [t.propertyId]);
     expect((await (await t.fetchAs('sam', 'GET', '/v1/annonces')).json()) as unknown).toMatchObject({ ok: true, data: [] });
     const before = (await t.journal.all()).filter((e) => e.type === 'acces.refuse').length;
     expect((await t.fetchAs('compliance', 'GET', '/v1/annonces')).status).toBe(403);

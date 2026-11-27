@@ -4,7 +4,7 @@ import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { ENGAGEMENTS_SCRIPT } from '../app/engagements.ts';
 import { REMISES_CONFIRM, REMISES_ELSEWHERE, REMISES_LOST, REMISES_NONE_NOW, REMISES_NONE_TODAY, REMISES_RANDOM, REMISES_REFUSALS, REMISES_SCRIPT } from '../app/remises.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp, stripCommentLines } from '../src/agent-app.ts';
-import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
+import { FakeElement, fakeDocument, pageIds, placeTool } from './fake-dom.ts';
 
 // Tout est inventé : clé, fournisseurs, partenaires, bien, dates.
 const KEY = 'k'.repeat(40);
@@ -127,7 +127,7 @@ async function bien(answers: Record<string, Answer> = {}) {
     b.listeners.click!({});
     await settle();
   };
-  await press(btn(els.biens!, 'Mettre en vente'));
+  await press(placeTool(els, 'Mettre en vente'));
   const block = () => vente().children.find((e) => e.tagName === 'section' && btn(e, 'Remises du moment'))!;
   const open = async () => {
     await press(btn(block(), 'Remises du moment'));

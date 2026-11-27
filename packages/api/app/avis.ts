@@ -58,7 +58,7 @@ const CHOICES = {
 };
 
 export const AVIS_HTML = `<section id="avis" hidden>
-<button id="avis-retour" type="button" class="retour">Retour à ma journée</button>
+<button id="avis-retour" type="button" class="retour">Retour</button>
 <h2 id="avis-titre">Avis de valeur</h2>
 <p id="avis-etat" class="etat" role="status"></p>
 <div id="avis-corps"></div>

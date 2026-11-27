@@ -82,7 +82,7 @@ const EVENTS = {
 const PROPOSAL_EVENTS = { vendeur: 'Proposition du vendeur', acquereur: 'Proposition de l’acquéreur', transmise: 'Proposition transmise', acceptee: 'Proposition acceptée', refusee: 'Proposition refusée', contre_offre: 'Nouvelle contre-offre' };
 
 export const OFFRES_HTML = `<section id="offres" hidden>
-<button id="offres-retour" type="button" class="retour">Retour à ma journée</button>
+<button id="offres-retour" type="button" class="retour">Retour</button>
 <h2 id="offres-titre">Offres</h2>
 <p id="offres-etat" class="etat" role="status"></p>
 <div id="offres-corps"></div>

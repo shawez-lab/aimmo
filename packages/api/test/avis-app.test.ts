@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { AVIS_SCRIPT } from '../app/avis.ts';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
-import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
+import { FakeElement, fakeDocument, pageIds, placeTool } from './fake-dom.ts';
 
 // Tout est inventé.
 const KEY = 'k'.repeat(40);
@@ -55,7 +55,7 @@ async function run(answers: Record<string, Answer>, kept: Record<string, string>
   };
   const input = (id: string) => body().all().find((e) => e.attributes.id === id)! as FakeElement & { value: string };
   const open = async () => {
-    await click(els.biens!.all().find((e) => e.tagName === 'button' && e.textContent === 'Avis de valeur'));
+    await click(placeTool(els, 'Avis de valeur'));
     const s = els.avis!.children.filter((e) => e.tagName === 'script');
     expect(s.map((e) => e.attributes.src)).toEqual(['/app/avis.js']);
     runInNewContext(AVIS_SCRIPT, context);
@@ -176,7 +176,7 @@ describe('E10 · écran de l’avis de valeur', () => {
     expect(t.state()).toBe('Le texte dit encore la fourchette du calcul : corrigez-le.');
     t.table['GET /v1/biens/b1/avis'] = ok([validated]);
     await t.click(t.els['avis-retour']);
-    await t.click(t.els.biens!.all().find((e) => e.tagName === 'button' && e.textContent === 'Avis de valeur'));
+    await t.click(placeTool(t.els, 'Avis de valeur'));
     await t.click(t.byText('Télécharger la page à imprimer'));
     expect(t.state()).toBe('Seul l’agent qui suit ce bien prépare et valide son avis.');
   });

@@ -108,14 +108,29 @@ export function annonceRoutes(options: AnnonceOptions = {}): AnnonceRoute[] {
           const agent = await s.db.first<{ status: string; network_id: string }>('SELECT status, network_id FROM agents WHERE id = ?', [v.userId]);
           if (agent?.status !== 'active' || agent.network_id !== v.networkId) return refuse('agent_inactive');
         }
-        const rows = await s.db.all<{ id: string; reference: string; city: string | null; state: string | null }>(
-          `SELECT p.id, p.reference, p.city,
-             (SELECT lv.state FROM listing_versions lv WHERE lv.property_id = p.id ORDER BY lv.seq DESC LIMIT 1) AS state
+        // DS023 · de quoi nommer le bien par ce qu'il est : son genre, ses pièces, et maison ou appartement. La fiche du bien,
+        // plus récente, l'emporte sur ce qui a été dit à la création ou à l'import (AU070). La fiche est lue telle qu'elle
+        // est rangée, et c'est ici qu'elle est ouverte : la requête reste du SQL que toute base comprend [R633].
+        const rows = await s.db.all<{ id: string; reference: string; city: string | null; state: string | null; kind: string; rooms: number | null; dwelling: string | null; sheet: string | null }>(
+          `SELECT p.id, p.reference, p.city, p.kind, p.rooms, p.dwelling,
+             (SELECT lv.state FROM listing_versions lv WHERE lv.property_id = p.id ORDER BY lv.seq DESC LIMIT 1) AS state,
+             (SELECT ps.data FROM property_sheets ps WHERE ps.property_id = p.id ORDER BY ps.version DESC LIMIT 1) AS sheet
            FROM properties p WHERE p.network_id = ? ${v.role === 'agent' ? 'AND p.agent_id = ?' : ''} AND p.status NOT IN ('sold', 'rented', 'withdrawn')
            ORDER BY p.reference, p.id LIMIT 200`,
           v.role === 'agent' ? [v.networkId, v.userId] : [v.networkId],
         );
-        return reply({ ok: true, value: rows.map((r) => ({ id: r.id, reference: r.reference, city: r.city, state: r.state })) });
+        const dwellingOf = (r: { kind: string; dwelling: string | null; sheet: string | null }): 'house' | 'apartment' | null => {
+          if (r.kind !== 'home') return null;
+          let said: unknown = r.dwelling;
+          try {
+            const sheet = r.sheet === null ? null : (JSON.parse(r.sheet) as { characteristics?: { dwelling?: unknown } } | null);
+            said = sheet?.characteristics?.dwelling ?? said;
+          } catch {
+            // Une fiche illisible ne nomme rien : ce qui a été dit à la création reste.
+          }
+          return said === 'house' || said === 'apartment' ? said : null;
+        };
+        return reply({ ok: true, value: rows.map((r) => ({ id: r.id, reference: r.reference, city: r.city, state: r.state, kind: r.kind, rooms: r.rooms, dwelling: dwellingOf(r) })) });
       },
     },
     { method: 'GET', pattern: new RegExp(`^/annonces/${ID}/fiche$`), name: 'annonces.fiche', handle: async (s, v, [id]) => reply(await fiches(s).read(v, id!)) },

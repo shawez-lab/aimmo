@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
-import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
+import { FakeElement, fakeDocument, pageIds, placeTool } from './fake-dom.ts';
 
 // Tout est inventé : bien, annonce, clé de test.
 const KEY = 'k'.repeat(40);
@@ -43,7 +43,7 @@ const BASE: Record<string, Answer> = {
   'GET /v1/contacts-chauds': ok({ contacts: [] }),
   'GET /v1/rendez-vous/jour': ok({ appointments: [] }),
   'GET /v1/usage/matin': ok(null),
-  'GET /v1/annonces': ok([{ id: 'b1', reference: 'REF-T-1', city: 'Dijon', state: null }]),
+  'GET /v1/annonces': ok([{ id: 'b1', reference: 'REF-T-1', city: 'Dijon', state: null, kind: 'home', rooms: 3, dwelling: 'apartment' }]),
   'GET /v1/annonces/b1/controle': ok(CHECK),
   'GET /v1/annonces/b1/brouillon': ok(DRAFT),
   'GET /v1/annonces/b1/publication': ok(null),
@@ -82,8 +82,16 @@ async function run(answers: Record<string, Answer> = {}) {
 describe('P10 · écran « Mettre en vente »', () => {
   it('depuis la journée : la liste de contrôle, l’annonce phrase par phrase avec la source de chaque nombre, et la validation', async () => {
     const t = await run();
-    expect(t.els.biens!.children.map((li) => li.textContent)).toEqual(['REF-T-1 · DijonPas encore publiée.Mettre en venteMandatOffresAvis de valeurStudio']);
-    await t.click(t.byText(t.els.biens!, 'Mettre en vente'));
+    // DS013, DS023, DS041 · dans la journée, le bien tient en une ligne, entière à toucher : ce qu'il est, puis sa référence et son état.
+    expect(t.els.biens!.children.map((li) => li.textContent)).toEqual(['Appartement 3 pièces · DijonRéf. REF-T-1, pas encore publiée.']);
+    expect(t.els.biens!.all().filter((e) => e.tagName === 'button')).toHaveLength(1);
+    const tool = placeTool(t.els, 'Mettre en vente');
+    // L'écran du bien : son nom en titre, sa référence et son état, et ses outils en rangées.
+    expect(t.els['un-bien']!.hidden).toBe(false);
+    expect(t.els['un-bien-titre']!.textContent).toBe('Appartement 3 pièces · Dijon');
+    expect(t.els['un-bien-etat']!.textContent).toBe('Réf. REF-T-1, pas encore publiée.');
+    expect(tool.textContent).toBe('Mettre en vente');
+    await t.click(tool);
     expect(t.els.vente!.hidden).toBe(false);
     expect(t.els['vente-titre']!.textContent).toBe('Mettre en vente · REF-T-1');
     const text = t.els['vente-corps']!.textContent;
@@ -104,7 +112,7 @@ describe('P10 · écran « Mettre en vente »', () => {
 
   it('sans annonce : « Rédiger l’annonce » ; publiée : la version, le prix et chaque canal', async () => {
     const t = await run({ 'GET /v1/annonces/b1/brouillon': no(404, { ok: false, rule: null, code: 'no_draft' }) });
-    await t.click(t.byText(t.els.biens!, 'Mettre en vente'));
+    await t.click(placeTool(t.els, 'Mettre en vente'));
     expect(t.els['vente-corps']!.textContent).toContain('Aucune annonce rédigée pour ce bien.');
     t.table['POST /v1/annonces/b1/brouillon'] = ok({ ...DRAFT, validated: null });
     t.table['GET /v1/annonces/b1/brouillon'] = ok({ ...DRAFT, validated: { by: 'agent:a1', at: '2027-02-12T10:05:00.000Z' } });
@@ -120,7 +128,7 @@ describe('P10 · écran « Mettre en vente »', () => {
 
   it('une lecture en échec n’est jamais montrée comme un état vide, et aucun geste n’est proposé dessus', async () => {
     const t = await run({ 'GET /v1/annonces/b1/brouillon': no(500, { ok: false, code: 'internal_error' }), 'GET /v1/annonces/b1/publication': () => Promise.reject(new TypeError('hors ligne')) });
-    await t.click(t.byText(t.els.biens!, 'Mettre en vente'));
+    await t.click(placeTool(t.els, 'Mettre en vente'));
     const text = t.els['vente-corps']!.textContent;
     expect(text).toContain('L’annonce n’a pas pu être lue.');
     expect(text).toContain('L’état de la publication n’a pas pu être lu.');
@@ -130,10 +138,10 @@ describe('P10 · écran « Mettre en vente »', () => {
 
   it('[R16] un bien hors des droits est dit ; une clé refusée efface tout', async () => {
     const denied = await run({ 'GET /v1/annonces/b1/controle': no(403, { ok: false, rule: 'R16', code: 'not_assigned' }) });
-    await denied.click(denied.byText(denied.els.biens!, 'Mettre en vente'));
+    await denied.click(placeTool(denied.els, 'Mettre en vente'));
     expect(denied.els['vente-etat']!.textContent).toBe('Ce bien n’est pas dans vos droits.');
     const refused = await run({ 'GET /v1/annonces/b1/controle': no(401, { ok: false, code: 'unauthorized' }) });
-    await refused.click(refused.byText(refused.els.biens!, 'Mettre en vente'));
+    await refused.click(placeTool(refused.els, 'Mettre en vente'));
     expect(refused.els.connexion!.hidden).toBe(false);
     expect(refused.storage.has('aimmo.cle')).toBe(false);
     expect(refused.els['vente-corps']!.children).toEqual([]);
@@ -145,7 +153,7 @@ describe('X18 · corriger le texte de l’annonce à l’écran', () => {
   const POST = 'POST /v1/annonces/b1/correction';
   const open = async (answers: Record<string, Answer> = {}) => {
     const t = await run({ 'GET /v1/annonces/b1/brouillon': ok(FULL), ...answers });
-    await t.click(t.byText(t.els.biens!, 'Mettre en vente'));
+    await t.click(placeTool(t.els, 'Mettre en vente'));
     await t.click(t.byText(t.els['vente-corps']!, 'Corriger le texte'));
     const inside = (id: string) => t.els['vente-corps']!.all().find((e) => e.attributes.id === id)!;
     const send = () => t.click(t.byText(t.els['vente-corps']!, 'Enregistrer la correction'));
@@ -262,7 +270,7 @@ describe('X18 · corriger le texte de l’annonce à l’écran', () => {
     await t.click(t.byText(t.els['vente-corps']!, 'Enregistrer la correction'));
     await t.click(t.byText(t.els['vente-corps']!, 'Valider l’annonce'));
     await t.click(t.byText(t.els['vente-corps']!, 'Rédiger de nouveau'));
-    await t.click(t.byText(t.els.biens!, 'Mettre en vente'));
+    await t.click(placeTool(t.els, 'Mettre en vente'));
     expect(t.posts().map((c) => c.url)).toEqual(['/v1/annonces/b1/correction']);
     expect(t.els['vente-etat']!.textContent).toBe('Un envoi part : patientez un instant.');
     release(Response.json({ ok: false, rule: 'R47', code: 'refused_text', sentences: [{ text: 'Avec piscine.', sources: [], problems: [{ code: 'fait_sans_source', value: 'piscine' }] }] }, { status: 409 }));

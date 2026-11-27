@@ -4,7 +4,7 @@ import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { MANDAT_SCRIPT } from '../app/mandat.ts';
 import { MANDAT_QUESTIONNAIRE_SCRIPT } from '../app/mandat-questionnaire.ts';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
-import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
+import { FakeElement, fakeDocument, pageIds, placeTool } from './fake-dom.ts';
 
 // BR116. Tout est inventé : clé, bien, propriétaire, questions, clauses, prix, avis de valeur.
 const KEY = 'k'.repeat(40);
@@ -96,7 +96,7 @@ async function run(answers: Record<string, Answer> = {}) {
   const box = () => body().all().find((e) => e.tagName === 'section' && e.children[0]?.textContent === 'Préparer par questionnaire');
   const status = () => box()!.all().find((e) => e.className === 'etat')?.textContent ?? '';
   const open = async () => {
-    await click(els.biens!.all().find((e) => e.tagName === 'button' && e.textContent === 'Mandat'));
+    await click(placeTool(els, 'Mandat'));
     const s = els.mandat!.children.filter((e) => e.tagName === 'script');
     runInNewContext(MANDAT_SCRIPT, context);
     s[0]!.listeners.load!({});

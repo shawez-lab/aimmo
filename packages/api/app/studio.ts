@@ -68,7 +68,7 @@ const REFUSALS = {
 };
 
 export const STUDIO_HTML = `<section id="studio" hidden>
-<button id="studio-retour" type="button" class="retour">Retour à ma journée</button>
+<button id="studio-retour" type="button" class="retour">Retour</button>
 <h2 id="studio-titre">Studio</h2>
 <p class="doux">Photos, vidéo et plan se préparent sur ce téléphone : aucune image ne part pour être traitée.</p>
 <p id="studio-etat" class="etat" role="status"></p>

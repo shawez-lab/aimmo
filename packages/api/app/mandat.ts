@@ -150,7 +150,7 @@ const SOURCES: Record<MandateSource, string> = {
 const FIELD_NAMES = Object.fromEntries(Object.entries(TEMPLATE_FIELDS).map(([k, v]) => [k, v.label]));
 
 export const MANDAT_HTML = `<section id="mandat" hidden>
-<button id="mandat-retour" type="button" class="retour">Retour à ma journée</button>
+<button id="mandat-retour" type="button" class="retour">Retour</button>
 <h2 id="mandat-titre">Mandat</h2>
 <p id="mandat-etat" class="etat" role="status"></p>
 <div id="mandat-corps"></div>
