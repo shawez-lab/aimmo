@@ -1818,3 +1818,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-27 09:02 · voie 1 · DS076 fusionnée (#806 : sur l'accueil et la liste des biens, les biens d'abord, la garantie des mandats en une ligne dessous ; vérifications GitHub vertes ; Codex sans remarque) ; prise à la voie 3, verrou figé depuis le 23 · prochaine : DS077
 - 2026-11-27 09:02 · voie 1 · relance de la séance suivante refusée par le contrôle des permissions (fire_trigger), un essai ; la voie 1 repart à son prochain horaire
 - 2026-11-27 09:53 · VOIE 2 : rien, une autre séance voie 2 travaille (verrou pris à 07:55, DS087 en cours, #807 ouverte) ; verrou non touché · VOIE 2 : aucune tâche, rien, relancé non
+- 2026-11-27 10:53 · VOIE 2 : rien, une autre séance voie 2 travaille (verrou pris à 07:55, DS087 en cours, #807 ouverte) ; verrou non touché · VOIE 2 : aucune tâche, rien, relancé non
