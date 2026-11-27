@@ -576,23 +576,27 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Preuve : `espace-client.jpg` : « 210 000 € annonce publiée, 20 mai 2027 à 10 h 00 · 64 annonce publiée, 20 mai 2027 à 10 h 00 m² ».
 - Principe : la preuve se donne à qui la demande.
 - Solution : la valeur seule, et « D'où vient ce chiffre ? » qui ouvre la source et la date. Le relevé prouvé reste téléchargeable.
+- Suite : corrigé le 2026-11-27 : une valeur se lit seule ; sa source et sa date sont juste dessous, derrière « D'où viennent ces informations ? », pour chaque bloc [R163] : chaque champ y est nommé avec sa source et sa date, et dans une liste les preuves sont numérotées comme les lignes. Aucune ne manque, et le relevé prouvé reste entier. Avant et après : `captures/avant-apres/DS079-espace-du-vendeur.jpg`.
 
 #### DS080 · Le vendeur voit « REF-V1 · Dijon », pas sa maison
 - Gravité : majeur · Catégorie : espace client · Effort : M
 - Où : `packages/api/src/espaces.ts`
 - Solution : la photo et l'adresse du bien, que le vendeur connaît déjà.
+- Suite : en partie le 2026-11-27 : le titre dit « Votre bien à Dijon », la référence est dessous ; l'acquéreur lit « Maison ou appartement à Dijon » avant la référence. Restent, faute de donnée dans la vue de l'espace : la photo et l'adresse du bien.
 
 #### DS081 · Le seul bouton plein est « Me déconnecter »
 - Gravité : majeur · Catégorie : espace client · Effort : S
 - Où : `packages/api/src/espaces.ts`
 - Preuve : `espace-client.jpg`.
 - Solution : la déconnexion en lien, en bas. Le bouton plein va au geste utile : signer, répondre à une offre, déposer une pièce.
+- Suite : corrigé le 2026-11-27 : « Me déconnecter » est un bouton de texte, en bas ; « Mettre en favori » est au trait. Aucun bouton plein ne reste sans geste utile.
 
 #### DS082 · Ni avancement, ni prochaine étape, ni agent
 - Gravité : majeur · Catégorie : espace client, parcours · Effort : M
 - Où : espace vendeur, espace acquéreur
 - Preuve : `espace-client.jpg` : des listes (« Visites », « Offres », « Documents », « Rendez-vous », « Points de la semaine »), la plupart vides.
 - Solution : en tête, où en est la vente, ce qui se passe ensuite et quand, et l'agent avec son moyen de contact.
+- Suite : en partie le 2026-11-27 : les listes vides ne prennent plus un titre chacune, leurs phrases tiennent en une ligne. Restent : où en est la vente, la prochaine étape, et l'agent avec son moyen de contact, qui demandent des données à la vue de l'espace.
 
 ### S. Documents imprimés
 
