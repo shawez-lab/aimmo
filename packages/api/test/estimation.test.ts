@@ -193,8 +193,9 @@ describeWithSqlite('RS04 · la page d’estimation du site', () => {
     const t = await sitesWorld();
     const own = await t.get(`${AGENT_SITE}/estimation`);
     expect(own.status).toBe(200);
-    // Le site d'un agent sans ses mentions ne mène pas à sa page [R152].
-    expect(await own.text()).toContain('class="appel" href="/"');
+    // Le site d'un agent sans ses mentions ne mène pas à sa page [R152]. DS087 · sans fourchette, l'action principale
+    // est « Voir la fourchette » : le rendez-vous est un lien filaire.
+    expect(await own.text()).toContain('class="appel secondaire" href="/"');
     expect(own.headers.get('cache-control')).toBe('no-store');
     expect(own.headers.get('x-robots-tag')).toBe('noindex, nofollow');
     expect(own.headers.get('content-security-policy')).toContain("form-action 'self'");

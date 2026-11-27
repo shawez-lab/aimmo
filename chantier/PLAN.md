@@ -8529,3 +8529,12 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Constat de l’audit : Le contrôle ne compte pas les boutons pleins ni la hauteur des écrans.
 - Objectif : deux contrôles de plus : un bouton plein par écran, et une hauteur d'écran bornée sur le portefeuille chargé.
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+- Décidé (2026-11-27, voie 2) : tâche coupée en deux (SECOURS, tâche trop grosse). DS087 : le bouton plein unique, contrôlé sur chaque écran rendu sans navigateur, et la borne de hauteur écrite et testée (`screenHeightProblems`, six fenêtres). DS087b : la mesure dans un navigateur sur le portefeuille chargé.
+
+### DS087b · La hauteur des écrans mesurée sur le portefeuille chargé
+- Statut : à faire
+- Qui : Claude · Relecture : normale · Dépend de : DS086, DS001, DS002
+- Audit : `docs/design/AUDIT.md`, DS087 (seconde moitié)
+- Objectif : rendre l'application de l'agent dans Chromium avec la vraie API sur une base en mémoire chargée de 1 000 clients et 400 biens (comme AU106), mesurer chaque écran à 390 × 844 et le passer à `screenHeightProblems` ; compter aussi les boutons pleins visibles qu'ajoutent les scripts (fiche client : 9 d'après l'audit, DS022).
+- Critères : un écran rendu plus haut que six fenêtres fait échouer la vérification (test) ; un écran rendu avec deux boutons pleins visibles aussi (test) ; sans navigateur, le test se dit sauté, jamais vert.
+- Remarque : la borne échoue sur l'accueil (288 écrans) tant que DS001 et DS002 ne sont pas faites ; d'où la dépendance.

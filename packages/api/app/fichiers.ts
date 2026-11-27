@@ -76,7 +76,7 @@ export const INDEX_HTML = `<!doctype html>
 <form id="form-connexion" autocomplete="off">
 <label for="cle">Clé personnelle</label>
 <input id="cle" name="cle" type="password" minlength="32" required autocomplete="off" spellcheck="false">
-<button type="submit">Entrer</button>
+<button type="submit" class="secondaire">Entrer</button>
 </form></details>
 <p id="erreur" role="alert" hidden></p>
 </section>
