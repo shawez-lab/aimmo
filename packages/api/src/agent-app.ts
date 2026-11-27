@@ -51,6 +51,7 @@ import { LETTRE_SCRIPT } from '../app/lettre.ts';
 import { CALENDRIER_SCRIPT } from '../app/calendrier.ts';
 import { ATTIRER_SCRIPT } from '../app/attirer.ts';
 import { BASCULE_SCRIPT } from '../app/bascule.ts';
+import { CLIENTS_SCRIPT } from '../app/clients.ts';
 import { REGLAGES_MANDAT_SCRIPT } from '../app/reglages-mandat.ts';
 import { LOYERS_SCRIPT } from '../app/loyers.ts';
 import { MESURE_SOURCES_SCRIPT } from '../app/mesure-sources.ts';
@@ -236,6 +237,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/attirer.js': { body: ATTIRER_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // La bascule sur l'écran du réseau (B05), chargée au premier geste, jamais gardée sur l'appareil [R201].
   '/app/bascule.js': { body: BASCULE_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // DS003 · la liste des clients de l'agent, chargée au premier geste, jamais gardée sur l'appareil [R201].
+  '/app/clients.js': { body: CLIENTS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les réglages du mandat pour la direction (D13), chargés au premier geste, jamais gardés sur l'appareil [R201].
   '/app/reglages-mandat.js': { body: REGLAGES_MANDAT_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les loyers de marché pour la direction (Y10), chargés au premier geste, jamais gardés sur l'appareil [R201].

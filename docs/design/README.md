@@ -30,7 +30,8 @@ L'agent a trois onglets, toujours là : Journée, Outils, Chiffres (`<nav id="on
 - Une lecture en panne ne s'écrit pas comme une aide : `down(zone d'état)` y pose un bandeau d'une ligne avec « Réessayer », qui relit l'écran (`reopen`, la journée par `home`). Le bandeau part avec le prochain message écrit dans la zone. Un rendu qui ne peut pas lire sa réponse rend une phrase commençant par « Indisponible » : elle passe par le même bandeau.
 - Le titre de la page suit l'écran : « Outils · AIMMO », « Mandat · REF-1 · AIMMO » (`retitle`). Jamais une personne : la fiche d'un client s'appelle « Fiche client », la journée « Ma journée ». Seuls les écrans d'un bien (liste `LIVE`) sont suivis quand leur titre se précise ; tout autre écran garde le titre écrit dans la page servie, même s'il y écrit ensuite un prénom. Un nouvel écran de bien s'ajoute à `LIVE` ; un écran de personne, jamais.
 - Un bien a son écran (`#un-bien`, `openPlace`) : la journée n'en montre qu'une ligne, entière à toucher (`<button class="secondaire rangee">` à deux lignes : ce qu'il est, puis sa référence et son état). Un nouvel outil d'un bien est une rangée de cet écran, jamais un bouton de plus sur la journée ; son « Retour » y ramène (`back`). Un bien se dit par ce qu'il est (`placeName`), sa référence en petit.
-- Clients et Biens auront leur onglet avec leur liste (DS003, DS004).
+- L'onglet « Clients » (`packages/api/app/clients.ts`, servi à part) liste les clients de l'agent, le dernier échange d'abord, avec un champ pour chercher par nom. Une ligne est une rangée entière à toucher. La liste s'efface quand on quitte l'onglet et avec la session ; rien n'est gardé sur l'appareil.
+- Biens aura son onglet avec sa liste (DS004).
 
 ## Ajouter un écran
 

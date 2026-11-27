@@ -66,11 +66,12 @@ async function run(role: 'agent' | 'direction' | 'compliance', options: { hash?:
 }
 
 describe('DS005 · une barre d’onglets, toujours là pour l’agent', () => {
-  it('[R201] la page porte un repère de navigation à trois onglets, avant le contenu, et un bouton pour l’enjamber', () => {
+  it('[R201] la page porte un repère de navigation à quatre onglets, avant le contenu, et un bouton pour l’enjamber', () => {
     const nav = /<nav id="onglets" class="onglets" aria-label="Sections" hidden>([\s\S]*?)<\/nav>/.exec(HTML)!;
     expect(nav).not.toBeNull();
     const tabs = [...nav[1]!.matchAll(/<button id="([a-z-]+)" type="button" class="discret"><svg viewBox="0 0 24 24" aria-hidden="true">[\s\S]*?<\/svg>([^<]+)<\/button>/g)].map((m) => [m[1], m[2]]);
-    expect(tabs).toEqual([['journee-ouvrir', 'Journée'], ['outils-ouvrir', 'Outils'], ['chiffres-ouvrir', 'Chiffres']]);
+    // DS003 · « Clients » a son onglet, le deuxième : la journée, les clients, les outils, les chiffres.
+    expect(tabs).toEqual([['journee-ouvrir', 'Journée'], ['clients-ouvrir', 'Clients'], ['outils-ouvrir', 'Outils'], ['chiffres-ouvrir', 'Chiffres']]);
     // Le dessin d'un onglet est dans la page, jamais écrit par le script [R13] ; il prend la couleur du texte.
     expect(nav[1]).not.toMatch(/stroke=|fill=|style=/);
     expect(CSS).toMatch(/\.onglets svg \{[^}]*fill: none; stroke: currentColor;/);
