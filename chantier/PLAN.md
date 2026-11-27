@@ -8325,7 +8325,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS061 · Une panne ressemble à une information
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS061 (majeur, états, effort S), endroit : fiche client, Studio, partenaires
 - Constat de l’audit : `appli-fiche-client.jpg` : « La liste des biens n'a pas pu être lue. » est en gris, sous un bouton, comme une aide.
@@ -8333,7 +8333,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS062 · L'écran de connexion est nu
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS062 (mineur, états, identité, effort S), endroit : connexion — `fichiers.ts` (`#connexion`)
 - Constat de l’audit : `appli-reseau-chiffres-connexion.jpg` : un titre, une phrase, un lien.
@@ -8341,7 +8341,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS063 · Le titre de la page ne change jamais
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS063 (mineur, accessibilité, effort S), endroit : toute l'application
 - Constat de l’audit : `document.title` vaut « AIMMO » sur chaque écran. Le seul `h1` est la marque.
