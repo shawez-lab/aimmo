@@ -7854,7 +7854,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS004 · Aucune liste de biens
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS004 (bloquant, navigation, effort L), endroit : toute l'application
 - Constat de l’audit : un bien n'apparaît que dans « Mes biens à mettre en vente », plafonné à 200 lignes sans recherche. Une fois vendu, il n'est plus que dans « Mes ventes conclues ».
