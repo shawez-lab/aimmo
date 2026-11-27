@@ -38,7 +38,9 @@ const perM2 = (n: number): string => `${euros(n)}/m²`;
 const CSS =
   SITE_CSS +
   'main>*{max-width:38rem}.types{border:0;margin:var(--e-4) 0 0;padding:0}.types legend{font-weight:600;padding:0}.types label{display:flex;align-items:center;gap:var(--e-2);margin:var(--e-2) 0;font-weight:400}' +
-  '.reponse{background:var(--surface);border-radius:var(--r-m);padding:var(--e-4);margin:var(--e-5) 0}.reponse strong{display:block;font-size:var(--t-l)}';
+  '.reponse{background:var(--surface);border-radius:var(--r-m);padding:var(--e-4);margin:var(--e-5) 0}.reponse strong{display:block;font-size:var(--t-l)}' +
+  // DS087 · un écran, une action principale : la seconde est filaire, comme `button.secondaire`.
+  '.appel.secondaire{background:transparent;color:var(--accent);box-shadow:inset 0 0 0 1.5px var(--accent)}';
 
 export interface EstimationPageInput {
   /** L'identifiant opaque de cette visite, seule base de la limite par visiteur ; il ne dit rien du visiteur. */
@@ -72,7 +74,7 @@ export function renderEstimationPage(input: EstimationPageInput): string {
     `<label for="cp">Code postal</label><input id="cp" name="postalCode" inputmode="numeric" autocomplete="postal-code" maxlength="5" required value="${escapeHtml(values?.postalCode ?? '')}">` +
     `<label for="commune">Commune</label><input id="commune" name="town" autocomplete="address-level2" maxlength="80" required value="${escapeHtml(values?.town ?? '')}">` +
     `<fieldset class="types"><legend>Type de logement</legend><label><input type="radio" name="kind" value="appartement" required${checked('appartement')}> Appartement</label><label><input type="radio" name="kind" value="maison"${checked('maison')}> Maison</label></fieldset>` +
-    `<button type="submit">Voir la fourchette</button></form><p class="doux">Rien de ce que vous indiquez ici n’est gardé, et personne ne vous recontactera : aucune coordonnée n’est demandée.</p>`;
+    `<button type="submit"${input.result ? ' class="secondaire"' : ''}>Voir la fourchette</button></form><p class="doux">Rien de ce que vous indiquez ici n’est gardé, et personne ne vous recontactera : aucune coordonnée n’est demandée.</p>`;
   const closed = '<p>L’estimation en ligne n’est pas encore ouverte.</p>';
   return (
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="index"><meta name="theme-color" content="${THEME_COLOR}"><title>Estimer mon logement</title><style>${CSS}</style></head>` +
@@ -81,6 +83,6 @@ export function renderEstimationPage(input: EstimationPageInput): string {
     (input.error ? `<p class="reponse" role="alert">${escapeHtml(ERRORS[input.error])}</p>` : '') +
     (input.result ? answer(input.result) : '') +
     (input.open ? form : closed) +
-    `<h2>Le prix de votre logement</h2><p>Chaque bien est différent : étage, état, vue, extérieur. Un agent immobilier peut venir voir le vôtre. C’est offert.</p><a class="appel" href="${escapeHtml(input.appointmentHref)}">Prendre rendez-vous avec un agent immobilier</a></main></body></html>`
+    `<h2>Le prix de votre logement</h2><p>Chaque bien est différent : étage, état, vue, extérieur. Un agent immobilier peut venir voir le vôtre. C’est offert.</p><a class="appel${input.open && !input.result ? ' secondaire' : ''}" href="${escapeHtml(input.appointmentHref)}">Prendre rendez-vous avec un agent immobilier</a></main></body></html>`
   );
 }

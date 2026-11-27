@@ -180,6 +180,109 @@ export function htmlProblems(html: string, options: HtmlAuditOptions = {}): stri
   return problems;
 }
 
+/* ---------- Une action qui domine, une hauteur bornée (DS087) ---------- */
+
+/** Les classes qui rendent un bouton filaire ou texte : tout autre `<button>`, et tout lien `.appel`, est plein. */
+const NOT_FILLED = /^(?:secondaire|second|retour|discret)$/;
+const classesOf = (tag: string): string[] => (attr(tag, 'class') ?? '').split(/\s+/).filter(Boolean);
+const isFilled = (tag: string): boolean => {
+  const classes = classesOf(tag);
+  if (/^<a\b/i.test(tag) && !classes.includes('appel')) return false;
+  return !classes.some((c) => NOT_FILLED.test(c));
+};
+
+/** Les libellés des boutons pleins d’un morceau de page, dans l’ordre : un `<button>` ou un lien `.appel`, sans classe filaire. */
+export function filledButtons(fragment: string): string[] {
+  const out: string[] = [];
+  for (const m of fragment.matchAll(/<(button|a)\b([^>]*)>([\s\S]*?)<\/\1>/gi)) {
+    const tag = `<${m[1]} ${m[2]}>`;
+    if (isFilled(tag)) out.push(textOf(m[3]!) || attr(tag, 'aria-label') || attr(tag, 'id') || m[1]!.toLowerCase());
+  }
+  return out;
+}
+
+/** Les écrans de premier rang d'une application : chaque `<section>` enfant direct de `<main>`, avec son identifiant. */
+export function appScreens(html: string): { id: string; html: string }[] {
+  const body = html.replace(/<!--[\s\S]*?-->/g, '').replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
+  const main = /<main\b[^>]*>([\s\S]*)<\/main>/i.exec(body)?.[1] ?? '';
+  const out: { id: string; html: string }[] = [];
+  const tags = /<(\/?)section\b[^>]*>/gi;
+  let depth = 0;
+  let start = -1;
+  let open = '';
+  for (const m of main.matchAll(tags)) {
+    if (m[1] === '') {
+      if (depth === 0) {
+        start = m.index!;
+        open = m[0];
+      }
+      depth += 1;
+    } else {
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        out.push({ id: attr(open, 'id') ?? `section ${out.length + 1}`, html: main.slice(start, m.index! + m[0].length) });
+        start = -1;
+      }
+    }
+  }
+  return out;
+}
+
+export interface FilledButtonOptions {
+  /** `sections` : une application dont chaque `<section>` de premier rang est un écran ; sinon toute la page en est un. */
+  screens?: 'page' | 'sections';
+  /** Le plus de boutons pleins par écran : un seul, l'action principale. */
+  max?: number;
+}
+
+/**
+ * Un écran, une action principale (DS022, DS087) : au plus un bouton plein par écran ; les autres sont filaires
+ * (`secondaire`), texte (`retour`, `discret`) ou de simples liens. Un bouton caché que le script montre compte aussi :
+ * le jour où il s'affiche, il partage l'écran.
+ */
+export function filledButtonProblems(html: string, options: FilledButtonOptions = {}): string[] {
+  const max = options.max ?? 1;
+  const body = html.replace(/<!--[\s\S]*?-->/g, '').replace(/<script[\s\S]*?<\/script>/gi, '').replace(/<style[\s\S]*?<\/style>/gi, '');
+  const units = options.screens === 'sections' ? appScreens(html) : [{ id: 'page', html: body }];
+  const problems: string[] = [];
+  for (const u of units) {
+    const filled = filledButtons(u.html);
+    if (filled.length > max) problems.push(`${u.id} : ${filled.length} boutons pleins pour ${max} (${filled.join(' · ')})`);
+  }
+  return problems;
+}
+
+/** La hauteur d'un écran rendu, mesurée dans un navigateur sur le portefeuille chargé. */
+export interface ScreenHeight {
+  name: string;
+  /** La hauteur du document, `document.documentElement.scrollHeight`, en pixels CSS. */
+  heightPx: number;
+  /** La hauteur de la fenêtre, en pixels CSS. */
+  viewportPx: number;
+}
+
+/**
+ * La hauteur bornée d'un écran : six fenêtres de téléphone au plus, quel que soit le portefeuille. L'accueil vide de
+ * l'audit fait 5,4 écrans ; chargé de 1 000 clients et 400 biens, 288 (DS002). Au-delà de six, une liste n'est plus
+ * bornée : elle doit montrer cinq lignes et « Tout voir ».
+ */
+export const HAUTEUR_MAX = Object.freeze({ ecrans: 6 });
+
+/** Les écrans plus hauts que la borne, en nombre de fenêtres ; une mesure impossible est un problème, jamais un succès. */
+export function screenHeightProblems(measures: readonly ScreenHeight[], maxScreens: number = HAUTEUR_MAX.ecrans): string[] {
+  const problems: string[] = [];
+  if (measures.length === 0) problems.push('aucune hauteur mesurée');
+  for (const m of measures) {
+    if (!(m.viewportPx > 0) || !(m.heightPx > 0) || !Number.isFinite(m.heightPx)) {
+      problems.push(`${m.name} : hauteur illisible`);
+      continue;
+    }
+    const screens = m.heightPx / m.viewportPx;
+    if (screens > maxScreens) problems.push(`${m.name} : ${screens.toFixed(1).replace('.', ',')} écrans de haut pour ${maxScreens}`);
+  }
+  return problems;
+}
+
 /* ---------- Budget de performance ---------- */
 
 export interface Screen {

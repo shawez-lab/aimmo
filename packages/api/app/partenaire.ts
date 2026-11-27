@@ -104,7 +104,7 @@ export const PARTNER_HTML = `<!doctype html>
 <input id="faite" name="faite" type="date" required>
 <label for="fichier">Fichier</label>
 <input id="fichier" name="fichier" type="file" accept="application/pdf,image/jpeg,image/png" required>
-<button type="submit">Déposer</button>
+<button type="submit" class="second">Déposer</button>
 </form>
 <p id="depot" class="etat" role="status" aria-live="polite"></p>
 </section>
