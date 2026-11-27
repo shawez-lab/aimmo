@@ -1,3 +1,4 @@
+import { RESEAU_HTML } from '../app/fichiers.ts';
 /**
  * Un petit document inventé pour faire tourner le script de l'application de l'agent dans les tests, sans
  * navigateur. Il ne sait pas lire du HTML : un texte posé reste un texte, ce qui est exactement ce que le script doit
@@ -86,4 +87,11 @@ export function fakeDocument(ids: readonly string[]) {
 }
 
 /** Les `id` de la page servie, lus dans son HTML. */
-export const pageIds = (html: string): string[] => [...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]!);
+const idsIn = (html: string): string[] => [...html.matchAll(/\sid="([^"]+)"/g)].map((m) => m[1]!);
+/**
+ * Les identifiants d'une page. Pour l'application, ceux de l'écran de la direction sont comptés aussi (DS069) : il est
+ * servi à part, et la coquille le pose dans la page avant de brancher quoi que ce soit. Un essai qui veut la page d'un
+ * agent, sans cet écran, passe `withReseau = false`.
+ */
+export const pageIds = (html: string, withReseau = true): string[] =>
+  withReseau && html.includes('<section id="reseau" hidden></section>') ? [...idsIn(html), ...idsIn(RESEAU_HTML)] : idsIn(html);

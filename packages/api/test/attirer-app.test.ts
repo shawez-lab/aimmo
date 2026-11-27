@@ -204,12 +204,10 @@ describe('AT12 · écran « Attirer » de la direction', () => {
   });
 
   it('l’entrée est dans l’écran du réseau, qu’un agent n’ouvre jamais', async () => {
-    const from = HTML.indexOf('<section id="reseau"');
-    const to = HTML.indexOf('<p id="attente"');
-    const at = HTML.indexOf('id="attirer-ouvrir"');
-    expect(from).toBeGreaterThan(-1);
-    expect(at).toBeGreaterThan(from);
-    expect(at).toBeLessThan(to);
+    // DS069 : l'écran du réseau est servi à part ; l'entrée y est, et la page de l'agent ne la porte pas.
+    expect(AGENT_APP_FILES['/app/reseau.html']).toContain('id="attirer-ouvrir"');
+    expect(HTML).not.toContain('id="attirer-ouvrir"');
+    expect(HTML).toContain('<section id="reseau" hidden></section>');
     const agent = await run({ 'GET /v1/moi': ok({ role: 'agent', firstName: 'Alex' }), 'GET /v1/plan-du-jour': ok(null) });
     expect(agent.els.reseau!.hidden).toBe(true);
     const direction = await run();
