@@ -607,6 +607,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : `packages/core/src/estimation/avis-imprime.ts`
 - Preuve : `documents-imprimes.jpg`. Le document qui fait signer le mandat est une page de texte avec un tableau.
 - Solution : une couverture, la fourchette en grand, les ventes comparables en tableau lisible, la méthode en clair, l'agent en pied de page.
+- Suite : corrigé le 2026-11-27 : l'avis s'ouvre sur une couverture (la marque, le titre, la date, la fourchette en grand sur une ligne, l'agent au pied de la page), puis le texte de l'avis et ce qui fonde la fourchette, en tableaux plus aérés dont le titre ne reste jamais seul en bas d'une page. Aucun mot de l'avis n'a changé. Un avis court fait deux pages, quarante ventes en font trois. À l'écran d'un téléphone, des marges et un montant par ligne. Restent, faute de donnée dans l'avis : l'adresse et la photo du bien sur la couverture. Avant et après : `captures/avant-apres/DS084-avis-de-valeur.jpg`.
 
 ### T. Mails et SMS
 

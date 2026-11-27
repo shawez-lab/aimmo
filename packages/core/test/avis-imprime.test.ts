@@ -166,6 +166,34 @@ describeWithSqlite('E08 · avis de valeur imprimable à la marque de l’agent',
     expect(JSON.stringify(entries)).not.toContain(String(r.computed_low));
   });
 
+  it('DS084 · une couverture : la marque, le titre, la date, la fourchette en grand, et l’agent à son pied ; le texte commence après', () => {
+    const html = renderValuationPrint({ low: 285000, high: 305000, validatedOn: '2026-11-02', text: 'A\n\nB', facts: { medianPerM2: 3720, comparables: 14, radius: 600, cited: [{ month: '2026-01', surface: 62, pricePerM2: 3540, distance: 80, street: 'Rue de l’Essai', town: 'Dijon' }], adjustments: [{ label: 'Balcon', pct: 2 }] }, agent: { firstName: 'Alex', lastName: 'Exemple', phone: '03 00 00 00 00', email: 'alex@exemple.test' } });
+    const cover = /<header class="couverture">(.*?)<\/header>/s.exec(html)![1]!;
+    expect(cover).toMatch(/^<p class="marque">AIMMO<\/p><div class="ouverture"><h1>Avis de valeur<\/h1><p class="date">Validé le 2 novembre 2026<\/p><p class="prix">[^<]+<span>à<\/span>[^<]+<\/p><\/div><section class="agent" aria-label="Votre agent">/);
+    expect(cover).toContain('<strong>Alex Exemple</strong>, agent immobilier');
+    expect(cover).toContain('03 00 00 00 00');
+    // L'agent n'est écrit qu'une fois, et la couverture vient avant le texte, qui vient avant les ventes.
+    expect(html.match(/class="agent"/g)).toHaveLength(1);
+    expect(html.indexOf('</header>')).toBeLessThan(html.indexOf('<section class="texte">'));
+    expect(html.indexOf('<section class="texte">')).toBeLessThan(html.indexOf('<h2>Ventes réelles comparables</h2>'));
+    // La fourchette est le plus grand texte de la page ; la couverture tient dans une feuille A4 et ferme sa page.
+    const size = (selector: string): number => Number(new RegExp(`(?:^|[}\\n])${selector}\\{font:400 ([\\d.]+)pt`).exec(html)![1]);
+    expect(size('\\.prix')).toBeGreaterThanOrEqual(2 * size('h1'));
+    expect(size('h1')).toBeGreaterThan(size('h2'));
+    const print = /@media print\{(.*)\}`?/s.exec(html)![1]!;
+    expect(print).toContain('break-after:page');
+    const height = Number(/\.couverture\{[^}]*min-height:(\d+)mm/.exec(print)![1]);
+    const margin = Number(/@page\{size:A4;margin:(\d+)mm\}/.exec(html)![1]);
+    expect(height).toBeLessThan(297 - 2 * margin);
+    expect(height).toBeGreaterThan(240);
+    // Un tableau ne laisse pas son titre ni son en-tête seuls en bas d'une page.
+    expect(html).toContain('h2{font:400 15pt/1.2 var(--police-titre);margin:10mm 0 3mm;break-after:avoid;page-break-after:avoid}');
+    expect(html).toContain('caption,thead{break-inside:avoid;page-break-inside:avoid;break-after:avoid;page-break-after:avoid}');
+    // Rien de collé ni de répété par le navigateur, et la marque n'est plus une étiquette en capitales de texte.
+    expect(html).not.toContain('position:fixed');
+    expect(html).toContain('.marque{margin:0;font:400 13pt/1 var(--police-titre)');
+  });
+
   it('une page sans vente citée ni ajustement reste juste', () => {
     const html = renderValuationPrint({ low: 100, high: 200, validatedOn: '2026-11-02', text: 'A\n\nB', facts: { medianPerM2: 1, comparables: 0, radius: 1, cited: [], adjustments: [] }, agent: { firstName: 'A', lastName: 'B', phone: null, email: null } });
     expect(html).not.toContain('<table');
