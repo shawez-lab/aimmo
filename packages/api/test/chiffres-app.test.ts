@@ -139,10 +139,11 @@ describe('K08 · « Mes chiffres » dans l’application', () => {
   it('hors réseau ou refusé : un message clair, rien d’affiché', async () => {
     const t = await run();
     await t.click(t.els['chiffres-ouvrir']);
-    expect(t.els['chiffres-etat']!.textContent).toBe('Pas de réseau. Réessayez dans un moment.');
+    expect(t.els['chiffres-etat']!.textContent).toBe('Pas de réseau.Réessayer');
+    expect(t.els['chiffres-etat']!.children[0]!.className).toBe('alerte');
     t.table['GET /v1/pilotage/mes-chiffres'] = no(403, { ok: false, rule: 'R16', code: 'role' });
     await t.click(t.els['chiffres-mois']);
-    expect(t.els['chiffres-etat']!.textContent).toBe('Indisponible pour le moment. Réessayez plus tard.');
+    expect(t.els['chiffres-etat']!.textContent).toBe('Indisponible pour le moment.Réessayer');
     expect(t.els['chiffres-corps']!.children).toHaveLength(0);
   });
 });

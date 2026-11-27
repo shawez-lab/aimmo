@@ -452,12 +452,14 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : fiche client, Studio, partenaires
 - Preuve : `appli-fiche-client.jpg` : « La liste des biens n'a pas pu être lue. » est en gris, sous un bouton, comme une aide.
 - Solution : un bandeau d'erreur, avec « Réessayer ».
+- Suite : corrigé en partie le 2026-11-27, pour les écrans de la coquille : la journée, la fiche d'un client, la visite, les acquéreurs d'un bien, la mise en vente, les ventes conclues et « Mes chiffres ». Une lecture en panne s'écrit dans un bandeau d'une ligne avec « Réessayer », qui relit l'écran ; une réponse illisible passe par le même bandeau [R10]. Restent les écrans des modules (Studio, partenaires, finances…), qui écrivent encore leur phrase eux-mêmes. Avant et après : `captures/avant-apres/DS061-panne.jpg`.
 
 #### DS062 · L'écran de connexion est nu
 - Gravité : mineur · Catégorie : états, identité · Effort : S
 - Où : connexion — `fichiers.ts` (`#connexion`)
 - Preuve : `appli-reseau-chiffres-connexion.jpg` : un titre, une phrase, un lien.
 - Solution : le premier écran porte la marque, et dit quoi faire en une phrase.
+- Suite : le constat ne se reproduit plus depuis la base du système (2026-11-27) : l'écran de connexion porte la marque dans l'en-tête, son titre, une phrase qui dit quoi faire, et un seul lien replié pour la clé personnelle. Un essai le garde.
 
 ### N. Accessibilité
 
@@ -466,6 +468,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : toute l'application
 - Preuve : `document.title` vaut « AIMMO » sur chaque écran. Le seul `h1` est la marque.
 - Solution : « Mandat · rue Monge · AIMMO ». Le `h1` est le titre de l'écran.
+- Suite : corrigé en partie le 2026-11-27 : le titre de la page dit l'écran (« Ma journée · AIMMO », « Outils · AIMMO », « Mandat · REF-1 · AIMMO ») et suit le titre de l'écran quand il se précise. Jamais une personne : la fiche d'un client s'appelle « Fiche client », la journée ne dit pas le prénom. Reste le niveau des titres : le seul `h1` est encore la marque, chaque écran garde un `h2` ; les changer touche tous les modules à la fois.
 
 #### DS064 · Le focus se perd à chaque changement d'écran
 - Gravité : mineur · Catégorie : accessibilité · Effort : S

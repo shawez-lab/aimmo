@@ -298,6 +298,9 @@ main > section > h2 { font-size: var(--t-xxl); margin: var(--e-2) 0 var(--e-4); 
 #note:not([hidden]) { position: fixed; left: var(--e-4); right: var(--e-4); bottom: max(var(--e-4), env(safe-area-inset-bottom)); max-width: var(--colonne); margin: 0 auto; padding: var(--e-3) var(--e-4); border-radius: var(--r-m); background: var(--encre); color: var(--papier); box-shadow: var(--ombre); z-index: 3; }
 .bloc > h3 { margin-bottom: var(--e-2); }
 .bloc > .etat { margin: 0; }
+.etat > .alerte { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 var(--e-4); padding: var(--e-1) var(--e-4); font-size: var(--t-m); }
+.alerte > button { margin: 0; }
+#accueil > .bloc:has(.alerte) { display: block; }
 #regmandat-corps h4 { margin: var(--e-4) 0 var(--e-2); }
 .bloc > button.secondaire { width: 100%; }
 .liste > li > strong:first-child { font-size: var(--t-l); font-family: var(--police-titre); font-weight: 600; }
@@ -663,13 +666,13 @@ export const APP_JS = `'use strict';
       if (mine !== session) return false;
       if (res.refused) { forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return false; }
       if (res.denied) { $('fiche-etat').textContent = 'Cette fiche n’est pas dans vos droits.'; return false; }
-      if (res.failed) { $('fiche-etat').textContent = 'Indisponible pour le moment. Réessayez plus tard.'; return false; }
+      if (res.failed) { down($('fiche-etat')); return false; }
       $('fiche-etat').textContent = '';
       renderFiche(res.body.data, personId);
       return true;
     }, function () {
       if (mine !== session) return false;
-      $('fiche-etat').textContent = 'Indisponible pour le moment. Réessayez plus tard.';
+      down($('fiche-etat'));
       return false;
     });
   }
@@ -731,15 +734,16 @@ export const APP_JS = `'use strict';
       if (mine !== session) return true;
       if (res.refused) return false;
       if (res.incomplete) { state.textContent = 'Fermé tant que votre dossier d’agent est incomplet : ouvrez « Mon dossier », dans les outils.'; return true; }
-      if (res.failed || !res.body || res.body.ok !== true) { state.textContent = 'Indisponible pour le moment. Réessayez plus tard.'; return true; }
+      if (res.failed || !res.body || res.body.ok !== true) { down(state); return true; }
       var empty = render(list, res.body.data);
-      state.textContent = empty || '';
+      // Une réponse illisible est une panne aussi, pas « rien » [R10] : le rendu la dit par sa phrase.
+      if (empty && !empty.indexOf('Indisponible')) down(state); else state.textContent = empty || '';
       if (id === 'chauds' || id === 'biens') fold(list);
       return true;
     }, function () {
       if (mine !== session) return true;
       clear(list);
-      state.textContent = 'Indisponible pour le moment. Réessayez plus tard.';
+      down(state);
       return true;
     });
   }
@@ -823,6 +827,16 @@ export const APP_JS = `'use strict';
     b.setAttribute('type', 'button');
     b.addEventListener('click', onClick);
     return b;
+  }
+  // DS061 · une panne ne ressemble pas à une aide : elle se voit, et « Réessayer » relit l'écran. Écrite dans la zone
+  // d'état, elle part avec le prochain message qui s'y écrit.
+  function down(state, offline) {
+    state.textContent = '';
+    state.appendChild(el('span', offline ? 'Pas de réseau.' : 'Indisponible pour le moment.', 'alerte')).appendChild(button('Réessayer', retry)).className = 'discret';
+  }
+  function retry() {
+    if (!currentKey || !shownId) return;
+    if (shownId === 'accueil') goHome(); else reopen(shownId, JSON.parse(shownArgs), true);
   }
   function section(title) {
     var box = el('section', null, 'bloc');
@@ -914,7 +928,7 @@ export const APP_JS = `'use strict';
       if (res.status === 403) { $('visite-etat').textContent = 'Cette visite n’est pas dans vos droits.'; return false; }
       // Une visite réservée en ligne n'a pas encore de dossier de visite : elle n'est rattachée à aucune recherche d'achat.
       if (res.status === 404) { $('visite-etat').textContent = 'Pas de dossier de visite pour ce rendez-vous : s’il a été réservé en ligne, il n’est pas encore rattaché à la recherche d’un acquéreur.'; return false; }
-      if (!res.ok) { $('visite-etat').textContent = 'Indisponible pour le moment. Réessayez plus tard.'; return false; }
+      if (!res.ok) { down($('visite-etat')); return false; }
       $('visite-etat').textContent = '';
       renderVisit(res.body.data);
       return true;
@@ -1111,7 +1125,7 @@ export const APP_JS = `'use strict';
       if (buyers.offline) { $('bien-etat').textContent = 'Pas de réseau. Réessayez dans un moment.'; return false; }
       if (buyers.status === 403 || buyers.status === 404) { $('bien-etat').textContent = 'Ce bien n’est pas dans vos droits.'; return false; }
       if (buyers.body && buyers.body.rule === 'R42') { $('bien-etat').textContent = 'Bien pas encore proposable : mandat pas en vigueur ou rétractation en cours.'; return false; }
-      if (!buyers.ok) { $('bien-etat').textContent = 'Indisponible pour le moment. Réessayez plus tard.'; return false; }
+      if (!buyers.ok) { down($('bien-etat')); return false; }
       $('bien-etat').textContent = '';
       renderBien(propertyId, buyers.body.data, map.ok ? map.body.data : null);
       return true;
@@ -1235,7 +1249,7 @@ export const APP_JS = `'use strict';
       if (all[0].gone || all[1].gone || all[2].gone) return false;
       if (all[0].offline) { $('vente-etat').textContent = 'Pas de réseau. Réessayez dans un moment.'; return false; }
       if (all[0].status === 403 || all[0].status === 404) { $('vente-etat').textContent = 'Ce bien n’est pas dans vos droits.'; return false; }
-      if (!all[0].ok) { $('vente-etat').textContent = 'Indisponible pour le moment. Réessayez plus tard.'; return false; }
+      if (!all[0].ok) { down($('vente-etat')); return false; }
       $('vente-etat').textContent = '';
       // Seul « aucune annonce » est un état vide ; une lecture en échec est dite comme telle, sans geste proposé.
       var draft = all[1].ok ? all[1].body.data : all[1].status === 404 && all[1].body && all[1].body.code === 'no_draft' ? null : undefined;
@@ -1492,7 +1506,7 @@ export const APP_JS = `'use strict';
     $('apres-etat').textContent = 'Chargement…';
     return send('/v1/apres-vente/dossiers', 'GET').then(function (res) {
       if (res.gone) return false;
-      if (!res.ok) { $('apres-etat').textContent = res.offline ? 'Pas de réseau. Réessayez dans un moment.' : 'Indisponible pour le moment. Réessayez plus tard.'; return false; }
+      if (!res.ok) { down($('apres-etat'), res.offline); return false; }
       renderApres(Array.isArray(res.body.data) ? res.body.data : []);
       return true;
     });
@@ -1919,7 +1933,7 @@ export const APP_JS = `'use strict';
     $('chiffres-etat').textContent = 'Chargement…';
     return send('/v1/pilotage/mes-chiffres?du=' + p.from + '&au=' + p.to, 'GET').then(function (res) {
       if (res.gone) return false;
-      if (!res.ok) { $('chiffres-etat').textContent = res.offline ? 'Pas de réseau. Réessayez dans un moment.' : 'Indisponible pour le moment. Réessayez plus tard.'; return false; }
+      if (!res.ok) { down($('chiffres-etat'), res.offline); return false; }
       $('chiffres-etat').textContent = 'Du ' + date(p.from + 'T12:00:00Z') + ' au ' + date(p.to + 'T12:00:00Z') + '.';
       renderChiffres(res.body.data || {});
       return true;
@@ -2203,6 +2217,17 @@ ${LOUER_JS}
   var ROOTS = { accueil: 'journee', outils: 'outils', chiffres: 'chiffres' };
   var tab = 'accueil', agentIn = false;
   function titleOf(id) { return $(id === 'accueil' ? 'bonjour' : id === 'fiche' ? 'fiche-nom' : id + '-titre'); }
+  // DS063 · le titre de la page dit l'écran, et le suit quand il se précise (« Mandat · REF-1 ») ; jamais une personne :
+  // la fiche d'un client reste « Fiche client », la journée ne dit pas le prénom.
+  var titled = null, watch = null;
+  function retitle(id) {
+    if (id) titled = id;
+    var h = titled === 'accueil' || titled === 'fiche' ? null : titleOf(titled);
+    document.title = (titled === 'accueil' ? 'Ma journée · ' : titled === 'fiche' ? 'Fiche client · ' : h && h.textContent ? h.textContent + ' · ' : '') + 'AIMMO';
+    if (!id || typeof MutationObserver !== 'function') return;
+    if (watch) watch.disconnect();
+    if (h) (watch = new MutationObserver(function () { retitle(); })).observe(h, { childList: true, characterData: true, subtree: true });
+  }
   function show(id, args) {
     ['connexion', 'invitation', 'accueil', 'outils', 'attente', 'fiche', 'hors-ligne', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
     var out = id === 'connexion' || id === 'attente' || id === 'invitation';
@@ -2220,6 +2245,7 @@ ${LOUER_JS}
     if (!out && !fromHistory && (id !== shownId || a !== shownArgs)) try { history[shownId ? 'pushState' : 'replaceState']({ s: id, a: args || null, t: tab }, ''); } catch (e) { /* sans historique */ }
     shownId = out ? null : id;
     shownArgs = a;
+    retitle(id);
     // DS064 · le focus suit l'écran : à chaque changement, il va au titre du nouvel écran, que le lecteur d'écran
     // annonce. Pas au premier écran ouvert (la page vient de se charger), ni à l'écran d'attente, qui n'a pas de titre.
     if (id === 'attente') return;
@@ -2360,22 +2386,27 @@ ${LOUER_JS}
       return offline(function (H) { return H.start(key, show, enter, function () { return mine === session; }, no); }).then(function (r) { return r === false ? no() : !!r; });
     });
   }
+  // Un écran se rouvre, relu : par le bouton Retour du navigateur, ou par « Réessayer » après une panne (DS061).
+  var goHome = null;
+  function reopen(s, a, force) {
+    // Une fiche, un bien, une visite ou une mise en vente se rouvrent, relus ; les autres écrans gardent ce qu'ils montraient.
+    var again = { fiche: openFiche, bien: openBien, visite: openVisit, vente: openVente, mandat: openMandat, dossier: openDossier, offres: openOffres, avis: openAvis, studio: openStudio }[s];
+    // Une lecture encore en route pour l'écran quitté ne s'affiche plus.
+    session += 1;
+    fromHistory = true;
+    // Un écran que le changement d'onglet a vidé est relu, pas rouvert vide ; s'il montre encore quelque chose (un dossier
+    // ouvert, un formulaire commencé), il le garde, comme avant.
+    var reread = { chiffres: function () { openChiffres(); }, partenaires: function () { openPartenaires('', 0); }, apres: function () { openApres(); }, louer: function () { openLouer('', 0); }, investir: function () { openInvestir(''); }, commerces: function () { openCommerces(''); }, gagner: function () { openGagner(); } }[s];
+    if (again && Array.isArray(a)) again.apply(null, a); else if (reread && (force || !$(s + '-corps').firstChild)) reread(); else show(s);
+    fromHistory = false;
+  }
   try {
     addEventListener('popstate', function (e) {
-      var s = e.state && e.state.s, a = e.state && e.state.a, t = e.state && e.state.t;
+      var s = e.state && e.state.s, t = e.state && e.state.t;
       if (!currentKey || !s || !document.getElementById(s)) return;
-      // Une fiche, un bien, une visite ou une mise en vente se rouvrent, relus ; les autres écrans gardent ce qu'ils montraient.
-      var again = { fiche: openFiche, bien: openBien, visite: openVisit, vente: openVente, mandat: openMandat, dossier: openDossier, offres: openOffres, avis: openAvis, studio: openStudio }[s];
-      // Une lecture encore en route pour l'écran quitté ne s'affiche plus.
-      session += 1;
-      fromHistory = true;
       // DS005 · l'écran rouvert retrouve l'onglet d'où il avait été ouvert : son « Retour » y ramène.
       if (ROOTS[t]) tab = t;
-      // Un écran que le changement d'onglet a vidé est relu, pas rouvert vide ; s'il montre encore quelque chose (un dossier
-      // ouvert, un formulaire commencé), il le garde, comme avant.
-      var reread = { chiffres: function () { openChiffres(); }, partenaires: function () { openPartenaires('', 0); }, apres: function () { openApres(); }, louer: function () { openLouer('', 0); }, investir: function () { openInvestir(''); }, commerces: function () { openCommerces(''); }, gagner: function () { openGagner(); } }[s];
-      if (again && Array.isArray(a)) again.apply(null, a); else if (reread && !$(s + '-corps').firstChild) reread(); else show(s);
-      fromHistory = false;
+      reopen(s, e.state.a);
     });
   } catch (e) { /* sans historique */ }
   function boot() {
@@ -2422,6 +2453,7 @@ ${LOUER_JS}
       show('accueil');
       day(currentKey, session);
     }
+    goHome = home;
     $('journee-ouvrir').addEventListener('click', function () { tab = 'accueil'; home(); });
     // Depuis la journée, rien n'est à effacer : ses lectures en route continuent.
     $('outils-ouvrir').addEventListener('click', function () { if (!currentKey) return; if (shownId !== 'accueil' && shownId !== 'outils') leave(); show('outils'); });

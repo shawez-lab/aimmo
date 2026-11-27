@@ -118,10 +118,12 @@ describe('W26 · à tenir sur mes ventes, à l’accueil', () => {
   });
 
   it('[R10] une lecture manquée n’est jamais « rien à tenir » : réseau coupé, panne ou réponse sans listes', async () => {
-    const lost = 'Indisponible pour le moment. Réessayez plus tard.';
     for (const answer of [null, async () => new Response('panne', { status: 500 }), ok(null), ok({ fonds: [] })]) {
       const t = await run(answer);
-      expect(t.els['a-tenir-etat']!.textContent).toBe(lost);
+      // DS061 · la panne se voit, avec « Réessayer » : un bandeau, pas une phrase grise.
+      const alert = t.els['a-tenir-etat']!.children[0]!;
+      expect(alert.className).toBe('alerte');
+      expect(t.els['a-tenir-etat']!.textContent).toBe('Indisponible pour le moment.Réessayer');
       expect(t.els['a-tenir']!.all().filter((e) => e.tagName === 'li')).toEqual([]);
     }
   });

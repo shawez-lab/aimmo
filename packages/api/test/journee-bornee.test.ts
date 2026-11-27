@@ -25,6 +25,11 @@ const DAY = (hot: number, goods: number, rdv = 0, lines = 0): Record<string, Ans
   '/v1/contacts-chauds': ok({ slot: 'morning', contacts: contacts(hot) }),
   '/v1/annonces': ok(properties(goods)),
   '/v1/rendez-vous/jour': ok({ day: '2026-11-10', appointments: appointments(rdv) }),
+  // Une journée sans rien répond partout : une lecture en panne n'est pas « rien » (DS061, R10).
+  '/v1/alertes-agent': ok({ alerts: [], more: false }),
+  '/v1/offres/a-tenir': ok({ fonds: [], financement: [], echeances: [] }),
+  '/v1/apres-vente/journee': ok({}),
+  '/v1/usage/matin': ok({ scope: 'agent', openedDays: 0, days: Array.from({ length: 7 }, (_, i) => ({ day: `2026-11-0${i + 3}`, opened: false })) }),
 });
 
 async function run(answers: Record<string, Answer>) {

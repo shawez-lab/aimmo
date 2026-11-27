@@ -127,7 +127,103 @@ async function lancer(): Promise<Navigateur | null> {
 }
 const navigateur = await lancer();
 
+describe('DS063 · le titre de la page dit l’écran, jamais une personne', () => {
+  /** Le faux document ne porte pas le texte de la page : les titres écrits dans le HTML servi y sont remis. */
+  const withTitles = async () => {
+    const a = await app();
+    for (const [, id, text] of HTML.matchAll(/<h2 id="([a-z-]+-titre)"[^>]*>([^<]+)<\/h2>/g)) if (a.els[id!]) a.els[id!]!.textContent = text!;
+    return a;
+  };
+
+  it('chaque écran ouvert renomme la page ; la journée ne dit pas le prénom, la déconnexion rend « Connexion »', async () => {
+    const a = await withTitles();
+    const title = (): string => (a.document as unknown as { title: string }).title;
+    expect(title()).toBe('Ma journée · AIMMO');
+    expect(title()).not.toContain('Alex');
+    a.els['outils-ouvrir']!.listeners.click!({});
+    await a.tick();
+    expect(title()).toBe('Outils · AIMMO');
+    a.els['partenaires-ouvrir']!.listeners.click!({});
+    await a.tick();
+    expect(title()).toBe('Mes partenaires · AIMMO');
+    a.els['chiffres-ouvrir']!.listeners.click!({});
+    await a.tick();
+    expect(title()).toBe('Mes chiffres · AIMMO');
+    a.els.sortir!.listeners.click!({});
+    await a.tick();
+    expect(title()).toBe('Connexion · AIMMO');
+  });
+
+  it('la fiche d’un client s’appelle « Fiche client » : son nom n’est jamais dans le titre de la page', async () => {
+    const a = await app();
+    // Le plan du jour porte une personne : son bouton ouvre sa fiche.
+    const open = a.els.plan!.all().find((e) => e.tagName === 'button' && e.textContent === 'Voir la fiche');
+    expect(open).toBeDefined();
+    open!.listeners.click!({});
+    await a.tick();
+    expect(a.els.fiche!.hidden).toBe(false);
+    const title = (a.document as unknown as { title: string }).title;
+    expect(title).toBe('Fiche client · AIMMO');
+    expect(title).not.toContain('Léa');
+  });
+
+  it('le script ne lit le titre que dans l’écran : `titleOf`, et deux noms fixes pour la journée et la fiche', () => {
+    expect(JS).toContain("document.title = (titled === 'accueil' ? 'Ma journée · ' : titled === 'fiche' ? 'Fiche client · ' : h && h.textContent ? h.textContent + ' · ' : '') + 'AIMMO';");
+    // Aucun autre endroit n'écrit le titre de la page.
+    expect(JS.match(/document\.title\s*=/g)).toHaveLength(1);
+  });
+});
+
+describe('DS062 · l’écran de connexion n’est plus nu', () => {
+  it('la marque dans l’en-tête, un titre, une seule phrase qui dit quoi faire, et la clé personnelle repliée', () => {
+    expect(HTML).toContain('<header class="tete"><h1 class="marque">AIMMO</h1></header>');
+    const login = /<section id="connexion" hidden>([\s\S]*?)<\/section>/.exec(HTML)![1]!;
+    expect(login).toContain('<h2 id="connexion-titre">Connexion</h2>');
+    // Une phrase, pas un mode d'emploi : hors du formulaire replié, un seul paragraphe.
+    const open = login.replace(/<details>[\s\S]*?<\/details>/, '');
+    expect(open.match(/<p>/g)).toHaveLength(1);
+    expect(open).toContain('<p id="erreur" role="alert" hidden></p>');
+    expect(open).toContain('demandez à la direction votre lien d’accès');
+    expect(login).toContain('<details><summary>J’ai une clé personnelle</summary>');
+    // Le seul geste montré d'emblée n'apparaît que si l'appareil a sa clé.
+    expect(open).toContain('<button id="entrer-appareil" type="button" hidden>Entrer avec la clé de cet appareil</button>');
+  });
+});
+
 describe('DS064 · dans Chromium', () => {
+  it.skipIf(navigateur === null)('DS063 · le titre suit l’écran, et se précise quand le titre de l’écran se précise', async () => {
+    const page = await navigateur!.newPage({ viewport: { width: 390, height: 844 } });
+    try {
+      await page.addInitScript((k: string) => (globalThis as any).localStorage.setItem('aimmo.cle', k), KEY);
+      await page.route('**/*', async (route: any) => {
+        const path = new URL(route.request().url()).pathname;
+        const file = AGENT_APP_FILES[path];
+        if (file !== undefined) return route.fulfill({ status: 200, contentType: path.endsWith('.js') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : path.endsWith('/') ? 'text/html' : 'application/octet-stream', body: file });
+        const answer = BASE[path];
+        if (answer) return route.fulfill({ status: 200, contentType: 'application/json', body: await (await answer()).text() });
+        return route.fulfill({ status: 503, contentType: 'application/json', body: '{"ok":false}' });
+      });
+      await page.goto('https://aimmo.example.test/app/');
+      await page.waitForSelector('#accueil:not([hidden])');
+      expect(await page.title()).toBe('Ma journée · AIMMO');
+      await page.click('#chiffres-ouvrir');
+      await page.waitForSelector('#chiffres:not([hidden])');
+      expect(await page.title()).toBe('Mes chiffres · AIMMO');
+      // Un écran précise son titre après coup (« Mandat · REF-1 ») : la page suit, sans que l'écran ait à le demander.
+      await page.evaluate(() => { (globalThis as any).document.getElementById('chiffres-titre').textContent = 'Mes chiffres · novembre'; });
+      await page.waitForFunction(() => (globalThis as any).document.title === 'Mes chiffres · novembre · AIMMO');
+      // L'écran quitté n'est plus écouté : son titre peut changer sans renommer la page.
+      await page.click('#outils-ouvrir');
+      await page.waitForSelector('#outils:not([hidden])');
+      await page.evaluate(() => { (globalThis as any).document.getElementById('chiffres-titre').textContent = 'Autre chose'; });
+      await page.waitForTimeout(50);
+      expect(await page.title()).toBe('Outils · AIMMO');
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+
   it.skipIf(navigateur === null)('après l’ouverture d’un écran, l’élément actif est son titre, pas le corps de la page', async () => {
     const page = await navigateur!.newPage({ viewport: { width: 390, height: 844 } });
     try {
