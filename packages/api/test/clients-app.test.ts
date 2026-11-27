@@ -351,7 +351,7 @@ afterAll(async () => {
 });
 
 describe('DS003 · dans Chromium', () => {
-  it.skipIf(navigateur === null)('quatre onglets tiennent sur un téléphone ; une ligne de client se touche en entier ; chercher au clavier filtre la liste', async () => {
+  it.skipIf(navigateur === null)('les onglets tiennent sur un téléphone ; une ligne de client se touche en entier ; chercher au clavier filtre la liste', async () => {
     const answers: Record<string, Answer> = { ...DAY, '/v1/fiches': ok(PEOPLE) };
     const page = await navigateur!.newPage({ viewport: { width: 320, height: 640 } });
     try {
@@ -367,9 +367,9 @@ describe('DS003 · dans Chromium', () => {
       });
       await page.goto('https://aimmo.example.test/app/');
       await page.waitForSelector('#accueil:not([hidden])');
-      // Sur le plus petit téléphone, les quatre onglets tiennent, chacun à la taille du doigt, sans déborder.
+      // Sur le plus petit téléphone, les cinq onglets tiennent, chacun à la taille du doigt, sans déborder.
       const tabs = await page.evaluate(() => [...(globalThis as any).document.querySelectorAll('#onglets button')].map((b: any) => { const r = b.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), clipped: b.scrollWidth > b.clientWidth + 1 }; }));
-      expect(tabs).toHaveLength(4);
+      expect(tabs).toHaveLength(5);
       for (const t of tabs) {
         expect(t.w).toBeGreaterThanOrEqual(48);
         expect(t.h).toBeGreaterThanOrEqual(48);
