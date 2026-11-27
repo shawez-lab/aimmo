@@ -12,6 +12,9 @@ import { LETTER_RECIPIENT_LABELS } from '../../core/src/mandats/gagner/lettres-q
  * `/app/veille-dpe.js`, qui lit `/v1/veille-dpe`, et celle de « Mon site » (BR42), `/app/site.js`, qui lit `/v1/site`, et celle des programmes neufs (BR78), `/app/neuf.js`, qui lit `/v1/neuf`, et celle du viager (BR81), `/app/viager.js`, qui lit `/v1/viager`. L'écran lui-même ne lit et n'écrit que par les routes `/v1/gagner` [R16] ; il ne
  * calcule rien, ne trie rien et ne décide rien : il montre ce que le code a décidé, dans l'ordre reçu. Aucun texte ne
  * promet de mandats [R145]. Tout texte reçu est posé avec `textContent`.
+ *
+ * DS014 · l'écran ne déplie plus sept outils l'un sous l'autre : chaque outil fermé est une rangée à son nom, qui
+ * s'ouvre à sa place avec son titre et sa phrase ; un bloc sans rien à montrer tient en une ligne.
  */
 
 const TRIGGER_LABELS = { mandat: 'Après un mandat signé', vente: 'Après une vente' };
@@ -69,6 +72,12 @@ export const GAGNER_HTML = `<section id="gagner" hidden>
 `;
 
 export const GAGNER_CSS = `
+/* DS014 · un outil fermé tient en une rangée, à son nom : son titre et sa phrase viennent avec lui, à l'ouverture.
+   Un bloc qui n'a rien à montrer tient en une ligne, son titre et son état côte à côte. */
+#gagner-corps > .bloc:has(> .rangee + div:empty) { margin: 0; padding: 0; border: 0; }
+#gagner-corps > .bloc:has(> .rangee + div:empty) > :is(h3, p) { display: none; }
+#gagner-corps > .bloc:has(> h3 + .doux):not(:has(> details, > .rangee)) { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--e-3); }
+#gagner-corps > .bloc:has(> h3 + .doux):not(:has(> details, > .rangee)) > * { margin: 0; }
 .compte { font-variant-numeric: tabular-nums; font-weight: 600; }
 .jauge { display: block; width: 100%; height: 8px; margin: var(--e-1) 0 var(--e-2); accent-color: var(--accent); }
 .preuve-taux { font: 600 var(--t-l)/1.2 var(--police-titre); color: var(--encre); margin: var(--e-1) 0; }
@@ -223,6 +232,7 @@ globalThis.AIMMO_GAGNER = function (t) {
       s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
       box.appendChild(s);
     });
+    b.className = 'secondaire rangee';
     box.appendChild(b);
     box.appendChild(inner);
     return box;
@@ -251,6 +261,7 @@ globalThis.AIMMO_GAGNER = function (t) {
       s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
       box.appendChild(s);
     });
+    b.className = 'secondaire rangee';
     box.appendChild(b);
     box.appendChild(inner);
     return box;
@@ -279,6 +290,7 @@ globalThis.AIMMO_GAGNER = function (t) {
       s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
       box.appendChild(s);
     });
+    b.className = 'secondaire rangee';
     box.appendChild(b);
     box.appendChild(inner);
     return box;
@@ -307,6 +319,7 @@ globalThis.AIMMO_GAGNER = function (t) {
       s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
       box.appendChild(s);
     });
+    b.className = 'secondaire rangee';
     box.appendChild(b);
     box.appendChild(inner);
     return box;
@@ -336,6 +349,7 @@ globalThis.AIMMO_GAGNER = function (t) {
       s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
       box.appendChild(s);
     });
+    b.className = 'secondaire rangee';
     box.appendChild(b);
     box.appendChild(inner);
     return box;
@@ -364,6 +378,7 @@ globalThis.AIMMO_GAGNER = function (t) {
       s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
       box.appendChild(s);
     });
+    b.className = 'secondaire rangee';
     box.appendChild(b);
     box.appendChild(inner);
     return box;
@@ -392,6 +407,7 @@ globalThis.AIMMO_GAGNER = function (t) {
       s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
       box.appendChild(s);
     });
+    b.className = 'secondaire rangee';
     box.appendChild(b);
     box.appendChild(inner);
     return box;
