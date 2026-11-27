@@ -2,6 +2,8 @@ import { expect, it } from 'vitest';
 import { FicheClient, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase } from '@aimmo/core';
 import { checkRecruitingText } from '../../core/src/reseau/index.ts';
 import { CANDIDATURE_PAGE_VERSION, PAGE_TEXT, candidaturePage, handleCandidature, pageProblems, pageTexts } from '../src/candidature.ts';
+import { filledButtons } from '../../core/src/design/audit.ts';
+import { DESIGN_CSS } from '../../core/src/design/systeme.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase } from '../../core/test/sqlite.ts';
 
@@ -71,6 +73,23 @@ describeWithSqlite('J12 · page de candidature', () => {
     expect((await t.journal.all()).map((e) => e.type)).toContain('candidature.page_fermee');
     // Les textes publiés ne se changent pas en cours de route.
     expect(Object.isFrozen(PAGE_TEXT.noPromise)).toBe(true);
+  });
+
+  it('DS074 · l’appel à candidater est un bouton, en haut, qui mène au formulaire ; le seul bouton plein est l’envoi', async () => {
+    const body = candidaturePage();
+    expect(body).toContain('<p><a class="appel second" href="#candidater">Déposer ma candidature</a></p>');
+    // Avant la première partie de la page, et sa cible existe : le formulaire.
+    expect(body.indexOf('href="#candidater"')).toBeLessThan(body.indexOf('<h2>'));
+    expect(body).toContain('<h2 id="candidater">');
+    expect(filledButtons(body)).toEqual(['Envoyer ma candidature']);
+    // La page servie dessine ce bouton au trait, à la taille des boutons du système.
+    const t = await setup();
+    const served = (await t.page())!.html;
+    expect(served).toContain('.second{background:transparent;color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}');
+    // Direction Maison : plus de losange penché sous les numéros des étapes, plus de petites capitales au-dessus des titres.
+    const local = /<style>([\s\S]*?)<\/style>/.exec(served)![1]!.replace(DESIGN_CSS, '');
+    expect(local).not.toMatch(/rotate\(|text-transform:\s*uppercase|--moutarde/);
+    expect(local).toContain('ol.etapes li::before{content:counter(e);');
   });
 
   it('sert la page avec une politique de contenu fermée, et rien hors de son adresse', async () => {

@@ -157,8 +157,9 @@ main>.marque{margin:0 0 var(--e-4);line-height:1.4;letter-spacing:.12em;font-siz
 main>.frise{margin:0 0 var(--e-7);border-radius:var(--r-rond)}
 h1{margin:0 0 var(--e-4)}
 .chapeau{font-size:var(--t-l);line-height:1.5;margin:0 0 var(--e-6)}
-h2{margin:var(--e-7) 0 var(--e-4);padding-top:var(--e-4);border-top:2px solid var(--encre)}
-h2 small{display:block;font:600 var(--t-xs)/1.4 var(--police-texte);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:var(--e-1)}
+h2{margin:var(--e-7) 0 var(--e-4);padding-top:var(--e-5);border-top:1px solid var(--trait)}
+h2 small{display:block;font:500 var(--t-s)/1.4 var(--police-texte);letter-spacing:0;color:var(--doux);margin-bottom:var(--e-1)}
+.second{background:transparent;color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 dl.offre{margin:0}
 dl.offre div{display:grid;grid-template-columns:1fr;gap:var(--e-1);padding:var(--e-3) 0;border-bottom:1px solid var(--trait)}
 dl.offre dt{font-weight:600}
@@ -168,7 +169,7 @@ table{width:100%;border-collapse:collapse;margin:0 0 var(--e-4)}
 th,td{text-align:left;padding:var(--e-3) 0;border-bottom:1px solid var(--trait);vertical-align:top}
 caption{caption-side:bottom;text-align:left;padding-top:var(--e-2)}
 td{text-align:right;font:600 var(--t-l)/1.2 var(--police-titre);color:var(--accent);white-space:nowrap;padding-left:var(--e-4);font-variant-numeric:tabular-nums lining-nums}
-.sans{margin:0;padding:var(--e-4) var(--e-4);background:var(--accent-doux);border-radius:var(--r-m);box-shadow:inset 4px 0 0 var(--accent);list-style:none}
+.sans{margin:0;padding:var(--e-4);border:1px solid var(--trait);border-radius:var(--r-m);list-style:none}
 .sans li+li{margin-top:var(--e-3)}
 ul.liste{margin:0 0 var(--e-4);padding-left:var(--e-5)}
 ul.liste li+li{margin-top:var(--e-2)}
@@ -176,7 +177,7 @@ ul.communes{list-style:none;margin:0 0 var(--e-3);padding:0;display:flex;flex-wr
 ul.communes li{padding:var(--e-1) var(--e-3);border:1px solid var(--trait);border-radius:var(--r-rond)}
 ol.etapes{counter-reset:e;list-style:none;margin:0;padding:0}
 ol.etapes li{counter-increment:e;position:relative;padding:0 0 var(--e-5) var(--e-7)}
-ol.etapes li::before{content:counter(e);position:absolute;left:0;top:0;width:32px;height:32px;background:var(--moutarde);color:var(--sur-moutarde);transform:rotate(45deg);border-radius:var(--r-s);display:flex;align-items:center;justify-content:center;font-weight:700}
+ol.etapes li::before{content:counter(e);position:absolute;left:0;top:0;font:400 var(--t-xl)/1.1 var(--police-titre);color:var(--doux)}
 ol.etapes strong{display:block}
 form{margin-top:var(--e-4)}
 fieldset{margin:0 0 var(--e-5)}
@@ -257,7 +258,7 @@ export function candidaturePage(values: FormValues = {}, error: { message: strin
   return `<p class="marque">${escape(t.kicker)}</p><div class="frise" aria-hidden="true"></div>
 <h1>${escape(t.title)}</h1>
 <p class="chapeau">${escape(t.lede)}</p>
-<p><a class="lien" href="#candidater">Déposer ma candidature</a></p>
+<p><a class="appel second" href="#candidater">Déposer ma candidature</a></p>
 <h2><small>Ce que vous trouvez</small>Le métier, sans l’administratif</h2>
 <dl class="offre">${t.finds.map(([k, v]) => `<div><dt>${escape(k)}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl>
 <h2><small>Ce que vous payez</small>Rien pour travailler avec le système</h2>

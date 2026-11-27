@@ -536,6 +536,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : `packages/api/src/candidature.ts`
 - Preuve : `site-candidature-estimation-dossier.jpg`. Le texte est bon. L'appel à l'action est « Déposer ma candidature » en lien. Aucun chiffre prouvé, aucun visage. 6 621 px sur téléphone.
 - Solution : un bouton, répété en bas. Les preuves chiffrées du compte public. Le témoignage d'un agent quand il y en aura un vrai.
+- Suite : corrigé le 2026-11-27 : « Déposer ma candidature » est un bouton, en haut, qui mène au formulaire ; l'envoi, en bas, reste le seul bouton plein. La page passe en direction Maison : plus de petites capitales au-dessus des titres, plus de losange penché sous les numéros des étapes. Restent, faute de donnée : les chiffres du compte public et le témoignage d'un agent. Avant et après : `captures/avant-apres/DS074-candidature.jpg`.
 
 #### DS075 · Les listes d'agents et de communes n'ont ni recherche ni index
 - Gravité : mineur · Catégorie : site public · Effort : S
