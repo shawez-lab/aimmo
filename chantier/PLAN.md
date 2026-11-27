@@ -7828,6 +7828,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS001 · L'accueil est une pile de 23 cartes égales
 - Statut : en cours (voie 3)
+- Suivi : proposition #816, avec DS002 et DS055 (ordre de la journée, date, blocs vides sur une ligne, listes à cinq lignes puis la suite, « Ma semaine » en mots) et les deux P2 de #812.
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS001 (bloquant, architecture de l'information, effort L), endroit : « Ma journée » — `packages/api/app/fichiers.ts` (`#accueil`)
 - Constat de l’audit : `appli-accueil.jpg`. Sans aucun dossier, l'accueil fait 5,4 écrans et compte 23 blocs, dont 6 vides. Avec un bien, 5,7 écrans.
