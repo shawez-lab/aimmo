@@ -138,13 +138,13 @@ export function renderListingPrint(input: PageInput): string | null {
   if (p.state === 'retiree' || p.priceEur === null || !p.body || !p.mentions || !p.title) return null;
   const brand = `<div class="marque">AIMMO · Réf. ${escapeHtml(p.reference)}</div>`;
   return (
-    `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(p.title)}</title><style>${PRINT_CSS}</style></head><body>` +
+    `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(p.title)}</title><style>${PRINT_CSS}</style></head><body><main>` +
     `<section class="page">${brand}<h1>${escapeHtml(p.title)}</h1><span class="etat">${STATE_LABEL[p.state]}</span>` +
     `<p class="prix">${escapeHtml(euros(p.priceEur))}</p><div class="mentions">${escapeHtml(p.mentions)}</div>${energyLabels(p.mentions)}${photoList(input.photos, MAX_PRINT_PHOTOS)}</section>` +
     // Sur papier, les retours à la ligne deviennent des espaces : 3 000 caractères tiennent toujours dans la page 2,
     // au-dessus de la carte de l'agent, sans rien couper.
     `<section class="page">${brand}<p class="texte">${escapeHtml(p.body.replace(/\s*\n\s*/g, ' '))}</p>${agentBlock(input.agent)}</section>` +
-    `</body></html>`
+    `</main></body></html>`
   );
 }
 

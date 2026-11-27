@@ -8234,7 +8234,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS052 · La mention de l'assistant dit « de Alex » et « réponse immédiate » hors de propos
-- Statut : fait (2026-11-27) pour l’élision (#803, fusionnée par la voie 1) ; la formule « Réponse immédiate… » attend Shawez
+- Statut : fait (2026-11-27)
+- Reste : l’élision est faite (#803, fusionnée par la voie 1) ; la formule « Réponse immédiate… » attend Shawez
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS052 (majeur, mails et SMS, effort S), endroit : `packages/core/src/envoi/controle.ts` l. 168
 - Constat de l’audit : la demande d'avis, envoyée quatre mois après la vente, commence par « Réponse immédiate de l'assistant IA de Alex, qui vous recontacte personnellement. »
@@ -8359,7 +8360,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS067 · Les documents imprimés n'ont ni repère principal ni titre de niveau 1
-- Statut : en cours (voie 1 : verrou de la voie 3 figé depuis le 2026-11-23 23:50)
+- Statut : en cours
+- Prise par la voie 1 le 2026-11-27 : verrou de la voie 3 figé depuis le 2026-11-23 23:50
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS067 (finition, accessibilité, impression, effort S), endroit : fiche imprimable, lettres de quartier, document à signer
 - Constat de l’audit : axe-core : `landmark-one-main`, `page-has-heading-one`, `region`.

@@ -396,7 +396,7 @@ export function renderLetters(recipient: LetterRecipient, text: string, agentNam
 <title>Lettres de quartier</title>
 <style>${LETTER_CSS}</style>
 </head>
-<body><h1 class="cache">Lettres de quartier</h1>${pages}</body>
+<body><main><h1 class="cache">Lettres de quartier</h1>${pages}</main></body>
 </html>`;
 }
 

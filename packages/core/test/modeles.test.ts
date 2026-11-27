@@ -79,7 +79,7 @@ describeWithSqlite('D02 · bibliothèque de modèles et documents générés', (
         .join('\n')
         .replace('[numéro au registre à la signature]', '<span class="a-signer">[numéro au registre à la signature]</span>')
         .replace(/’/g, '’');
-      expect(r.document.content).toContain(`<body>\n${html}\n</body>`);
+      expect(r.document.content).toContain(`\n${html}\n</main>\n</body>`);
       expect(r.document.content).toContain('<p class="evidence">Clause d’exclusivité de test');
     }
   });

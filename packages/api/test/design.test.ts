@@ -145,6 +145,18 @@ describe('Z03 · système de design d’AIMMO', () => {
     for (const s of await screens()) expect(htmlProblems(s.html, s.print ? { print: true } : {}), s.name).toEqual([]);
   });
 
+  it('[R201] DS067 · chaque document imprimé a un seul repère principal, qui porte tout le contenu, et un seul titre de niveau 1', async () => {
+    const prints = (await screens()).filter((s) => s.print);
+    expect(prints.map((s) => s.name)).toEqual(expect.arrayContaining(['fiche imprimable', 'document à signer', 'lettres de quartier']));
+    for (const s of prints) {
+      const body = /<body[^>]*>([\s\S]*)<\/body>/.exec(s.html)?.[1] ?? '';
+      expect(body.match(/<main[\s>]/g), s.name).toHaveLength(1);
+      // axe-core « region » : rien hors du repère principal.
+      expect(body.replace(/<main[\s>][\s\S]*<\/main>/, '').trim(), s.name).toBe('');
+      expect(body.match(/<h1[\s>]/g), s.name).toHaveLength(1);
+    }
+  });
+
   it('[R201] chaque écran tient son budget de performance, sans rien d’extérieur', async () => {
     for (const s of await screens()) expect(budgetProblems(s, s.budget), s.name).toEqual([]);
   });

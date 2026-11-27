@@ -153,7 +153,9 @@ const ENTITIES: Readonly<Record<string, string>> = { '&amp;': '&', '&lt;': '<', 
  */
 export function slipParagraphs(html: string): string[] {
   const body = /<body[^>]*>([\s\S]*)<\/body>/i.exec(html)?.[1] ?? html;
+  // Le titre caché du document (DS067) sert aux lecteurs d'écran ; la page de signature a déjà le sien.
   return body
+    .replace(/<h1 class="cache">[\s\S]*?<\/h1>/i, '')
     .split(/<\/p>/i)
     .map((part) =>
       part
