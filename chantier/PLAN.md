@@ -7939,12 +7939,13 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS015 · La marque n'a pas de voix typographique tenue
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS015 (majeur, identité, effort M), endroit : `packages/core/src/design/systeme.ts` (`POLICES`)
 - Constat de l’audit : la pile des titres est Iowan Old Style, Charter, Palatino Linotype, Book Antiqua, Georgia. Un iPhone rend Iowan, un PC Palatino, un téléphone Android aucune des cinq : il tombe sur son serif par défaut, comme le poste d'audit (toutes les captures).
 - Objectif : une police de titres propre à AIMMO, servie par le Worker lui-même, en sous-ensemble latin de moins de 25 Ko. Demande un changement de R201 : c'est la question posée à Shawez. Sans accord : une pile resserrée, corps et graisses réglés pour que le repli se tienne.
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+- Suivi : proposition #810 (la base du système en direction Maison).
 
 ### DS016 · Pas de logotype
 - Statut : à faire
@@ -7955,20 +7956,22 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS017 · En sombre, le bordeaux devient rose
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS017 (majeur, identité, mode sombre, effort S), endroit : `systeme.ts` (`PALETTE.sombre.accent` : `#f0a6b0`)
 - Constat de l’audit : `appli-ordinateur-et-sombre.jpg` : le bouton « Noter une rétractation » est rose saumon.
 - Objectif : en sombre, le bouton plein garde un bordeaux profond avec un texte clair ; le rose ne sert qu'aux liens et aux contours.
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+- Suivi : proposition #810 (la base du système en direction Maison).
 
 ### DS018 · La frise rayée se lit comme un ruban de chantier
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS018 (majeur, identité, effort S), endroit : sous chaque en-tête — `systeme.ts` (`--frise`)
 - Constat de l’audit : toutes les captures. Quatre couleurs en biais sur 6 px : le motif n'évoque pas les losanges des toits vernissés.
 - Objectif : selon la direction retenue : un vrai motif de losanges, discret, ou plus de frise du tout.
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+- Suivi : proposition #810 (la base du système en direction Maison).
 
 ### DS019 · Aucune image dans toute l'application
 - Statut : à faire
@@ -7979,12 +7982,13 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS020 · Le losange est partout, donc nulle part
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS020 (mineur, identité, effort S), endroit : devant chaque titre de carte — `systeme.ts` (`.bloc>h3::before`)
 - Constat de l’audit : 23 losanges sur l'accueil.
 - Objectif : le losange reste le signe de la marque et des moments forts, pas une puce.
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+- Suivi : proposition #810 (la base du système en direction Maison).
 
 ### DS021 · Rien ne dit le haut de gamme
 - Statut : à faire
@@ -8043,12 +8047,13 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS028 · Une graisse de 650 qui n'existe pas partout
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS028 (finition, typographie, effort S), endroit : `systeme.ts` (`strong`, `.pastille`, `.fait`)
 - Constat de l’audit : une police de système sans axe variable rend 650 en 600 ou en 700 selon l'appareil.
 - Objectif : 600 et 700 seulement.
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+- Suivi : proposition #810 (la base du système en direction Maison).
 
 ### DS029 · Une seule échelle pour le téléphone et l'ordinateur
 - Statut : à faire
@@ -8059,12 +8064,13 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS030 · L'action et le danger sont deux rouges voisins
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS030 (majeur, couleur, effort S), endroit : `systeme.ts` (`accent` `#7c1f32`, `danger` `#a3231b`)
 - Constat de l’audit : « Noter une rétractation » (action) et un bouton `.danger` ne se distinguent que par leur largeur.
 - Objectif : le bouton d'action change de teinte selon la direction retenue (encre, ou vert de tuile), et le rouge reste au danger. Ou le danger devient filaire avec une confirmation.
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
+- Suivi : proposition #810 (la base du système en direction Maison).
 
 ### DS031 · Le moutarde a quatre sens
 - Statut : à faire
@@ -8378,13 +8384,14 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS069 · Chaque agent télécharge l'écran de la direction
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS069 (majeur, performance, effort M), endroit : `fichiers.ts` (`#reseau`)
 - Constat de l’audit : la section `#reseau` fait 16 457 des 33 722 caractères de la page d'accueil de l'application.
 - Objectif : la console de la direction dans son propre fichier, chargé pour la direction seule.
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 - Suivi : à faire en tête de l’étape 5, avec la nouvelle coquille : les écrans de la direction lisent leurs éléments au chargement, et une centaine de tests s’appuient sur la page entière. DS063, DS064, DS065 et DS066 viennent juste après, dans la place libérée.
+- Suivi : prise le 2026-11-27 par la voie 3 : ouvre la refonte de la coquille (étape 5, famille « agent au quotidien »), avant DS005, DS001 et DS006.
 
 ### DS070 · Les gestes sont hors de portée du pouce
 - Statut : à faire
