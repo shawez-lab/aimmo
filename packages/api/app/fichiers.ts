@@ -2217,31 +2217,34 @@ export const APP_JS = `'use strict';
     });
   }
   // Les écrans chargés au premier geste : un seul chargeur, une seule fois chacun, jamais pour une session finie [R201].
-  var toolCache = {}, toolBusy = {};
+  // Pendant que le script arrive, le dernier geste gagne : une demande plus ancienne ne s'affiche pas, la dernière oui.
+  var toolCache = {}, toolWait = {};
   function withTool(src, name, state, host, act, tools) {
     if (!currentKey) return Promise.resolve(false);
     if (toolCache[src]) return act(toolCache[src]);
-    if (toolBusy[src]) return Promise.resolve(false);
-    toolBusy[src] = true;
-    var mine = session;
+    var mine = session, before = toolWait[src];
     $(state).textContent = 'Chargement…';
     return new Promise(function (resolve) {
+      toolWait[src] = function (tool, said) {
+        if (mine !== session) { resolve(false); return; }
+        if (!tool) { if (said) $(state).textContent = said; resolve(false); return; }
+        resolve(act(tool));
+      };
+      if (before) { before(); return; }
+      function done(tool, said) {
+        var wait = toolWait[src];
+        toolWait[src] = null;
+        wait(tool, said);
+      }
       var s = document.createElement('script');
       s.setAttribute('src', '/app/' + src + '.js');
       s.addEventListener('load', function () {
-        toolBusy[src] = false;
         var make = globalThis[name];
         try { delete globalThis[name]; } catch (e) { /* rien */ }
-        if (mine !== session) { resolve(false); return; }
-        if (typeof make !== 'function') { $(state).textContent = 'Indisponible pour le moment. Réessayez dans un moment.'; resolve(false); return; }
-        toolCache[src] = make(tools());
-        resolve(act(toolCache[src]));
+        if (typeof make !== 'function') { done(null, 'Indisponible pour le moment. Réessayez dans un moment.'); return; }
+        done(currentKey ? (toolCache[src] = make(tools())) : null);
       });
-      s.addEventListener('error', function () {
-        toolBusy[src] = false;
-        if (mine === session) $(state).textContent = 'Pas de réseau. Réessayez dans un moment.';
-        resolve(false);
-      });
+      s.addEventListener('error', function () { done(null, 'Pas de réseau. Réessayez dans un moment.'); });
       $(host).appendChild(s);
     });
   }

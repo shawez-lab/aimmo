@@ -65,10 +65,8 @@ async function run(answers: Record<string, Answer | null> = {}) {
   listeners.DOMContentLoaded!();
   await settle();
   const scripts = () => els.clients!.all().filter((e) => e.tagName === 'script' && e.attributes.src === '/app/clients.js');
-  /** Un geste ; le script de l'écran se charge à sa première demande, comme dans le navigateur. */
-  const click = async (e: FakeElement) => {
-    e.listeners.click!({});
-    await settle();
+  /** Le script de l'écran arrive, une fois, comme dans le navigateur. */
+  const load = async () => {
     const s = scripts();
     if (s.length === 1 && !context.loaded) {
       runInNewContext(CLIENTS_SCRIPT, context);
@@ -76,6 +74,12 @@ async function run(answers: Record<string, Answer | null> = {}) {
       s[0]!.listeners.load!({});
       await settle();
     }
+  };
+  /** Un geste ; le script de l'écran se charge à sa première demande. */
+  const click = async (e: FakeElement) => {
+    e.listeners.click!({});
+    await settle();
+    await load();
   };
   const body = () => els['clients-corps']!;
   const list = () => body().all().find((e) => e.attributes.id === 'clients-liste')!;
@@ -94,7 +98,7 @@ async function run(answers: Record<string, Answer | null> = {}) {
     await settle();
   };
   const title = (): string => (document as unknown as { title: string }).title;
-  return { els, calls, table, states, storage, click, body, list, rows, names, count, type, reads, scripts, pop, title };
+  return { els, calls, table, states, storage, click, load, body, list, rows, names, count, type, reads, scripts, pop, title };
 }
 
 describe('DS003 · l’agent a la liste de ses clients, et y cherche par nom', () => {
@@ -237,6 +241,48 @@ describe('DS003 · l’agent a la liste de ses clients, et y cherche par nom', (
       expect(a.names(), name).toHaveLength(5);
       expect(a.els['clients-etat']!.textContent, name).toBe('');
     }
+  });
+
+  it('[R201] pendant que le script arrive, le dernier geste gagne : toucher « Clients » deux fois, ou partir et revenir, finit par montrer la liste', async () => {
+    const a = await run();
+    // Le script est demandé, mais n'est pas encore arrivé : l'essai ne le charge pas tout de suite.
+    a.els['clients-ouvrir']!.listeners.click!({});
+    await settle();
+    expect(a.scripts()).toHaveLength(1);
+    expect(a.els['clients-etat']!.textContent).toBe('Chargement…');
+    // Un second appui, puis un détour par la journée et un retour : le script n'est demandé qu'une fois.
+    a.els['clients-ouvrir']!.listeners.click!({});
+    await settle();
+    a.els['journee-ouvrir']!.listeners.click!({});
+    await settle();
+    a.els['clients-ouvrir']!.listeners.click!({});
+    await settle();
+    expect(a.scripts()).toHaveLength(1);
+    expect(a.els.clients!.hidden).toBe(false);
+    expect(a.els['clients-etat']!.textContent).toBe('Chargement…');
+    expect(a.reads()).toBe(0);
+    // Le script arrive : la liste se lit et se montre, une seule fois, pour l'écran ouvert.
+    await a.load();
+    expect(a.names()).toHaveLength(5);
+    expect(a.els['clients-etat']!.textContent).toBe('');
+    expect(a.scripts()).toHaveLength(1);
+  });
+
+  it('[R201] le script arrive après que l’agent est reparti : rien ne se dessine sur un écran quitté, et l’onglet rouvert se montre sans le redemander', async () => {
+    const a = await run();
+    a.els['clients-ouvrir']!.listeners.click!({});
+    await settle();
+    a.els['journee-ouvrir']!.listeners.click!({});
+    await settle();
+    expect(a.els.accueil!.hidden).toBe(false);
+    // Le script arrive alors que la journée est à l'écran.
+    await a.load();
+    expect(a.els.accueil!.hidden).toBe(false);
+    expect(a.body().children).toHaveLength(0);
+    expect(a.reads()).toBe(0);
+    await a.click(a.els['clients-ouvrir']!);
+    expect(a.names()).toHaveLength(5);
+    expect(a.scripts()).toHaveLength(1);
   });
 
   it('[R16] une clé refusée pendant la lecture ferme l’application ; quitter l’onglet efface la liste ; le Retour du navigateur la relit', async () => {
