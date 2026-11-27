@@ -1,1 +1,1 @@
-occupé depuis 2026-11-23 23:50 (heure de Paris), DS00 : audit et refonte du design (consigne chantier/taches/DS00.md)
+occupé depuis 2026-11-27 16:45 (heure de Paris), DS00 étape 5 : le système de design en direction Maison (packages/core/src/design/systeme.ts, docs/design/README.md), puis les écrans par familles. La séance de la voie 3 était en pause du 24 au 27 : elle a repris.

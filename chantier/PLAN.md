@@ -7818,12 +7818,13 @@ Voie : 3
 Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (7 bloquants, 45 majeurs, 32 mineurs, 3 de finition ; DS078 est passé de bloquant à majeur le 2026-11-24, voir sa ligne de suivi). Consigne : `chantier/taches/DS00.md`. Preuves, captures et sources : `docs/design/AUDIT.md`. Une tâche par point ; une proposition peut en fermer plusieurs, par famille d’écrans. Les tâches qui dépendent de DS000 attendent le choix de la direction de design par Shawez ; sans réponse le 2026-11-25 à 1 h, la direction recommandée est prise, sans changer de règle.
 
 ### DS000 · Choisir la direction de design
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-27)
 - Qui : Claude, voie 3, puis Shawez · Relecture : normale · Dépend de : rien
 - Audit : étape 4 de `chantier/taches/DS00.md`.
 - Objectif : deux ou trois directions vraiment différentes, appliquées à six surfaces (journée de l’agent, fiche d’un bien, fiche d’un client, signature d’un mandat, page publique d’un bien, espace du vendeur), en vrai HTML rendu, téléphone et ordinateur, clair et sombre ; puis une seule question à choix multiple à Shawez.
 - Critères : les captures des directions sont dans `docs/design/captures/directions/` ; la question est posée une fois ; la direction retenue est notée ici.
 - Suivi : trois directions rendues (A · Maison, recommandée ; B · Atelier ; C · Toits vernissés), `docs/design/DIRECTIONS.md`, proposition #800. Question posée à Shawez le 2026-11-24 à 0 h 50, avec les planches. Sans réponse le 2026-11-25 à 1 h : A · Maison, sans changer de règle.
+- Suivi : pas de réponse à l’échéance du 2026-11-25 à 1 h. Direction retenue : A · Maison, sans changer de règle (titres dans la police de l’appareil, aucune police téléchargée). Appliquée le 2026-11-27 seulement : la séance de la voie 3 est restée en pause du 24 au 27. Shawez a écrit le 27 à 16 h 40 pour demander si c’était terminé, sans choisir : le choix par défaut tient ; il peut encore écrire « 1 » pour la police servie.
 
 ### DS001 · L'accueil est une pile de 23 cartes égales
 - Statut : à faire
