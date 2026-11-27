@@ -607,6 +607,8 @@ export const APP_JS = `'use strict';
     var mine = session;
     var key = currentKey;
     wipeFiche();
+    // DS064 · le focus rejoint ce titre à l'ouverture : il dit déjà quel écran s'ouvre, le nom vient avec la réponse.
+    $('fiche-nom').textContent = 'Fiche du client';
     $('fiche-etat').textContent = 'Chargement…';
     show('fiche', [personId]);
     return api('/v1/fiches/' + encodeURIComponent(personId) + '/resume', key).then(ficheAnswer).then(function (res) {
@@ -837,7 +839,7 @@ export const APP_JS = `'use strict';
     if (!ID.test(id)) return Promise.resolve(false);
     visitId = id;
     clear($('visite-corps'));
-    $('visite-titre').textContent = '';
+    $('visite-titre').textContent = 'Visite';
     $('visite-etat').textContent = 'Chargement…';
     show('visite', [id]);
     return send('/v1/visites/' + encodeURIComponent(id), 'GET').then(function (res) {

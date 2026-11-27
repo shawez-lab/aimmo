@@ -12,7 +12,7 @@ const JS = AGENT_APP_FILES['/app/app.js']!;
 const ok = (data: unknown) => async () => Response.json({ ok: true, mode: 'essai', data });
 const BASE: Record<string, () => Promise<Response>> = {
   '/v1/moi': async () => Response.json({ ok: true, data: { role: 'agent', firstName: 'Alex' } }),
-  '/v1/plan-du-jour': ok({ agentId: 'a1', day: '2026-11-10', computedAt: '2026-11-10T06:30:00.000Z', items: [], removed: { excluded: 0, withdrawn: 0, noBasis: 0 }, hiddenSinceFrozen: 0 }),
+  '/v1/plan-du-jour': ok({ agentId: 'a1', day: '2026-11-10', computedAt: '2026-11-10T06:30:00.000Z', items: [{ rank: 1, personId: 'p-1', firstName: 'Léa', kind: 'callback', reason: 'A demandé à être rappelée', order: 'règle 1', basis: { kind: 'request', since: '2026-11-01', purpose: null }, projectId: null, taskId: 't-1', reportId: null }], removed: { excluded: 0, withdrawn: 0, noBasis: 0 }, hiddenSinceFrozen: 0 }),
   '/v1/contacts-chauds': ok({ slot: 'morning', contacts: [] }),
   '/v1/rendez-vous/jour': ok({ day: '2026-11-10', appointments: [] }),
 };
@@ -62,6 +62,21 @@ describe('DS064 · le focus va au titre du nouvel écran', () => {
     await a.tick();
     expect(a.els.connexion!.hidden).toBe(false);
     expect(a.document.activeElement).toBe(a.els['connexion-titre']);
+  });
+
+  it('le titre qui reçoit le focus dit déjà quel écran s’ouvre, même avant la réponse du serveur', async () => {
+    const a = await app();
+    const voir = a.els.plan!.all().find((e) => e.tagName === 'button' && e.textContent === 'Voir la fiche')!;
+    voir.listeners.click!({});
+    // La fiche ne répond pas (pas de réseau) : le titre focalisé n'est pas vide pour autant.
+    expect(a.els.fiche!.hidden).toBe(false);
+    expect(a.document.activeElement).toBe(a.els['fiche-nom']);
+    expect(a.els['fiche-nom']!.textContent).toBe('Fiche du client');
+    await a.tick();
+    expect(a.els['fiche-nom']!.textContent).toBe('Fiche du client');
+    // La visite pose aussi un titre avant d'être lue, au lieu de le vider.
+    expect(JS).toMatch(/\$\('visite-titre'\)\.textContent = 'Visite';\s*\$\('visite-etat'\)\.textContent = 'Chargement…';\s*show\('visite', \[id\]\);/);
+    expect(JS).not.toContain("$('visite-titre').textContent = '';");
   });
 
   it('un écran redessiné sur place ne vole pas le focus à ce que l’agent touche', async () => {
