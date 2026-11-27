@@ -13,7 +13,7 @@
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
-import { DESIGN_CSS, ETIQUETTES_CSS, PRINT_DESIGN_CSS, THEME_COLOR } from '../design/systeme.ts';
+import { DESIGN_CSS, ETIQUETTES_CSS, LIEN_CSS, PRINT_DESIGN_CSS, THEME_COLOR } from '../design/systeme.ts';
 import { escapeHtml } from '../documents/modeles.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -52,6 +52,7 @@ const mediaUrl = (ref: string): string => `/medias/${ref.split('/').map(encodeUR
 const CSS =
   DESIGN_CSS +
   ETIQUETTES_CSS +
+  LIEN_CSS +
   `.tete{display:flex;justify-content:space-between;align-items:center;gap:var(--e-4);padding:var(--e-4)}
 .ref{font-size:var(--t-xs);letter-spacing:.12em;text-transform:uppercase;color:var(--doux)}
 main{max-width:56rem;margin:0 auto;padding:0 var(--e-4) var(--e-8)}

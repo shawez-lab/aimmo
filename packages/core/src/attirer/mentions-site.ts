@@ -12,7 +12,7 @@ import type { Viewer } from '../acces/droits.ts';
 import { LAUNCH_PREREQUISITES, MiseEnService } from '../conformite/mise-en-service.ts';
 import { REGISTRE_TRAITEMENTS } from '../conformite/registre-traitements.ts';
 import type { SqlDatabase } from '../db/sql.ts';
-import { DESIGN_CSS, THEME_COLOR } from '../design/systeme.ts';
+import { DESIGN_CSS, LIEN_CSS, THEME_COLOR } from '../design/systeme.ts';
 import { escapeHtml } from '../documents/modeles.ts';
 import { appendEvent } from '../journal/journal.ts';
 import type { JournalStore } from '../journal/types.ts';
@@ -131,7 +131,7 @@ export function withLegalLinks(html: string): string {
   return end >= 0 ? `${html.slice(0, end)}${links}${html.slice(end)}` : html;
 }
 
-const CSS = `${DESIGN_CSS}.tete{display:flex;align-items:center;justify-content:space-between;gap:var(--e-4);padding:var(--e-4)}main{max-width:46rem;margin:0 auto;padding:var(--e-5) var(--e-4) var(--e-8)}.manque{font-weight:700;color:var(--danger)}.alerte{border-left:.25rem solid var(--danger);padding-left:var(--e-3)}dt{font-weight:600;margin-top:var(--e-3)}dd{margin:0}`;
+const CSS = `${DESIGN_CSS}${LIEN_CSS}.tete{display:flex;align-items:center;justify-content:space-between;gap:var(--e-4);padding:var(--e-4)}main{max-width:46rem;margin:0 auto;padding:var(--e-5) var(--e-4) var(--e-8)}.manque{font-weight:700;color:var(--danger)}.alerte{border-left:.25rem solid var(--danger);padding-left:var(--e-3)}dt{font-weight:600;margin-top:var(--e-3)}dd{margin:0}`;
 
 function shell(title: string, body: string): string {
   return (

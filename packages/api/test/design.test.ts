@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { renderSlipSignPage } from '../src/bon-visite-public.ts';
 import { renderSlipCopy } from '../../core/src/visites/signature-bon.ts';
-import { DESIGN_CSS, PAIRES_TEXTE, PAIRES_TRAIT, PALETTE, PRINT_DESIGN_CSS, renderPublicPage, renderValuationPrint, type Teinte } from '@aimmo/core';
+import { DESIGN_CSS, LIEN_CSS, PAIRES_TEXTE, PAIRES_TRAIT, PALETTE, PRINT_DESIGN_CSS, renderPublicPage, renderValuationPrint, type Teinte } from '@aimmo/core';
 import { renderLegalNotice, renderPrivacyPage, withLegalLinks } from '../../core/src/attirer/mentions-site.ts';
 import { renderEstimationPage } from '../../core/src/attirer/page-estimation.ts';
 import { renderSiteHome } from '../../core/src/attirer/accueil-site.ts';
@@ -228,7 +228,7 @@ describe('Z03 · système de design d’AIMMO', () => {
       expect(await petitsLiens(s.html), s.name).toEqual([]);
     }
     // La mesure attrape ce qu'elle doit attraper : un lien seul trop bas, pas un lien pris dans une phrase.
-    const page = (corps: string) => `<!doctype html><html lang="fr"><head><style>${DESIGN_CSS}</style></head><body>${corps}</body></html>`;
+    const page = (corps: string) => `<!doctype html><html lang="fr"><head><style>${DESIGN_CSS}${LIEN_CSS}</style></head><body>${corps}</body></html>`;
     expect(await petitsLiens(page('<p><a href="/x">Seul</a></p>'))).toHaveLength(1);
     expect(await petitsLiens(page('<p>Lire <a href="/x">la suite</a> du texte.</p>'))).toEqual([]);
     expect(await petitsLiens(page('<p><a class="lien" href="/x">Seul</a></p>'))).toEqual([]);

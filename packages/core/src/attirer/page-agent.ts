@@ -13,7 +13,7 @@
  */
 import type { Viewer } from '../acces/droits.ts';
 import type { SqlDatabase } from '../db/sql.ts';
-import { DESIGN_CSS, THEME_COLOR } from '../design/systeme.ts';
+import { DESIGN_CSS, LIEN_CSS, THEME_COLOR } from '../design/systeme.ts';
 import { escapeHtml } from '../documents/modeles.ts';
 import { euros } from '../annonces/mentions.ts';
 import { appendEvent } from '../journal/journal.ts';
@@ -81,6 +81,7 @@ export function normalizeRsac(value: string): string | null {
 
 const CSS =
   DESIGN_CSS +
+  LIEN_CSS +
   `.tete{display:flex;justify-content:space-between;align-items:center;gap:var(--e-4);padding:var(--e-4)}
 main{max-width:46rem;margin:0 auto;padding:0 var(--e-4) var(--e-8)}
 .qui{margin:var(--e-6) 0 var(--e-5);border-bottom:2px solid var(--accent);padding-bottom:var(--e-5)}

@@ -14,7 +14,7 @@
  * Les communes ouvertes au recrutement par la direction (HX68, BR37) sont dites par leur nom seul, triées, sans aucun
  * chiffre ni promesse [R628] ; aucune ouverte, ou une lecture qui échoue : la section n'est pas là, la page sert quand même.
  */
-import { appendEvent, DESIGN_CSS, SqlJournalStore, THEME_COLOR, type SqlDatabase } from '@aimmo/core';
+import { appendEvent, DESIGN_CSS, LIEN_CSS, SqlJournalStore, THEME_COLOR, type SqlDatabase } from '@aimmo/core';
 import { CANDIDATE_EXPERIENCES, CANDIDATE_SOURCES, CANDIDATE_STATUSES, Candidatures, CommunesAPourvoir, checkRecruitingText } from '../../core/src/reseau/index.ts';
 
 export const CANDIDATURE_PATH = '/rejoindre';
@@ -151,7 +151,7 @@ export function pageProblems(): string[] {
 }
 
 /** La page suit le système de design d'AIMMO (Z03) : sa base, puis sa mise en page, en jetons seulement [R201]. */
-const STYLE = DESIGN_CSS + `
+const STYLE = DESIGN_CSS + LIEN_CSS + `
 main{max-width:var(--colonne);margin:0 auto;padding:var(--e-5) var(--e-4) var(--e-8)}
 main>.marque{margin:0 0 var(--e-4);line-height:1.4;letter-spacing:.12em;font-size:var(--t-xs);align-items:flex-start}
 main>.frise{margin:0 0 var(--e-7);border-radius:var(--r-rond)}

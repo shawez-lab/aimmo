@@ -13,7 +13,7 @@
  */
 import { euros } from '../annonces/mentions.ts';
 import { escapeHtml } from '../documents/modeles.ts';
-import { DESIGN_CSS, PUBLIC_PAGE_CSS, THEME_COLOR } from '../design/systeme.ts';
+import { DESIGN_CSS, LIEN_CSS, PUBLIC_PAGE_CSS, THEME_COLOR } from '../design/systeme.ts';
 import { PHRASE_MAX_LENGTH, type PhraseResult, type PhraseResults, type SearchStep } from './langage-courant.ts';
 
 export const PUBLIC_SEARCH_PATH = '/chercher';
@@ -106,6 +106,7 @@ export type PublicSearchPageInput =
 const CSS =
   DESIGN_CSS +
   PUBLIC_PAGE_CSS +
+  LIEN_CSS +
   '.biens{list-style:none;padding:0;display:grid;gap:var(--e-4)}.biens li{display:grid;gap:var(--e-1)}' +
   '.biens a{display:flex;justify-content:space-between;gap:var(--e-3);flex-wrap:wrap}.prix{font-weight:700;white-space:nowrap}' +
   '.raisons{margin:0;padding-left:1.2rem}.voisines{display:flex;flex-wrap:wrap;gap:var(--e-2) var(--e-4);padding:0;list-style:none}' +

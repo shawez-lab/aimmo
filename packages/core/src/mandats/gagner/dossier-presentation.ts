@@ -17,7 +17,7 @@
 import type { Viewer } from '../../acces/droits.ts';
 import { frenchDate, frenchMonth } from '../../attirer/page-prix.ts';
 import type { SqlDatabase, SqlValue } from '../../db/sql.ts';
-import { DESIGN_CSS } from '../../design/systeme.ts';
+import { DESIGN_CSS, LIEN_CSS } from '../../design/systeme.ts';
 import { checkText, plain } from '../../envoi/texte.ts';
 import { localTime } from '../../envoi/horaires.ts';
 import { appendEvent } from '../../journal/journal.ts';
@@ -399,6 +399,7 @@ ${sales}
 /** La feuille du dossier : la base du système, téléphone d'abord, et l'impression. */
 export const DOSSIER_CSS =
   DESIGN_CSS +
+  LIEN_CSS +
   `.tete{display:flex;align-items:center;justify-content:space-between;gap:var(--e-4);padding:var(--e-4)}
 main{max-width:var(--colonne);margin:0 auto;padding:var(--e-4) var(--e-4) var(--e-8)}
 section{margin-top:var(--e-6)}

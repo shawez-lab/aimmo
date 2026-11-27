@@ -11,7 +11,7 @@
  * contrôle que les biens de sa page : une adresse profonde coûte autant que la première, et les pages restent stables.
  */
 import { euros } from '../annonces/mentions.ts';
-import { DESIGN_CSS, THEME_COLOR } from '../design/systeme.ts';
+import { DESIGN_CSS, LIEN_CSS, THEME_COLOR } from '../design/systeme.ts';
 import { escapeHtml } from '../documents/modeles.ts';
 import type { PublishedListing } from './referencement.ts';
 import { PUBLIC_SEARCH_ENTRY_CSS, publicSearchEntry } from '../recherche/page-publique.ts';
@@ -110,6 +110,7 @@ export async function latestListings(published: readonly PublishedListing[], gat
 /** Le cadre d'une page du site et ses cartes de biens, communs à la liste et à l'accueil [R201]. */
 export const SITE_CSS =
   DESIGN_CSS +
+  LIEN_CSS +
   '.tete{display:flex;align-items:center;justify-content:space-between;gap:var(--e-4);padding:var(--e-4)}' +
   'main{max-width:72rem;margin:0 auto;padding:var(--e-5) var(--e-4) var(--e-8)}' +
   '.controle{border-left:.25rem solid var(--accent);padding-left:var(--e-3)}' +
