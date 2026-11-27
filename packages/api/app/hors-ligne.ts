@@ -715,7 +715,8 @@ function render() {
     // Un geste de l'agent sur l'écran (toucher, taper) repousse le verrouillage ; rien d'autre ne le fait.
     if (!root.privWatched && root.addEventListener) { root.privWatched = true; root.addEventListener('pointerdown', privTouch); root.addEventListener('keydown', privTouch); }
     if (mine.back) root.appendChild(btn('Retour à ma journée', function () { mine.open = false; mine.back(mine.key); }, 'retour'));
-    root.appendChild(el('h2', 'Mes visites sans réseau'));
+    // DS064 · le titre que le focus rejoint quand l'écran s'ouvre.
+    root.appendChild(el('h2', 'Mes visites sans réseau')).setAttribute('id', 'hors-ligne-titre');
     mine.etat = el('p', '', 'etat');
     mine.etat.setAttribute('role', 'status');
     root.appendChild(mine.etat);
