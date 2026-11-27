@@ -7938,8 +7938,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS014 · « Gagner des mandats » déplie sept outils l'un sous l'autre
-- Statut : en cours (voie 3)
-- Suivi : proposition #823 ouverte le 2026-11-27 (chaque outil fermé est une rangée, un bloc vide tient en une ligne ; 1,4 écran au lieu de 2,8).
+- Statut : à faire
+- Suivi : fait en partie le 2026-11-27 (#823 fusionnée) : chaque outil fermé est une rangée, un bloc vide tient en une ligne ; 1,4 écran au lieu de 2,8, aucun bouton plein au lieu de 8. Reste : ouvrir chaque outil sur son propre écran, avec son « Retour » (voir la Suite de DS014 dans `docs/design/AUDIT.md`).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS014 (majeur, architecture de l'information, effort M), endroit : `packages/api/app/gagner.ts` et ses modules (pige, tournée, veille, site, calendrier, neuf, viager)
 - Constat de l’audit : 11 blocs, 8 boutons pleins, 3,1 écrans avant toute ouverture, 3,5 après.
