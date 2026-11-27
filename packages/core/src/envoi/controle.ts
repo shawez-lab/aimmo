@@ -198,6 +198,18 @@ const AUTOMATIC = new Set(['ai', 'system']);
 const placeholders = (n: number): string => Array.from({ length: n }, () => '?').join(', ');
 const sameText = (text: string): string => plain(text).replace(/[^a-z0-9]+/g, ' ').trim();
 
+/** Le prénom s'élide-t-il ? « d’Alex », « d’Hugo », mais « de Paul ». */
+const ELIDED = /^[aeiouyhàâäéèêëîïôöùûüœ]/i;
+
+/**
+ * La mention avec le prénom de l'agent [R06]. Devant une voyelle ou un h, « de {prenom} » devient « d’Alex » : la
+ * mention est une phrase de français, pas un gabarit qui se voit.
+ */
+export function mentionFor(template: string, firstName: string): string {
+  const name = firstName.trim();
+  return template.replace(/\bde \{prenom\}/, ELIDED.test(name) ? `d’${name}` : `de ${name}`).replace('{prenom}', name);
+}
+
 function timeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<never>((_, reject) => {
@@ -231,8 +243,9 @@ export class ControleEnvois {
   private isMention(paragraph: string): boolean {
     const p = sameText(paragraph);
     return [this.settings.mentionInstagram, this.settings.mentionWithAgent, this.settings.mentionWithoutAgent].some((m) => {
+      // Jusqu'au prénom, sans le « de » qui le précède : « de Paul » et « d’Alex » sont la même mention.
       const [head = ''] = sameText(m).split(' prenom');
-      return p.startsWith(head);
+      return p.startsWith(head.replace(/ de$/, ''));
     });
   }
 
@@ -253,7 +266,8 @@ export class ControleEnvois {
   private exactMentionRemoved(text: string, agentFirstName: string | null): string | null {
     // Comparée à la lettre : ce paragraphe n'est plus contrôlé ensuite, rien ne doit s'y glisser.
     const exact = (paragraph: string): string => paragraph.trim().replace(/’/g, "'");
-    const accepted = [this.settings.mentionWithoutAgent, ...(agentFirstName ? [this.settings.mentionWithAgent.replace('{prenom}', agentFirstName)] : [])].map(exact);
+    // Les deux écritures du prénom sont reçues : un texte rangé avant l'élision porte encore « de Alex ».
+    const accepted = [this.settings.mentionWithoutAgent, ...(agentFirstName ? [mentionFor(this.settings.mentionWithAgent, agentFirstName), this.settings.mentionWithAgent.replace('{prenom}', agentFirstName)] : [])].map(exact);
     const paragraphs = text.split('\n\n');
     const at = paragraphs.findIndex((p) => accepted.includes(exact(p)));
     return at < 0 ? null : paragraphs.filter((_, i) => i !== at).join('\n\n');
@@ -426,7 +440,7 @@ export class ControleEnvois {
       if (order.channel === 'instagram') mention = this.settings.mentionInstagram;
       else if (agentId) {
         const agent = await this.db.first<{ first_name: string }>('SELECT first_name FROM agents WHERE id = ? AND network_id = ?', [agentId, order.networkId]);
-        if (agent?.first_name) mention = this.settings.mentionWithAgent.replace('{prenom}', agent.first_name);
+        if (agent?.first_name) mention = mentionFor(this.settings.mentionWithAgent, agent.first_name);
       }
     }
     const withMentionText = (text: string): string => (mention ? `${mention}\n\n${text.trim()}` : text.trim());
