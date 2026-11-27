@@ -8516,7 +8516,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS083 · La fiche imprimable rejette la description sur une page presque vide
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : proposition #820 ouverte le 2026-11-27 (une feuille quand le texte le permet, deux au plus).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS083 (majeur, impression, effort M), endroit : `packages/core/src/annonces/page-bien.ts` (`renderListingPrint`)
 - Constat de l’audit : `documents-imprimes.jpg` : la deuxième page porte un en-tête et une ligne.
@@ -8525,6 +8526,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS084 · L'avis de valeur ne porte pas la marque
 - Statut : en cours (voie 3)
+- Suivi : proposition #819 ouverte le 2026-11-27 (couverture, fourchette en grand, agent au pied de la couverture).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS084 (majeur, impression, effort M), endroit : `packages/core/src/estimation/avis-imprime.ts`
 - Constat de l’audit : `documents-imprimes.jpg`. Le document qui fait signer le mandat est une page de texte avec un tableau.
