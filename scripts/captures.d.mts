@@ -9,3 +9,5 @@ export interface Mesure {
 }
 /** Ce qui a changé entre deux jeux de mesures : une ligne par écran et par vue ; rien pour un écran qui n'a pas bougé. */
 export function compareCaptures(before: readonly Mesure[], after: readonly Mesure[]): string[];
+/** Ce qu'un dossier de captures contient après une demande faite à `since` : un succès seulement si ses mesures sont là, écrites depuis, et non vides. */
+export function captureOutcome(dir: string, since: number): { ok: boolean; message: string };

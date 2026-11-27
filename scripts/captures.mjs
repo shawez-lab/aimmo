@@ -8,7 +8,7 @@
 // mémoire. Aucune donnée réelle, aucune clé du réseau, aucun appel au dehors. Les captures tournent là où Playwright et
 // son navigateur sont installés ; le plan et les mesures sont décrits dans `packages/api/test/captures.test.ts`.
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -40,6 +40,30 @@ export function compareCaptures(before, after) {
 
 const read = (dir) => JSON.parse(readFileSync(join(resolve(dir), 'captures.json'), 'utf8'));
 
+/**
+ * Ce qu'un dossier de captures contient après une demande faite à `since` (en millisecondes) : un succès seulement si
+ * ses mesures sont là, écrites depuis, et non vides. Sans Chromium, les essais se sautent ou échouent : ce contrôle
+ * empêche de prendre un dossier vide, ou resté d'une autre fois, pour un jeu de captures.
+ */
+export function captureOutcome(dir, since) {
+  const file = join(dir, 'captures.json');
+  let written;
+  try {
+    written = statSync(file).mtimeMs;
+  } catch {
+    return { ok: false, message: `Aucune capture n’a été faite : ${file} est absent. Playwright et Chromium sont-ils installés ?` };
+  }
+  if (written < since - 2000) return { ok: false, message: `Aucune capture n’a été faite : ${file} date d’avant cette demande.` };
+  let list;
+  try {
+    list = JSON.parse(readFileSync(file, 'utf8'));
+  } catch {
+    return { ok: false, message: `Les mesures ne se lisent pas : ${file} n’est pas un fichier de mesures.` };
+  }
+  if (!Array.isArray(list) || list.length === 0) return { ok: false, message: `Aucune capture n’a été faite : ${file} est vide.` };
+  return { ok: true, message: `${list.length} ${list.length > 1 ? 'captures et leurs mesures' : 'capture et ses mesures'} dans ${dir} (captures.json).` };
+}
+
 function main(args) {
   if (args[0] === '--comparer') {
     if (args.length !== 3) { console.error('Usage : node scripts/captures.mjs --comparer <avant> <après>'); return 2; }
@@ -50,9 +74,15 @@ function main(args) {
   if (args.length !== 1 || args[0].startsWith('-')) { console.error('Usage : node scripts/captures.mjs <dossier>\n        node scripts/captures.mjs --comparer <avant> <après>'); return 2; }
   const out = resolve(args[0]);
   const root = resolve(fileURLToPath(import.meta.url), '..', '..');
+  // Les mesures d'une fois précédente s'en vont : elles ne peuvent pas passer pour celles de cette fois-ci.
+  rmSync(join(out, 'captures.json'), { force: true });
+  const since = Date.now();
   const run = spawnSync('npx', ['vitest', 'run', 'packages/api/test/captures.test.ts'], { cwd: root, stdio: 'inherit', env: { ...process.env, AIMMO_CAPTURES: out } });
-  if (run.status === 0) console.log(`Captures et mesures dans ${out} (captures.json).`);
-  return run.status ?? 1;
+  const outcome = captureOutcome(out, since);
+  if (run.status !== 0) { console.error(`Les captures ont échoué.${outcome.ok ? ' Des images ont été faites, mais le jeu n’est pas complet.' : ` ${outcome.message}`}`); return run.status ?? 1; }
+  if (!outcome.ok) { console.error(outcome.message); return 1; }
+  console.log(outcome.message);
+  return 0;
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) process.exit(main(process.argv.slice(2)));
