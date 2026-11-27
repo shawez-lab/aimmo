@@ -8481,8 +8481,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Suivi : proposition #801. « Statut : available » venait du jeu de test des routes, pas du produit (la vraie source disait déjà « en vente »). Les vrais codes montrés étaient ceux des visites, des signatures, des pièces de l’acquéreur et de la sorte du bien : corrigés dans la vue, donc aussi dans le relevé prouvé.
 
 ### DS079 · La source de chaque chiffre coupe la phrase
-- Statut : en cours (voie 3)
-- Suivi : proposition #815 (`packages/api/src/espaces.ts`).
+- Statut : fait (2026-11-27)
+- Suivi : #815 fusionnée : chaque valeur se lit seule ; la source et la date sont juste dessous, dans « D'où viennent ces informations ? », champ par champ et ligne par ligne [R163].
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS079 (bloquant, espace client, effort M), endroit : `packages/api/src/espaces.ts`
 - Constat de l’audit : `espace-client.jpg` : « 210 000 € annonce publiée, 20 mai 2027 à 10 h 00 · 64 annonce publiée, 20 mai 2027 à 10 h 00 m² ».
@@ -8490,8 +8490,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS080 · Le vendeur voit « REF-V1 · Dijon », pas sa maison
-- Statut : en cours (voie 3)
-- Suivi : proposition #815 (`packages/api/src/espaces.ts`).
+- Statut : à faire
+- Suivi : fait en partie avec #815 (2026-11-27) : le titre dit « Votre bien à Dijon », la référence est en petit dessous. Restent la photo et l'adresse du bien : l'espace du vendeur ne les reçoit pas en donnée.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS080 (majeur, espace client, effort M), endroit : `packages/api/src/espaces.ts`
 - Constat de l’audit : Le vendeur voit « REF-V1 · Dijon », pas sa maison.
@@ -8499,8 +8499,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS081 · Le seul bouton plein est « Me déconnecter »
-- Statut : en cours (voie 3)
-- Suivi : proposition #815 (`packages/api/src/espaces.ts`).
+- Statut : fait (2026-11-27)
+- Suivi : #815 fusionnée : « Me déconnecter » est un lien discret, « Mes favoris » un bouton au trait.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS081 (majeur, espace client, effort S), endroit : `packages/api/src/espaces.ts`
 - Constat de l’audit : `espace-client.jpg`.
@@ -8509,6 +8509,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS082 · Ni avancement, ni prochaine étape, ni agent
 - Statut : à faire
+- Suivi : avancé avec #815 (2026-11-27) : les offres disent quand elles ont été reçues et les listes vides tiennent en une phrase. Restent l'avancement de la vente, la prochaine étape et les coordonnées de l'agent : à donner à l'espace.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS082 (majeur, espace client, parcours, effort M), endroit : espace vendeur, espace acquéreur
 - Constat de l’audit : `espace-client.jpg` : des listes (« Visites », « Offres », « Documents », « Rendez-vous », « Points de la semaine »), la plupart vides.
