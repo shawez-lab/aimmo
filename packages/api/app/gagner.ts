@@ -64,7 +64,7 @@ export const GAGNER_HOME_HTML = `<section class="bloc" aria-labelledby="titre-ga
 `;
 
 export const GAGNER_HTML = `<section id="gagner" hidden>
-<button id="gagner-retour" type="button" class="retour">Retour à ma journée</button>
+<button id="gagner-retour" type="button" class="retour">Retour</button>
 <h2 id="gagner-titre">Gagner des mandats</h2>
 <p class="doux">Chaque ligne vient de la base, avec sa raison. Rien ne part sans vous, et en essai rien ne part du tout.</p>
 <p id="gagner-etat" class="etat" role="status"></p>

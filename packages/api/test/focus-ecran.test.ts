@@ -149,10 +149,17 @@ describe('DS064 · dans Chromium', () => {
       await page.goto('https://aimmo.example.test/app/');
       await page.waitForSelector('#accueil:not([hidden])');
       expect(await page.evaluate(() => (globalThis as any).document.activeElement.tagName)).toBe('BODY');
+      // DS005 · les outils ont leur onglet : l'écran ouvert depuis eux y revient, et le focus suit chaque fois.
+      await page.click('#outils-ouvrir');
+      await page.waitForSelector('#outils:not([hidden])');
+      expect(await page.evaluate(() => (globalThis as any).document.activeElement.id)).toBe('outils-titre');
       await page.click('#partenaires-ouvrir');
       await page.waitForSelector('#partenaires:not([hidden])');
       expect(await page.evaluate(() => (globalThis as any).document.activeElement.id)).toBe('partenaires-titre');
       await page.click('#partenaires-retour');
+      await page.waitForSelector('#outils:not([hidden])');
+      expect(await page.evaluate(() => (globalThis as any).document.activeElement.id)).toBe('outils-titre');
+      await page.click('#journee-ouvrir');
       await page.waitForSelector('#accueil:not([hidden])');
       expect(await page.evaluate(() => (globalThis as any).document.activeElement.id)).toBe('bonjour');
     } finally {

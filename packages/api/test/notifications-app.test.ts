@@ -102,8 +102,9 @@ describe('BR67 · « Mes notifications » sur l’accueil de l’agent', () => {
     const t = await run();
     expect(t.scripts()).toHaveLength(0);
     expect(t.calls.some((c) => c.url.startsWith('/v1/notifications'))).toBe(false);
-    const accueil = HTML.slice(HTML.indexOf('<section id="accueil"'));
-    expect(accueil.slice(0, accueil.indexOf('<section id=', 10))).toContain('<h3 id="titre-notifications">Mes notifications</h3>');
+    // DS011 · le bloc est dans l'écran « Outils » de l'agent, plus sur sa journée.
+    const outils = HTML.slice(HTML.indexOf('<section id="outils"'));
+    expect(outils.slice(0, outils.indexOf('<section id=', 10))).toContain('<h3 id="titre-notifications">Mes notifications</h3>');
     await t.open();
     expect(t.status()).toBe('');
     // Un second geste relit tout sans recharger le script.

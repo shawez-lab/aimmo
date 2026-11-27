@@ -93,7 +93,7 @@ export const NOTIFICATIONS_JS = `
     s.addEventListener('error', function () { notifBusy = false; $('notifications-etat').textContent = mine === session ? 'Pas de réseau. Réessayez dans un moment.' : ''; });
     $('accueil').appendChild(s);
   }
-  function notifLink() { if (typeof location !== 'undefined' && String(location.hash).indexOf('#envoi=') === 0) openNotifications(); }
+  function notifLink() { if (typeof location !== 'undefined' && String(location.hash).indexOf('#envoi=') === 0) { show('outils'); openNotifications(); } }
 `;
 
 /** Le script servi à part (`/app/notifications.js`). Il ne lit et n'écrit que par `/v1/notifications` [R16]. */

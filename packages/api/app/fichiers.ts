@@ -111,8 +111,14 @@ export const INDEX_HTML = `<!doctype html>
 <script src="/app/app.js" defer></script>
 </head>
 <body>
-<header class="tete"><h1 class="marque">AIMMO</h1><button id="sortir" type="button" class="secondaire" hidden>Se déconnecter</button></header>
+<button id="vers-contenu" type="button" class="evitement" hidden>Aller au contenu</button>
+<header class="tete"><h1 class="marque">AIMMO</h1></header>
 <div class="frise" aria-hidden="true"></div>
+<nav id="onglets" class="onglets" aria-label="Sections" hidden>
+<button id="journee-ouvrir" type="button" class="discret"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>Journée</button>
+<button id="outils-ouvrir" type="button" class="discret"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 3.5h7v7h-7zM13.5 3.5h7v7h-7zM3.5 13.5h7v7h-7zM13.5 13.5h7v7h-7z"/></svg>Outils</button>
+<button id="chiffres-ouvrir" type="button" class="discret"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Chiffres</button>
+</nav>
 <main>
 <section id="connexion" hidden>
 <h2 id="connexion-titre">Connexion</h2>
@@ -166,23 +172,21 @@ ${A_TENIR_HOME_HTML}<section class="bloc" aria-labelledby="titre-plan">
 <ul id="apres-jour" class="liste"></ul>
 <button id="apres-ouvrir" type="button" class="secondaire">Mes ventes conclues</button>
 </section>
-<section class="bloc" aria-labelledby="titre-partenaires-accueil">
-<h3 id="titre-partenaires-accueil">Mes partenaires</h3>
-<p class="etat">Proposez au client des professionnels tirés au sort, notez son choix, suivez leurs réponses.</p>
-<button id="partenaires-ouvrir" type="button" class="secondaire">Ouvrir mes mises en relation</button>
-</section>
-<div id="remises-accueil"></div>
-${ACTUALITES_HOME_HTML}${CLES_A_RENDRE_HOME_HTML}${NOTIFICATIONS_HOME_HTML}${INTEGRATION_HOME_HTML}${GAGNER_HOME_HTML}${FICHE_GOOGLE_HOME_HTML}${LOUER_HOME_HTML}${INVESTIR_HOME_HTML}${COMMERCES_HOME_HTML}<section class="bloc" aria-labelledby="titre-chiffres-accueil">
-<h3 id="titre-chiffres-accueil">Mes chiffres</h3>
-<p class="etat">Chaque chiffre s’ouvre sur les lignes qui le font : vous pouvez tout recompter.</p>
-<button id="chiffres-ouvrir" type="button" class="secondaire">Voir mes chiffres</button>
-</section>
 <section class="bloc" aria-labelledby="titre-semaine">
 <h3 id="titre-semaine">Ma semaine</h3>
 <p id="semaine-etat" class="etat"></p>
 <ul id="semaine" class="liste"></ul>
 </section>
-${clesEntryHtml('accueil')}</section>
+</section>
+<section id="outils" hidden>
+<h2 id="outils-titre">Outils</h2>
+${GAGNER_HOME_HTML}${LOUER_HOME_HTML}${COMMERCES_HOME_HTML}${INVESTIR_HOME_HTML}<section class="bloc" aria-labelledby="titre-partenaires-accueil">
+<h3 id="titre-partenaires-accueil">Mes partenaires</h3>
+<p class="etat">Proposez au client des professionnels tirés au sort, notez son choix, suivez leurs réponses.</p>
+<button id="partenaires-ouvrir" type="button" class="secondaire">Ouvrir mes mises en relation</button>
+</section>
+${CLES_A_RENDRE_HOME_HTML}<div id="remises-accueil"></div>
+${FICHE_GOOGLE_HOME_HTML}${ACTUALITES_HOME_HTML}${INTEGRATION_HOME_HTML}${NOTIFICATIONS_HOME_HTML}${clesEntryHtml('accueil')}</section>
 <section id="fiche" hidden>
 <button id="retour" type="button">Retour à ma journée</button>
 <h2 id="fiche-nom"></h2>
@@ -217,15 +221,15 @@ ${clesEntryHtml('accueil')}</section>
 <div id="apres-corps"></div>
 </section>
 <section id="partenaires" hidden>
-<button id="partenaires-retour" type="button" class="retour">Retour à ma journée</button>
+<button id="partenaires-retour" type="button" class="retour">Retour</button>
 <h2 id="partenaires-titre">Mes partenaires</h2>
 <p class="doux">Personne ne paie pour être proposé ni pour passer devant : l’ordre est tiré au sort, et le client choisit.</p>
 <p id="partenaires-etat" class="etat" role="status"></p>
 <div id="partenaires-corps"></div>
 </section>
 ${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${AVIS_HTML}${OFFRES_HTML}${DOSSIER_HTML}${MANDAT_HTML}${STUDIO_HTML}${GAGNER_HTML}${ATTIRER_HTML}${FICHE_GOOGLE_HTML}${INTEGRATION_HTML}<section id="chiffres" hidden>
-<button id="chiffres-retour" type="button" class="retour">Retour à ma journée</button>
 <h2 id="chiffres-titre">Mes chiffres</h2>
+<p class="doux">Chaque chiffre s’ouvre sur les lignes qui le font : vous pouvez tout recompter.</p>
 <div class="periodes" role="group" aria-label="Période">
 <button id="chiffres-mois" type="button" class="secondaire" aria-pressed="true">Ce mois-ci</button>
 <button id="chiffres-precedent" type="button" class="secondaire" aria-pressed="false">Mois dernier</button>
@@ -235,6 +239,7 @@ ${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${AVIS_HTML}${OF
 <div id="chiffres-corps"></div>
 ${EUROS_ENTRY_HTML}${RAPPORT_AGENT_HTML}</section>
 <section id="reseau" hidden></section>
+<button id="sortir" type="button" class="secondaire" hidden>Se déconnecter</button>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
 </main>
@@ -253,7 +258,23 @@ export const APP_CSS = DESIGN_CSS + `
 body { min-height: 100dvh; }
 .tete { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: var(--e-4); padding: max(var(--e-3), env(safe-area-inset-top)) var(--e-4) var(--e-3); background: var(--papier); }
 .tete h1 { font-size: var(--t-s); }
-.tete button { margin: 0; min-height: 40px; padding: var(--e-2) var(--e-4); font-size: var(--t-s); }
+.evitement { position: absolute; z-index: 4; top: var(--e-2); left: var(--e-4); margin: 0; }
+.evitement:not(:focus) { width: 1px; height: 1px; min-height: 0; padding: 0; overflow: hidden; clip-path: inset(50%); }
+.onglets { position: fixed; z-index: 3; left: 0; right: 0; bottom: 0; display: flex; padding-bottom: env(safe-area-inset-bottom); background: var(--surface); border-top: 1px solid var(--trait); }
+.onglets button { flex: 1 1 0; flex-direction: column; gap: var(--e-1); min-height: calc(var(--cible) + var(--e-2)); margin: 0; padding: var(--e-1) 0; border-radius: 0; color: var(--doux); font-size: var(--t-xs); text-decoration: none; }
+.onglets button[aria-current] { color: var(--encre); box-shadow: inset 0 2px 0 var(--encre); }
+.onglets button:focus-visible { outline-offset: -3px; }
+.onglets svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.onglets:not([hidden]) ~ main { padding-bottom: calc(var(--e-8) + var(--cible) + var(--e-2) + env(safe-area-inset-bottom)); }
+.onglets:not([hidden]) ~ main #note { bottom: calc(var(--cible) + var(--e-5) + env(safe-area-inset-bottom)); }
+#sortir { margin-top: var(--e-7); }
+@media (min-width: 64rem) {
+.onglets { z-index: 1; top: 0; right: auto; width: 12rem; flex-direction: column; gap: var(--e-1); padding: var(--e-8) var(--e-4) 0; background: var(--papier); border-top: 0; border-right: 1px solid var(--trait); }
+.onglets button { flex: none; flex-direction: row; justify-content: flex-start; gap: var(--e-3); min-height: var(--cible); padding: 0 var(--e-3); font-size: var(--t-m); }
+.onglets button[aria-current] { box-shadow: inset 2px 0 0 var(--encre); }
+.onglets:not([hidden]) ~ main { padding-bottom: var(--e-8); }
+.onglets:not([hidden]) ~ main #note { bottom: var(--e-4); }
+}
 main { max-width: var(--colonne); margin: 0 auto; padding: var(--e-5) var(--e-4) var(--e-8); }
 main > section > h2 { font-size: var(--t-xxl); margin: var(--e-2) 0 var(--e-4); }
 #bonjour::after { content: ""; display: block; width: 48px; height: 4px; margin-top: var(--e-3); background: var(--moutarde); border-radius: var(--r-rond); }
@@ -680,7 +701,7 @@ export const APP_JS = `'use strict';
     }).then(function (res) {
       if (mine !== session) return true;
       if (res.refused) return false;
-      if (res.incomplete) { state.textContent = 'Fermé tant que votre dossier d’agent est incomplet : ouvrez « Mon dossier ».'; return true; }
+      if (res.incomplete) { state.textContent = 'Fermé tant que votre dossier d’agent est incomplet : ouvrez « Mon dossier », dans les outils.'; return true; }
       if (res.failed || !res.body || res.body.ok !== true) { state.textContent = 'Indisponible pour le moment. Réessayez plus tard.'; return true; }
       var empty = render(list, res.body.data);
       state.textContent = empty || '';
@@ -2148,11 +2169,23 @@ ${LOUER_JS}
   }
   // AU117 · chaque écran ouvert entre dans l'historique du navigateur : Retour et Avancer le rouvrent tel qu'il était.
   var shownId = null, shownArgs = 'null', fromHistory = false, seenId = null;
+  // DS005 · les onglets de l'agent : sa journée, ses outils, ses chiffres. Un écran ouvert depuis un onglet y revient.
+  var ROOTS = { accueil: 'journee', outils: 'outils', chiffres: 'chiffres' };
+  var tab = 'accueil', agentIn = false;
+  function titleOf(id) { return $(id === 'accueil' ? 'bonjour' : id === 'fiche' ? 'fiche-nom' : id + '-titre'); }
   function show(id, args) {
-    ['connexion', 'invitation', 'accueil', 'attente', 'fiche', 'hors-ligne', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
+    ['connexion', 'invitation', 'accueil', 'outils', 'attente', 'fiche', 'hors-ligne', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
     var out = id === 'connexion' || id === 'attente' || id === 'invitation';
     if (id === 'connexion') try { $('entrer-appareil').hidden = !localStorage.getItem('aimmo.appareil'); } catch (e) { /* sans mémoire */ }
-    $('sortir').hidden = out;
+    // DS006 · « Se déconnecter » se tient au pied de l'écran de départ de chaque rôle, plus dans l'en-tête.
+    $('sortir').hidden = !(id === 'outils' || id === 'reseau' || id === 'conformite' || id === 'hors-ligne');
+    // Les onglets : pour l'agent entré seulement ; ni à l'entrée, ni sans réseau, ni pour la direction ou la conformité.
+    if (ROOTS[id]) tab = id;
+    $('onglets').hidden = $('vers-contenu').hidden = !agentIn || out || id === 'hors-ligne';
+    Object.keys(ROOTS).forEach(function (r) {
+      var b = $(ROOTS[r] + '-ouvrir');
+      if (r === tab) b.setAttribute('aria-current', r === id ? 'page' : 'true'); else b.removeAttribute('aria-current');
+    });
     var a = JSON.stringify(args || null);
     if (!out && !fromHistory && (id !== shownId || a !== shownArgs)) try { history[shownId ? 'pushState' : 'replaceState']({ s: id, a: args || null }, ''); } catch (e) { /* sans historique */ }
     shownId = out ? null : id;
@@ -2160,7 +2193,7 @@ ${LOUER_JS}
     // DS064 · le focus suit l'écran : à chaque changement, il va au titre du nouvel écran, que le lecteur d'écran
     // annonce. Pas au premier écran ouvert (la page vient de se charger), ni à l'écran d'attente, qui n'a pas de titre.
     if (id === 'attente') return;
-    var t = seenId && seenId !== id && $(id === 'accueil' ? 'bonjour' : id === 'fiche' ? 'fiche-nom' : id + '-titre');
+    var t = seenId && seenId !== id && titleOf(id);
     seenId = id;
     if (t && t.focus) { t.tabIndex = -1; t.focus(); }
   }
@@ -2237,6 +2270,7 @@ ${LOUER_JS}
   function enter(key) {
     session += 1;
     var mine = session;
+    agentIn = false;
     wipe();
     show('attente');
     return api('/v1/moi', key).then(function (r) {
@@ -2284,6 +2318,7 @@ ${LOUER_JS}
       $('bonjour').textContent = me.firstName ? 'Bonjour ' + me.firstName : 'Bonjour';
       $('erreur').hidden = true;
       currentKey = key;
+      agentIn = true;
       show('accueil');
       return day(key, mine).then(function () { if (mine === session) { notifLink(); offline(function (H) { if (mine === session) H.preparer(key, show, enter); }); } return true; });
     }, function () {
@@ -2328,8 +2363,7 @@ ${LOUER_JS}
       show('accueil');
       day(currentKey, session);
     });
-    function home() {
-      if (!currentKey) return;
+    function leave() {
       session += 1;
       wipeFiche();
       wipeM08();
@@ -2343,13 +2377,21 @@ ${LOUER_JS}
       wipeAttirer();
       wipeGoogle();
       wipeIntegration();
+    }
+    function home() {
+      if (!currentKey) return;
+      leave();
+      if (tab === 'outils') { show('outils'); return; }
       show('accueil');
       day(currentKey, session);
     }
+    $('journee-ouvrir').addEventListener('click', function () { tab = 'accueil'; home(); });
+    // Depuis la journée, rien n'est à effacer : ses lectures en route continuent.
+    $('outils-ouvrir').addEventListener('click', function () { if (!currentKey) return; if (shownId !== 'accueil' && shownId !== 'outils') leave(); show('outils'); });
+    $('vers-contenu').addEventListener('click', function () { var t = titleOf(shownId); if (t && t.focus) { t.tabIndex = -1; t.focus(); } });
     $('visite-retour').addEventListener('click', home);
     $('apres-retour').addEventListener('click', home);
     $('apres-ouvrir').addEventListener('click', function () { openApres(); });
-    $('chiffres-retour').addEventListener('click', home);
     $('partenaires-retour').addEventListener('click', home);
     $('partenaires-ouvrir').addEventListener('click', function () { openPartenaires('', 0); });
     $('actualites-ouvrir').addEventListener('click', function () { openActualites('fil'); });
@@ -2405,7 +2447,7 @@ ${LOUER_JS}
       wipeIntegration();
       if (back === 'candidatures') openReseau(reseauRange); else home();
     });
-    $('chiffres-ouvrir').addEventListener('click', function () { openChiffres('mois'); });
+    $('chiffres-ouvrir').addEventListener('click', function () { if (currentKey && shownId !== 'accueil' && shownId !== 'outils') leave(); openChiffres('mois'); });
     ['mois', 'precedent', 'annee'].forEach(function (r) { $('chiffres-' + r).addEventListener('click', function () { openChiffres(r); }); });
     $('vente-retour').addEventListener('click', home);
     ['mois', 'precedent', 'annee'].forEach(function (r) { $('reseau-' + r).addEventListener('click', function () { openReseau(r); }); });
@@ -2426,6 +2468,8 @@ ${LOUER_JS}
       forgetKey();
       try { localStorage.removeItem('aimmo.brouillons'); } catch (e) { /* rien */ }
       $('bonjour').textContent = '';
+      agentIn = false;
+      tab = 'accueil';
       wipe();
       show('connexion');
     });

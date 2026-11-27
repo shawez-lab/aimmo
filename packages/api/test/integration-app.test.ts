@@ -244,7 +244,7 @@ describe('J14 · écrans de M14 dans l’application', () => {
     expect(t.els.accueil!.hidden).toBe(false);
     expect(t.els.connexion!.hidden).toBe(true);
     expect(t.storage.get('aimmo.cle')).toBe(KEY);
-    expect(t.els['plan-etat']!.textContent).toBe('Fermé tant que votre dossier d’agent est incomplet : ouvrez « Mon dossier ».');
+    expect(t.els['plan-etat']!.textContent).toBe('Fermé tant que votre dossier d’agent est incomplet : ouvrez « Mon dossier », dans les outils.');
     await t.ouvrir('integration-ouvrir');
     expect(t.body().textContent).toContain('Mon dossier d’agent');
     await t.click(t.els['integration-retour']);

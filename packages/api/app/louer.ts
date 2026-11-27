@@ -40,7 +40,7 @@ export const LOUER_MODELES_ENTRY_HTML = modelesEntry('louer-modeles', 'La direct
 export const LOUER_MODELES_CONFORMITE_HTML = modelesEntry('louer-modeles-c', 'Valider seulement un texte relu par l’avocat.');
 
 export const LOUER_HTML = `<section id="louer" hidden>
-<button id="louer-retour" type="button" class="retour">Retour à ma journée</button>
+<button id="louer-retour" type="button" class="retour">Retour</button>
 <h2 id="louer-titre">Louer</h2>
 <p class="doux">Les dossiers complets sont montrés au propriétaire dans leur ordre d’arrivée, sans note ni tri : il choisit.</p>
 <p id="louer-etat" class="etat" role="status"></p>

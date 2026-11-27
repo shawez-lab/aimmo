@@ -126,7 +126,7 @@ export const COMMERCES_HOME_HTML = `<section class="bloc" aria-labelledby="titre
 `;
 
 export const COMMERCES_HTML = `<section id="commerces" hidden>
-<button id="commerces-retour" type="button" class="retour">Retour à ma journée</button>
+<button id="commerces-retour" type="button" class="retour">Retour</button>
 <h2 id="commerces-titre">Commerces</h2>
 <p class="doux">Aucun chiffre confidentiel ne part sans engagement signé et pièce vérifiée.</p>
 <p id="commerces-etat" class="etat" role="status"></p>

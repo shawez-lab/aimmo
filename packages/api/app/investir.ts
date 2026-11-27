@@ -34,7 +34,7 @@ export const INVESTIR_HOME_HTML = `<section class="bloc" aria-labelledby="titre-
 `;
 
 export const INVESTIR_HTML = `<section id="investir" hidden>
-<button id="investir-retour" type="button" class="retour">Retour à ma journée</button>
+<button id="investir-retour" type="button" class="retour">Retour</button>
 <h2 id="investir-titre">Investir</h2>
 <p class="doux">Chaque chiffre vient du serveur avec sa source, sa date et son hypothèse.</p>
 <p id="investir-etat" class="etat" role="status"></p>
