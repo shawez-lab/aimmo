@@ -204,6 +204,8 @@ globalThis.AIMMO_MANDAT = function (t) {
   var RESUME_REF = 'mandats/reprise';
   var cur = null, seq = 0, busy = null;
   function state(x) { $('mandat-etat').textContent = x; }
+  /* DS022 · un seul bouton plein : le pas qui fait avancer le mandat. Lire, rouvrir, annuler ou ouvrir un formulaire sont filaires. */
+  function quiet(b) { b.className = 'secondaire'; return b; }
   function body() { return $('mandat-corps'); }
   function why(res, fallback) {
     if (res.offline) return 'Pas de réponse : rouvrez cet écran pour voir ce qui est rangé.';
@@ -290,7 +292,8 @@ globalThis.AIMMO_MANDAT = function (t) {
     var amendable = !free && m.reason !== 'no_mandate' && m.number && ID.test(m.id) ? m.id : null;
     list.forEach(function (d) { if (ID.test(d.id)) drawDocument(docs, d, free, amendable); });
     if (free) drawDesignation(data.designation || null, Array.isArray(data.owners) ? data.owners : []);
-    if (free) drawGenerate(Array.isArray(data.owners) ? data.owners : []);
+    var waiting = list.some(function (d) { return ID.test(d.id) && /^mandat_/.test(String(d.kind)) && !(d.signature && d.signature.complete); });
+    if (free) drawGenerate(Array.isArray(data.owners) ? data.owners : [], waiting);
     else if (amendable) drawAmend(m, Array.isArray(data.owners) ? data.owners : []);
   }
   // Les conditions se lisent à part : sans elles, le mandat reste lisible et l'avenant possible.
@@ -323,6 +326,10 @@ globalThis.AIMMO_MANDAT = function (t) {
     if (!known.length) { box.appendChild(el('p', 'Aucun propriétaire n’est lié à ce bien : l’avenant ne se prépare pas.', 'doux')); return; }
     var names = {};
     known.forEach(function (o) { names[o.personId] = [o.firstName, o.lastName].filter(Boolean).join(' ') || 'Propriétaire sans nom'; });
+    // DS022 · le formulaire ne s'ouvre qu'au geste : le mandat en cours se lit d'abord.
+    var form = box.appendChild(el('details'));
+    form.appendChild(el('summary', 'Dire ce qui change'));
+    box = form;
     var who = choice(box, 'avenant-mandant', 'Mandant', known.map(function (o) { return o.personId; }), names, known.length > 1 ? 'À choisir' : '');
     if (known.length === 1) who.value = known[0].personId;
     var price = field(box, 'avenant-prix', 'Nouveau prix, en euros');
@@ -336,7 +343,7 @@ globalThis.AIMMO_MANDAT = function (t) {
     var kind = choice(box, 'avenant-type', 'Type du mandat', ['simple', 'exclusif'], { simple: 'Mandat simple', exclusif: 'Mandat exclusif' }, 'Sans changement');
     var effect = field(box, 'avenant-effet', 'Prend effet le (vide : à la signature)');
     effect.setAttribute('type', 'date');
-    box.appendChild(button('Préparer l’avenant', act(function () {
+    box.appendChild(quiet(button('Préparer l’avenant', act(function () {
       var inputs = {}, p = price.value.trim(), d = months.value.trim(), h = fee.value.trim(), e = effect.value.trim();
       if (!who.value) { state('Choisissez le mandant.'); return false; }
       if (!p && !d && !h && !charge.value && !kind.value) { state('Dites ce qui change : le nouveau prix, la nouvelle durée, les honoraires, leur charge ou le type du mandat.'); return false; }
@@ -356,7 +363,7 @@ globalThis.AIMMO_MANDAT = function (t) {
         state(res.body && res.body.code === 'bad_input' ? 'Un changement ne convient pas (même type de mandat, date d’effet passée ou à plus d’un an) : vérifiez la saisie.' : res.body && res.body.code === 'no_evidence' ? 'Le modèle d’avenant n’a pas de clause d’exclusivité mise en évidence : l’avenant ne peut pas rendre le mandat exclusif.' : why(res, 'L’avenant n’est pas préparé : réessayez.'));
         return false;
       });
-    })));
+    }))));
   }
   // Signé hors de l'agence : le délai est dit, et ses deux gestes restent à portée. La rétractation reste proposée après
   // le délai, car une lettre postée à temps arrive plus tard ; le code refuse un envoi trop tardif [R42].
@@ -370,8 +377,8 @@ globalThis.AIMMO_MANDAT = function (t) {
     if (!live || !m.withdrawalLastDay || !ID.test(m.id)) return;
     box.appendChild(el('p', 'Dernier jour du délai de rétractation : ' + date(m.withdrawalLastDay) + '.', 'doux'));
     var zone = el('div');
-    if (m.reason === 'withdrawal_period') box.appendChild(button(STOPS['debut-anticipe'].open, function () { drawStop(zone, m, 'debut-anticipe'); }));
-    box.appendChild(button(STOPS.retractation.open, function () { drawStop(zone, m, 'retractation'); }));
+    if (m.reason === 'withdrawal_period') box.appendChild(quiet(button(STOPS['debut-anticipe'].open, function () { drawStop(zone, m, 'debut-anticipe'); })));
+    box.appendChild(quiet(button(STOPS.retractation.open, function () { drawStop(zone, m, 'retractation'); })));
     box.appendChild(zone);
   }
   function drawStop(zone, m, kind) {
@@ -392,7 +399,7 @@ globalThis.AIMMO_MANDAT = function (t) {
       clear(zone);
       zone.appendChild(el('p', 'Rétractation envoyée le ' + date(day) + ' : le mandat ' + (m.number || '') + ' s’arrête, son numéro est annulé au registre, où il reste, et la diffusion s’arrête au prochain passage des annonces. Cela ne se défait pas.'));
       zone.appendChild(button('Confirmer : noter la rétractation', act(function () { return stop(m, kind, said, day); })));
-      zone.appendChild(button('Ne rien noter', function () { clear(zone); state(''); }));
+      zone.appendChild(quiet(button('Ne rien noter', function () { clear(zone); state(''); })));
       return true;
     })));
   }
@@ -418,7 +425,8 @@ globalThis.AIMMO_MANDAT = function (t) {
     });
   }
   function drawDocument(box, d, free, amendable) {
-    var card = el('article');
+    // Les gestes d'un document tiennent côte à côte, avec leur écart : la classe « gestes », comme les gestes d'appel de la fiche.
+    var card = el('article', null, 'gestes');
     box.appendChild(card);
     card.appendChild(el('strong', (KINDS[d.kind] || 'Document') + ', préparé le ' + date(d.createdAt)));
     if (d.mode === 'essai') card.appendChild(el('p', 'Document d’essai : il ne se signe pas.'));
@@ -427,9 +435,9 @@ globalThis.AIMMO_MANDAT = function (t) {
     var zone = el('div');
     if (s && s.complete) card.appendChild(el('p', 'Signé le ' + date(s.signedAt) + ', ' + (PLACES[s.place] || '').toLowerCase() + (s.number ? ', n° ' + s.number : '') + '.'));
     if (s && !s.complete) card.appendChild(el('p', 'Enregistrement arrêté en route : ce mandat n’est pas encore signé.'));
-    card.appendChild(button('Lire le document', function () { return read(zone, doc(d.id), 'Le document ne se lit pas : réessayez.'); }));
+    card.appendChild(quiet(button('Lire le document', function () { return read(zone, doc(d.id), 'Le document ne se lit pas : réessayez.'); })));
     var isMandate = d.kind === 'mandat_vente_simple' || d.kind === 'mandat_vente_exclusif' || d.kind === 'mandat_location';
-    if (s && s.complete) card.appendChild(button('Voir l’exemplaire', function () { return read(zone, doc(d.id) + '/exemplaire', 'L’exemplaire ne se lit pas : réessayez.'); }));
+    if (s && s.complete) card.appendChild(quiet(button('Voir l’exemplaire', function () { return read(zone, doc(d.id) + '/exemplaire', 'L’exemplaire ne se lit pas : réessayez.'); })));
     else if (s && isMandate) card.appendChild(button('Reprendre l’enregistrement', function () { clear(zone); drawResume(zone, d, s); }));
     else if (isMandate && free) card.appendChild(button('Contrôler avant signature', act(function () { return control(zone, d); })));
     else if (isMandate) card.appendChild(el('p', 'Un mandat est déjà en cours sur ce bien : ce document ne se signe pas.', 'doux'));
@@ -648,7 +656,7 @@ globalThis.AIMMO_MANDAT = function (t) {
     var read = addressFields(box, 'bien-adresse', d && d.address);
     var parcels = field(box, 'bien-parcelles', 'Parcelles (section et numéro, par exemple AB 123, 012 C 45)');
     if (d && Array.isArray(d.parcels)) parcels.value = d.parcels.map(function (p) { return (p.prefix ? p.prefix + ' ' : '') + p.section + ' ' + p.number; }).join(', ');
-    box.appendChild(button('Enregistrer la désignation', act(function () {
+    box.appendChild(quiet(button('Enregistrer la désignation', act(function () {
       var list = [], bad = false;
       parcels.value.split(/[,;]/).forEach(function (part) {
         var x = part.trim();
@@ -669,14 +677,14 @@ globalThis.AIMMO_MANDAT = function (t) {
         state(why(res, 'La désignation n’est pas enregistrée : vérifiez l’adresse et les parcelles.'));
         return false;
       });
-    })));
+    }))));
     owners.filter(function (o) { return ID.test(o.personId); }).forEach(function (o) {
       var name = [o.firstName, o.lastName].filter(Boolean).join(' ') || 'Propriétaire sans nom';
       var sub = el('div');
       box.appendChild(sub);
       sub.appendChild(el('p', where(o.domicile) ? 'Domicile de ' + name + ' : ' + where(o.domicile) : 'Domicile de ' + name + ' : à saisir.'));
       var get = addressFields(sub, 'domicile-' + o.personId, o.domicile, true);
-      sub.appendChild(button('Enregistrer le domicile de ' + name, act(function () {
+      sub.appendChild(quiet(button('Enregistrer le domicile de ' + name, act(function () {
         var mine = ++seq;
         return send('/v1/fiches/' + o.personId + '/domicile', 'POST', get()).then(function (res) {
           if (res.gone || mine !== seq) return false;
@@ -684,10 +692,10 @@ globalThis.AIMMO_MANDAT = function (t) {
           state(why(res, 'Le domicile n’est pas enregistré : vérifiez l’adresse.'));
           return false;
         });
-      })));
+      }))));
     });
   }
-  function drawGenerate(owners) {
+  function drawGenerate(owners, waiting) {
     var box = bloc('Préparer un mandat');
     var known = owners.filter(function (o) { return ID.test(o.personId); });
     if (!known.length) { box.appendChild(el('p', 'Aucun propriétaire n’est lié à ce bien sur une fiche que vous voyez : liez d’abord la fiche du propriétaire.', 'doux')); return; }
@@ -701,7 +709,7 @@ globalThis.AIMMO_MANDAT = function (t) {
     var charge = choice(box, 'mandat-charge', 'À la charge de', ['vendeur', 'acquereur'], { vendeur: 'Le vendeur', acquereur: 'L’acquéreur' }, 'À choisir');
     var months = field(box, 'mandat-duree', 'Durée, en mois');
     months.setAttribute('inputmode', 'numeric');
-    box.appendChild(button('Préparer le mandat', act(function () {
+    var go = box.appendChild(button('Préparer le mandat', act(function () {
       if (!who.value) { state('Choisissez le mandant.'); return false; }
       if (!kind.value) { state('Choisissez le type de mandat.'); return false; }
       if (!/^\\d{1,9}$/.test(fee.value.trim())) { state('Les honoraires : un montant en euros, sans centimes.'); return false; }
@@ -717,6 +725,7 @@ globalThis.AIMMO_MANDAT = function (t) {
         return false;
       });
     })));
+    if (waiting) quiet(go);
     drawQuestionnaire(who);
   }
   /* BR116 : le mandat par questionnaire, script servi à part, chargé au geste [R201, R440, R441]. */
@@ -728,7 +737,7 @@ globalThis.AIMMO_MANDAT = function (t) {
     // Vivant tant que l'écran montre le même bien : quitter ou rouvrir l'écran remplace cur.
     var mine = cur;
     var ctx = { personId: function () { return who.value; }, propertyId: mine.id, alive: function () { return cur === mine; } };
-    var b = button('Ouvrir le questionnaire', function () {
+    var b = quiet(button('Ouvrir le questionnaire', function () {
       if (b.disabled || !ctx.alive()) return;
       if (questionnaire) { questionnaire.show(inner, ctx); return; }
       b.disabled = true;
@@ -745,7 +754,7 @@ globalThis.AIMMO_MANDAT = function (t) {
       });
       s.addEventListener('error', function () { b.disabled = false; if (ctx.alive()) state('Pas de réseau. Réessayez dans un moment.'); });
       box.appendChild(s);
-    });
+    }));
     box.appendChild(b);
     box.appendChild(inner);
   }

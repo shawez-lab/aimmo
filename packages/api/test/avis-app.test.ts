@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { AVIS_SCRIPT } from '../app/avis.ts';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
-import { FakeElement, fakeDocument, pageIds, placeTool } from './fake-dom.ts';
+import { FakeElement, fakeDocument, pageIds, placeTool, filledButtons } from './fake-dom.ts';
 
 // Tout est inventé.
 const KEY = 'k'.repeat(40);
@@ -432,5 +432,33 @@ describe('AU049b · l’écran de l’avis montre les ventes citées et permet d
     await t.open();
     expect(t.byText('Écarter cette vente')).toBeUndefined();
     expect(t.byText('Retenir cet ajustement')).toBeUndefined();
+  });
+});
+
+describe('DS022 · « Avis de valeur » : un seul bouton plein, le pas qui fait avancer l’avis', () => {
+  const filled = (t: Awaited<ReturnType<typeof run>>) => filledButtons(t.body());
+
+  it('sans avis : préparer le brouillon ; brouillon : valider ; validé : télécharger la page', async () => {
+    const none = await run({ 'GET /v1/biens/b1/avis': ok([]) });
+    await none.open();
+    expect(filled(none)).toEqual(['Préparer le brouillon']);
+    const draft = await run({ 'GET /v1/biens/b1/avis': ok([DRAFT]) });
+    await draft.open();
+    expect(filled(draft)).toEqual(['Valider l’avis']);
+    for (const text of ['Enregistrer', 'Refaire le calcul']) expect(draft.byText(text)!.className, text).toBe('secondaire');
+    const validated = await run({ 'GET /v1/biens/b1/avis': ok([{ ...DRAFT, status: 'validated', validatedAt: '2026-11-02T09:00:00.000Z' }]) });
+    await validated.open();
+    expect(filled(validated)).toEqual(['Télécharger la page à imprimer']);
+    expect(validated.byText('Préparer un nouvel avis')!.className).toBe('secondaire');
+  });
+
+  it('[R690] sans fourchette du calcul, l’avis motivé devient le pas à faire : « Préparer le brouillon » passe en filaire', async () => {
+    const t = await run({ 'GET /v1/biens/b1/avis': ok([]), 'POST /v1/biens/b1/avis': async () => Response.json({ ok: false, rule: 'R27', code: 'peu_de_ventes', comparablesFound: 2, manualPossible: true }, { status: 422 }) });
+    await t.open();
+    t.input('avis-type').value = 'house';
+    await t.click(t.byText('Préparer le brouillon'));
+    expect(filled(t)).toEqual(['Préparer l’avis motivé']);
+    expect(t.byText('Préparer le brouillon')!.className).toBe('secondaire');
+    expect(t.byText('Ajouter une vente')!.className).toBe('secondaire');
   });
 });

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { MANDAT_SCRIPT } from '../app/mandat.ts';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
-import { FakeElement, fakeDocument, pageIds, placeTool } from './fake-dom.ts';
+import { FakeElement, fakeDocument, pageIds, placeTool, filledButtons } from './fake-dom.ts';
 
 // Tout est inventé.
 const KEY = 'k'.repeat(40);
@@ -781,5 +781,54 @@ describe('D12 · écran « Mandat »', () => {
         expect(t.state()).toContain(text);
       }
     });
+  });
+});
+
+describe('DS022 · « Mandat » : un seul bouton plein, le pas qui fait avancer le mandat', () => {
+  const SIGNED = { ...DOC, signature: { signedAt: '2027-02-10T09:00:00.000Z', place: 'agence', number: 'AV-7', complete: true } };
+  const mandate = (reason: string, withdrawalLastDay: string | null = null) => ({ id: 'm1', number: 'AV-7', signedAt: '2027-02-10T09:00:00.000Z', allowed: reason === 'allowed', reason, withdrawalLastDay });
+  const opened = async (read: unknown) => {
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok(read) });
+    await t.open();
+    return t;
+  };
+  const filled = (t: Awaited<ReturnType<typeof run>>) => filledButtons(t.body());
+  const named = (t: Awaited<ReturnType<typeof run>>, text: string) => t.body().all().find((e) => e.tagName === 'button' && e.textContent === text);
+
+  it('sans mandat : préparer ; un mandat préparé : le contrôler, et en préparer un autre devient filaire ; un enregistrement arrêté : le reprendre', async () => {
+    const none = await opened(READ);
+    expect(filled(none)).toEqual(['Préparer le mandat']);
+    for (const text of ['Enregistrer la désignation', 'Ouvrir le questionnaire']) expect(named(none, text)!.className, text).toBe('secondaire');
+    const prepared = await opened({ ...READ, documents: [DOC] });
+    expect(filled(prepared)).toEqual(['Contrôler avant signature']);
+    expect(named(prepared, 'Préparer le mandat')!.className).toBe('secondaire');
+    expect(named(prepared, 'Lire le document')!.className).toBe('secondaire');
+    const stopped = await opened({ ...READ, documents: [{ ...DOC, signature: { signedAt: '2027-02-10T09:00:00.000Z', place: 'agence', number: null, complete: false } }] });
+    expect(filled(stopped)).toEqual(['Reprendre l’enregistrement']);
+  });
+
+  it('un mandat en cours : aucun bouton plein ; lire, revoir, noter une rétractation et l’avenant sont filaires, l’avenant dans un volet fermé', async () => {
+    const live = await opened({ ...READ, documents: [SIGNED], mandate: mandate('withdrawal_period', '2027-02-24') });
+    expect(filled(live)).toEqual([]);
+    for (const text of ['Lire le document', 'Voir l’exemplaire', 'Noter une rétractation', 'Préparer l’avenant']) expect(named(live, text)!.className, text).toBe('secondaire');
+    const fold = live.body().all().filter((e) => e.tagName === 'details');
+    expect(fold).toHaveLength(1);
+    expect(fold[0]!.children[0]!.tagName).toBe('summary');
+    expect(fold[0]!.children[0]!.textContent).toBe('Dire ce qui change');
+    expect(fold[0]!.attributes.open).toBeUndefined();
+    // Tout le formulaire de l'avenant est dans le volet : ses champs et son geste.
+    expect(fold[0]!.all().filter((e) => e.tagName === 'input' || e.tagName === 'select').map((e) => e.attributes.id)).toEqual(['avenant-mandant', 'avenant-prix', 'avenant-duree', 'avenant-honoraires', 'avenant-charge', 'avenant-type', 'avenant-effet']);
+    expect(fold[0]!.all().filter((e) => e.tagName === 'button').map((e) => e.textContent)).toEqual(['Préparer l’avenant']);
+  });
+
+  it('[R42] une rétractation ouverte : son geste est le seul plein, puis sa confirmation ; « Ne rien noter » est filaire', async () => {
+    const t = await opened({ ...READ, documents: [SIGNED], mandate: mandate('withdrawal_period', '2027-02-24') });
+    await t.press('Noter une rétractation');
+    expect(filled(t)).toHaveLength(1);
+    t.input('mandat-arret-jour').value = '2027-02-20';
+    t.input('mandat-arret-preuve').value = 'Lettre recommandée du 20 février, inventée.';
+    await t.click(named(t, filled(t)[0]!));
+    expect(filled(t)).toEqual(['Confirmer : noter la rétractation']);
+    expect(named(t, 'Ne rien noter')!.className).toBe('secondaire');
   });
 });

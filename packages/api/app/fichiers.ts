@@ -321,10 +321,10 @@ main > section > h2 { font-size: var(--t-xxl); margin: var(--e-2) 0 var(--e-4); 
 .appel { margin-top: var(--e-3); }
 .gestes { display: flex; flex-wrap: wrap; gap: 0 var(--e-2); }
 .gestes > button { padding-inline: var(--e-4); }
-.gestes > p { flex: 1 0 100%; }
+.gestes > :not(button) { flex: 1 0 100%; }
 #fiche-corps .periodes button { margin-top: 0; }
-#fiche-corps summary::before { content: "+"; width: 1em; font-weight: 400; }
-#fiche-corps details[open] > summary::before { content: "–"; }
+#fiche-corps summary::before, #mandat-corps summary::before { content: "+"; width: 1em; font-weight: 400; }
+#fiche-corps details[open] > summary::before, #mandat-corps details[open] > summary::before { content: "–"; }
 #fiche-corps li > button { display: flex; width: fit-content; }
 details { margin-top: var(--e-2); }
 summary { min-height: var(--cible); display: flex; align-items: center; cursor: pointer; color: var(--accent); font-weight: 600; list-style-position: inside; }
@@ -681,6 +681,8 @@ export const APP_JS = `'use strict';
     b.addEventListener('click', onClick);
     return b;
   }
+  // DS022 · un geste qui n'est pas le pas à faire sur l'écran est filaire.
+  function quiet(b) { b.className = 'secondaire'; return b; }
   // DS061 · une panne ne ressemble pas à une aide : elle se voit, et « Réessayer » relit l'écran. Écrite dans la zone
   // d'état, elle part avec le prochain message qui s'y écrit.
   function down(state, offline) {
@@ -1170,7 +1172,7 @@ export const APP_JS = `'use strict';
       loading = true;
       return ficheBien.open(zone, o).then(function (shown) { loading = false; open.hidden = !!shown; return shown; });
     }
-    var open = button('Remplir la fiche du bien', function () {
+    var open = quiet(button('Remplir la fiche du bien', function () {
       if (loading) return;
       var o = { base: base, validated: validated };
       if (ficheBien) return start(o);
@@ -1198,7 +1200,7 @@ export const APP_JS = `'use strict';
       });
       s.addEventListener('error', function () { loading = false; clear(zone); zone.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'alerte')); });
       zone.appendChild(s);
-    });
+    }));
     box.appendChild(open);
     box.appendChild(zone);
   }
@@ -1208,7 +1210,7 @@ export const APP_JS = `'use strict';
     var box = section('Armoire des clés');
     var zone = el('div');
     var mine = currentVente, loading = false;
-    var open = button('Ouvrir l’armoire', function () {
+    var open = quiet(button('Ouvrir l’armoire', function () {
       if (armoire) { open.hidden = true; return armoire.open(zone, propertyId); }
       if (loading) return;
       loading = true;
@@ -1228,7 +1230,7 @@ export const APP_JS = `'use strict';
       });
       s.addEventListener('error', function () { loading = false; clear(zone); zone.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'alerte')); });
       zone.appendChild(s);
-    });
+    }));
     box.appendChild(open);
     box.appendChild(zone);
     body.appendChild(box);
@@ -1236,7 +1238,7 @@ export const APP_JS = `'use strict';
   /* X18 · Le texte de l'agent passe le même contrôle que celui de l'IA [R47] : refusé, il reste à l'écran avec ses phrases en cause. */
   function venteCorrection(box, base, draft) {
     var zone = el('div');
-    var open = button('Corriger le texte', function () {
+    var open = quiet(button('Corriger le texte', function () {
       clear(zone);
       open.hidden = true;
       var title = field(zone, 'vente-correction-titre', 'Titre');
@@ -1249,7 +1251,7 @@ export const APP_JS = `'use strict';
       var said = el('ul', null, 'liste');
       var state = el('p', null, 'doux');
       state.setAttribute('role', 'status');
-      var go = button('Enregistrer la correction', function () {
+      var go = quiet(button('Enregistrer la correction', function () {
         if (venteSending) return;
         clear(said);
         if (!title.value.trim() || !text.value.trim()) { state.textContent = 'Le titre et le texte sont à remplir.'; return; }
@@ -1276,11 +1278,11 @@ export const APP_JS = `'use strict';
           if ($('vente').hidden) return true;
           return openVente(mine.id, mine.reference).then(function () { $('vente-etat').textContent = 'Correction rangée : l’agent du bien la relit, puis la valide.'; return true; });
         });
-      });
+      }));
       zone.appendChild(go);
       zone.appendChild(state);
       zone.appendChild(said);
-    });
+    }));
     box.appendChild(open);
     box.appendChild(zone);
   }
@@ -1320,7 +1322,9 @@ export const APP_JS = `'use strict';
       if (draft.stale) text.appendChild(el('p', 'La fiche du bien a changé depuis la validation de ce texte : l’annonce ne peut plus partir. Rédigez-la de nouveau ou corrigez-la, puis validez-la.', 'alerte'));
       else if (draft.validated) text.appendChild(el('p', 'Annonce validée le ' + date(draft.validated.at) + '.', 'fait'));
       else if (ID.test(draft.id)) text.appendChild(button('Valider l’annonce', function () { venteAct('/v1/annonces/brouillons/' + encodeURIComponent(draft.id) + '/validation', 'L’annonce n’est pas validée.'); }));
-      text.appendChild(button('Rédiger de nouveau', function () { venteAct(base + '/brouillon', 'L’annonce n’a pas pu être rédigée.'); }));
+      // Le pas à faire reste plein : rédiger sans brouillon, valider un brouillon, rédiger de nouveau quand la fiche a changé.
+      var again = text.appendChild(button('Rédiger de nouveau', function () { venteAct(base + '/brouillon', 'L’annonce n’a pas pu être rédigée.'); }));
+      if (!draft.stale) quiet(again);
       venteCorrection(text, base, draft);
       body.appendChild(text);
     }
