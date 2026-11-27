@@ -7827,7 +7827,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Suivi : pas de réponse à l’échéance du 2026-11-25 à 1 h. Direction retenue : A · Maison, sans changer de règle (titres dans la police de l’appareil, aucune police téléchargée). Appliquée le 2026-11-27 seulement : la séance de la voie 3 est restée en pause du 24 au 27. Shawez a écrit le 27 à 16 h 40 pour demander si c’était terminé, sans choisir : le choix par défaut tient ; il peut encore écrire « 1 » pour la police servie.
 
 ### DS001 · L'accueil est une pile de 23 cartes égales
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS001 (bloquant, architecture de l'information, effort L), endroit : « Ma journée » — `packages/api/app/fichiers.ts` (`#accueil`)
 - Constat de l’audit : `appli-accueil.jpg`. Sans aucun dossier, l'accueil fait 5,4 écrans et compte 23 blocs, dont 6 vides. Avec un bien, 5,7 écrans.
@@ -7835,7 +7835,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS002 · L'accueil n'a pas de limite
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS002 (bloquant, architecture de l'information, effort M), endroit : « Contacts chauds à rappeler », « Mes biens à mettre en vente » — `packages/api/app/fichiers.ts`
 - Constat de l’audit : `appli-accueil-portefeuille-charge.jpg`. Avec 1 000 rappels en attente et 400 biens, l'accueil fait 243 424 px, soit 288 écrans, et porte 2 019 boutons. Les 1 000 contacts sont listés d'un bloc, 4,5 par écran. Tout ce qui suit est hors d'atteinte.
