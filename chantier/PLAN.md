@@ -8360,7 +8360,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS067 · Les documents imprimés n'ont ni repère principal ni titre de niveau 1
-- Statut : en cours
+- Statut : fait (2026-11-27)
 - Prise par la voie 1 le 2026-11-27 : verrou de la voie 3 figé depuis le 2026-11-23 23:50
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS067 (finition, accessibilité, impression, effort S), endroit : fiche imprimable, lettres de quartier, document à signer
