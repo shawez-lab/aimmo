@@ -7860,6 +7860,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS005 · Aucune navigation permanente
 - Statut : en cours (voie 3)
+- Suivi : proposition #812, avec DS006, DS011, DS065 et DS066 (barre d'onglets, écran « Outils » en index, « Se déconnecter » au pied de l'écran). La journée bornée (DS001, DS002, DS055) suit sur la branche `voie3/DS001`.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS005 (majeur, navigation, effort L), endroit : toute l'application
 - Constat de l’audit : aucun élément `nav`. Le seul lien entre écrans est « Retour à ma journée ». Passer du mandat aux offres du même bien demande : retour, défilement jusqu'au bien, « Offres ».
