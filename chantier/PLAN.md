@@ -8454,8 +8454,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS075 · Les listes d'agents et de communes n'ont ni recherche ni index
-- Statut : en cours (voie 3)
-- Suivi : proposition #818 ouverte le 2026-11-27 (index par lettre, colonnes, pages plus courtes ; le champ de filtre n'est pas fait, voir l'audit).
+- Statut : fait (2026-11-27)
+- Suivi : #818 fusionnée : index par lettre qui reste à l'écran, communes en colonnes, agents en grille, pages plus courtes (40 agents, 200 communes) ; sur téléphone 8,6 écrans au lieu de 24 et 7,3 au lieu de 38. Le champ de filtre n'est pas fait : un champ libre sur une page publique demande sa règle.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS075 (mineur, site public, effort S), endroit : `packages/core/src/attirer/annuaire-site.ts`
 - Constat de l’audit : 500 agents : 17 299 px. 2 000 communes : 21 582 px.
