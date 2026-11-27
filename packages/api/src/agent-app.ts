@@ -90,7 +90,7 @@ import { FICHE_BIEN_SCRIPT } from '../app/fiche-bien.ts';
 import { INTEGRATION_SCRIPT } from '../app/integration.ts';
 import { NOTIFICATIONS_SCRIPT } from '../app/notifications.ts';
 import { HORS_LIGNE_PATH, HORS_LIGNE_SCRIPT } from '../app/hors-ligne.ts';
-import { APP_CSS, APP_JS, ICON_SVG, INDEX_HTML, MANIFEST, swJs } from '../app/fichiers.ts';
+import { APP_CSS, APP_JS, ICON_SVG, INDEX_HTML, MANIFEST, RESEAU_PAGE_HTML, swJs } from '../app/fichiers.ts';
 
 export const AGENT_APP_PATH = '/app';
 /** Version de la coquille : changer ce nom remplace le cache de l'appareil. */
@@ -146,6 +146,8 @@ export function trimIndent(js: string): string {
 
 const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.freeze({
   '/app/': { body: INDEX_HTML, type: 'text/html; charset=utf-8' },
+  // DS069 · la page de la direction : la même, avec l'écran du réseau. Hors de la coquille gardée sans réseau, pour qu'aucun agent ne la télécharge.
+  '/app/reseau': { body: RESEAU_PAGE_HTML, type: 'text/html; charset=utf-8' },
   '/app/app.css': { body: APP_CSS, type: 'text/css; charset=utf-8' },
   '/app/app.js': { body: trimIndent(stripCommentLines(APP_JS)), type: 'text/javascript; charset=utf-8' },
   // La visite sans réseau (AU018), gardée par l'appareil avec la coquille [R276, R277, R278].

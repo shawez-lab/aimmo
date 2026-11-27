@@ -51,6 +51,52 @@ const DOMAIN_NAMES: Record<string, string> = { ...Object.fromEntries(CERTIFIED_D
  * téléphone de l'agent, pas dans le Worker : il n'appelle que l'API de la même adresse (politique de contenu
  * `connect-src 'self'`), jamais une adresse extérieure. Le Worker les sert tels quels (`src/agent-app.ts`).
  */
+/**
+ * DS069 · l'écran de la direction. Il n'est plus dans la page de l'agent (`/app/`), qui ne le télécharge donc plus :
+ * il est dans la page de la direction (`/app/reseau`, `RESEAU_PAGE_HTML`), la même page avec cet écran en plus.
+ */
+export const RESEAU_HTML = `<button id="vers-journee" type="button" class="retour" hidden>Ma journée d’agent</button>
+<h2 id="reseau-titre">Le réseau</h2>
+<div class="periodes" role="group" aria-label="Période">
+<button id="reseau-mois" type="button" class="secondaire" aria-pressed="true">Ce mois-ci</button>
+<button id="reseau-precedent" type="button" class="secondaire" aria-pressed="false">Mois dernier</button>
+<button id="reseau-annee" type="button" class="secondaire" aria-pressed="false">12 derniers mois</button>
+</div>
+<p id="reseau-etat" class="etat" role="status"></p>
+<div id="reseau-corps"></div>
+<section class="bloc" aria-labelledby="titre-reseau-alertes">
+<h3 id="titre-reseau-alertes">Alertes</h3>
+<p id="reseau-alertes-etat" class="etat" role="status"></p>
+<ul id="reseau-alertes" class="liste"></ul>
+<p id="reseau-sans-agent" class="etat"></p>
+</section>
+<section class="bloc" aria-labelledby="titre-reseau-reversements">
+<h3 id="titre-reseau-reversements">Reversements à faire</h3>
+<p id="reseau-reversements-etat" class="etat" role="status"></p>
+<ul id="reseau-reversements" class="liste"></ul>
+</section>
+<section class="bloc" aria-labelledby="titre-reseau-brouillons">
+<h3 id="titre-reseau-brouillons">Factures à valider</h3>
+<p class="doux">Mode essai : une facture validée part à la plateforme d’essai, jamais à une vraie plateforme. Elle ne change plus ensuite : un avoir la corrige.</p>
+<p id="reseau-brouillons-etat" class="etat" role="status"></p>
+<ul id="reseau-brouillons" class="liste"></ul>
+</section>
+<section class="bloc" aria-labelledby="titre-reseau-export">
+<h3 id="titre-reseau-export">Export du jour</h3>
+<p class="doux">Les chiffres d’un jour, au format tableur, pour les comparer au comptage manuel.</p>
+<label for="reseau-export-jour">Jour</label>
+<input id="reseau-export-jour" type="date" required>
+<button id="reseau-export" type="button" class="secondaire">Télécharger l’export</button>
+<p id="reseau-export-etat" class="etat" role="status"></p>
+</section>
+<section class="bloc" aria-labelledby="titre-reseau-cas">
+<h3 id="titre-reseau-cas">Mesure du classement</h3>
+<p class="doux">Les 150 derniers classements corrigés par les agents, sans coordonnées, pour relancer la mesure. Un nom peut rester : à relire, et à garder hors du dépôt.</p>
+<button id="reseau-cas" type="button" class="secondaire">Télécharger les cas corrigés</button>
+<p id="reseau-cas-etat" class="etat" role="status"></p>
+</section>
+${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${REGLAGES_MANDAT_ENTRY_HTML}${MANDAT_MODELES_ENTRY_HTML}${LOYERS_ENTRY_HTML}${MESURE_SOURCES_ENTRY_HTML}${ANNUAIRE_ENTRY_HTML}${PROSPECTION_ENTRY_HTML}${BIBLIOTHEQUE_ENTRY_HTML}${ENGAGEMENTS_ENTRY_HTML}${GUIDES_PHOTO_ENTRY_HTML}${LOUER_MODELES_ENTRY_HTML}${BASCULE_ENTRY_HTML}${RAPPORT_DIRECTION_HTML}${PHASES_ENTRY_HTML}${LICENCES_ENTRY_HTML}${clesEntryHtml('reseau')}${COMMISSIONS_ENTRY_HTML}${REGLAGES_ENTRY_HTML}`;
+
 export const INDEX_HTML = `<!doctype html>
 <html lang="fr">
 <head>
@@ -188,48 +234,7 @@ ${LOUER_HTML}${INVESTIR_HTML}${CONFORMITE_HTML}${COMMERCES_HTML}${AVIS_HTML}${OF
 <p id="chiffres-etat" class="etat" role="status"></p>
 <div id="chiffres-corps"></div>
 ${EUROS_ENTRY_HTML}${RAPPORT_AGENT_HTML}</section>
-<section id="reseau" hidden>
-<button id="vers-journee" type="button" class="retour" hidden>Ma journée d’agent</button>
-<h2 id="reseau-titre">Le réseau</h2>
-<div class="periodes" role="group" aria-label="Période">
-<button id="reseau-mois" type="button" class="secondaire" aria-pressed="true">Ce mois-ci</button>
-<button id="reseau-precedent" type="button" class="secondaire" aria-pressed="false">Mois dernier</button>
-<button id="reseau-annee" type="button" class="secondaire" aria-pressed="false">12 derniers mois</button>
-</div>
-<p id="reseau-etat" class="etat" role="status"></p>
-<div id="reseau-corps"></div>
-<section class="bloc" aria-labelledby="titre-reseau-alertes">
-<h3 id="titre-reseau-alertes">Alertes</h3>
-<p id="reseau-alertes-etat" class="etat" role="status"></p>
-<ul id="reseau-alertes" class="liste"></ul>
-<p id="reseau-sans-agent" class="etat"></p>
-</section>
-<section class="bloc" aria-labelledby="titre-reseau-reversements">
-<h3 id="titre-reseau-reversements">Reversements à faire</h3>
-<p id="reseau-reversements-etat" class="etat" role="status"></p>
-<ul id="reseau-reversements" class="liste"></ul>
-</section>
-<section class="bloc" aria-labelledby="titre-reseau-brouillons">
-<h3 id="titre-reseau-brouillons">Factures à valider</h3>
-<p class="doux">Mode essai : une facture validée part à la plateforme d’essai, jamais à une vraie plateforme. Elle ne change plus ensuite : un avoir la corrige.</p>
-<p id="reseau-brouillons-etat" class="etat" role="status"></p>
-<ul id="reseau-brouillons" class="liste"></ul>
-</section>
-<section class="bloc" aria-labelledby="titre-reseau-export">
-<h3 id="titre-reseau-export">Export du jour</h3>
-<p class="doux">Les chiffres d’un jour, au format tableur, pour les comparer au comptage manuel.</p>
-<label for="reseau-export-jour">Jour</label>
-<input id="reseau-export-jour" type="date" required>
-<button id="reseau-export" type="button" class="secondaire">Télécharger l’export</button>
-<p id="reseau-export-etat" class="etat" role="status"></p>
-</section>
-<section class="bloc" aria-labelledby="titre-reseau-cas">
-<h3 id="titre-reseau-cas">Mesure du classement</h3>
-<p class="doux">Les 150 derniers classements corrigés par les agents, sans coordonnées, pour relancer la mesure. Un nom peut rester : à relire, et à garder hors du dépôt.</p>
-<button id="reseau-cas" type="button" class="secondaire">Télécharger les cas corrigés</button>
-<p id="reseau-cas-etat" class="etat" role="status"></p>
-</section>
-${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${REGLAGES_MANDAT_ENTRY_HTML}${MANDAT_MODELES_ENTRY_HTML}${LOYERS_ENTRY_HTML}${MESURE_SOURCES_ENTRY_HTML}${ANNUAIRE_ENTRY_HTML}${PROSPECTION_ENTRY_HTML}${BIBLIOTHEQUE_ENTRY_HTML}${ENGAGEMENTS_ENTRY_HTML}${GUIDES_PHOTO_ENTRY_HTML}${LOUER_MODELES_ENTRY_HTML}${BASCULE_ENTRY_HTML}${RAPPORT_DIRECTION_HTML}${PHASES_ENTRY_HTML}${LICENCES_ENTRY_HTML}${clesEntryHtml('reseau')}${COMMISSIONS_ENTRY_HTML}${REGLAGES_ENTRY_HTML}</section>
+<section id="reseau" hidden></section>
 <p id="attente">Chargement…</p>
 <p id="note" role="status" hidden></p>
 </main>
@@ -241,6 +246,9 @@ ${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${REGLAGES_M
  * La feuille de l'application : la base du système de design d'AIMMO (Z03), puis la mise en page de ses écrans, en
  * jetons seulement [R201].
  */
+/** DS069 · la page de la direction : celle de l'agent, avec l'écran du réseau posé à sa place. */
+export const RESEAU_PAGE_HTML = INDEX_HTML.replace('<section id="reseau" hidden></section>', () => `<section id="reseau" hidden>\n${RESEAU_HTML}</section>`);
+
 export const APP_CSS = DESIGN_CSS + `
 body { min-height: 100dvh; }
 .tete { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: var(--e-4); padding: max(var(--e-3), env(safe-area-inset-top)) var(--e-4) var(--e-3); background: var(--papier); }
@@ -312,7 +320,13 @@ export const APP_JS = `'use strict';
   var KEY_DIRECTION = 'aimmo.cle.direction';
   // Le lien d'invitation (Z02) : le jeton suit « # », que le navigateur n'envoie jamais au serveur.
   var INVITATION = /^#invitation=([A-Za-z0-9_-]{43})$/;
-  var $ = function (id) { return document.getElementById(id); };
+  // DS069 · l'écran de la direction n'est que dans sa page (/app/reseau). Dans celle de l'agent, un de ses éléments
+  // est un fantôme hors de la page : les branchements du démarrage et les remises à zéro ne cassent rien.
+  var KEY_RESEAU = 'aimmo.reseau';
+  var RESEAU_PATH = '/app/reseau';
+  var ghosts = {};
+  function reseauHere() { return !!document.getElementById('reseau-corps'); }
+  var $ = function (id) { return document.getElementById(id) || (reseauHere() ? null : ghosts[id] || (ghosts[id] = document.createElement('div'))); };
   function readKey() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
   function writeKey(v) { try { localStorage.setItem(KEY, v); return true; } catch (e) { return false; } }
   function readDirectionKey() { try { return localStorage.getItem(KEY_DIRECTION); } catch (e) { return null; } }
@@ -322,6 +336,7 @@ export const APP_JS = `'use strict';
     // AU104 : le mode privé de la clé oubliée s'efface [R676].
     var k = refused || readKey();
     if (k) offline(function (H) { H.oublier(k); });
+    if (!refused) try { localStorage.removeItem(KEY_RESEAU); } catch (e) { /* sans mémoire */ }
     [KEY, KEY_DIRECTION].forEach(function (slot) {
       try { if (refused === undefined || localStorage.getItem(slot) === refused) localStorage.removeItem(slot); } catch (e) { /* rien à effacer */ }
     });
@@ -2251,6 +2266,13 @@ ${LOUER_JS}
         return openConformite();
       }
       if (me.role === 'direction') {
+        if (!reseauHere()) {
+          // La direction entre depuis la page de l'agent : l'appareil le note et ouvre sa page, qui porte son écran.
+          // Si ce n'est pas la clé d'entrée de l'appareil (« Voir le réseau »), le geste est gardé : sa page y mène.
+          try { localStorage.setItem(KEY_RESEAU, key === readKey() ? '1' : 'ouvrir'); } catch (e) { /* sans mémoire */ }
+          location.replace(RESEAU_PATH);
+          return false;
+        }
         $('erreur').hidden = true;
         currentKey = key;
         var agentKey = readKey();
@@ -2274,7 +2296,7 @@ ${LOUER_JS}
   try {
     addEventListener('popstate', function (e) {
       var s = e.state && e.state.s, a = e.state && e.state.a;
-      if (!currentKey || !s || !$(s)) return;
+      if (!currentKey || !s || !document.getElementById(s)) return;
       // Une fiche, un bien, une visite ou une mise en vente se rouvrent, relus ; les autres écrans gardent ce qu'ils montraient.
       var again = { fiche: openFiche, bien: openBien, visite: openVisit, vente: openVente, mandat: openMandat, dossier: openDossier, offres: openOffres, avis: openAvis, studio: openStudio }[s];
       // Une lecture encore en route pour l'écran quitté ne s'affiche plus.
@@ -2284,7 +2306,7 @@ ${LOUER_JS}
       fromHistory = false;
     });
   } catch (e) { /* sans historique */ }
-  document.addEventListener('DOMContentLoaded', function () {
+  function boot() {
     // AU023 · la clé de l'appareil connecte, sans clé à taper ; le script des clés la porte.
     $('entrer-appareil').addEventListener('click', function () {
       withCles(0, function (c) { return c.login(); }).then(function (r) {
@@ -2430,11 +2452,22 @@ ${LOUER_JS}
       refuse('Lien d’invitation incomplet. Ouvrez votre lien d’accès en entier.');
     } else {
       var key = readKey();
+      // DS069 · la direction avait demandé son écran depuis la page de l'agent : elle y arrive, sans second geste.
+      try { if (localStorage.getItem(KEY_RESEAU) === 'ouvrir') { localStorage.setItem(KEY_RESEAU, '1'); key = readDirectionKey() || key; } } catch (e) { /* sans mémoire */ }
       if (key) enter(key); else show('connexion');
     }
     var offline = 'Cet appareil ne garde pas l’application : elle ne s’ouvrira qu’avec du réseau.';
     function warn() { $('note').textContent = offline; $('note').hidden = false; }
     if ('serviceWorker' in navigator) navigator.serviceWorker.register('/app/sw.js', { scope: '/app/' }).catch(warn); else warn();
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    var want = false;
+    try { want = !!(localStorage.getItem(KEY_RESEAU) || localStorage.getItem(KEY_DIRECTION)); } catch (e) { /* sans mémoire */ }
+    if (!want || reseauHere()) return boot();
+    // L'appareil de la direction ouvre sa page. Sans réseau, il garde celle-ci : la journée et le mode sans réseau tiennent.
+    return fetch('/app/reseau', { method: 'HEAD', credentials: 'omit', referrerPolicy: 'no-referrer' }).then(function (r) {
+      if (r.ok) location.replace(RESEAU_PATH + (location.hash || '')); else boot();
+    }, function () { boot(); });
   });
 })();
 `;
@@ -2456,8 +2489,11 @@ self.addEventListener('activate', function (event) {
 });
 self.addEventListener('fetch', function (event) {
   var url = new URL(event.request.url);
-  if (event.request.method !== 'GET' || url.origin !== self.location.origin || SHELL.indexOf(url.pathname) === -1) return;
-  event.respondWith(fetch(event.request).catch(function () { return caches.match(url.pathname); }));
+  // DS069 · la page de la direction n'est pas gardée, pour qu'aucun agent ne la télécharge. Sans réseau, elle se replie
+  // sur la coquille : la journée et les visites préparées s'ouvrent aussi depuis son adresse [R278].
+  var kept = url.pathname === '/app/reseau' ? '/app/' : url.pathname;
+  if (event.request.method !== 'GET' || url.origin !== self.location.origin || SHELL.indexOf(kept) === -1) return;
+  event.respondWith(fetch(event.request).catch(function () { return caches.match(kept); }));
 });
 `;
 

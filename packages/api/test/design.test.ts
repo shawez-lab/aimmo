@@ -105,6 +105,8 @@ async function screens(): Promise<{ name: string; html: string; css?: string; js
   const get = (path: string) => new Request(`https://aimmo.example.test${path}`);
   return [
     { name: 'application de l’agent', html: AGENT_APP_FILES['/app/']!, css: AGENT_APP_FILES['/app/app.css']!, js: AGENT_APP_FILES['/app/app.js']!, budget: BUDGETS.application },
+    // DS069 · la page de la direction, avec l'écran du réseau : elle passe les mêmes contrôles.
+    { name: 'application, page de la direction', html: AGENT_APP_FILES['/app/reseau']!, css: AGENT_APP_FILES['/app/app.css']!, js: AGENT_APP_FILES['/app/app.js']!, budget: Object.freeze({ gzipBytes: BUDGETS.application.gzipBytes + BUDGETS.page.gzipBytes }) },
     { name: 'espace partenaire', html: PARTNER_SPACE_FILES['/partenaire/']!, css: PARTNER_SPACE_FILES['/partenaire/partenaire.css']!, js: PARTNER_SPACE_FILES['/partenaire/partenaire.js']!, budget: BUDGETS.application },
     { name: 'candidature', html: await text(await handleCandidature(get('/rejoindre'), { db: NO_DB, networkId: 'n1' })), budget: BUDGETS.page },
     { name: 'candidature pas encore ouverte', html: await text(await handleCandidature(get('/rejoindre'), { db: NO_DB, networkId: null })), budget: BUDGETS.page },

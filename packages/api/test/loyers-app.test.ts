@@ -303,7 +303,7 @@ describe('Y10 · importer les loyers de marché depuis l’écran du réseau', (
     });
 
     it('[R16] [Y11] la direction, sur l’écran du réseau, range une règle : ce qu’elle a écrit part, puis la commune est relue', async () => {
-      expect(HTML).toContain('id="loyers-commune"');
+      expect(AGENT_APP_FILES['/app/reseau']).toContain('id="loyers-commune"');
       let rules: unknown[] = [];
       const t = await open(null, {
         [READ]: async () => Response.json({ ok: true, data: { canRecord: true, rules } }),

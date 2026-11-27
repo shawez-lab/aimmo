@@ -4,7 +4,7 @@ import { DepotsReprise, FicheClient, SqlJournalStore, applyMigrations, fromSyncS
 import { checkBatch, d1Rest, D1RestError } from '../outils/d1-rest.ts';
 import { main, readEnv, safeMessage, summary } from '../outils/reprise.ts';
 import { repriseRoutes } from '../src/reprise.ts';
-import { APP_JS, INDEX_HTML } from '../app/fichiers.ts';
+import { APP_JS, INDEX_HTML, RESEAU_PAGE_HTML } from '../app/fichiers.ts';
 import { REPRISE_JS, REPRISE_SCRIPT } from '../app/reprise.ts';
 import { loadMigrations } from '../../core/test/migrations.ts';
 import { describeWithSqlite, openMemoryDatabase, type SqliteDatabase } from '../../core/test/sqlite.ts';
@@ -224,8 +224,10 @@ describeWithSqlite('reprise lancée sur les vraies bases : travail, API D1 et d�
 
   it('l\'écran du réseau porte le dépôt des trois fichiers, étiquetés, et n\'affiche que des nombres', () => {
     for (const tool of ['exclusion_list', 'gohighlevel', 'manychat']) {
-      expect(INDEX_HTML).toContain(`<label for="reprise-${tool}">`);
-      expect(INDEX_HTML).toContain(`<input id="reprise-${tool}" type="file"`);
+      // DS069 : l'écran du réseau est dans la page de la direction, plus dans celle de l'agent.
+      expect(RESEAU_PAGE_HTML).toContain(`<label for="reprise-${tool}">`);
+      expect(RESEAU_PAGE_HTML).toContain(`<input id="reprise-${tool}" type="file"`);
+      expect(INDEX_HTML).not.toContain(`id="reprise-${tool}"`);
     }
     expect(REPRISE_SCRIPT).toContain("send('/v1/reprise/fichiers', 'POST', { tool: t.id, csv: csv })");
     // Le fichier n'est jamais gardé sur l'appareil.
