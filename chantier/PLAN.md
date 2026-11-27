@@ -7939,7 +7939,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS015 · La marque n'a pas de voix typographique tenue
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-27)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS015 (majeur, identité, effort M), endroit : `packages/core/src/design/systeme.ts` (`POLICES`)
 - Constat de l’audit : la pile des titres est Iowan Old Style, Charter, Palatino Linotype, Book Antiqua, Georgia. Un iPhone rend Iowan, un PC Palatino, un téléphone Android aucune des cinq : il tombe sur son serif par défaut, comme le poste d'audit (toutes les captures).
@@ -7956,7 +7956,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS017 · En sombre, le bordeaux devient rose
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-27)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS017 (majeur, identité, mode sombre, effort S), endroit : `systeme.ts` (`PALETTE.sombre.accent` : `#f0a6b0`)
 - Constat de l’audit : `appli-ordinateur-et-sombre.jpg` : le bouton « Noter une rétractation » est rose saumon.
@@ -7965,7 +7965,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Suivi : proposition #810 (la base du système en direction Maison).
 
 ### DS018 · La frise rayée se lit comme un ruban de chantier
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-27)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS018 (majeur, identité, effort S), endroit : sous chaque en-tête — `systeme.ts` (`--frise`)
 - Constat de l’audit : toutes les captures. Quatre couleurs en biais sur 6 px : le motif n'évoque pas les losanges des toits vernissés.
@@ -7982,7 +7982,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS020 · Le losange est partout, donc nulle part
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-27)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS020 (mineur, identité, effort S), endroit : devant chaque titre de carte — `systeme.ts` (`.bloc>h3::before`)
 - Constat de l’audit : 23 losanges sur l'accueil.
@@ -8047,7 +8047,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS028 · Une graisse de 650 qui n'existe pas partout
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-27)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS028 (finition, typographie, effort S), endroit : `systeme.ts` (`strong`, `.pastille`, `.fait`)
 - Constat de l’audit : une police de système sans axe variable rend 650 en 600 ou en 700 selon l'appareil.
@@ -8064,7 +8064,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS030 · L'action et le danger sont deux rouges voisins
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-27)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS030 (majeur, couleur, effort S), endroit : `systeme.ts` (`accent` `#7c1f32`, `danger` `#a3231b`)
 - Constat de l’audit : « Noter une rétractation » (action) et un bouton `.danger` ne se distinguent que par leur largeur.
