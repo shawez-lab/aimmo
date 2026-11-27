@@ -8557,7 +8557,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS086 · Les captures de référence datent d'un mois et couvrent cinq écrans
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : proposition #825 ouverte le 2026-11-28 (`node scripts/captures.mjs` : chaque écran capturé avec ses mesures, et la comparaison de deux jeux).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS086 (mineur, système de design, effort M), endroit : `docs/design/captures/`
 - Constat de l’audit : 20 images du 28 octobre, pour 26 écrans et une vingtaine de pages.
