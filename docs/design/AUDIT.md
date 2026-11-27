@@ -601,6 +601,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : `packages/core/src/annonces/page-bien.ts` (`renderListingPrint`)
 - Preuve : `documents-imprimes.jpg` : la deuxième page porte un en-tête et une ligne.
 - Solution : une page : photo, titre, prix, faits clés, description, étiquettes, agent.
+- Suite : corrigé le 2026-11-27 : la fiche tient sur une feuille quand le texte le permet (jusqu'à 1 100 signes environ avec les mentions habituelles) : la photo d'abord et en grand, trois vignettes, le titre, le prix et l'état, les faits clés, la description, les mentions à côté des étiquettes du DPE, l'agent au pied. Un texte plus long passe sur une seconde feuille avec les photos suivantes : deux feuilles au plus, la première garde le prix, les mentions et les étiquettes. Si le texte demandait plus de place que prévu, ce sont les photos qui rétrécissent, jamais un mot qui disparaît. La mention d'aménagement virtuel ne recouvre plus la légende. Avant et après : `captures/avant-apres/DS083-fiche-imprimable.jpg`.
 
 #### DS084 · L'avis de valeur ne porte pas la marque
 - Gravité : majeur · Catégorie : impression · Effort : M

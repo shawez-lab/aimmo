@@ -8,8 +8,8 @@
  *
  * Le dessin suit le système de design d'AIMMO (Z03). La page vend le bien (DS072) : la photo d'abord et en grand, une
  * galerie qui se feuillette, l'état, le titre, le prix en grands chiffres, les faits en une ligne, le texte, les mentions
- * lisibles et jamais cachées, puis l'agent et ses deux gestes. Téléphone d'abord, sans script ; la fiche imprimable a
- * exactement deux pages A4, la première porte toujours le prix et les mentions.
+ * lisibles et jamais cachées, puis l'agent et ses deux gestes. Téléphone d'abord, sans script ; la fiche imprimable
+ * tient sur une feuille A4 quand le texte le permet, deux au plus, et la première porte toujours le prix et les mentions.
  */
 import type { Acces } from '../acces/acces.ts';
 import type { Viewer } from '../acces/droits.ts';
@@ -87,36 +87,57 @@ h1{margin:var(--e-3) 0 var(--e-2);max-width:22ch}
 .contact{display:block;position:sticky;top:var(--e-5);margin-top:var(--e-5)}.contact .agent{margin-top:0}
 .gestes{position:static;flex-direction:column;margin:var(--e-4) 0 0;padding:0;border:0}.gestes .appel{flex:none}}`;
 
-/** La fiche imprimable : les jetons du papier, deux pages A4 exactement. */
+/**
+ * La fiche imprimable (DS083) : les jetons du papier, une feuille A4 quand tout y tient, deux au plus. Chaque feuille est
+ * une colonne : les photos prennent la place qui reste, le reste garde sa hauteur. Si le texte demandait plus que prévu,
+ * ce sont les photos qui rétrécissent, jamais un mot qui disparaît.
+ */
 const PRINT_CSS =
   PRINT_DESIGN_CSS +
   ETIQUETTES_CSS +
   `@page{size:A4;margin:0}
-body{font:10.5pt/1.45 var(--police-titre)}
-.page{width:210mm;height:297mm;padding:16mm 16mm 14mm;overflow:hidden;break-after:page;page-break-after:always;position:relative}
+body{font:10pt/1.45 var(--police-titre)}
+.page{width:210mm;height:297mm;padding:14mm 16mm;overflow:hidden;display:flex;flex-direction:column;break-after:page;page-break-after:always}
 .page:last-child{break-after:auto;page-break-after:auto}
-.marque{font:600 8pt/1 var(--police-texte);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border-bottom:1pt solid var(--accent);padding-bottom:4mm}
-h1{font-size:20pt;line-height:1.15;margin:8mm 0 3mm}.prix{font-size:30pt;font-weight:700;color:var(--accent);margin:4mm 0}
-.etat{display:inline-block;border:1.5pt solid var(--accent);color:var(--accent);padding:1mm 3mm;font:700 8pt var(--police-texte);letter-spacing:.1em;text-transform:uppercase}
-.mentions{border-left:2pt solid var(--moutarde);padding:2mm 4mm;margin:6mm 0;font-size:9pt;white-space:pre-line}
-.photos{display:grid;grid-template-columns:1fr 1fr;gap:3mm;margin:0;padding:0;list-style:none}.photos li{position:relative}
-.photos img{width:100%;height:44mm;object-fit:cover}.etiquettes{grid-template-columns:1fr 1fr;gap:6mm;margin:0 0 5mm;font-size:8pt}.virtuel{position:absolute;left:2mm;bottom:2mm;background:var(--encre);color:var(--papier);font:700 7pt var(--police-texte);padding:1mm 2mm}.legende{display:block;font:7pt var(--police-texte);padding-top:1mm}
-.page+.page{padding-bottom:42mm}.texte{margin:6mm 0}.agent{position:absolute;left:16mm;right:16mm;bottom:14mm;border-top:1pt solid var(--accent);padding-top:3mm;font-size:9.5pt}`;
+.marque{flex:none;display:flex;justify-content:space-between;align-items:baseline;gap:6mm;margin:0 0 5mm;font:400 12pt/1 var(--police-titre);letter-spacing:.2em;text-transform:uppercase}
+.marque span{font:400 8.5pt/1 var(--police-texte);letter-spacing:0;text-transform:none;color:var(--doux)}
+.photos{flex:1 1 0;min-height:0;display:grid;grid-template-columns:2fr 1fr;grid-auto-rows:minmax(0,1fr);gap:2mm;margin:0 0 6mm;padding:0;list-style:none}
+.photos li{position:relative;min-height:0;display:flex;flex-direction:column}
+.photos img{flex:1 1 0;min-height:0;width:100%;object-fit:cover}
+.photos.p1{grid-template-columns:1fr}.photos.p3 li:first-child{grid-row:span 2}.photos.p4 li:first-child{grid-row:span 3}
+.photos.suite{grid-template-columns:repeat(3,1fr);max-height:70mm}
+.legende{flex:none;display:block;font:7.5pt/1.3 var(--police-texte);color:var(--doux);padding-top:1mm}
+.virtuel{position:absolute;left:2mm;top:2mm;background:var(--encre);color:var(--papier);font:600 7pt var(--police-texte);padding:1mm 2mm}
+h1{flex:none;font:400 20pt/1.12 var(--police-titre);margin:0 0 3mm}
+.ligne{flex:none;display:flex;align-items:baseline;justify-content:space-between;gap:6mm;margin:0}
+.prix{font:400 24pt/1.1 var(--police-titre);letter-spacing:-.01em;white-space:nowrap}
+.etat{font:500 9.5pt/1 var(--police-texte);white-space:nowrap}
+.faits{flex:none;display:flex;flex-wrap:wrap;gap:1mm 9mm;margin:4mm 0 0;padding:2.5mm 0;border-top:.5pt solid var(--trait);border-bottom:.5pt solid var(--trait)}
+.faits div{display:flex;align-items:baseline;gap:2mm}.faits dt{font:400 8.5pt/1.3 var(--police-texte);color:var(--doux)}.faits dd{margin:0;font:400 11pt/1.3 var(--police-titre)}
+.texte{flex:none;margin:4mm 0 6mm}
+.bas{flex:none;display:grid;grid-template-columns:1fr 1fr;gap:8mm;align-items:start;margin:0 0 6mm}.bas.seul{grid-template-columns:1fr}.faits+.bas,.ligne+.bas{margin-top:5mm}
+.mentions{font:8.5pt/1.4 var(--police-texte);white-space:pre-line}
+.etiquettes{grid-template-columns:1fr 1fr;gap:4mm;margin:0;font:7pt/1.2 var(--police-texte)}.etiquette figcaption{margin-bottom:1.5mm}
+.agent{flex:none;display:flex;flex-wrap:wrap;align-items:baseline;gap:1mm 7mm;margin-top:auto;border-top:.5pt solid var(--encre);padding-top:3mm;font:400 9.5pt/1.3 var(--police-texte)}
+.agent p{margin:0}.agent a{color:inherit;text-decoration:none}`;
+
+/** Une photo de la version publiée, avec sa mention [R48] et sa légende [R478]. */
+function photoItem(p: PageInput['photos'][number], first: boolean): string {
+  // Une photo d'aménagement virtuel porte la mention sur l'image elle-même [R48].
+  const virtual = p.overlay ? `<span class="virtuel">${escapeHtml(p.overlay)}</span>` : '';
+  // La légende des portails [R478], quand la version publiée en a une : texte de remplacement et légende visible (AU114).
+  const alt = p.caption ?? (p.overlay ? 'Photo du bien, aménagement virtuel' : 'Photo du bien');
+  const caption = p.caption ? `<span class="legende">${escapeHtml(p.caption)}</span>` : '';
+  // DS072 · sur la page, la première photo est le visage du bien : elle n'attend pas le défilement.
+  const load = first ? 'fetchpriority="high"' : 'loading="lazy"';
+  return `<li><img src="${escapeHtml(mediaUrl(p.ref))}" alt="${escapeHtml(alt)}" ${load} decoding="async">${virtual}${caption}</li>`;
+}
 
 function photoList(photos: PageInput['photos'], limit: number, hero = false): string {
   const items = photos
     .filter((p) => p.kind === 'photo')
     .slice(0, limit)
-    .map((p, i) => {
-      // Une photo d'aménagement virtuel porte la mention sur l'image elle-même [R48].
-      const virtual = p.overlay ? `<span class="virtuel">${escapeHtml(p.overlay)}</span>` : '';
-      // La légende des portails [R478], quand la version publiée en a une : texte de remplacement et légende visible (AU114).
-      const alt = p.caption ?? (p.overlay ? 'Photo du bien, aménagement virtuel' : 'Photo du bien');
-      const caption = p.caption ? `<span class="legende">${escapeHtml(p.caption)}</span>` : '';
-      // DS072 · sur la page, la première photo est le visage du bien : elle n'attend pas le défilement.
-      const load = hero && i === 0 ? 'fetchpriority="high"' : 'loading="lazy"';
-      return `<li><img src="${escapeHtml(mediaUrl(p.ref))}" alt="${escapeHtml(alt)}" ${load} decoding="async">${virtual}${caption}</li>`;
-    });
+    .map((p, i) => photoItem(p, hero && i === 0));
   return items.length > 0 ? `<ul class="photos">${items.join('')}</ul>` : '';
 }
 
@@ -197,19 +218,56 @@ export function renderListingPage(input: PageInput): string {
   );
 }
 
-/** La fiche imprimable : exactement deux pages A4. Page 1 : titre, état, prix, mentions, étiquettes du DPE, photos ; page 2 : texte et agent. */
+/** Les lignes qu'un texte prend sur une largeur donnée en signes, comptées large : une ligne par retour, une de plus par tranche entamée. */
+const printLines = (text: string, perLine: number): number => text.split('\n').reduce((n, line) => n + Math.max(1, Math.ceil(line.length / perLine)), 0);
+
+/**
+ * La hauteur que la fiche demande sur une seule feuille, en millimètres, comptée large (DS083) : des lignes plus courtes
+ * que celles du papier, et 70 mm gardés aux photos. Au-dessus de la feuille, la fiche passe sur deux pages.
+ */
+export function printHeightMm(input: PageInput): number {
+  const p = input.payload;
+  const body = (p.body ?? '').replace(/\s*\n\s*/g, ' ');
+  const mentions = p.mentions ?? '';
+  const labels = energyClassesOf(mentions) !== null;
+  const hasPhotos = input.photos.some((x) => x.kind === 'photo');
+  const head = 28 + 10 + printLines(p.title ?? '', 38) * 8.5 + 3 + 11;
+  const facts = keyFacts(p) !== '' ? 13 : 0;
+  const text = 4 + printLines(body, 85) * 4.9;
+  const low = 5 + Math.max(printLines(mentions, labels ? 45 : 95) * 4.2, labels ? 44 : 0);
+  const agent = input.agent ? 16 : 0;
+  return head + facts + text + low + agent + (hasPhotos ? 76 : 0);
+}
+
+/**
+ * La fiche imprimable (DS083) : une feuille A4 quand tout y tient, deux au plus [P05]. La photo d'abord, puis le titre,
+ * le prix et l'état, les faits clés, la description, les mentions avec les étiquettes du DPE, et l'agent au pied. Quand
+ * le texte est long, il passe sur la deuxième feuille avec les photos suivantes : le prix, les mentions et les
+ * étiquettes restent sur la première [R43].
+ */
 export function renderListingPrint(input: PageInput): string | null {
   const p = input.payload;
   if (p.state === 'retiree' || p.priceEur === null || !p.body || !p.mentions || !p.title) return null;
-  const brand = `<div class="marque">AIMMO · Réf. ${escapeHtml(p.reference)}</div>`;
+  const brand = `<p class="marque">AIMMO <span>Réf. ${escapeHtml(p.reference)}</span></p>`;
+  const photos = input.photos.filter((x) => x.kind === 'photo');
+  // Sur papier, rien n'attend le défilement : aucune photo n'est chargée « plus tard ».
+  const mosaic = (list: typeof photos, extra: string): string =>
+    list.length > 0 ? `<ul class="photos ${extra}">${list.map((x) => photoItem(x, false).replace(' loading="lazy"', '')).join('')}</ul>` : '';
+  const first = photos.slice(0, MAX_PRINT_PHOTOS);
+  const labels = energyLabels(p.mentions);
+  const head =
+    `<h1>${escapeHtml(p.title)}</h1><p class="ligne"><span class="prix">${escapeHtml(euros(p.priceEur))}</span><span class="etat">${STATE_LABEL[p.state]}</span></p>` +
+    keyFacts(p);
+  // Sur papier, les retours à la ligne deviennent des espaces.
+  const text = `<p class="texte">${escapeHtml(p.body.replace(/\s*\n\s*/g, ' '))}</p>`;
+  const low = `<div class="bas${labels ? '' : ' seul'}"><div class="mentions">${escapeHtml(p.mentions)}</div>${labels}</div>`;
+  const agent = agentBlock(input.agent);
+  const open = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(p.title)}</title><style>${PRINT_CSS}</style></head><body><main>`;
+  if (printHeightMm(input) <= 297) return `${open}<section class="page">${brand}${mosaic(first, `p${first.length}`)}${head}${text}${low}${agent}</section></main></body></html>`;
+  const next = photos.slice(MAX_PRINT_PHOTOS, MAX_PRINT_PHOTOS + 3);
   return (
-    `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${escapeHtml(p.title)}</title><style>${PRINT_CSS}</style></head><body><main>` +
-    `<section class="page">${brand}<h1>${escapeHtml(p.title)}</h1><span class="etat">${STATE_LABEL[p.state]}</span>` +
-    `<p class="prix">${escapeHtml(euros(p.priceEur))}</p><div class="mentions">${escapeHtml(p.mentions)}</div>${energyLabels(p.mentions)}${photoList(input.photos, MAX_PRINT_PHOTOS)}</section>` +
-    // Sur papier, les retours à la ligne deviennent des espaces : 3 000 caractères tiennent toujours dans la page 2,
-    // au-dessus de la carte de l'agent, sans rien couper.
-    `<section class="page">${brand}<p class="texte">${escapeHtml(p.body.replace(/\s*\n\s*/g, ' '))}</p>${agentBlock(input.agent)}</section>` +
-    `</main></body></html>`
+    `${open}<section class="page">${brand}${mosaic(first, `p${first.length}`)}${head}${low}</section>` +
+    `<section class="page">${brand}${text}${mosaic(next, 'suite')}${agent}</section></main></body></html>`
   );
 }
 

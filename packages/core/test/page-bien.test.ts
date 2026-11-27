@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DESIGN_CSS, ETIQUETTES_CSS, ETIQUETTES_DPE } from '../src/design/systeme.ts';
 import { contrastRatio, filledButtons, htmlProblems, screenCssProblems } from '../src/design/audit.ts';
 import { PageBien, computeMentions, energyClassesOf, energyLabels, renderListingPage, renderListingPrint, type PageInput } from '../src/annonces/index.ts';
+import { printHeightMm } from '../src/annonces/page-bien.ts';
 import { keyFacts } from '../src/annonces/page-bien.ts';
 import { surfacesFor } from '../src/annonces/fiche-bien.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
@@ -72,22 +73,53 @@ describe('P05 · page du bien et fiche imprimable', () => {
     expect(html).toContain('&lt;script&gt;');
   });
 
-  it('la fiche imprimable a exactement deux pages A4, la première porte le prix et les mentions, quatre photos au plus', () => {
+  it('DS083 · la fiche imprimable tient sur une feuille A4 quand le texte le permet : la photo, le titre, le prix, la description, les mentions, l’agent', () => {
     const many = { ...INPUT, photos: Array.from({ length: 9 }, (_, i) => ({ ref: `biens/b1/0b6f1d2e-1111-4a2b-8c3d-00000000000${i}.jpg`, kind: 'photo' as const, overlay: null })) };
     const html = renderListingPrint(many)!;
-    expect(html.match(/<section class="page">/g)).toHaveLength(2);
+    expect(printHeightMm(many)).toBeLessThanOrEqual(297);
+    expect(html.match(/<section class="page">/g)).toHaveLength(1);
     expect(html).toContain('@page{size:A4');
-    expect(html).toContain('height:297mm;padding:16mm 16mm 14mm;overflow:hidden');
+    expect(html).toContain('.page{width:210mm;height:297mm;padding:14mm 16mm;overflow:hidden;display:flex;flex-direction:column;');
+    // Dans l'ordre de lecture : la marque, les photos, le titre, le prix et l'état, la description, les mentions, l'agent.
+    const page = html.split('<section class="page">')[1]!;
+    const order = ['<p class="marque">AIMMO <span>Réf. REF-T-1</span></p>', '<ul class="photos p4">', '<h1>Appartement 3 pièces à Dijon</h1>', '<span class="prix">', '<span class="etat">En vente</span>', '<p class="texte">', '<div class="mentions">', '<section class="agent"'].map((part) => page.indexOf(part));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    // Quatre photos au plus, et aucune n'attend un défilement qui n'existe pas sur le papier.
+    expect(page.match(/<img /g)).toHaveLength(4);
+    expect(html).not.toContain('loading="lazy"');
+    expect(page).toContain('agent immobilier');
+    // Les photos prennent la place qui reste ; si le texte en demandait plus, ce sont elles qui rétrécissent.
+    expect(html).toContain('.photos{flex:1 1 0;min-height:0;');
+    // Sur papier, les retours à la ligne deviennent des espaces.
+    const lines = renderListingPrint({ ...INPUT, payload: { ...INPUT.payload, body: Array.from({ length: 60 }, () => 'Balcon.').join('\n') } })!;
+    expect(lines).toContain(`<p class="texte">${Array.from({ length: 60 }, () => 'Balcon.').join(' ')}</p>`);
+  });
+
+  it('DS083 · un long texte : deux feuilles au plus, la première garde le prix, les mentions et quatre photos, la seconde porte le texte, les photos suivantes et l’agent', () => {
+    const photos = Array.from({ length: 9 }, (_, i) => ({ ref: `biens/b1/0b6f1d2e-1111-4a2b-8c3d-00000000000${i}.jpg`, kind: 'photo' as const, overlay: null }));
+    const long = { ...INPUT, photos, payload: { ...INPUT.payload, body: 'Une phrase inventée pour mesurer la place. '.repeat(70).trim() } };
+    expect(long.payload.body.length).toBeGreaterThan(2900);
+    expect(printHeightMm(long)).toBeGreaterThan(297);
+    const html = renderListingPrint(long)!;
+    expect(html.match(/<section class="page">/g)).toHaveLength(2);
     const [page1, page2] = html.split('<section class="page">').slice(1);
     expect(page1).toContain('class="prix"');
     expect(page1).toContain('class="mentions"');
     expect(page1!.match(/<img /g)).toHaveLength(4);
+    expect(page1).not.toContain('class="texte"');
     expect(page2).toContain('class="texte"');
     expect(page2).toContain('agent immobilier');
-    // Sur papier, les retours à la ligne deviennent des espaces : rien n'est coupé, rien ne passe sous la carte de l'agent.
-    const lines = renderListingPrint({ ...INPUT, payload: { ...INPUT.payload, body: Array.from({ length: 60 }, () => 'Balcon.').join('\n') } })!;
-    expect(lines).toContain(`<p class="texte">${Array.from({ length: 60 }, () => 'Balcon.').join(' ')}</p>`);
-    expect(lines).toContain('.page+.page{padding-bottom:42mm}');
+    // Les photos cinq à sept accompagnent le texte : la seconde feuille n'est jamais un en-tête et une ligne.
+    expect(page2).toContain('<ul class="photos suite">');
+    expect(page2!.match(/<img /g)).toHaveLength(3);
+    expect(html.match(/class="agent"/g)).toHaveLength(1);
+    // La hauteur comptée grandit avec le texte, le titre et les mentions : rien ne passe d'une feuille à deux par hasard.
+    const withBody = (n: number): number => printHeightMm({ ...INPUT, photos, payload: { ...INPUT.payload, body: 'x'.repeat(n) } });
+    expect(withBody(200)).toBeLessThan(withBody(800));
+    expect(withBody(800)).toBeLessThan(withBody(1600));
+    expect(printHeightMm({ ...INPUT, photos: [] })).toBeLessThan(printHeightMm({ ...INPUT, photos }));
+    expect(printHeightMm({ ...INPUT, agent: null })).toBeLessThan(printHeightMm(INPUT));
   });
 });
 
@@ -112,7 +144,7 @@ describe('DS072 · la page du bien vend le bien', () => {
     expect(html).toContain('overflow-x:auto;scroll-snap-type:x mandatory');
     expect(html).toContain('.photos li{position:relative;flex:0 0 88%;');
     expect(html).not.toContain('<script');
-    // La fiche imprimable garde ses images comme avant.
+    // La fiche imprimable n'a pas de photo prioritaire : toutes se chargent d'emblée.
     expect(renderListingPrint(INPUT)).not.toContain('fetchpriority');
   });
 

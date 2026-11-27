@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
 import { renderListingPrint, type PageInput } from '../src/annonces/index.ts';
+import { printHeightMm } from '../src/annonces/page-bien.ts';
 import { SUPPORT_SIZES, renderBusinessCard, renderFlyer, renderNeighbourhoodLetter, renderPanel } from '../src/studio/index.ts';
 
 /**
@@ -48,6 +49,13 @@ const LONG: PageInput = {
   ],
 };
 
+const SHORT: PageInput = { ...LONG, payload: { ...LONG.payload, title: 'Maison 5 pièces avec jardin à Talant', body: 'Sur les hauteurs, une maison de 1962 rénovée en 2021. Séjour traversant sur jardin clos, plein sud. Trois chambres, garage, cave.' } };
+// Le plus long texte que la fiche garde sur une feuille, écrit tout en capitales.
+const tight = (n: number): PageInput => ({ ...SHORT, payload: { ...SHORT.payload, body: 'MAISON DE FAMILLE AVEC JARDIN CLOS ET GARAGE. '.repeat(80).slice(0, n).trim() } });
+let fits = 100;
+while (printHeightMm(tight(fits + 20)) <= 297) fits += 20;
+const TIGHT = tight(fits);
+
 describe.skipIf(browser === null)('X06 · impression sous Chromium', () => {
   const cases: [string, string, number][] = [
     ['panneau', renderPanel(LONG)!, 1],
@@ -55,6 +63,9 @@ describe.skipIf(browser === null)('X06 · impression sous Chromium', () => {
     ['lettre_quartier', renderNeighbourhoodLetter(LONG)!, 1],
     ['carte_visite', renderBusinessCard(LONG.agent!), 1],
     ['fiche', renderListingPrint(LONG)!, 2],
+    // DS083 · un texte court : une seule feuille. Et le cas le plus serré d'une feuille : tout en capitales, plus larges que prévu.
+    ['fiche', renderListingPrint(SHORT)!, 1],
+    ['fiche', renderListingPrint(TIGHT)!, 1],
   ];
   for (const [kind, html, pages] of cases) {
     it(`${kind} : ${pages} page(s), rien hors de la feuille, rien sous la carte de l’agent`, async () => {
@@ -100,6 +111,31 @@ describe.skipIf(browser === null)('X06 · impression sous Chromium', () => {
       }
     });
   }
+  it('DS083 · sur une seule feuille, même la plus serrée : la photo garde 40 mm au moins, et l’agent est au pied', async () => {
+    expect(TIGHT.payload.body!.length).toBeGreaterThan(300);
+    expect(printHeightMm(tight(fits + 20))).toBeGreaterThan(297);
+    for (const [name, input] of [['courte', SHORT], ['serrée', TIGHT]] as const) {
+      const page = await browser!.newPage();
+      try {
+        await page.setContent(renderListingPrint(input)!, { waitUntil: 'load' });
+        const seen = await page.evaluate(() => {
+          const d = (globalThis as any).document;
+          const mm = (px: number) => (px * 25.4) / 96;
+          const sheet = d.querySelector('.page').getBoundingClientRect();
+          const photo = d.querySelector('.photos li:first-child img').getBoundingClientRect();
+          const agent = d.querySelector('.agent').getBoundingClientRect();
+          return { sheets: d.querySelectorAll('.page').length, photoMm: mm(photo.height), agentFromBottomMm: mm(sheet.bottom - agent.bottom) };
+        });
+        expect(seen.sheets, name).toBe(1);
+        expect(seen.photoMm, name).toBeGreaterThanOrEqual(40);
+        expect(seen.agentFromBottomMm, name).toBeGreaterThanOrEqual(13);
+        expect(seen.agentFromBottomMm, name).toBeLessThanOrEqual(16);
+      } finally {
+        await page.close();
+      }
+    }
+  });
+
   it('ferme le navigateur', async () => {
     await browser!.close();
   });
