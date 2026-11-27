@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import { afterAll, describe, expect, it } from 'vitest';
 import { renderListingPage, type PageInput } from '../../core/src/annonces/page-bien.ts';
+import { withLegalLinks } from '../../core/src/attirer/mentions-site.ts';
 
 // DS072 · la page publique d'un bien, rendue dans Chromium. Tout est inventé : le bien, l'agent, les photos (un dessin).
 const N = ' ';
@@ -34,12 +35,13 @@ async function lancer(): Promise<Navigateur | null> {
 }
 const navigateur = await lancer();
 
-async function ouvrir(viewport: { width: number; height: number }, input: PageInput = LISTING) {
+async function ouvrir(viewport: { width: number; height: number }, input: PageInput = LISTING, site = false) {
   const page = await navigateur!.newPage({ viewport });
   await page.route('**/*', (route: any) => {
     const path = new URL(route.request().url()).pathname;
     if (path.startsWith('/medias/')) return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: DRAWING });
-    return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: renderListingPage(input) });
+    // Sur un site, la page reçoit en plus les liens des pages légales, posés à la fin [R221].
+    return route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: site ? withLegalLinks(renderListingPage(input)) : renderListingPage(input) });
   });
   await page.goto('https://site.example.test/biens/b1');
   await page.waitForSelector('.photos img');
@@ -89,6 +91,23 @@ describe('DS072 · la page du bien, dans Chromium', () => {
       const mentions = await page.evaluate(() => { const m = (globalThis as any).document.querySelector('.mentions'); const s = (globalThis as any).getComputedStyle(m); return { size: parseFloat(s.fontSize), shown: s.display !== 'none' && s.visibility === 'visible' && m.getBoundingClientRect().height > 40 }; });
       expect(mentions.shown).toBe(true);
       expect(mentions.size).toBeGreaterThanOrEqual(13);
+    } finally {
+      await page.close();
+    }
+  }, 60_000);
+
+  it.skipIf(navigateur === null)('[R221] sur un site, les liens des pages légales viennent après les gestes : ni dessous, ni par-dessus', async () => {
+    const page = await ouvrir({ width: 390, height: 844 }, LISTING, true);
+    try {
+      // En haut de page, les gestes sont au pied de l'écran et les liens légaux plus bas, hors de l'écran.
+      expect(Math.round((await box(page, '.gestes')).bottom)).toBe(844);
+      await page.evaluate(() => (globalThis as any).scrollTo(0, (globalThis as any).document.documentElement.scrollHeight));
+      const [bar, legal] = [await box(page, '.gestes'), await box(page, 'nav[aria-label="Informations légales"]')];
+      expect(legal.top).toBeGreaterThanOrEqual(bar.bottom);
+      expect(legal.bottom).toBeLessThanOrEqual(844);
+      // Chaque lien légal se touche : 24 px au moins de haut, sans rien dessus.
+      const top = await page.evaluate(() => { const a = (globalThis as any).document.querySelector('nav[aria-label="Informations légales"] a'); const r = a.getBoundingClientRect(); return (globalThis as any).document.elementFromPoint(r.left + 4, r.top + r.height / 2) === a; });
+      expect(top).toBe(true);
     } finally {
       await page.close();
     }

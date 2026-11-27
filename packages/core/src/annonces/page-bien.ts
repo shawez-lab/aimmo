@@ -77,7 +77,7 @@ h1{margin:var(--e-3) 0 var(--e-2);max-width:22ch}
 .agent{border-top:1px solid var(--trait);padding-top:var(--e-5);margin-top:var(--e-6)}.agent a{font-weight:600}
 .agent .nom{margin:0;font:400 var(--t-xl)/1.2 var(--police-titre)}
 .contact{display:contents}
-.gestes{position:sticky;bottom:0;display:flex;gap:var(--e-2);margin:var(--e-5) calc(-1 * var(--e-4)) calc(-1 * var(--e-6));padding:var(--e-3) var(--e-4) max(var(--e-3),env(safe-area-inset-bottom));background:var(--papier);border-top:1px solid var(--trait)}
+.gestes{position:sticky;bottom:0;display:flex;gap:var(--e-2);margin:var(--e-5) calc(-1 * var(--e-4)) 0;padding:var(--e-3) var(--e-4) max(var(--e-3),env(safe-area-inset-bottom));background:var(--papier);border-top:1px solid var(--trait)}
 .gestes .appel{flex:1 1 0;margin:0}.gestes .second{flex:0 1 auto;background:transparent;color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
 .retire{margin:var(--e-7) 0;font-size:var(--t-l);color:var(--doux)}
 @media (min-width:60rem){.photos{display:grid;grid-auto-flow:column;grid-template-rows:1fr 1fr;grid-auto-columns:calc(25% - var(--e-2) * .75);height:min(64vh,36rem);margin:var(--e-4) 0 0;padding:0 0 var(--e-2);scroll-snap-type:x proximity;scroll-padding:0}
