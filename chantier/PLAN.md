@@ -8434,7 +8434,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS076 · Le jargon de la preuve passe avant le contenu
-- Statut : à faire
+- Statut : en cours
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS076 (mineur, site public, microcopie, effort S), endroit : accueil du site, « Les derniers biens »
 - Constat de l’audit : la section commence par « Mandats vérifiés le … Un bien sans mandat en vigueur à cette heure n'apparaît pas ici. »

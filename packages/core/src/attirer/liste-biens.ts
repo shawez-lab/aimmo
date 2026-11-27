@@ -169,7 +169,6 @@ export function renderListingsPage(input: ListingsPageInput): string {
   return (
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="index"><meta name="theme-color" content="${THEME_COLOR}"><title>${escapeHtml(pageTitle)}</title><style>${CSS}</style></head>` +
     `<body><header class="tete"><p class="marque">AIMMO</p><a href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div><main><h1>${escapeHtml(pageTitle)}</h1>${publicSearchEntry()}` +
-    `<p class="controle">Mandats vérifiés le ${when(input.checkedAt)}. Un bien sans mandat en vigueur à cette heure n'apparaît pas ici.</p>` +
-    `${filters}${list}${pages}<p class="doux">Annonces des agents immobiliers du réseau AIMMO. Les adresses exactes ne sont jamais publiées.</p></main></body></html>`
+    `${filters}${list}<p class="controle">Mandats vérifiés le ${when(input.checkedAt)} : seuls les biens sous mandat en vigueur sont montrés.</p>${pages}<p class="doux">Annonces des agents immobiliers du réseau AIMMO. Les adresses exactes ne sont jamais publiées.</p></main></body></html>`
   );
 }
