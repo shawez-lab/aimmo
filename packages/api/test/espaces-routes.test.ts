@@ -249,16 +249,50 @@ describeWithSqlite('EC06 · routes et page de l’espace', () => {
     const visible = home.text.replace(/<details class="preuve">[\s\S]*?<\/details>/g, '');
     for (const source of ['fiche du bien', 'mandat en vigueur', 'agenda du bien', 'compte rendu validé', 'dossier de vente']) expect(visible, source).not.toContain(source);
     // Chaque bloc a sa preuve, regroupée par source, avec la date de chacune.
-    const proofs = [...home.text.matchAll(/<details class="preuve"><summary>D’où viennent ces informations \?<\/summary><ul>([\s\S]*?)<\/ul><\/details>/g)].map((m) => m[1]);
+    const proofs = [...home.text.matchAll(/<details class="preuve"><summary>D’où viennent ces informations \?<\/summary>([\s\S]*?)<\/details>/g)].map((m) => m[1]);
     expect(proofs).toEqual([
-      '<li>Statut : fiche du bien, 2 mai 2027 à 11 h 00</li><li>Prix du mandat : mandat en vigueur, 1 mai 2027 à 12 h 00</li>',
-      '<li>Visite du 5 juin 2027 à 16 h 00 : agenda du bien, 5 juin 2027 à 16 h 00</li><li>Visite du 5 juin 2027 à 16 h 00 : compte rendu validé par l’agent, 5 juin 2027 à 20 h 00</li>',
-      '<li>Mandat de vente : dossier de vente, 1 mai 2027 à 12 h 30</li>',
+      // Les faits du bien : une preuve par champ.
+      '<ul><li>Statut : fiche du bien, 2 mai 2027 à 11 h 00</li><li>Prix du mandat : mandat en vigueur, 1 mai 2027 à 12 h 00</li></ul>',
+      // Une liste : une preuve par ligne, sous le numéro de la ligne, chaque champ nommé.
+      '<ol><li>Date, état : agenda du bien, 5 juin 2027 à 16 h 00 ; compte rendu : compte rendu validé par l’agent, 5 juin 2027 à 20 h 00</li></ol>',
+      '<ol><li>Signature : dossier de vente, 1 mai 2027 à 12 h 30</li></ol>',
     ]);
+    // Les lignes d'une liste sont numérotées comme leurs preuves.
+    expect(home.text).toContain('<h3>Visites</h3><ol><li>5 juin 2027 à 16 h 00 · faite<br>');
     // Une donnée absente reste dite, sans preuve à montrer.
     expect(home.text).toContain('<dt>Acte au plus tôt</dt><dd><span class="doux">non communiquée</span></dd>');
     // Le relevé prouvé reste entier : il part des mêmes données, sources et dates comprises [R164].
     expect(home.text).toContain('Télécharger le relevé prouvé de mon espace');
+  });
+
+  it('[R163] DS079 · chaque valeur garde sa propre preuve : deux offres du même montant, un état changé après la réception', async () => {
+    const t = await setup();
+    const c = await t.client('vendeur');
+    t.s.vendeur.offersOf = async () => [
+      { id: 'o1', receivedAt: '2027-06-06T08:00:00.000Z', amountEur: 200_000, netSellerEur: 190_000, conditions: ['prêt'], validUntil: '2027-06-20', state: 'refusée', stateAt: '2027-06-08T09:30:00.000Z', buyer: null },
+      { id: 'o2', receivedAt: '2027-06-07T08:00:00.000Z', amountEur: 200_000, netSellerEur: 190_000, conditions: [], validUntil: '2027-06-21', state: 'reçue', stateAt: '2027-06-07T08:00:00.000Z', buyer: null },
+    ];
+    const home = await t.pub('GET', ESPACE_PATH, { cookie: await t.enter(c.token) });
+    const offers = /<h3>Offres<\/h3><ol>([\s\S]*?)<\/ol><details class="preuve"><summary>[^<]*<\/summary><ol>([\s\S]*?)<\/ol><\/details>/.exec(home.text)!;
+    const lines = offers[1]!.split('</li>').filter(Boolean);
+    const proofs = offers[2]!.split('</li>').filter(Boolean).map((p) => p.replace('<li>', ''));
+    // Deux lignes, deux preuves, dans le même ordre : la preuve n° 1 est celle de la ligne n° 1.
+    expect(lines).toHaveLength(2);
+    expect(proofs).toHaveLength(2);
+    expect(lines[0]).toContain('refusée');
+    expect(lines[1]).toContain('reçue');
+    // L'état de la première offre a changé deux jours après sa réception : sa preuve le dit à part, sous son nom.
+    expect(proofs[0]).toMatch(/état : registre des offres, 8 juin 2027 à 11 h 30/);
+    expect(proofs[0]).toMatch(/[Mm]ontant[^:;]* : registre des offres, 6 juin 2027 à 10 h 00/);
+    expect(proofs[0]).not.toMatch(/état[^;]*6 juin 2027/);
+    // Le net vendeur ne vient pas du registre des offres : il a sa source à lui.
+    const net = /net vendeur[^:;]* : ([^;<]+)/.exec(proofs[0]!)![1]!;
+    expect(net).not.toContain('8 juin 2027');
+    // La seconde offre, de même montant, a ses preuves à elle : datées de sa réception.
+    expect(proofs[1]).toMatch(/registre des offres, 7 juin 2027 à 10 h 00/);
+    expect(proofs[1]).not.toContain('6 juin 2027');
+    // Chaque champ montré est nommé dans la preuve de sa ligne.
+    for (const p of proofs) for (const field of ['ontant', 'net vendeur', 'état', 'réception', 'validité']) expect(p, field).toContain(field);
   });
 
   it('DS080, DS081, DS082 · le client lit son bien, les listes vides tiennent en une phrase, et aucun bouton plein ne va à la déconnexion', async () => {

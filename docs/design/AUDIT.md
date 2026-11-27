@@ -566,7 +566,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Preuve : `espace-client.jpg` : « 210 000 € annonce publiée, 20 mai 2027 à 10 h 00 · 64 annonce publiée, 20 mai 2027 à 10 h 00 m² ».
 - Principe : la preuve se donne à qui la demande.
 - Solution : la valeur seule, et « D'où vient ce chiffre ? » qui ouvre la source et la date. Le relevé prouvé reste téléchargeable.
-- Suite : corrigé le 2026-11-27 : une valeur se lit seule ; sa source et sa date sont juste dessous, derrière « D'où viennent ces informations ? », regroupées par source, pour chaque bloc [R163]. Aucune ne manque, et le relevé prouvé reste entier. Avant et après : `captures/avant-apres/DS079-espace-du-vendeur.jpg`.
+- Suite : corrigé le 2026-11-27 : une valeur se lit seule ; sa source et sa date sont juste dessous, derrière « D'où viennent ces informations ? », pour chaque bloc [R163] : chaque champ y est nommé avec sa source et sa date, et dans une liste les preuves sont numérotées comme les lignes. Aucune ne manque, et le relevé prouvé reste entier. Avant et après : `captures/avant-apres/DS079-espace-du-vendeur.jpg`.
 
 #### DS080 · Le vendeur voit « REF-V1 · Dijon », pas sa maison
 - Gravité : majeur · Catégorie : espace client · Effort : M
