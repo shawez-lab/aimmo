@@ -7928,7 +7928,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS013 · Un bien n'a pas d'écran à lui
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : branche voie3/DS013 (l'écran d'un bien, une ligne par bien dans la journée, un seul « Retour ») ; proposée après la fusion de #821, même fichier.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS013 (majeur, navigation, effort L), endroit : « Mettre en vente », « Mandat », « Offres », « Avis de valeur », « Studio », « Dossier de vente »
 - Constat de l’audit : six écrans séparés, ouverts par cinq boutons pleins de même poids sur l'accueil, chacun avec son « Retour à ma journée ».
@@ -8012,7 +8013,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS023 · Le bien s'appelle « B-E6B8BB51 »
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : branche voie3/DS013 (l'écran d'un bien, une ligne par bien dans la journée, un seul « Retour ») ; proposée après la fusion de #821, même fichier.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS023 (majeur, hiérarchie, microcopie, effort M), endroit : titres de six écrans, carte de l'accueil
 - Constat de l’audit : `appli-mandat-offres-avis.jpg`. 105 occurrences dans les plans des écrans. Le point médian passe seul en début de ligne : « Avis de valeur / · B-E6B8BB51 ».
@@ -8126,7 +8128,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS037 · « Retour » a trois formes
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : branche voie3/DS013 (l'écran d'un bien, une ligne par bien dans la journée, un seul « Retour ») ; proposée après la fusion de #821, même fichier.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS037 (majeur, composants, effort S), endroit : tous les écrans
 - Constat de l’audit : lien fléché « Retour à ma journée » (mandat), bouton plein « Retour à ma journée » (fiche client), « Ma journée d'agent » (réseau), « Retour » (Fiche Google).
@@ -8158,7 +8161,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS041 · Une liste ne se touche que par son bouton
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : branche voie3/DS013 (l'écran d'un bien, une ligne par bien dans la journée, un seul « Retour ») ; proposée après la fusion de #821, même fichier.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS041 (mineur, composants, effort S), endroit : contacts chauds, rendez-vous, biens
 - Constat de l’audit : `appli-accueil-portefeuille-charge.jpg` : chaque ligne fait 185 px, dont un bouton « Voir la fiche » plein.
