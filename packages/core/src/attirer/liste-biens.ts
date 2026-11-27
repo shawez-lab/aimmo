@@ -113,10 +113,12 @@ export const SITE_CSS =
   LIEN_CSS +
   '.tete{display:flex;align-items:center;justify-content:space-between;gap:var(--e-4);padding:var(--e-4)}' +
   'main{max-width:72rem;margin:0 auto;padding:var(--e-5) var(--e-4) var(--e-8)}' +
-  '.controle{border-left:.25rem solid var(--accent);padding-left:var(--e-3)}' +
-  '.biens{display:grid;grid-template-columns:repeat(auto-fill,minmax(17rem,1fr));gap:var(--e-5);margin:var(--e-5) 0;padding:0;list-style:none}' +
-  '.biens li{position:relative}.biens a{display:block}.biens img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--trait);border-radius:var(--r-m)}' +
-  '.biens strong{display:block;margin-top:var(--e-2)}.biens .prix{display:block;font-weight:700}.biens small{display:block;margin-top:var(--e-1)}' +
+  '.controle{font-size:var(--t-s);color:var(--doux)}' +
+  // DS071 · la carte d'un bien : la photo d'abord, le titre dans le caractère des titres, le prix, puis la commune et les mentions.
+  '.biens{display:grid;grid-template-columns:repeat(auto-fill,minmax(17rem,1fr));gap:var(--e-6) var(--e-5);margin:var(--e-5) 0;padding:0;list-style:none}' +
+  '.biens li{position:relative}.biens a{display:block;text-decoration:none}.biens img,.biens .sans{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--accent-doux)}' +
+  '.biens strong{display:block;margin-top:var(--e-3);font:400 var(--t-l)/1.25 var(--police-titre)}.biens a:hover strong{text-decoration:underline}' +
+  '.biens .prix{display:block;margin-top:var(--e-1);font-weight:500}.biens small{display:block;margin-top:var(--e-2);font-size:var(--t-xs)}' +
   '.virtuel{position:absolute;left:var(--e-2);top:var(--e-2);background:var(--encre);color:var(--papier);font-size:var(--t-s);padding:0 var(--e-2)}';
 
 const CSS =
@@ -143,7 +145,7 @@ export function listingCard(l: PublishedListing): string {
   // Une photo d'aménagement virtuel porte sa mention sur l'image [R48].
   const photo = l.photo
     ? `<img src="${escapeHtml(mediaUrl(l.photo.ref))}" alt="${l.photo.overlay ? 'Photo du bien, aménagement virtuel' : 'Photo du bien'}" loading="lazy" decoding="async">${l.photo.overlay ? `<span class="virtuel">${escapeHtml(l.photo.overlay)}</span>` : ''}`
-    : '';
+    : '<span class="sans"></span>';
   return `<li><a href="/biens/${encodeURIComponent(l.propertyId)}">${photo}<strong>${escapeHtml(l.title)}</strong><span class="prix">${escapeHtml(euros(l.priceEur))}</span></a><span class="doux">${l.city ? `${escapeHtml(l.city)} · ` : ''}${STATE_LABEL[l.state]}</span><small class="doux">${escapeHtml(l.mentions)}</small></li>`;
 }
 
