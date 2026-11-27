@@ -7859,8 +7859,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS005 · Aucune navigation permanente
-- Statut : en cours (voie 3)
-- Suivi : proposition #812, avec DS006, DS011, DS065 et DS066 (barre d'onglets, écran « Outils » en index, « Se déconnecter » au pied de l'écran). La journée bornée (DS001, DS002, DS055) suit sur la branche `voie3/DS001`.
+- Statut : fait (2026-11-27)
+- Suivi : fusionnée (#812, `787d4320`) : une barre de trois onglets pour l'agent (Journée, Outils, Chiffres), en bas sur téléphone, en colonne à gauche sur ordinateur. Clients et Biens auront leur onglet avec leur liste (DS003, DS004). Codex : 2 P2 (historique du navigateur), corrigés dans la proposition suivante.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS005 (majeur, navigation, effort L), endroit : toute l'application
 - Constat de l’audit : aucun élément `nav`. Le seul lien entre écrans est « Retour à ma journée ». Passer du mandat aux offres du même bien demande : retour, défilement jusqu'au bien, « Offres ».
@@ -7868,7 +7868,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS006 · « Se déconnecter » occupe la meilleure place
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-27)
+- Suivi : fusionnée (#812) : l'en-tête ne porte plus que la marque ; « Se déconnecter » est au pied de l'écran de départ de chaque rôle.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS006 (majeur, navigation, effort S), endroit : en-tête de chaque écran — `packages/api/app/fichiers.ts` l. 68
 - Constat de l’audit : toutes les captures. L'en-tête ne porte que la marque et ce bouton.
@@ -7908,7 +7909,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS011 · Les outils secondaires pèsent autant que le cœur du métier
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-27)
+- Suivi : fusionnée (#812) : les outils ont leur onglet, un index d'une rangée par outil en trois groupes, sans phrase permanente ; 1,6 écran.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS011 (majeur, hiérarchie, effort M), endroit : accueil
 - Constat de l’audit : remises, panneaux, clés, notifications, actualités, intégration, Fiche Google, locations, investisseurs, commerces : dix blocs sur 23, chacun avec une phrase d'explication permanente.
@@ -8352,7 +8354,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS065 · Une cible de 40 px dans l'en-tête
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-27)
+- Suivi : fusionnée (#812) : le bouton a quitté l'en-tête et fait 48 px.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS065 (mineur, accessibilité, effort S), endroit : « Se déconnecter » — `fichiers.ts` l. 248
 - Constat de l’audit : 40 px de haut, pour 48 px promis par le système. WCAG 2.2 demande 24 px au moins : la règle est tenue, la promesse du système ne l'est pas.
@@ -8360,7 +8363,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS066 · Pas de lien d'évitement ni de repère de navigation
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-27)
+- Suivi : fusionnée (#812) : repère `nav` avant le contenu, et « Aller au contenu » au clavier.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS066 (mineur, accessibilité, effort S), endroit : toute l'application
 - Constat de l’audit : Pas de lien d'évitement ni de repère de navigation.
@@ -8472,7 +8476,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Suivi : proposition #801. « Statut : available » venait du jeu de test des routes, pas du produit (la vraie source disait déjà « en vente »). Les vrais codes montrés étaient ceux des visites, des signatures, des pièces de l’acquéreur et de la sorte du bien : corrigés dans la vue, donc aussi dans le relevé prouvé.
 
 ### DS079 · La source de chaque chiffre coupe la phrase
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : proposition #815 (`packages/api/src/espaces.ts`).
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS079 (bloquant, espace client, effort M), endroit : `packages/api/src/espaces.ts`
 - Constat de l’audit : `espace-client.jpg` : « 210 000 € annonce publiée, 20 mai 2027 à 10 h 00 · 64 annonce publiée, 20 mai 2027 à 10 h 00 m² ».
@@ -8480,7 +8485,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS080 · Le vendeur voit « REF-V1 · Dijon », pas sa maison
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : proposition #815 (`packages/api/src/espaces.ts`).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS080 (majeur, espace client, effort M), endroit : `packages/api/src/espaces.ts`
 - Constat de l’audit : Le vendeur voit « REF-V1 · Dijon », pas sa maison.
@@ -8488,7 +8494,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS081 · Le seul bouton plein est « Me déconnecter »
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : proposition #815 (`packages/api/src/espaces.ts`).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS081 (majeur, espace client, effort S), endroit : `packages/api/src/espaces.ts`
 - Constat de l’audit : `espace-client.jpg`.
