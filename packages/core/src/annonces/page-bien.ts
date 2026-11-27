@@ -103,8 +103,8 @@ export function agentBlock(agent: AgentCard | null): string {
   if (!agent) return '';
   const name = escapeHtml(`${agent.firstName} ${agent.lastName}`);
   const parts = [`<p><strong>${name}</strong>, ${escapeHtml(agent.title ?? DEFAULT_PROFESSIONAL_TITLE)}</p>`];
-  if (agent.phone && PHONE.test(agent.phone)) parts.push(`<p><a href="tel:${escapeHtml(agent.phone.replace(/[ .]/g, ''))}">${escapeHtml(agent.phone)}</a></p>`);
-  if (agent.email && EMAIL.test(agent.email)) parts.push(`<p><a href="mailto:${escapeHtml(agent.email)}">${escapeHtml(agent.email)}</a></p>`);
+  if (agent.phone && PHONE.test(agent.phone)) parts.push(`<p><a class="lien" href="tel:${escapeHtml(agent.phone.replace(/[ .]/g, ''))}">${escapeHtml(agent.phone)}</a></p>`);
+  if (agent.email && EMAIL.test(agent.email)) parts.push(`<p><a class="lien" href="mailto:${escapeHtml(agent.email)}">${escapeHtml(agent.email)}</a></p>`);
   return `<section class="agent" aria-label="Votre agent">${parts.join('')}</section>`;
 }
 

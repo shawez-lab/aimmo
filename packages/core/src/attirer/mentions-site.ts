@@ -136,7 +136,7 @@ const CSS = `${DESIGN_CSS}.tete{display:flex;align-items:center;justify-content:
 function shell(title: string, body: string): string {
   return (
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="index"><meta name="theme-color" content="${THEME_COLOR}"><title>${escapeHtml(title)}</title><style>${CSS}</style></head>` +
-    `<body><header class="tete"><p class="marque">AIMMO</p><a href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div><main><h1>${escapeHtml(title)}</h1>${body}</main></body></html>`
+    `<body><header class="tete"><p class="marque">AIMMO</p><a class="lien" href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div><main><h1>${escapeHtml(title)}</h1>${body}</main></body></html>`
   );
 }
 

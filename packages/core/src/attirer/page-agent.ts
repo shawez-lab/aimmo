@@ -107,7 +107,7 @@ export function renderAgentPage(input: AgentPageInput, check?: { at: Date; more:
   const quality = input.title ?? DEFAULT_PROFESSIONAL_TITLE;
   const title = `${name}, ${quality}`;
   const head = `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="index"><meta name="theme-color" content="${THEME_COLOR}"><title>${escapeHtml(title)}</title><style>${CSS}</style></head>`;
-  const brand = `<header class="tete"><p class="marque">AIMMO</p><a href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div>`;
+  const brand = `<header class="tete"><p class="marque">AIMMO</p><a class="lien" href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div>`;
   const contact: string[] = [];
   if (input.phone && PHONE.test(input.phone)) contact.push(`<a href="tel:${escapeHtml(input.phone.replace(/[ .]/g, ''))}">Appeler ${escapeHtml(input.phone)}</a>`);
   if (input.email && EMAIL.test(input.email)) contact.push(`<a href="mailto:${escapeHtml(input.email)}">Écrire à ${escapeHtml(input.firstName)}</a>`);

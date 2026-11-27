@@ -126,7 +126,7 @@ const JETONS = [
 
 /**
  * La base commune de tout écran. Les classes partagées : `.marque` (le nom AIMMO et son losange), `.bloc` (une carte),
- * `.liste`, `.doux`, `.etat`, `.pastille`, `.secondaire`, `.retour`, `.danger`, `.case`, `.alerte`, `.notes` (une
+ * `.liste`, `.lien` (un lien seul sur sa ligne, à la taille du doigt), `.doux`, `.etat`, `.pastille`, `.secondaire`, `.retour`, `.danger`, `.case`, `.alerte`, `.notes` (une
  * échelle de choix), `.carte` (le cadre d'une page publique courte).
  */
 export const DESIGN_CSS =
@@ -139,6 +139,8 @@ export const DESIGN_CSS =
   'h1{font-size:var(--t-xxl)}h2{font-size:var(--t-xl)}h3{font-size:var(--t-l)}h4{font-size:var(--t-m);font-family:var(--police-texte);letter-spacing:0}' +
   'p{margin:0 0 var(--e-3)}' +
   'a{color:var(--accent);text-underline-offset:.2em;text-decoration-thickness:1px}a:hover{text-decoration-thickness:2px}' +
+  // Un lien seul sur sa ligne se touche du doigt : la cible fait la hauteur d'un bouton [DS077].
+  '.lien{display:inline-flex;align-items:center;min-height:var(--cible);min-width:var(--cible)}' +
   'strong{font-weight:650}' +
   'img{max-width:100%;height:auto;display:block}' +
   '.doux,.etat{color:var(--doux);font-size:var(--t-s)}' +

@@ -257,7 +257,7 @@ export function candidaturePage(values: FormValues = {}, error: { message: strin
   return `<p class="marque">${escape(t.kicker)}</p><div class="frise" aria-hidden="true"></div>
 <h1>${escape(t.title)}</h1>
 <p class="chapeau">${escape(t.lede)}</p>
-<p><a href="#candidater">Déposer ma candidature</a></p>
+<p><a class="lien" href="#candidater">Déposer ma candidature</a></p>
 <h2><small>Ce que vous trouvez</small>Le métier, sans l’administratif</h2>
 <dl class="offre">${t.finds.map(([k, v]) => `<div><dt>${escape(k)}</dt><dd>${escape(v)}</dd></div>`).join('')}</dl>
 <h2><small>Ce que vous payez</small>Rien pour travailler avec le système</h2>

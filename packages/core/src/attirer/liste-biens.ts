@@ -121,7 +121,7 @@ export const SITE_CSS =
 const CSS =
   SITE_CSS +
   PUBLIC_SEARCH_ENTRY_CSS +
-  '.communes{display:flex;flex-wrap:wrap;gap:var(--e-2) var(--e-4);padding:0;list-style:none}.communes [aria-current]{font-weight:700}' +
+  '.communes{display:flex;flex-wrap:wrap;gap:var(--e-2) var(--e-4);padding:0;list-style:none}.communes [aria-current]{font-weight:700}.communes a,.suite a{display:inline-flex;align-items:center;min-height:var(--cible);min-width:var(--cible)}' +
   '.suite{display:flex;justify-content:space-between;gap:var(--e-4)}';
 
 /** La date et l'heure d'un contrôle, à Paris. */
@@ -168,7 +168,7 @@ export function renderListingsPage(input: ListingsPageInput): string {
   const pages = query.page > 1 || input.hasNext ? `<nav class="suite" aria-label="Pages">${previous}${next}</nav>` : '';
   return (
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="index"><meta name="theme-color" content="${THEME_COLOR}"><title>${escapeHtml(pageTitle)}</title><style>${CSS}</style></head>` +
-    `<body><header class="tete"><p class="marque">AIMMO</p><a href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div><main><h1>${escapeHtml(pageTitle)}</h1>${publicSearchEntry()}` +
+    `<body><header class="tete"><p class="marque">AIMMO</p><a class="lien" href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div><main><h1>${escapeHtml(pageTitle)}</h1>${publicSearchEntry()}` +
     `${filters}${list}<p class="controle">Mandats vérifiés le ${when(input.checkedAt)} : seuls les biens sous mandat en vigueur sont montrés.</p>${pages}<p class="doux">Annonces des agents immobiliers du réseau AIMMO. Les adresses exactes ne sont jamais publiées.</p></main></body></html>`
   );
 }

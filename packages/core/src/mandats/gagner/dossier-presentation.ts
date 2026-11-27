@@ -376,7 +376,7 @@ export function renderDossier(d: Dossier, agentName: string): string {
     )
     .join('');
   const reviews = d.reviews.count === 0 ? '<p>Aucun avis sur la période.</p>' : `<p>${d.reviews.count} avis, note moyenne ${String(d.reviews.average).replace('.', ',')} sur 5.</p><ul class="avis">${d.reviews.answers.map((a) => `<li>${escape(frenchDate(a.day))} : ${a.score} sur 5</li>`).join('')}</ul>`;
-  const link = d.reviews.link ? `<p><a href="${escape(d.reviews.link)}" rel="noopener">Tous les avis publics</a></p>` : '';
+  const link = d.reviews.link ? `<p><a class="lien" href="${escape(d.reviews.link)}" rel="noopener">Tous les avis publics</a></p>` : '';
   return `<!doctype html>
 <html lang="fr">
 <head>

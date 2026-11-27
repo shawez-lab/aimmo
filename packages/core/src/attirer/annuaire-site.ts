@@ -24,12 +24,12 @@ export function parseDirectoryPage(params: URLSearchParams): number | null {
   return /^[1-9]\d{0,3}$/.test(page) ? Number(page) : null;
 }
 
-const CSS = SITE_CSS + '.suite{display:flex;justify-content:space-between;gap:var(--e-4)}.annuaire{display:grid;gap:var(--e-4);margin:var(--e-5) 0;padding:0;list-style:none;max-width:46rem}.annuaire a{font-weight:700}.annuaire p{margin:var(--e-1) 0 0}';
+const CSS = SITE_CSS + '.suite{display:flex;justify-content:space-between;gap:var(--e-4)}.annuaire{display:grid;gap:var(--e-4);margin:var(--e-5) 0;padding:0;list-style:none;max-width:46rem}.annuaire a,.suite a{display:inline-flex;align-items:center;min-height:var(--cible);min-width:var(--cible)}.annuaire a{font-weight:700}.annuaire p{margin:var(--e-1) 0 0}';
 
 function page(title: string, intro: string, body: string): string {
   return (
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="referrer" content="no-referrer"><meta name="robots" content="index"><meta name="theme-color" content="${THEME_COLOR}"><title>${escapeHtml(title)}</title><style>${CSS}</style></head>` +
-    `<body><header class="tete"><p class="marque">AIMMO</p><a href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div><main><h1>${escapeHtml(title)}</h1><p>${escapeHtml(intro)}</p>${body}</main></body></html>`
+    `<body><header class="tete"><p class="marque">AIMMO</p><a class="lien" href="/">Accueil</a></header><div class="frise" aria-hidden="true"></div><main><h1>${escapeHtml(title)}</h1><p>${escapeHtml(intro)}</p>${body}</main></body></html>`
   );
 }
 
