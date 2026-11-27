@@ -52,8 +52,8 @@ const DOMAIN_NAMES: Record<string, string> = { ...Object.fromEntries(CERTIFIED_D
  * `connect-src 'self'`), jamais une adresse extérieure. Le Worker les sert tels quels (`src/agent-app.ts`).
  */
 /**
- * DS069 · l'écran de la direction, servi à part (`/app/reseau.html`) : un agent ne le télécharge plus. La coquille le
- * pose dans `#reseau` avant de brancher quoi que ce soit, seulement sur un appareil où la direction est entrée.
+ * DS069 · l'écran de la direction. Il n'est plus dans la page de l'agent (`/app/`), qui ne le télécharge donc plus :
+ * il est dans la page de la direction (`/app/reseau`, `RESEAU_PAGE_HTML`), la même page avec cet écran en plus.
  */
 export const RESEAU_HTML = `<button id="vers-journee" type="button" class="retour" hidden>Ma journée d’agent</button>
 <h2 id="reseau-titre">Le réseau</h2>
@@ -246,6 +246,9 @@ ${EUROS_ENTRY_HTML}${RAPPORT_AGENT_HTML}</section>
  * La feuille de l'application : la base du système de design d'AIMMO (Z03), puis la mise en page de ses écrans, en
  * jetons seulement [R201].
  */
+/** DS069 · la page de la direction : celle de l'agent, avec l'écran du réseau posé à sa place. */
+export const RESEAU_PAGE_HTML = INDEX_HTML.replace('<section id="reseau" hidden></section>', () => `<section id="reseau" hidden>\n${RESEAU_HTML}</section>`);
+
 export const APP_CSS = DESIGN_CSS + `
 body { min-height: 100dvh; }
 .tete { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: var(--e-4); padding: max(var(--e-3), env(safe-area-inset-top)) var(--e-4) var(--e-3); background: var(--papier); }
@@ -317,11 +320,11 @@ export const APP_JS = `'use strict';
   var KEY_DIRECTION = 'aimmo.cle.direction';
   // Le lien d'invitation (Z02) : le jeton suit « # », que le navigateur n'envoie jamais au serveur.
   var INVITATION = /^#invitation=([A-Za-z0-9_-]{43})$/;
-  // DS069 · l'écran de la direction arrive à part, pour elle seule. Tant qu'il n'est pas dans la page, un de ses
-  // éléments est un fantôme hors de la page : les branchements du démarrage et les remises à zéro ne cassent rien.
+  // DS069 · l'écran de la direction n'est que dans sa page (/app/reseau). Dans celle de l'agent, un de ses éléments
+  // est un fantôme hors de la page : les branchements du démarrage et les remises à zéro ne cassent rien.
   var KEY_RESEAU = 'aimmo.reseau';
+  var RESEAU_PATH = '/app/reseau';
   var ghosts = {};
-  var reseauMissed = false;
   function reseauHere() { return !!document.getElementById('reseau-corps'); }
   var $ = function (id) { return document.getElementById(id) || (reseauHere() ? null : ghosts[id] || (ghosts[id] = document.createElement('div'))); };
   function readKey() { try { return localStorage.getItem(KEY); } catch (e) { return null; } }
@@ -2264,12 +2267,10 @@ ${LOUER_JS}
       }
       if (me.role === 'direction') {
         if (!reseauHere()) {
-          // Première entrée de la direction sur cet appareil : on le note et la page repart, avec son écran cette fois.
-          try { localStorage.setItem(KEY_RESEAU, '1'); } catch (e) { /* sans mémoire */ }
-          if (!reseauMissed) { location.reload(); return false; }
-          $('erreur').textContent = 'Pas de réseau. Réessayez dans un moment.';
-          $('erreur').hidden = false;
-          show('connexion');
+          // La direction entre depuis la page de l'agent : l'appareil le note et ouvre sa page, qui porte son écran.
+          // Si ce n'est pas la clé d'entrée de l'appareil (« Voir le réseau »), le geste est gardé : sa page y mène.
+          try { localStorage.setItem(KEY_RESEAU, key === readKey() ? '1' : 'ouvrir'); } catch (e) { /* sans mémoire */ }
+          location.replace(RESEAU_PATH);
           return false;
         }
         $('erreur').hidden = true;
@@ -2451,6 +2452,8 @@ ${LOUER_JS}
       refuse('Lien d’invitation incomplet. Ouvrez votre lien d’accès en entier.');
     } else {
       var key = readKey();
+      // DS069 · la direction avait demandé son écran depuis la page de l'agent : elle y arrive, sans second geste.
+      try { if (localStorage.getItem(KEY_RESEAU) === 'ouvrir') { localStorage.setItem(KEY_RESEAU, '1'); key = readDirectionKey() || key; } } catch (e) { /* sans mémoire */ }
       if (key) enter(key); else show('connexion');
     }
     var offline = 'Cet appareil ne garde pas l’application : elle ne s’ouvrira qu’avec du réseau.';
@@ -2461,10 +2464,10 @@ ${LOUER_JS}
     var want = false;
     try { want = !!(localStorage.getItem(KEY_RESEAU) || localStorage.getItem(KEY_DIRECTION)); } catch (e) { /* sans mémoire */ }
     if (!want || reseauHere()) return boot();
-    // L'écran de la direction d'abord, les branchements ensuite : ils trouvent ses vrais boutons.
-    return fetch('/app/reseau.html', { credentials: 'omit', referrerPolicy: 'no-referrer' }).then(function (r) { return r.ok ? r.text() : ''; }).then(function (html) {
-      if (html) document.getElementById('reseau').innerHTML = html; else reseauMissed = true;
-    }, function () { reseauMissed = true; }).then(boot);
+    // L'appareil de la direction ouvre sa page. Sans réseau, il garde celle-ci : la journée et le mode sans réseau tiennent.
+    return fetch('/app/reseau', { method: 'HEAD', credentials: 'omit', referrerPolicy: 'no-referrer' }).then(function (r) {
+      if (r.ok) location.replace(RESEAU_PATH + (location.hash || '')); else boot();
+    }, function () { boot(); });
   });
 })();
 `;

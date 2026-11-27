@@ -94,8 +94,10 @@ describe('DS064 · le focus va au titre du nouvel écran', () => {
 
   it('chaque écran a un titre de niveau 2 que le focus rejoint, dans l’écran lui-même', () => {
     expect(SCREENS.length).toBeGreaterThan(20);
-    const ids = pageIds(HTML);
-    const starts = SCREENS.map((s) => HTML.indexOf(`<section id="${s}"`));
+    // DS069 : la page de la direction porte tous les écrans, celui du réseau compris.
+    const FULL = AGENT_APP_FILES['/app/reseau']!;
+    const ids = pageIds(FULL);
+    const starts = SCREENS.map((s) => FULL.indexOf(`<section id="${s}"`));
     for (const [i, s] of SCREENS.entries()) {
       // L'attente n'est qu'une ligne « Chargement… », sans écran ni titre ; l'écran sans réseau dessine son titre lui-même.
       if (s === 'attente') continue;
@@ -106,8 +108,8 @@ describe('DS064 · le focus va au titre du nouvel écran', () => {
       expect(starts[i], s).toBeGreaterThanOrEqual(0);
       expect(ids, s).toContain(titleOf(s));
       // Le titre est le premier h2 de l'écran, avant l'écran suivant.
-      const next = Math.min(...starts.filter((x) => x > starts[i]!), HTML.length);
-      const first = HTML.slice(starts[i]!, next).match(/<h2\b[^>]*>/)?.[0];
+      const next = Math.min(...starts.filter((x) => x > starts[i]!), FULL.length);
+      const first = FULL.slice(starts[i]!, next).match(/<h2\b[^>]*>/)?.[0];
       expect(first, s).toBe(`<h2 id="${titleOf(s)}">`);
     }
   });
