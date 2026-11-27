@@ -34,11 +34,7 @@ export const RECLAMATIONS_REFUSALS = Object.freeze({
   unexpected_field: 'Cette lecture n’est pas lisible.',
 });
 
-/** Le bloc de la fiche, posé dans le script de l'application par le chargeur commun : le moins possible [R201]. */
-export const RECLAMATIONS_JS = `
-  function reclamationsBlock(personId) { return lazyBlock('Réclamations', '/app/reclamations.js', 'AIMMO_RECLAMATIONS', personId); }
-`;
-
+/** Le bloc de la fiche n'est plus posé dans l'application : la fiche servie à part (`/app/fiche.js`) le demande au chargeur commun (DS010). */
 /** Le script servi à part. Il ne lit et n'écrit que les routes des réclamations [R16]. */
 export const RECLAMATIONS_SCRIPT = `'use strict';
 globalThis.AIMMO_RECLAMATIONS = function (t) {

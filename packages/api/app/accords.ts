@@ -7,7 +7,8 @@ import { AGENT_CONSENT_LABELS } from '@aimmo/core';
  * canal et jour sont à choisir à chaque fois : rien de présélectionné ne peut rouvrir un accord par distraction. L'écran
  * envoie le jour seul : l'heure est celle du serveur, jamais celle du téléphone. Un refus qui dit que la fiche a changé
  * la fait relire ; un seul envoi à la fois ; une personne exclue n'a plus de formulaire, retirer reste possible [R02, R04].
- * Le script n'a aucun commentaire : l'application est tout près de son budget de poids [R201].
+ * DS010 · ce bloc n'est plus dans le script de l'application : il fait partie de la fiche servie à part
+ * (`/app/fiche.js`), qui lui donne ses outils. Ses gestes sont filaires : sur la fiche, seul « Appeler » est plein (DS022).
  */
 const FORM_PURPOSES: Readonly<Record<string, string>> = AGENT_CONSENT_LABELS;
 
@@ -44,12 +45,12 @@ export const ACCORDS_JS = `
   }
   function accordButton(text, act) {
     var busy = false;
-    var b = button(text, function () {
+    var b = quiet(button(text, function () {
       if (busy) return false;
       busy = true;
       b.disabled = true;
       return act().then(function (done) { busy = false; b.disabled = false; return done; });
-    });
+    }));
     return b;
   }
   function accordChoices(labels) {
@@ -99,7 +100,10 @@ export const ACCORDS_JS = `
           return openFiche(personId);
         });
       }));
-      box.appendChild(form);
+      var more = el('details');
+      more.appendChild(el('summary', 'Noter un accord'));
+      more.appendChild(form);
+      box.appendChild(more);
       box.appendChild(espaceEntry(personId, state));
     }
     box.appendChild(state);
@@ -109,11 +113,11 @@ export const ACCORDS_JS = `
   function espaceEntry(personId, state) {
     var inner = el('div');
     var say = function (x) { state.textContent = x; };
-    inner.appendChild(button('Ouvrir son espace client', function () {
+    inner.appendChild(quiet(button('Ouvrir son espace client', function () {
       if (espaceTool) return espaceTool.form(inner, personId, say);
       if (espaceBusy) return;
       espaceBusy = true;
-      var mine = session;
+      var mine = session();
       say('Chargement…');
       var s = el('script');
       s.setAttribute('src', '/app/espace-agent.js');
@@ -121,16 +125,16 @@ export const ACCORDS_JS = `
         espaceBusy = false;
         var make = globalThis.AIMMO_ESPACE_AGENT;
         try { delete globalThis.AIMMO_ESPACE_AGENT; } catch (e) {}
-        if (typeof make !== 'function') { if (mine === session) say('Pas de réseau. Réessayez dans un moment.'); return; }
+        if (typeof make !== 'function') { if (mine === session()) say('Pas de réseau. Réessayez dans un moment.'); return; }
         espaceTool = make({ el: el, clear: clear, send: send, button: accordButton, field: field, seq: cSeq });
-        if (mine === session) { say(''); espaceTool.form(inner, personId, say); }
+        if (mine === session()) { say(''); espaceTool.form(inner, personId, say); }
       });
       s.addEventListener('error', function () {
         espaceBusy = false;
-        if (mine === session) say('Pas de réseau. Réessayez dans un moment.');
+        if (mine === session()) say('Pas de réseau. Réessayez dans un moment.');
       });
       inner.appendChild(s);
-    }));
+    })));
     return inner;
   }
 `;

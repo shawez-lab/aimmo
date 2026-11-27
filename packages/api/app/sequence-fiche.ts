@@ -99,7 +99,7 @@ globalThis.AIMMO_SEQUENCE_FICHE = function (t) {
       sync();
       rows.push(r);
     }
-    var more = el('button', 'Ajouter une étape');
+    var more = el('button', 'Ajouter une étape', 'secondaire');
     more.setAttribute('type', 'button');
     more.addEventListener('click', function () {
       if (rows.length >= MAX) return;

@@ -164,7 +164,7 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     section.appendChild(inner);
     section.appendChild(state);
     box.appendChild(section);
-    var open = el('button', 'Préparer une séquence');
+    var open = el('button', 'Préparer une séquence', 'secondaire');
     open.setAttribute('type', 'button');
     function show() { inner.removeChild(open); state.textContent = ''; seqTool(inner, personId); }
     open.addEventListener('click', function () {
@@ -195,7 +195,7 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     section.appendChild(inner);
     section.appendChild(state);
     box.appendChild(section);
-    var open = el('button', 'Chercher avec ses mots');
+    var open = el('button', 'Chercher avec ses mots', 'secondaire');
     open.setAttribute('type', 'button');
     function show() { inner.removeChild(open); state.textContent = ''; searchTool(inner, projects); }
     open.addEventListener('click', function () {
@@ -230,7 +230,7 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     var pick = projects.length > 1 ? t.cSelect(section, id + '-projet', 'Le projet', labels, projects[0].id) : null;
     var seen = 0, known = false, picked = 0;
     // Sans le secteur en place lu, rien ne se range ni ne se retire : on ne remplace pas ce qu'on n'a pas vu.
-    var retry = el('button', 'Réessayer de lire le secteur');
+    var retry = el('button', 'Réessayer de lire le secteur', 'secondaire');
     retry.setAttribute('type', 'button');
     retry.addEventListener('click', function () { load(); });
     function unread() { state.textContent = 'Le secteur en place n’est pas lu : réessayez de le lire d’abord.'; return Promise.resolve(false); }
@@ -238,9 +238,12 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     var now = el('p', null, 'doux');
     section.appendChild(now);
     var fix = section.appendChild(el('div'));
-    var place = field(section, id + '-lieu', 'Lieu précis (adresse, gare, école…)', false);
-    var km = field(section, id + '-rayon', 'Rayon, en km', true);
-    var label = field(section, id + '-nom', 'Nom du secteur, pour vous', false);
+    // DS010 · le réglage ne s'ouvre qu'au geste : le bloc dit d'abord le secteur en place.
+    var more = section.appendChild(el('details'));
+    more.appendChild(el('summary', 'Régler le secteur'));
+    var place = field(more, id + '-lieu', 'Lieu précis (adresse, gare, école…)', false);
+    var km = field(more, id + '-rayon', 'Rayon, en km', true);
+    var label = field(more, id + '-nom', 'Nom du secteur, pour vous', false);
     var current = null;
     function said(a) { current = a; now.textContent = a ? (a.shape === 'cercle' ? 'Secteur « ' + a.label + ' » : ' + String(a.radiusM / 1000).replace('.', ',') + ' km autour du lieu dit.' : 'Secteur « ' + a.label + ' » dessiné.') : 'Aucun secteur : les communes de la recherche suffisent.'; }
     // Une réponse arrivée après un changement de projet ne s'affiche pas sous le nouveau projet.
@@ -251,16 +254,16 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
       state.textContent = 'Secteur rangé.';
       return true;
     }; }
-    section.appendChild(t.accordButton('Ranger le secteur', function () {
+    more.appendChild(t.accordButton('Ranger le secteur', function () {
       if (!known) return unread();
       var r = Number(String(km.value).replace(',', '.'));
       if (!(r >= 0.1 && r <= 50)) { state.textContent = AREA_REFUSALS.rayon; return Promise.resolve(false); }
       return t.send(base(), 'POST', { shape: 'cercle', place: place.value.trim(), radiusM: Math.round(r * 1000), label: label.value.trim() }).then(answer(seen));
     }));
-    section.appendChild(t.accordButton('Retirer le secteur', function () { return known ? t.send(base(), 'POST', { shape: 'aucun' }).then(answer(seen)) : unread(); }));
+    more.appendChild(t.accordButton('Retirer le secteur', function () { return known ? t.send(base(), 'POST', { shape: 'aucun' }).then(answer(seen)) : unread(); }));
     // AU073b · dessiner le contour au doigt sur une carte : le script n'est chargé qu'au geste.
     var drawBox = el('div');
-    var drawOpen = el('button', 'Dessiner sur la carte');
+    var drawOpen = el('button', 'Dessiner sur la carte', 'secondaire');
     drawOpen.setAttribute('type', 'button');
     drawOpen.className = 'secondaire';
     // La carte est celle du projet choisi à son ouverture : elle se referme quand le projet change, et rien de ce qu'elle
@@ -297,7 +300,7 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
       section.appendChild(s);
     });
     drawBox.appendChild(drawOpen);
-    section.appendChild(drawBox);
+    more.appendChild(drawBox);
     section.appendChild(state);
     box.appendChild(section);
     function load() {
@@ -326,7 +329,7 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     section.appendChild(inner);
     section.appendChild(state);
     box.appendChild(section);
-    var open = el('button', 'Voir les visites à rattacher');
+    var open = el('button', 'Voir les visites à rattacher', 'secondaire');
     open.setAttribute('type', 'button');
     function show() { inner.removeChild(open); state.textContent = ''; onlineTool(inner, personId, projects); }
     open.addEventListener('click', function () {
@@ -348,13 +351,16 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
     });
     inner.appendChild(open);
   }
-  return function (box, personId, f) {
+  // DS010 · la fiche range ses blocs en parties : les biens dans « box », le nom dans « where.nom », la séquence et
+  // la recherche d'un acquéreur dans « where.suite ». Sans « where », tout va dans « box », comme avant.
+  return function (box, personId, f, where) {
+    var named = where ? where.nom : box, rest = where ? where.suite : box;
     // La direction corrige ce qui est écrit ; une fiche sans aucun nom se remplit, avec ou sans elle.
-    if (f && f.nameCorrectable === true && (f.firstName || f.lastName)) correctionBlock(box, personId, f);
-    else if (f && (!f.firstName || !f.lastName)) nameBlock(box, personId, f);
+    if (f && f.nameCorrectable === true && (f.firstName || f.lastName)) correctionBlock(named, personId, f);
+    else if (f && (!f.firstName || !f.lastName)) nameBlock(named, personId, f);
     var section = el('section', null, 'bloc');
     section.appendChild(el('h3', 'Biens du client'));
-    var list = el('ul');
+    var list = el('ul', null, 'liste');
     section.appendChild(list);
     var shown = {};
     function add(b) {
@@ -402,7 +408,11 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
       });
     }));
     form.appendChild(state);
-    section.appendChild(form);
+    // DS010 · le formulaire ne s'ouvre qu'au geste : la liste des biens tient en un écran.
+    var more = el('details');
+    more.appendChild(el('summary', 'Ajouter un bien'));
+    more.appendChild(form);
+    section.appendChild(more);
     box.appendChild(section);
     t.send('/v1/fiches/' + encodeURIComponent(personId) + '/biens', 'GET').then(function (res) {
       if (res.gone) return;
@@ -410,13 +420,13 @@ globalThis.AIMMO_BIENS_FICHE = function (t) {
       (res.body.data || []).forEach(add);
     });
     // La séquence de prospection (BR34) : seulement pour une personne joignable [R301].
-    if (f && f.contact && f.contact.allowed === true) sequenceBlock(box, personId);
+    if (f && f.contact && f.contact.allowed === true) sequenceBlock(rest, personId);
     // La recherche en langage courant (BR40) : seulement sur un projet d'achat, pour le ranger au bon endroit.
     var buying = (f && Array.isArray(f.projects) ? f.projects : []).filter(function (p) { return p && p.kind === 'buy' && /^[A-Za-z0-9_-]{1,64}$/.test(String(p.id)); });
-    if (buying.length) searchBlock(box, buying);
-    if (buying.length) areaBlock(box, buying);
+    if (buying.length) searchBlock(rest, buying);
+    if (buying.length) areaBlock(rest, buying);
     // Les visites réservées en ligne, rattachées à la recherche (BR64) : seulement avec un projet d'achat.
-    if (buying.length) onlineBlock(box, personId, buying);
+    if (buying.length) onlineBlock(rest, personId, buying);
   };
 };
 `;

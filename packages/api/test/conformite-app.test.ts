@@ -482,7 +482,8 @@ describe('L10 · dépôt d’une pièce au coffre depuis la fiche', () => {
     expect(coffreScripts(t)).toEqual([]);
     expect(AGENT_APP_FILES['/app/coffre.js']).toBe(COFFRE_SCRIPT);
     expect(AGENT_APP_SHELL).not.toContain('/app/coffre.js');
-    expect(JS).toContain("lazyBlock('Pièces au coffre', '/app/coffre.js', 'AIMMO_COFFRE', personId)");
+    // DS010 · la fiche servie à part demande ce bloc au chargeur commun.
+    expect(AGENT_APP_FILES['/app/fiche.js']).toContain("lazyBlock('Pièces au coffre', '/app/coffre.js', 'AIMMO_COFFRE', personId)");
     // Le dépôt n'est plus dans le script que reçoit chaque agent : ni la liste des preuves, ni le formulaire.
     for (const gone of ['/coffre/recus', 'Déposer au coffre', 'Sorte de pièce', 'vault_not_configured']) expect(JS).not.toContain(gone);
     expect(COFFRE_SCRIPT).not.toContain('innerHTML');

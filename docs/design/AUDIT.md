@@ -110,6 +110,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : fiche client — `packages/api/app/fichiers.ts` (`#fiche`) et modules chargés
 - Preuve : `appli-fiche-client.jpg`. 5,2 écrans, 14 blocs dont 6 réduits à un bouton, 9 boutons pleins. La fiche ouvre sur un prénom et un nom, sans rôle, sans coordonnées, sans dernier échange.
 - Solution : un en-tête de fiche : nom, rôle, bien lié, dernier échange, prochain geste et moyens de contact permis. Dessous, des onglets : Fil, Projets, Biens, Accords.
+- Suite : corrigé le 2026-11-27 : la fiche ouvre sur une phrase (ses projets, le dernier message), l'appel ou la raison qui le ferme, les deux gestes d'appel sur une ligne, puis les rappels encore à faire. Dessous, quatre parties dont une seule se voit : Fil (messages, rappels faits, origines, appels reçus, notes vocales), Projets (projets, classement, séquence, recherche d'un acquéreur, dates connues, recommandation), Biens, Accords (nom, accords, espace client, réclamations, coffre). Les formulaires ne s'ouvrent qu'au geste : « Corriger », « Régler le secteur », « Ajouter un bien », « Noter un accord ». Une relecture après un geste garde la partie ouverte. Sur le jeu de capture, avec un numéro et un rappel inventés : 2,2 écrans et 1 bouton plein, au lieu de 5,8 écrans et 11 boutons pleins ; la partie la plus longue, les projets d'un acquéreur, tient en trois écrans au plus ; mesuré dans Chromium par un test. Le dessin de la fiche est servi à part (`/app/fiche.js`, `packages/api/app/fiche.ts`) : l'application y regagne environ 3 200 octets sur son budget de 49 152. Restent : le bien lié et le rôle dits en tête (la lecture de la fiche ne les donne pas), le budget d'un projet écrit sans séparateur de milliers. Avant et après : `captures/avant-apres/DS010-fiche.jpg`.
 
 #### DS011 · Les outils secondaires pèsent autant que le cœur du métier
 - Gravité : majeur · Catégorie : hiérarchie · Effort : M
@@ -196,6 +197,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Preuve : `appli-accueil.jpg`, `appli-mettre-en-vente.jpg` : « Rédiger de nouveau » et « Corriger le texte » sont pleins tous les deux.
 - Principe : un écran, une action principale.
 - Solution : un seul bouton plein par écran. Les autres sont filaires, ou de simples liens. À inscrire dans le contrôle du système.
+- Suite : fait pour la fiche client le 2026-11-27 : « Appeler » est le seul bouton plein, tous les autres gestes sont filaires, blocs servis à part compris (un test le vérifie sur la fiche dessinée, un autre dans Chromium, partie par partie). La journée et « Gagner des mandats » l'étaient déjà (DS013, DS014). Restent : conformité, « Mettre en vente », mandat, offres, et les formulaires des blocs ouverts au geste (coffre, réclamations, dates connues).
 
 #### DS023 · Le bien s'appelle « B-E6B8BB51 »
 - Gravité : majeur · Catégorie : hiérarchie, microcopie · Effort : M
@@ -384,6 +386,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Preuve : `appli-fiche-client.jpg` : aucune coordonnée en tête, aucun lien `tel:`, `sms:` ni `mailto:`. Les gestes sont « J'ai appelé » et « La personne a refusé ».
 - Principe : le cahier décrit la journée : « qui appeler, où aller ».
 - Solution : en tête, les moyens de contact que les règles d'appel et d'accord permettent, et la raison quand un moyen est fermé. À faire dans le respect de R202 à R204.
+- Suite : fait en partie le 2026-11-27 : l'appel, ou la raison qui le ferme, est la première chose sous le nom, avec les gestes d'appel et le rappel à faire ; quand l'appel est fermé faute d'accord, la phrase dit où le noter (« Accords »). Décidé, lecture prudente : ni lien `sms:` ni lien `mailto:`. Un message écrit depuis le téléphone de l'agent partirait hors du contrôle central des envois (accords, horaires, arrêt, journal) : c'est au cahier de dire si l'agent peut écrire ainsi, pas à l'écran de l'ouvrir. Un test garde cette absence.
 
 #### DS051 · Dix requêtes pour ouvrir l'accueil
 - Gravité : mineur · Catégorie : performance ressentie · Effort : M

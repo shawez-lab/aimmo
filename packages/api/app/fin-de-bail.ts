@@ -17,11 +17,7 @@ import { DATE_REFUSALS } from '../src/scenarios.ts';
 export const CLIENT_DATE_LABELS: Readonly<Record<(typeof CLIENT_DATE_KINDS)[number], string>> = Object.freeze({ anniversaire: 'Anniversaire', fete: 'Fête' });
 export const CLIENT_DATE_LOST = 'La réponse n’est pas arrivée : rien n’est sûr. Rangez de nouveau la date si besoin : la dernière compte.';
 
-/** Le bloc de la fiche et son chargeur, posés dans le script de l'application. */
-export const FIN_DE_BAIL_JS = `
-  function finDeBailBlock(personId) { return lazyBlock('Dates connues', '/app/fin-de-bail.js', 'AIMMO_FIN_DE_BAIL', personId, 'fin-bail'); }
-`;
-
+/** Le bloc de la fiche n'est plus posé dans l'application : la fiche servie à part (`/app/fiche.js`) le demande au chargeur commun (DS010). */
 /** Le script servi à part. Il ne lit et n'écrit que les routes de la fin de bail et des dates de cette fiche [R16]. */
 export const FIN_DE_BAIL_SCRIPT = `'use strict';
 globalThis.AIMMO_FIN_DE_BAIL = function (t) {

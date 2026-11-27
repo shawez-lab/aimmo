@@ -57,11 +57,7 @@ export const APPELS_RECUS_RDV_STATES = Object.freeze({
   introuvable: 'introuvable dans l’agenda : vérifiez-le.',
 });
 
-/** Le bloc de la fiche, posé dans le script de l'application par le chargeur commun (BR69) : le moins possible [R201]. */
-export const APPELS_RECUS_JS = `
-  function appelsRecusBlock(personId) { return lazyBlock('Appels reçus', '/app/appels-recus.js', 'AIMMO_APPELS_RECUS', personId); }
-`;
-
+/** Le bloc de la fiche n'est plus posé dans l'application : la fiche servie à part (`/app/fiche.js`) le demande au chargeur commun (DS010). */
 /** Le script servi à part. Il ne lit que la route des appels reçus de cette fiche [R16]. */
 export const APPELS_RECUS_SCRIPT = `'use strict';
 globalThis.AIMMO_APPELS_RECUS = function (t) {

@@ -8,7 +8,7 @@ export const APPELS_SCRIPT = `'use strict';
 globalThis.AIMMO_APPELS = function (t) {
   var $ = t.$, el = t.el, send = t.send, cState = t.cState, accordButton = t.accordButton, accordFailed = t.accordFailed, openFiche = t.openFiche;
   return function (box, personId) {
-    var form = el('div', null, 'decision');
+    var form = el('div', null, 'decision gestes');
     var state = cState();
     var path = '/v1/fiches/' + encodeURIComponent(personId) + '/appels';
     function gesture(text, outcome, done) {

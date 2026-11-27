@@ -124,7 +124,9 @@ describe('BR69 · les réclamations dans la fiche', () => {
     expect(scripts(a)).toEqual([]);
     expect(AGENT_APP_FILES['/app/reclamations.js']).toBe(RECLAMATIONS_SCRIPT);
     expect(AGENT_APP_FILES['/app/app.js']).not.toContain('/v1/securite');
-    expect(AGENT_APP_FILES['/app/app.js']).toContain("lazyBlock('Réclamations', '/app/reclamations.js', 'AIMMO_RECLAMATIONS', personId)");
+    // DS010 · la fiche servie à part demande ce bloc au chargeur commun, qui reste dans l'application.
+    expect(AGENT_APP_FILES['/app/fiche.js']).toContain("lazyBlock('Réclamations', '/app/reclamations.js', 'AIMMO_RECLAMATIONS', personId)");
+    expect(AGENT_APP_FILES['/app/app.js']).toContain('function lazyBlock(');
     expect(RECLAMATIONS_SCRIPT).not.toContain('innerHTML');
     expect(budgetProblems({ html: '', js: RECLAMATIONS_SCRIPT }, BUDGETS.page)).toEqual([]);
     expect(budgetProblems({ html: HTML, css: AGENT_APP_FILES['/app/app.css']!, js: AGENT_APP_FILES['/app/app.js']! }, BUDGETS.application)).toEqual([]);

@@ -140,7 +140,8 @@ describe('AC12 · les gestes d’appel de la fiche', () => {
     a.scripts()[0]!.listeners.error!({});
     expect(a.body.textContent).toContain('Pas de réseau : les gestes d’appel reviendront.');
     expect(a.body.all().filter((e) => e.tagName === 'a')).toHaveLength(1);
-    expect(AGENT_APP_FILES['/app/app.js']).toContain('given_before_refusal');
+    // DS010 · ce texte est dans la fiche servie à part, avec le bloc des accords.
+    expect(AGENT_APP_FILES['/app/fiche.js']).toContain('given_before_refusal');
   });
 
   it('[R201] le script est servi à part, hors de la coquille, et tient le budget d’une page', async () => {
