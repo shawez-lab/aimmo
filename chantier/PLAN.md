@@ -7846,6 +7846,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS003 · Aucune liste ni recherche de clients
 - Statut : en cours (voie 3)
+- Suivi : branche voie3/DS003 prête (l'onglet « Clients », la liste et la recherche par nom) ; proposée après la fusion de la proposition de DS013, même fichier.
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS003 (bloquant, navigation, effort L), endroit : toute l'application — `packages/api/app/fichiers.ts`
 - Constat de l’audit : la coquille n'appelle que `/v1/contacts-chauds`, `/v1/rendez-vous/jour`, `/v1/plan-du-jour` et `/v1/fiches/<id>`. Au stade « rendez-vous pris » du parcours, la vendeuse qui vient d'écrire n'est joignable depuis aucun écran : elle n'est plus « chaude » et son rendez-vous n'est pas aujourd'hui.
@@ -7938,6 +7939,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS014 · « Gagner des mandats » déplie sept outils l'un sous l'autre
 - Statut : en cours (voie 3)
+- Suivi : proposition #823 ouverte le 2026-11-27 (chaque outil fermé est une rangée, un bloc vide tient en une ligne ; 1,4 écran au lieu de 2,8).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS014 (majeur, architecture de l'information, effort M), endroit : `packages/api/app/gagner.ts` et ses modules (pige, tournée, veille, site, calendrier, neuf, viager)
 - Constat de l’audit : 11 blocs, 8 boutons pleins, 3,1 écrans avant toute ouverture, 3,5 après.
