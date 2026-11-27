@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { DESIGN_CSS, ETIQUETTES_CSS, ETIQUETTES_DPE } from '../src/design/systeme.ts';
-import { contrastRatio, htmlProblems, screenCssProblems } from '../src/design/audit.ts';
+import { contrastRatio, filledButtons, htmlProblems, screenCssProblems } from '../src/design/audit.ts';
 import { PageBien, computeMentions, energyClassesOf, energyLabels, renderListingPage, renderListingPrint, type PageInput } from '../src/annonces/index.ts';
+import { keyFacts } from '../src/annonces/page-bien.ts';
+import { surfacesFor } from '../src/annonces/fiche-bien.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -86,6 +88,88 @@ describe('P05 · page du bien et fiche imprimable', () => {
     const lines = renderListingPrint({ ...INPUT, payload: { ...INPUT.payload, body: Array.from({ length: 60 }, () => 'Balcon.').join('\n') } })!;
     expect(lines).toContain(`<p class="texte">${Array.from({ length: 60 }, () => 'Balcon.').join(' ')}</p>`);
     expect(lines).toContain('.page+.page{padding-bottom:42mm}');
+  });
+});
+
+describe('DS072 · la page du bien vend le bien', () => {
+  const DPE = `${INPUT.payload.mentions!.split('\n')[0]}\nClasse énergie D, classe climat B. Logement à consommation énergétique moyenne.\nCarte professionnelle n° CPI 0000.`;
+
+  it('la photo d’abord : la galerie ouvre la page, la première image n’attend pas, les autres viennent au défilement', () => {
+    const html = renderListingPage({ ...INPUT, photos: [{ ...INPUT.photos[0]!, caption: 'Le séjour' }, INPUT.photos[1]!] });
+    const main = html.slice(html.indexOf('<main>'));
+    expect(main.startsWith('<main><ul class="photos">')).toBe(true);
+    expect(main.indexOf('class="photos"')).toBeLessThan(main.indexOf('<h1>'));
+    const imgs = [...main.matchAll(/<img [^>]*>/g)].map((m) => m[0]);
+    expect(imgs).toHaveLength(2);
+    expect(imgs[0]).toContain('fetchpriority="high"');
+    expect(imgs[0]).not.toContain('loading="lazy"');
+    expect(imgs[1]).toContain('loading="lazy"');
+    // La légende des portails reste le texte de remplacement et la légende visible [R478] ; la mention reste sur l'image [R48].
+    expect(main).toContain('alt="Le séjour" fetchpriority="high" decoding="async"><span class="legende">Le séjour</span>');
+    expect(main.match(/<span class="virtuel">Aménagement virtuel<\/span>/g)).toHaveLength(1);
+    // Une galerie qui se feuillette du doigt, sans script : chaque photo s'arrête à sa place, la suivante dépasse.
+    expect(html).toContain('.photos{display:flex;');
+    expect(html).toContain('overflow-x:auto;scroll-snap-type:x mandatory');
+    expect(html).toContain('.photos li{position:relative;flex:0 0 88%;');
+    expect(html).not.toContain('<script');
+    // La fiche imprimable garde ses images comme avant.
+    expect(renderListingPrint(INPUT)).not.toContain('fetchpriority');
+  });
+
+  it('[R43] les faits en une ligne viennent de la version publiée seule : surfaces du site (AU063) et classes des mentions', () => {
+    const payload = { ...INPUT.payload, mentions: DPE, surfaces: [{ kind: 'habitable' as const, m2: 118, source: 'mesurage' as const }, { kind: 'carrez' as const, m2: 60.5, source: null }, { kind: 'utile' as const, m2: 40, source: null }] };
+    expect(keyFacts(payload)).toBe(
+      `<dl class="faits"><div><dt>Surface habitable</dt><dd>118${N}m²</dd></div><div><dt>Surface Carrez</dt><dd>60,5${N}m²</dd></div><div><dt>Classe énergie</dt><dd>D</dd></div><div><dt>Classe climat</dt><dd>B</dd></div></dl>`,
+    );
+    // Un local, des murs ou un fonds : la version publiée range la surface utile en tête, et la page la dit d'abord (AU063, R47).
+    const shop = { ...INPUT.payload, surfaces: surfacesFor('portails', { kind: 'commercial', surfaceM2: 40, usableM2: 85.25 }).map((x) => ({ kind: x.kind, m2: x.m2, source: x.source })) };
+    expect(shop.surfaces.map((x) => x.kind)).toEqual(['utile', 'habitable']);
+    expect(keyFacts(shop)).toBe(`<dl class="faits"><div><dt>Surface utile</dt><dd>85,25${N}m²</dd></div><div><dt>Surface habitable</dt><dd>40${N}m²</dd></div></dl>`);
+    expect(keyFacts({ ...INPUT.payload, surfaces: [{ kind: 'utile', m2: 120, source: 'acte' }] })).toBe(`<dl class="faits"><div><dt>Surface utile</dt><dd>120${N}m²</dd></div></dl>`);
+    // Un logement, lui, garde l'ordre du site : la surface utile que les portails reçoivent n'y est pas dite.
+    expect(surfacesFor('portails', { kind: 'home', surfaceM2: 118, carrezM2: 60.5, usableM2: 40 }).map((x) => x.kind)).toEqual(['habitable', 'carrez', 'utile']);
+    // Sans surface ni diagnostic dans la version : aucun fait, rien d'inventé ni de déduit du titre.
+    expect(keyFacts(INPUT.payload)).toBe('');
+    const html = renderListingPage({ ...INPUT, payload });
+    expect(html.indexOf('class="prix"')).toBeLessThan(html.indexOf('class="faits"'));
+    expect(html.indexOf('class="faits"')).toBeLessThan(html.indexOf('class="texte"'));
+    expect(renderListingPage(INPUT)).not.toContain('<dl');
+    expect(htmlProblems(html)).toEqual([]);
+  });
+
+  it('l’agent a deux gestes, de vrais boutons : demander une visite par écrit, appeler ; un seul est plein', () => {
+    const html = renderListingPage(INPUT);
+    expect(html).toContain('<p class="gestes"><a class="appel" href="mailto:alex@exemple.test?subject=Demande%20de%20visite%2C%20r%C3%A9f.%20REF-T-1">Demander une visite</a><a class="appel second" href="tel:0300000000">Appeler</a></p>');
+    expect(filledButtons(html)).toEqual(['Demander une visite']);
+    // Le numéro et l'adresse restent écrits en clair, avec le nom et le titre [R07].
+    expect(html).toContain('<section class="agent" aria-label="Votre agent"><p class="nom">Alex Agent</p><p class="doux">agent immobilier</p>');
+    expect(html).toContain('>03 00 00 00 00</a>');
+    expect(html).toContain('>alex@exemple.test</a>');
+    // Sur téléphone, les gestes restent au pied de l'écran ; rien d'autre ne bouge.
+    expect(html).toContain('.gestes{position:sticky;bottom:0;');
+  });
+
+  it('un bien sous offre ou vendu ne propose plus de visite ; sans coordonnées réglées, aucun geste', () => {
+    for (const state of ['sous_offre', 'vendu'] as const) {
+      const html = renderListingPage({ ...INPUT, payload: { ...INPUT.payload, state } });
+      expect(html, state).not.toContain('Demander une visite');
+      expect(html, state).toContain('subject=Votre%20annonce%2C%20r%C3%A9f.%20REF-T-1">Écrire à l’agent</a>');
+      // Écrire devient le second geste : appeler est le geste plein.
+      expect(filledButtons(html), state).toEqual(['Appeler']);
+    }
+    const phoneOnly = renderListingPage({ ...INPUT, agent: { ...INPUT.agent!, email: null } });
+    expect(filledButtons(phoneOnly)).toEqual(['Appeler']);
+    expect(phoneOnly).not.toContain('mailto:');
+    const mailOnly = renderListingPage({ ...INPUT, agent: { ...INPUT.agent!, phone: null } });
+    expect(filledButtons(mailOnly)).toEqual(['Demander une visite']);
+    expect(mailOnly).not.toContain('tel:');
+    const none = renderListingPage({ ...INPUT, agent: { ...INPUT.agent!, phone: null, email: null } });
+    expect(none).toContain('<p class="nom">Alex Agent</p>');
+    expect(none).not.toContain('class="gestes"');
+    // Un agent parti n'est plus montré : ni son nom, ni un geste.
+    const gone = renderListingPage({ ...INPUT, agent: null });
+    expect(gone).not.toContain('class="contact"');
+    expect(gone).not.toContain('class="gestes"');
   });
 });
 
