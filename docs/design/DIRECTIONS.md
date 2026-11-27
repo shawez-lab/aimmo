@@ -61,9 +61,9 @@ Deux choses par surface sont communes aux trois directions. La troisième est pr
 | Texte doux | `#615a50` | `#b3aa9c` |
 | Trait | `#e7e2d9` | `#2e2b26` |
 | Laiton, jamais en texte | `#b08a3c` | `#d2b06a` |
+| Retard | `#8a2331` | `#f0a3ab` |
 
 À la mise en œuvre (2026-11-27), l'encre est passée de `#16130f` à `#1a1612` et le fond sombre de `#131210` à `#0f0e0c` : aucune teinte ne s'écrit plus avec cinq chiffres de suite, qu'un contrôle lirait comme un code postal dans un plan ou un document (R135).
-| Retard | `#8a2331` | `#f0a3ab` |
 
 - **Typographie.** Les titres, les prix et les grands chiffres dans un caractère de titre à fort contraste, de 34 px au téléphone à 58 px sur la page publique. Le texte courant dans la police de l'appareil, 16 px. Deux graisses seulement.
 - **Formes.** Pas de carte : des filets fins. Des angles presque droits (2 px). Le bouton plein est noir.
