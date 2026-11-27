@@ -8523,7 +8523,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS087 · Le contrôle ne compte pas les boutons pleins ni la hauteur des écrans
-- Statut : en cours (voie 2)
+- Statut : fait (2026-11-27)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS087 (mineur, système de design, effort S), endroit : `packages/core/src/design/audit.ts`
 - Constat de l’audit : Le contrôle ne compte pas les boutons pleins ni la hauteur des écrans.
