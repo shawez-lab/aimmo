@@ -49,7 +49,7 @@ describe('DS064 · le focus va au titre du nouvel écran', () => {
     await a.tick();
     expect(a.els.partenaires!.hidden).toBe(false);
     expect(a.document.activeElement).toBe(a.els['partenaires-titre']);
-    expect(a.els['partenaires-titre']!.attributes.tabindex).toBe('-1');
+    expect((a.els['partenaires-titre'] as unknown as { tabIndex: number }).tabIndex).toBe(-1);
     a.els['partenaires-retour']!.listeners.click!({});
     await a.tick();
     expect(a.els.accueil!.hidden).toBe(false);

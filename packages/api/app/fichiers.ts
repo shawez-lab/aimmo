@@ -2145,13 +2145,9 @@ ${LOUER_JS}
     // DS064 · le focus suit l'écran : à chaque changement, il va au titre du nouvel écran, que le lecteur d'écran
     // annonce. Pas au premier écran ouvert (la page vient de se charger), ni à l'écran d'attente, qui n'a pas de titre.
     if (id === 'attente') return;
-    var before = seenId;
+    var t = seenId && seenId !== id && $(id === 'accueil' ? 'bonjour' : id === 'fiche' ? 'fiche-nom' : id + '-titre');
     seenId = id;
-    if (!before || before === id) return;
-    var t = $(id === 'accueil' ? 'bonjour' : id === 'fiche' ? 'fiche-nom' : id + '-titre');
-    if (!t || typeof t.focus !== 'function') return;
-    t.setAttribute('tabindex', '-1');
-    t.focus();
+    if (t && t.focus) { t.tabIndex = -1; t.focus(); }
   }
   function api(path, key, method, body, extra) {
     var headers = { authorization: 'Bearer ' + key };
