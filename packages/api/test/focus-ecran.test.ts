@@ -15,10 +15,13 @@ const BASE: Record<string, () => Promise<Response>> = {
   '/v1/plan-du-jour': ok({ agentId: 'a1', day: '2026-11-10', computedAt: '2026-11-10T06:30:00.000Z', items: [{ rank: 1, personId: 'p-1', firstName: 'Léa', kind: 'callback', reason: 'A demandé à être rappelée', order: 'règle 1', basis: { kind: 'request', since: '2026-11-01', purpose: null }, projectId: null, taskId: 't-1', reportId: null }], removed: { excluded: 0, withdrawn: 0, noBasis: 0 }, hiddenSinceFrozen: 0 }),
   '/v1/contacts-chauds': ok({ slot: 'morning', contacts: [] }),
   '/v1/rendez-vous/jour': ok({ day: '2026-11-10', appointments: [] }),
+  '/v1/annonces': ok([{ id: 'b1', reference: 'REF-1', city: 'Dijon', state: null }]),
 };
 
 async function app() {
   const { els, listeners, document } = fakeDocument(pageIds(HTML));
+  // Le faux document ne porte pas le texte de la page : les titres écrits dans le HTML servi y sont remis, avant le départ.
+  for (const [, id, text] of HTML.matchAll(/<h2 id="([a-z-]+-titre)"[^>]*>([^<]+)<\/h2>/g)) if (els[id!]) els[id!]!.textContent = text!;
   const storage = new Map<string, string>([['aimmo.cle', KEY]]);
   runInNewContext(JS, {
     document,
@@ -35,7 +38,7 @@ async function app() {
 }
 
 /** Les écrans que `show` sait ouvrir, lus dans le script servi. */
-const SCREENS: string[] = JSON.parse(JS.match(/function show\(id, args\) \{\s*(\[[^\]]+\])/)![1]!.replace(/'/g, '"'));
+const SCREENS: string[] = JSON.parse(JS.match(/var SCREENS = (\[[^\]]+\]);/)![1]!.replace(/'/g, '"'));
 /** Le titre de chaque écran, tel que `show` le cherche. */
 const titleOf = (id: string) => (id === 'accueil' ? 'bonjour' : id === 'fiche' ? 'fiche-nom' : `${id}-titre`);
 
@@ -128,15 +131,8 @@ async function lancer(): Promise<Navigateur | null> {
 const navigateur = await lancer();
 
 describe('DS063 · le titre de la page dit l’écran, jamais une personne', () => {
-  /** Le faux document ne porte pas le texte de la page : les titres écrits dans le HTML servi y sont remis. */
-  const withTitles = async () => {
-    const a = await app();
-    for (const [, id, text] of HTML.matchAll(/<h2 id="([a-z-]+-titre)"[^>]*>([^<]+)<\/h2>/g)) if (a.els[id!]) a.els[id!]!.textContent = text!;
-    return a;
-  };
-
   it('chaque écran ouvert renomme la page ; la journée ne dit pas le prénom, la déconnexion rend « Connexion »', async () => {
-    const a = await withTitles();
+    const a = await app();
     const title = (): string => (a.document as unknown as { title: string }).title;
     expect(title()).toBe('Ma journée · AIMMO');
     expect(title()).not.toContain('Alex');
@@ -167,8 +163,35 @@ describe('DS063 · le titre de la page dit l’écran, jamais une personne', () 
     expect(title).not.toContain('Léa');
   });
 
-  it('le script ne lit le titre que dans l’écran : `titleOf`, et deux noms fixes pour la journée et la fiche', () => {
-    expect(JS).toContain("document.title = (titled === 'accueil' ? 'Ma journée · ' : titled === 'fiche' ? 'Fiche client · ' : h && h.textContent ? h.textContent + ' · ' : '') + 'AIMMO';");
+  it('l’écran d’un bien précise son titre par sa référence, et la page le suit', async () => {
+    const a = await app();
+    a.els.biens!.all().find((e) => e.tagName === 'button' && e.textContent === 'Mettre en vente')!.listeners.click!({});
+    await a.tick();
+    expect(a.els.vente!.hidden).toBe(false);
+    expect((a.document as unknown as { title: string }).title).toBe('Mettre en vente · REF-1 · AIMMO');
+  });
+
+  it('un écran qui écrit un prénom dans son titre ne le met pas dans celui de la page : seuls les écrans d’un bien sont suivis', async () => {
+    const a = await app();
+    const title = (): string => (a.document as unknown as { title: string }).title;
+    // « Mes investisseurs » ouvre l'écran, puis la fiche d'un investisseur y écrit son prénom ; un entretien, celui d'un candidat.
+    for (const [open, id] of [['investir-ouvrir', 'investir'], ['integration-ouvrir', 'integration']] as const) {
+      a.els[open]!.listeners.click!({});
+      await a.tick();
+      expect(a.els[id]!.hidden, id).toBe(false);
+      const fixedTitle = title();
+      expect(fixedTitle).toMatch(/^[^·]+ · AIMMO$/);
+      a.els[`${id}-titre`]!.textContent = 'Camille';
+      a.els[open]!.listeners.click!({});
+      await a.tick();
+      expect(title(), id).toBe(fixedTitle);
+      expect(title()).not.toContain('Camille');
+      a.els['outils-ouvrir']!.listeners.click!({});
+      await a.tick();
+    }
+    // La liste des écrans suivis est fermée : ceux qui précisent leur titre par la référence d'un bien, pas un de plus.
+    expect(JS).toContain('var LIVE = /^(visite|bien|vente|mandat|offres|avis|studio|dossier|hors-ligne)$/;');
+    for (const id of ['investir', 'integration', 'fiche-google', 'commerces', 'louer', 'gagner', 'partenaires', 'fiche', 'accueil']) expect(/^(visite|bien|vente|mandat|offres|avis|studio|dossier|hors-ligne)$/.test(id), id).toBe(false);
     // Aucun autre endroit n'écrit le titre de la page.
     expect(JS.match(/document\.title\s*=/g)).toHaveLength(1);
   });
@@ -209,15 +232,21 @@ describe('DS064 · dans Chromium', () => {
       await page.click('#chiffres-ouvrir');
       await page.waitForSelector('#chiffres:not([hidden])');
       expect(await page.title()).toBe('Mes chiffres · AIMMO');
-      // Un écran précise son titre après coup (« Mandat · REF-1 ») : la page suit, sans que l'écran ait à le demander.
-      await page.evaluate(() => { (globalThis as any).document.getElementById('chiffres-titre').textContent = 'Mes chiffres · novembre'; });
-      await page.waitForFunction(() => (globalThis as any).document.title === 'Mes chiffres · novembre · AIMMO');
-      // L'écran quitté n'est plus écouté : son titre peut changer sans renommer la page.
+      // Un écran qui n'est pas celui d'un bien garde son titre fixe, quoi qu'il écrive ensuite dans le sien.
+      await page.evaluate(() => { (globalThis as any).document.getElementById('chiffres-titre').textContent = 'Camille'; });
+      await page.waitForTimeout(50);
+      expect(await page.title()).toBe('Mes chiffres · AIMMO');
       await page.click('#outils-ouvrir');
       await page.waitForSelector('#outils:not([hidden])');
-      await page.evaluate(() => { (globalThis as any).document.getElementById('chiffres-titre').textContent = 'Autre chose'; });
-      await page.waitForTimeout(50);
       expect(await page.title()).toBe('Outils · AIMMO');
+      // L'écran d'un bien : son titre se précise après coup, la page suit sans que l'écran ait à le demander.
+      await page.click('#journee-ouvrir');
+      await page.waitForSelector('#biens button');
+      await page.click('#biens button');
+      await page.waitForSelector('#vente:not([hidden])');
+      expect(await page.title()).toBe('Mettre en vente · REF-1 · AIMMO');
+      await page.evaluate(() => { (globalThis as any).document.getElementById('vente-titre').textContent = 'Mettre en vente · REF-2'; });
+      await page.waitForFunction(() => (globalThis as any).document.title === 'Mettre en vente · REF-2 · AIMMO');
     } finally {
       await page.close();
     }

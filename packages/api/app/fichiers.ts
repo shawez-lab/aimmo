@@ -2217,19 +2217,24 @@ ${LOUER_JS}
   var ROOTS = { accueil: 'journee', outils: 'outils', chiffres: 'chiffres' };
   var tab = 'accueil', agentIn = false;
   function titleOf(id) { return $(id === 'accueil' ? 'bonjour' : id === 'fiche' ? 'fiche-nom' : id + '-titre'); }
-  // DS063 · le titre de la page dit l'écran, et le suit quand il se précise (« Mandat · REF-1 ») ; jamais une personne :
-  // la fiche d'un client reste « Fiche client », la journée ne dit pas le prénom.
-  var titled = null, watch = null;
+  // DS063 · le titre de la page dit l'écran, jamais une personne : la fiche d'un client reste « Fiche client », la
+  // journée ne dit pas le prénom. Les écrans d'un bien précisent leur titre par sa référence (« Mandat · REF-1 ») : la
+  // page les suit. Les autres gardent le titre écrit dans la page servie, lu au départ : un écran qui y écrit ensuite
+  // un prénom (un investisseur, un candidat, un agent) ne le met ni dans l'onglet ni dans l'historique du navigateur.
+  var LIVE = /^(visite|bien|vente|mandat|offres|avis|studio|dossier|hors-ligne)$/;
+  var titled = null, watch = null, fixed = {};
   function retitle(id) {
     if (id) titled = id;
-    var h = titled === 'accueil' || titled === 'fiche' ? null : titleOf(titled);
-    document.title = (titled === 'accueil' ? 'Ma journée · ' : titled === 'fiche' ? 'Fiche client · ' : h && h.textContent ? h.textContent + ' · ' : '') + 'AIMMO';
+    var h = LIVE.test(titled) ? titleOf(titled) : null;
+    var name = titled === 'accueil' ? 'Ma journée' : titled === 'fiche' ? 'Fiche client' : h ? h.textContent : fixed[titled];
+    document.title = (name ? name + ' · ' : '') + 'AIMMO';
     if (!id || typeof MutationObserver !== 'function') return;
     if (watch) watch.disconnect();
     if (h) (watch = new MutationObserver(function () { retitle(); })).observe(h, { childList: true, characterData: true, subtree: true });
   }
+  var SCREENS = ['connexion', 'invitation', 'accueil', 'outils', 'attente', 'fiche', 'hors-ligne', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'];
   function show(id, args) {
-    ['connexion', 'invitation', 'accueil', 'outils', 'attente', 'fiche', 'hors-ligne', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
+    SCREENS.forEach(function (s) { $(s).hidden = s !== id; });
     var out = id === 'connexion' || id === 'attente' || id === 'invitation';
     if (id === 'connexion') try { $('entrer-appareil').hidden = !localStorage.getItem('aimmo.appareil'); } catch (e) { /* sans mémoire */ }
     // DS006 · « Se déconnecter » se tient au pied de l'écran de départ de chaque rôle, plus dans l'en-tête.
@@ -2410,6 +2415,7 @@ ${LOUER_JS}
     });
   } catch (e) { /* sans historique */ }
   function boot() {
+    SCREENS.forEach(function (i) { var h = document.getElementById(i + '-titre'); if (h) fixed[i] = h.textContent; });
     // AU023 · la clé de l'appareil connecte, sans clé à taper ; le script des clés la porte.
     $('entrer-appareil').addEventListener('click', function () {
       withCles(0, function (c) { return c.login(); }).then(function (r) {

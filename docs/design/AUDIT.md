@@ -468,7 +468,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : toute l'application
 - Preuve : `document.title` vaut « AIMMO » sur chaque écran. Le seul `h1` est la marque.
 - Solution : « Mandat · rue Monge · AIMMO ». Le `h1` est le titre de l'écran.
-- Suite : corrigé en partie le 2026-11-27 : le titre de la page dit l'écran (« Ma journée · AIMMO », « Outils · AIMMO », « Mandat · REF-1 · AIMMO ») et suit le titre de l'écran quand il se précise. Jamais une personne : la fiche d'un client s'appelle « Fiche client », la journée ne dit pas le prénom. Reste le niveau des titres : le seul `h1` est encore la marque, chaque écran garde un `h2` ; les changer touche tous les modules à la fois.
+- Suite : corrigé en partie le 2026-11-27 : le titre de la page dit l'écran (« Ma journée · AIMMO », « Outils · AIMMO », « Mandat · REF-1 · AIMMO ») et suit le titre des écrans d'un bien quand il se précise par sa référence. Jamais une personne : la fiche d'un client s'appelle « Fiche client », la journée ne dit pas le prénom, et un écran qui écrit un prénom dans son propre titre (un investisseur, un candidat) garde dans la page le titre qu'il avait au départ. Reste le niveau des titres : le seul `h1` est encore la marque, chaque écran garde un `h2` ; les changer touche tous les modules à la fois.
 
 #### DS064 · Le focus se perd à chaque changement d'écran
 - Gravité : mineur · Catégorie : accessibilité · Effort : S
