@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { OFFRES_SCRIPT } from '../app/offres.ts';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
-import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
+import { FakeElement, fakeDocument, pageIds, placeTool } from './fake-dom.ts';
 
 // Tout est inventé.
 const KEY = 'k'.repeat(40);
@@ -62,7 +62,7 @@ async function run(answers: Record<string, Answer>) {
   };
   const input = (id: string) => body().all().find((e) => e.attributes.id === id)! as FakeElement & { value: string; files?: unknown[] };
   const open = async () => {
-    await click(els.biens!.all().find((e) => e.tagName === 'button' && e.textContent === 'Offres'));
+    await click(placeTool(els, 'Offres'));
     const s = els.offres!.children.filter((e) => e.tagName === 'script');
     expect(s.map((e) => e.attributes.src)).toEqual(['/app/offres.js']);
     runInNewContext(OFFRES_SCRIPT, context);

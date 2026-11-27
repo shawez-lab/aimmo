@@ -5,7 +5,7 @@ import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { checkOperations } from '../../core/src/studio/certificats.ts';
 import { STUDIO_SCRIPT } from '../app/studio.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
-import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
+import { FakeElement, fakeDocument, pageIds, placeTool } from './fake-dom.ts';
 
 // Tout est inventé : biens, photos, références de stockage, clé de test.
 const KEY = 'k'.repeat(40);
@@ -154,7 +154,7 @@ async function run(answers: Record<string, Answer> = {}) {
     screen = context.__studio as typeof screen;
   };
   const openB1 = async () => {
-    const studio = els.biens!.all().find((e) => e.tagName === 'button' && e.textContent === 'Studio');
+    const studio = placeTool(els, 'Studio');
     if (!studio) throw new Error('bouton Studio absent');
     studio.listeners.click!({});
     await settle();
@@ -528,10 +528,12 @@ describe('X11 · écran « Studio » de l’application', () => {
     await t.openB1();
     expect(t.body().textContent).toContain('Guide de prise de vue');
     expect(t.body().textContent).toContain('Où : Dos à la porte d’entrée.');
+    // DS013 · « Retour » ramène à l'écran du bien, d'où le Studio a été ouvert.
     await t.click(t.els['studio-retour']);
-    expect(t.els.accueil!.hidden).toBe(false);
+    expect(t.els['un-bien']!.hidden).toBe(false);
+    expect(t.els.accueil!.hidden).toBe(true);
     expect(t.body().textContent).toBe('');
-    const again = t.els.biens!.all().find((e) => e.tagName === 'button' && e.textContent === 'Studio')!;
+    const again = placeTool(t.els, 'Studio');
     again.listeners.click!({});
     await new Promise((r) => setTimeout(r, 20));
     expect(t.scripts()).toHaveLength(1);

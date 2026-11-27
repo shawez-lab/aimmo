@@ -188,14 +188,14 @@ ${CLES_A_RENDRE_HOME_HTML}<div id="remises-accueil"></div>
 ${FICHE_GOOGLE_HOME_HTML}${ACTUALITES_HOME_HTML}<h3>Mon compte</h3>
 ${INTEGRATION_HOME_HTML}${NOTIFICATIONS_HOME_HTML}${clesEntryHtml('accueil')}</section>
 <section id="fiche" hidden>
-<button id="retour" type="button">Retour à ma journée</button>
+<button id="retour" type="button" class="retour">Retour</button>
 <h2 id="fiche-nom"></h2>
 <p id="fiche-etat" class="etat" role="status"></p>
 <div id="fiche-corps"></div>
 </section>
 <section id="hors-ligne" hidden></section>
 <section id="visite" hidden>
-<button id="visite-retour" type="button" class="retour">Retour à ma journée</button>
+<button id="visite-retour" type="button" class="retour">Retour</button>
 <button id="alerte" type="button" class="danger">Alerte sécurité</button>
 <p id="alerte-etat" role="alert" hidden></p>
 <h2 id="visite-titre"></h2>
@@ -208,8 +208,18 @@ ${INTEGRATION_HOME_HTML}${NOTIFICATIONS_HOME_HTML}${clesEntryHtml('accueil')}</s
 <p id="bien-etat" class="etat" role="status"></p>
 <div id="bien-corps"></div>
 </section>
+<section id="un-bien" hidden>
+<button id="un-bien-retour" type="button" class="retour">Retour</button>
+<h2 id="un-bien-titre"></h2>
+<p id="un-bien-etat" class="doux"></p>
+<button id="un-bien-vente" type="button" class="secondaire rangee">Annonce</button>
+<button id="un-bien-mandat" type="button" class="secondaire rangee">Mandat</button>
+<button id="un-bien-offres" type="button" class="secondaire rangee">Offres</button>
+<button id="un-bien-avis" type="button" class="secondaire rangee">Avis de valeur</button>
+<button id="un-bien-studio" type="button" class="secondaire rangee">Studio</button>
+</section>
 <section id="vente" hidden>
-<button id="vente-retour" type="button" class="retour">Retour à ma journée</button>
+<button id="vente-retour" type="button" class="retour">Retour</button>
 <h2 id="vente-titre"></h2>
 <p id="vente-etat" class="etat" role="status"></p>
 <div id="vente-corps"></div>
@@ -276,6 +286,10 @@ body { min-height: 100dvh; }
 #outils > h3 { margin: var(--e-6) 0 var(--e-2); font: 500 var(--t-s)/1.3 var(--police-texte); letter-spacing: 0; color: var(--doux); }
 button.rangee, #remises-accueil > .bloc > button { width: 100%; justify-content: space-between; min-height: calc(var(--cible) + var(--e-2)); margin: 0; padding: var(--e-3) 0; border-top: 1px solid var(--trait); border-radius: 0; box-shadow: none; color: var(--encre); text-align: left; }
 button.rangee::after, #remises-accueil > .bloc > button::after { content: "›"; color: var(--doux); font-size: 1.4em; line-height: .8; font-weight: 400; }
+button.rangee > span { display: grid; gap: var(--e-1); font-weight: 400; }
+#biens > li { margin: 0; padding: 0; border: 0; }
+#biens button.rangee { margin: 0; padding: var(--e-2) 0; }
+#un-bien > .doux { margin-bottom: var(--e-4); }
 #remises-accueil > .bloc { margin: 0; padding: 0; border: 0; }
 #outils > .etat { margin: 0 0 var(--e-3); }
 #actualites-vues { padding-left: var(--e-5); }
@@ -1194,19 +1208,34 @@ export const APP_JS = `'use strict';
   }
   /* ---------- M07 : l'écran « Mettre en vente » (P10). ---------- */
   var LISTING_STATES = { en_vente: 'en vente', sous_offre: 'sous offre', vendu: 'vendu', retiree: 'retirée de la vente' };
+  // DS023 · un bien se dit par ce qu'il est, sa référence en petit : « Maison 5 pièces · Talant ».
+  var PLACES = { land: 'Terrain', building: 'Immeuble', commercial: 'Local commercial', business_walls: 'Murs commerciaux', business: 'Fonds de commerce' };
+  function placeName(b) {
+    var what = PLACES[b.kind] || (b.dwelling === 'house' ? 'Maison' : b.dwelling === 'apartment' ? 'Appartement' : b.kind === 'home' ? 'Logement' : 'Bien');
+    if (b.kind === 'home' && b.rooms > 0) what += ' ' + b.rooms + (b.rooms > 1 ? ' pièces' : ' pièce');
+    return what + (b.city ? ' · ' + b.city : '');
+  }
+  function placeState(reference, state) { return 'Réf. ' + reference + (state ? ', annonce ' + (LISTING_STATES[state] || 'publiée') + '.' : ', pas encore publiée.'); }
+  // DS013 · un bien a son écran : son nom, où il en est, et ses outils en rangées. La journée n'en garde qu'une ligne,
+  // entière à toucher (DS041), au lieu de cinq boutons pleins.
+  var place = null;
+  function openPlace(id, reference, name, state) {
+    if (!ID.test(id)) return;
+    place = [id, reference, name, state];
+    $('un-bien-titre').textContent = name;
+    $('un-bien-etat').textContent = placeState(reference, state);
+    $('un-bien-vente').textContent = state ? 'Voir l’annonce' : 'Mettre en vente';
+    show('un-bien', place);
+  }
   function renderBiens(list, data) {
     var items = Array.isArray(data) ? data : [];
     items.forEach(function (b) {
       if (!ID.test(b.id)) return;
-      var li = el('li');
-      li.appendChild(el('strong', b.reference + (b.city ? ' · ' + b.city : '')));
-      li.appendChild(el('p', b.state ? 'Annonce ' + (LISTING_STATES[b.state] || 'publiée') + '.' : 'Pas encore publiée.', 'doux'));
-      li.appendChild(button(b.state ? 'Voir l’annonce' : 'Mettre en vente', function () { openVente(b.id, b.reference); }));
-      li.appendChild(button('Mandat', function () { openMandat(b.id, b.reference); }));
-      li.appendChild(button('Offres', function () { openOffres(b.id, b.reference); }));
-      li.appendChild(button('Avis de valeur', function () { openAvis(b.id, b.reference); }));
-      li.appendChild(button('Studio', function () { openStudio(b.id, b.reference); }));
-      list.appendChild(li);
+      var row = list.appendChild(el('li')).appendChild(button('', function () { openPlace(b.id, b.reference, placeName(b), b.state || ''); }));
+      row.className = 'secondaire rangee';
+      var text = row.appendChild(el('span'));
+      text.appendChild(el('strong', placeName(b)));
+      text.appendChild(el('span', placeState(b.reference, b.state), 'doux'));
     });
     return items.length === 0 ? 'Aucun bien à mettre en vente.' : null;
   }
@@ -2221,7 +2250,7 @@ ${LOUER_JS}
   // journée ne dit pas le prénom. Les écrans d'un bien précisent leur titre par sa référence (« Mandat · REF-1 ») : la
   // page les suit. Les autres gardent le titre écrit dans la page servie, lu au départ : un écran qui y écrit ensuite
   // un prénom (un investisseur, un candidat, un agent) ne le met ni dans l'onglet ni dans l'historique du navigateur.
-  var LIVE = /^(visite|bien|vente|mandat|offres|avis|studio|dossier|hors-ligne)$/;
+  var LIVE = /^(visite|bien|un-bien|vente|mandat|offres|avis|studio|dossier|hors-ligne)$/;
   var titled = null, watch = null, fixed = {};
   function retitle(id) {
     if (id) titled = id;
@@ -2232,7 +2261,7 @@ ${LOUER_JS}
     if (watch) watch.disconnect();
     if (h) (watch = new MutationObserver(function () { retitle(); })).observe(h, { childList: true, characterData: true, subtree: true });
   }
-  var SCREENS = ['connexion', 'invitation', 'accueil', 'outils', 'attente', 'fiche', 'hors-ligne', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'];
+  var SCREENS = ['connexion', 'invitation', 'accueil', 'outils', 'attente', 'fiche', 'hors-ligne', 'visite', 'bien', 'un-bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'];
   function show(id, args) {
     SCREENS.forEach(function (s) { $(s).hidden = s !== id; });
     var out = id === 'connexion' || id === 'attente' || id === 'invitation';
@@ -2395,7 +2424,7 @@ ${LOUER_JS}
   var goHome = null;
   function reopen(s, a, force) {
     // Une fiche, un bien, une visite ou une mise en vente se rouvrent, relus ; les autres écrans gardent ce qu'ils montraient.
-    var again = { fiche: openFiche, bien: openBien, visite: openVisit, vente: openVente, mandat: openMandat, dossier: openDossier, offres: openOffres, avis: openAvis, studio: openStudio }[s];
+    var again = { fiche: openFiche, bien: openBien, 'un-bien': openPlace, visite: openVisit, vente: openVente, mandat: openMandat, dossier: openDossier, offres: openOffres, avis: openAvis, studio: openStudio }[s];
     // Une lecture encore en route pour l'écran quitté ne s'affiche plus.
     session += 1;
     fromHistory = true;
@@ -2439,6 +2468,7 @@ ${LOUER_JS}
     });
     function leave() {
       session += 1;
+      place = null;
       wipeFiche();
       wipeM08();
       wipeApres();
@@ -2481,11 +2511,24 @@ ${LOUER_JS}
     $('investir-ouvrir').addEventListener('click', function () { openInvestir(''); });
     $('commerces-retour').addEventListener('click', function () { if (commercesInside()) openCommerces(''); else home(); });
     $('commerces-ouvrir').addEventListener('click', function () { openCommerces(''); });
-    $('avis-retour').addEventListener('click', function () { wipeAvis(); home(); });
-    $('offres-retour').addEventListener('click', function () { wipeOffres(); home(); });
+    // DS013 · un outil ouvert depuis l'écran d'un bien y revient ; ouvert d'ailleurs, il revient à la journée.
+    function back() {
+      var p = place;
+      if (!p) { home(); return; }
+      leave();
+      openPlace.apply(null, p);
+    }
+    $('avis-retour').addEventListener('click', function () { wipeAvis(); back(); });
+    $('offres-retour').addEventListener('click', function () { wipeOffres(); back(); });
     $('dossier-retour').addEventListener('click', function () { wipeDossier(); home(); });
-    $('mandat-retour').addEventListener('click', function () { wipeMandat(); home(); });
-    $('studio-retour').addEventListener('click', function () { wipeStudio(); home(); });
+    $('mandat-retour').addEventListener('click', function () { wipeMandat(); back(); });
+    $('studio-retour').addEventListener('click', function () { wipeStudio(); back(); });
+    $('un-bien-retour').addEventListener('click', home);
+    $('un-bien-vente').addEventListener('click', function () { openVente(place[0], place[1]); });
+    $('un-bien-mandat').addEventListener('click', function () { openMandat(place[0], place[1]); });
+    $('un-bien-offres').addEventListener('click', function () { openOffres(place[0], place[1]); });
+    $('un-bien-avis').addEventListener('click', function () { openAvis(place[0], place[1]); });
+    $('un-bien-studio').addEventListener('click', function () { openStudio(place[0], place[1]); });
     $('gagner-retour').addEventListener('click', function () { if (gagnerScreen && gagnerScreen.inside()) openGagner(); else { wipeGagner(); home(); } });
     $('gagner-ouvrir').addEventListener('click', function () { openGagner(); });
     $('attirer-retour').addEventListener('click', function () { if (attirerScreen && attirerScreen.inside()) { openAttirer(); return; } wipeAttirer(); openReseau(reseauRange); });
@@ -2524,7 +2567,7 @@ ${LOUER_JS}
     });
     $('chiffres-ouvrir').addEventListener('click', function () { if (currentKey && shownId !== 'accueil' && shownId !== 'outils') leave(); openChiffres('mois'); });
     ['mois', 'precedent', 'annee'].forEach(function (r) { $('chiffres-' + r).addEventListener('click', function () { openChiffres(r); }); });
-    $('vente-retour').addEventListener('click', home);
+    $('vente-retour').addEventListener('click', back);
     ['mois', 'precedent', 'annee'].forEach(function (r) { $('reseau-' + r).addEventListener('click', function () { openReseau(r); }); });
     $('reseau-export').addEventListener('click', function () { downloadExport(); });
     $('rapport-agent-lire').addEventListener('click', function () { readReport('agent', 'chiffres'); });

@@ -128,6 +128,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : « Mettre en vente », « Mandat », « Offres », « Avis de valeur », « Studio », « Dossier de vente »
 - Preuve : six écrans séparés, ouverts par cinq boutons pleins de même poids sur l'accueil, chacun avec son « Retour à ma journée ».
 - Solution : une fiche du bien, avec ses étapes en onglets et un fil d'avancement : estimé, sous mandat, en vente, offre, compromis, vendu.
+- Suite : premier pas le 2026-11-27 : un bien a son écran, ouvert depuis sa ligne de la journée : son nom, sa référence et l'état de son annonce, puis ses outils en rangées (annonce, mandat, offres, avis de valeur, Studio). « Retour » d'un outil ramène au bien, celui du bien à la journée. Restent le fil d'avancement et les étapes en onglets : ils demandent, pour chaque bien, où il en est (mandat signé, offres, compromis). Avant et après : `captures/avant-apres/DS013-un-bien.jpg`.
 
 #### DS014 · « Gagner des mandats » déplie sept outils l'un sous l'autre
 - Gravité : majeur · Catégorie : architecture de l'information · Effort : M
@@ -199,6 +200,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : titres de six écrans, carte de l'accueil
 - Preuve : `appli-mandat-offres-avis.jpg`. 105 occurrences dans les plans des écrans. Le point médian passe seul en début de ligne : « Avis de valeur / · B-E6B8BB51 ».
 - Solution : le bien se nomme par son type, sa rue et sa commune (« Appartement, rue Monge, Dijon »), la référence en petit. Le titre de l'écran est le bien, l'étape est l'onglet.
+- Suite : corrigé en partie le 2026-11-27 : dans la journée et sur l'écran du bien, il se dit par ce qu'il est, « Maison 5 pièces · Talant », la référence en petit dessous ; la liste des biens rend son genre, ses pièces, et maison ou appartement (la fiche, plus récente, l'emporte, AU070). La rue n'y est pas : l'adresse exacte d'un bien ne sort pas de sa fiche. Restent les titres des six écrans d'outils, qui portent encore la référence.
 
 #### DS024 · Toutes les cartes ont le même poids
 - Gravité : majeur · Catégorie : hiérarchie · Effort : M
@@ -294,6 +296,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : tous les écrans
 - Preuve : lien fléché « Retour à ma journée » (mandat), bouton plein « Retour à ma journée » (fiche client), « Ma journée d'agent » (réseau), « Retour » (Fiche Google).
 - Solution : un seul retour, dans l'en-tête, avec le nom de l'écran d'où l'on vient.
+- Suite : corrigé en partie le 2026-11-27 : la fiche d'un client, la visite, la mise en vente, le mandat, les offres, l'avis de valeur, le Studio et le dossier de vente ont le même « Retour », fléché, jamais un bouton plein. Il n'est pas dans l'en-tête et ne nomme pas encore l'écran d'où l'on vient.
 
 #### DS038 · Les formulaires sont toujours ouverts
 - Gravité : majeur · Catégorie : composants · Effort : M
@@ -318,6 +321,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : contacts chauds, rendez-vous, biens
 - Preuve : `appli-accueil-portefeuille-charge.jpg` : chaque ligne fait 185 px, dont un bouton « Voir la fiche » plein.
 - Solution : la ligne entière est la cible, avec un chevron. 72 px par ligne.
+- Suite : corrigé pour les biens le 2026-11-27 : une ligne, entière à toucher, avec un chevron, 58 px. Restent les contacts chauds et les rendez-vous, dont la ligne porte encore un bouton.
 
 #### DS042 · Pas de composant de niveau produit
 - Gravité : majeur · Catégorie : système de design · Effort : L

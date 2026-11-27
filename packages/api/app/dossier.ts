@@ -82,7 +82,7 @@ const LAPSING = ['fin_retractation', 'reponse_commune', 'reflexion_offre_pret'];
 const IDENTITY = { verifiee: 'Identité de l’acquéreur vérifiée.', non_verifiee: 'Identité de l’acquéreur à vérifier.', non_visible: 'L’identité de l’acquéreur n’est pas dans vos droits.' };
 
 export const DOSSIER_HTML = `<section id="dossier" hidden>
-<button id="dossier-retour" type="button" class="retour">Retour à ma journée</button>
+<button id="dossier-retour" type="button" class="retour">Retour</button>
 <h2 id="dossier-titre">Dossier de vente</h2>
 <p id="dossier-etat" class="etat" role="status"></p>
 <div id="dossier-corps"></div>

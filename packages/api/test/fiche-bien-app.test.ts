@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { FICHE_BIEN_SCRIPT } from '../app/fiche-bien.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL } from '../src/agent-app.ts';
-import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
+import { FakeElement, fakeDocument, pageIds, placeTool } from './fake-dom.ts';
 
 // Tout est inventé : bien, fiche, clé de test.
 const KEY = 'k'.repeat(40);
@@ -69,7 +69,7 @@ async function run(answers: Record<string, Answer> = {}, kept: Record<string, st
   const f = (id: string) => body().all().find((e: FakeElement) => e.attributes.id === id)!;
   const posts = () => calls.filter((c) => c.method === 'POST');
   const open = async () => {
-    await click(els.biens!.all().find((e: FakeElement) => e.textContent === 'Mettre en vente'));
+    await click(placeTool(els, 'Mettre en vente'));
     await click(find('Remplir la fiche du bien'));
     const s = body().all().filter((e: FakeElement) => e.tagName === 'script');
     if (s.length === 1) {
@@ -264,7 +264,7 @@ describe('X19 · la fiche du bien à l’écran', () => {
 
   it('une lecture ratée de la fiche ne dit pas que la validation est tombée', async () => {
     const t = await run({ 'GET /v1/annonces/b1/brouillon': ok({ ...DRAFT, sheetVersion: 3, validated: { at: '2027-02-12T11:00:00.000Z' } }), [GET]: no(500, { ok: false, code: 'internal_error' }) });
-    await t.click(t.els.biens!.all().find((e: FakeElement) => e.textContent === 'Mettre en vente'));
+    await t.click(placeTool(t.els, 'Mettre en vente'));
     expect(t.body().textContent).toContain('Annonce validée le');
     expect(t.body().textContent).not.toContain('La fiche du bien a changé');
   });
@@ -285,7 +285,7 @@ describe('X19 · la fiche du bien à l’écran', () => {
 
   it('le script se charge une fois, un échec se réessaie, et une lecture ratée laisse le bouton', async () => {
     const t = await run({ [GET]: () => Promise.reject(new TypeError('hors ligne')) });
-    await t.click(t.els.biens!.all().find((e: FakeElement) => e.textContent === 'Mettre en vente'));
+    await t.click(placeTool(t.els, 'Mettre en vente'));
     const open = t.find('Remplir la fiche du bien')!;
     await t.click(open);
     await t.click(open);
@@ -309,7 +309,7 @@ describe('X19 · la fiche du bien à l’écran', () => {
 
   it('un script abîmé est dit', async () => {
     const t = await run();
-    await t.click(t.els.biens!.all().find((e: FakeElement) => e.textContent === 'Mettre en vente'));
+    await t.click(placeTool(t.els, 'Mettre en vente'));
     await t.click(t.find('Remplir la fiche du bien'));
     t.body().all().find((e: FakeElement) => e.tagName === 'script')!.listeners.load!({});
     await settle();

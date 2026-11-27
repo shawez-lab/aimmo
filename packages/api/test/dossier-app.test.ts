@@ -6,7 +6,7 @@ import { DOSSIER_SCRIPT } from '../app/dossier.ts';
 import { OFFRES_SCRIPT } from '../app/offres.ts';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
-import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
+import { FakeElement, fakeDocument, pageIds, placeTool } from './fake-dom.ts';
 
 // Tout est inventé.
 const KEY = 'k'.repeat(40);
@@ -82,7 +82,7 @@ async function run(answers: Record<string, Answer> = {}) {
   const input = (id: string) => body().all().find((e) => e.attributes.id === id)! as FakeElement & { value: string; files?: unknown[] };
   // Depuis « Mes biens » : l'écran Offres, puis le dossier de l'offre.
   const open = async () => {
-    await click(find(els.biens!, 'Offres'));
+    await click(placeTool(els, 'Offres'));
     runInNewContext(OFFRES_SCRIPT, context);
     els.offres!.children.filter((e) => e.tagName === 'script')[0]!.listeners.load!({});
     await settle();

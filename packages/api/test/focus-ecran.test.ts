@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { afterAll, describe, expect, it } from 'vitest';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
-import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
+import { FakeElement, fakeDocument, pageIds, placeTool } from './fake-dom.ts';
 
 // DS064 · le focus suit l'écran. Tout est inventé : clé de test, prénom, réponses du serveur.
 const KEY = 'k'.repeat(40);
@@ -15,7 +15,7 @@ const BASE: Record<string, () => Promise<Response>> = {
   '/v1/plan-du-jour': ok({ agentId: 'a1', day: '2026-11-10', computedAt: '2026-11-10T06:30:00.000Z', items: [{ rank: 1, personId: 'p-1', firstName: 'Léa', kind: 'callback', reason: 'A demandé à être rappelée', order: 'règle 1', basis: { kind: 'request', since: '2026-11-01', purpose: null }, projectId: null, taskId: 't-1', reportId: null }], removed: { excluded: 0, withdrawn: 0, noBasis: 0 }, hiddenSinceFrozen: 0 }),
   '/v1/contacts-chauds': ok({ slot: 'morning', contacts: [] }),
   '/v1/rendez-vous/jour': ok({ day: '2026-11-10', appointments: [] }),
-  '/v1/annonces': ok([{ id: 'b1', reference: 'REF-1', city: 'Dijon', state: null }]),
+  '/v1/annonces': ok([{ id: 'b1', reference: 'REF-1', city: 'Dijon', state: null, kind: 'home', rooms: 3, dwelling: 'apartment' }]),
 };
 
 async function app() {
@@ -165,7 +165,10 @@ describe('DS063 · le titre de la page dit l’écran, jamais une personne', () 
 
   it('l’écran d’un bien précise son titre par sa référence, et la page le suit', async () => {
     const a = await app();
-    a.els.biens!.all().find((e) => e.tagName === 'button' && e.textContent === 'Mettre en vente')!.listeners.click!({});
+    // DS013 · la ligne du bien ouvre son écran, au nom du bien ; puis la mise en vente, à sa référence.
+    const tool = placeTool(a.els, 'Mettre en vente');
+    expect((a.document as unknown as { title: string }).title).toBe('Appartement 3 pièces · Dijon · AIMMO');
+    tool.listeners.click!({});
     await a.tick();
     expect(a.els.vente!.hidden).toBe(false);
     expect((a.document as unknown as { title: string }).title).toBe('Mettre en vente · REF-1 · AIMMO');
@@ -190,8 +193,8 @@ describe('DS063 · le titre de la page dit l’écran, jamais une personne', () 
       await a.tick();
     }
     // La liste des écrans suivis est fermée : ceux qui précisent leur titre par la référence d'un bien, pas un de plus.
-    expect(JS).toContain('var LIVE = /^(visite|bien|vente|mandat|offres|avis|studio|dossier|hors-ligne)$/;');
-    for (const id of ['investir', 'integration', 'fiche-google', 'commerces', 'louer', 'gagner', 'partenaires', 'fiche', 'accueil']) expect(/^(visite|bien|vente|mandat|offres|avis|studio|dossier|hors-ligne)$/.test(id), id).toBe(false);
+    expect(JS).toContain('var LIVE = /^(visite|bien|un-bien|vente|mandat|offres|avis|studio|dossier|hors-ligne)$/;');
+    for (const id of ['investir', 'integration', 'fiche-google', 'commerces', 'louer', 'gagner', 'partenaires', 'fiche', 'accueil']) expect(/^(visite|bien|un-bien|vente|mandat|offres|avis|studio|dossier|hors-ligne)$/.test(id), id).toBe(false);
     // Aucun autre endroit n'écrit le titre de la page.
     expect(JS.match(/document\.title\s*=/g)).toHaveLength(1);
   });
@@ -243,6 +246,9 @@ describe('DS064 · dans Chromium', () => {
       await page.click('#journee-ouvrir');
       await page.waitForSelector('#biens button');
       await page.click('#biens button');
+      await page.waitForSelector('#un-bien:not([hidden])');
+      expect(await page.title()).toBe('Appartement 3 pièces · Dijon · AIMMO');
+      await page.click('#un-bien-vente');
       await page.waitForSelector('#vente:not([hidden])');
       expect(await page.title()).toBe('Mettre en vente · REF-1 · AIMMO');
       await page.evaluate(() => { (globalThis as any).document.getElementById('vente-titre').textContent = 'Mettre en vente · REF-2'; });

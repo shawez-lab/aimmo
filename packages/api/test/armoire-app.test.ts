@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { ARMOIRE_CONFIRM, ARMOIRE_HOURS, ARMOIRE_REFUSALS, ARMOIRE_SCRIPT, ARMOIRE_UNSURE } from '../app/armoire.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
-import { fakeDocument, pageIds, type FakeElement } from './fake-dom.ts';
+import { fakeDocument, pageIds, type FakeElement, placeTool } from './fake-dom.ts';
 
 // Tout est inventé : clé, bien, trousseaux, agents, partenaire, dates.
 const KEY = 'k'.repeat(40);
@@ -104,7 +104,7 @@ async function run(answers: Record<string, Answer> = {}) {
     await settle();
   };
   const scripts = () => vente().all().filter((e) => e.tagName === 'script' && e.attributes.src === '/app/armoire.js');
-  const openVente = () => press(byText(els.biens!, 'Mettre en vente'));
+  const openVente = () => press(placeTool(els, 'Mettre en vente'));
   const openArmoire = async (load = true) => {
     await press(byText(vente(), 'Ouvrir l’armoire'));
     const s = scripts();

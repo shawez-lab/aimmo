@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { PANNEAUX_BUSY, PANNEAUX_CONFIRM, PANNEAUX_FORM, PANNEAUX_OFFLINE, PANNEAUX_REFUSALS, PANNEAUX_SCRIPT, PANNEAUX_UNSURE } from '../app/panneaux.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
-import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
+import { FakeElement, fakeDocument, pageIds, placeTool } from './fake-dom.ts';
 
 // Tout est inventé : clé, biens, adresses, numéros de panneaux.
 const KEY = 'k'.repeat(40);
@@ -74,7 +74,7 @@ async function screen(where: 'accueil' | 'bien', answers: Record<string, Answer>
     await settle();
   };
   const label = where === 'accueil' ? 'Mes panneaux' : 'Panneaux du bien';
-  if (where === 'bien') await press(btn(els.biens!, 'Mettre en vente'));
+  if (where === 'bien') await press(placeTool(els, 'Mettre en vente'));
   const root = () => (where === 'accueil' ? els['remises-accueil']! : els['vente-corps']!);
   const block = () => root().children.find((e) => e.tagName === 'section' && btn(e, label))!;
   const open = async () => {
@@ -251,7 +251,7 @@ describe('BR104 · les panneaux à l’écran', () => {
     await a.press(btns(a.block(), 'Récupéré')[1]);
     expect(a.posts()).toHaveLength(1);
     // Un autre bloc ouvert pendant l'envoi attend sa fin, dit en mots.
-    await a.press(btn(a.els.biens!, 'Mettre en vente'));
+    await a.press(placeTool(a.els, 'Mettre en vente'));
     const other = a.els['vente-corps']!.children.find((e) => e.tagName === 'section' && btn(e, 'Panneaux du bien'))!;
     await a.press(btn(other, 'Panneaux du bien'));
     expect(statusOf(other)).toBe(PANNEAUX_BUSY);

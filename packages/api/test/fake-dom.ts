@@ -95,3 +95,14 @@ const idsIn = (html: string): string[] => [...html.matchAll(/\sid="([^"]+)"/g)].
  */
 export const pageIds = (html: string, withReseau = true): string[] =>
   withReseau && html.includes('<section id="reseau" hidden></section>') ? [...idsIn(html), ...idsIn(RESEAU_HTML)] : idsIn(html);
+
+/**
+ * DS013 · un outil d'un bien s'ouvre depuis l'écran du bien : la ligne du bien dans la journée ouvre cet écran, et la
+ * rangée de l'outil y attend. Rend cette rangée, à toucher ; `at` choisit le bien quand la journée en montre plusieurs.
+ */
+export function placeTool(els: Record<string, FakeElement>, label: 'Mettre en vente' | 'Voir l’annonce' | 'Mandat' | 'Offres' | 'Avis de valeur' | 'Studio', at = 0): FakeElement {
+  const rows = els.biens!.all().filter((e) => e.tagName === 'button' && e.className === 'secondaire rangee');
+  rows[at]!.listeners.click!({});
+  const tool = { 'Mettre en vente': 'vente', 'Voir l’annonce': 'vente', Mandat: 'mandat', Offres: 'offres', 'Avis de valeur': 'avis', Studio: 'studio' }[label];
+  return els[`un-bien-${tool}`]!;
+}
