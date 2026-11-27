@@ -2489,8 +2489,11 @@ self.addEventListener('activate', function (event) {
 });
 self.addEventListener('fetch', function (event) {
   var url = new URL(event.request.url);
-  if (event.request.method !== 'GET' || url.origin !== self.location.origin || SHELL.indexOf(url.pathname) === -1) return;
-  event.respondWith(fetch(event.request).catch(function () { return caches.match(url.pathname); }));
+  // DS069 · la page de la direction n'est pas gardée, pour qu'aucun agent ne la télécharge. Sans réseau, elle se replie
+  // sur la coquille : la journée et les visites préparées s'ouvrent aussi depuis son adresse [R278].
+  var kept = url.pathname === '/app/reseau' ? '/app/' : url.pathname;
+  if (event.request.method !== 'GET' || url.origin !== self.location.origin || SHELL.indexOf(kept) === -1) return;
+  event.respondWith(fetch(event.request).catch(function () { return caches.match(kept); }));
 });
 `;
 

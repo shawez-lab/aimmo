@@ -22,8 +22,9 @@ const idsOf = (html: string): string[] => [...html.matchAll(/\sid="([^"]+)"/g)].
  * Une page ouverte dans un navigateur : celle de l'agent (`/app/`, sans l'écran de la direction) ou celle de la
  * direction (`/app/reseau`). Le rôle rendu par `/v1/moi` est celui de la clé présentée.
  */
-async function run(path: '/app/' | '/app/reseau', stored: Record<string, string>, network: 'là' | 'coupé' = 'là') {
-  const { els, listeners, document } = fakeDocument(pageIds(HTML, path === '/app/reseau'));
+async function run(path: '/app/' | '/app/reseau', stored: Record<string, string>, network: 'là' | 'coupé' = 'là', content: 'la sienne' | 'la coquille' = 'la sienne') {
+  // « la coquille » : l'adresse de la direction, servie sans réseau par la page de l'agent gardée sur l'appareil.
+  const { els, listeners, document } = fakeDocument(pageIds(HTML, path === '/app/reseau' && content === 'la sienne'));
   const storage = new Map<string, string>(Object.entries(stored));
   const calls: string[] = [];
   const asked: (string | null)[] = [];
@@ -139,6 +140,57 @@ describe('DS069 · l’écran de la direction n’est plus dans la page de l’a
     expect(t.calls).toContain('GET /v1/moi');
     expect(t.storage.get('aimmo.cle')).toBe(AGENT);
     expect(t.storage.get('aimmo.cle.direction')).toBe(DIRECTION);
+  });
+
+  it('[R278] sans réseau, l’adresse de la direction s’ouvre sur la coquille gardée : la journée démarre, sans boucle', async () => {
+    // Le service worker : il ne garde pas cette page, mais il la replie sur la coquille quand le réseau manque.
+    const sw = (online: boolean) => {
+      const listeners: Record<string, (event: unknown) => void> = {};
+      const stored: string[] = [];
+      const matched: string[] = [];
+      const sandbox = {
+        URL,
+        Promise,
+        self: { location: { origin: 'https://app.aimmo.test' }, addEventListener: (name: string, fn: (e: unknown) => void) => (listeners[name] = fn) },
+        caches: {
+          open: async () => ({ addAll: async (urls: string[]) => void stored.push(...urls) }),
+          keys: async () => [],
+          delete: async () => undefined,
+          match: async (p: string) => (matched.push(p), new Response('coquille')),
+        },
+        fetch: async () => (online ? new Response('réseau') : Promise.reject(new TypeError('hors ligne'))),
+      };
+      runInNewContext(AGENT_APP_FILES['/app/sw.js']!, sandbox);
+      return { listeners, stored, matched };
+    };
+    const ask = async (online: boolean, path: string, method = 'GET') => {
+      const w = sw(online);
+      let answer: Promise<Response> | null = null;
+      w.listeners.fetch!({ request: { url: `https://app.aimmo.test${path}`, method }, respondWith: (p: Promise<Response>) => (answer = p) });
+      return { text: answer ? await (await (answer as Promise<Response>)).text() : null, matched: w.matched };
+    };
+    expect(await ask(true, '/app/reseau')).toEqual({ text: 'réseau', matched: [] });
+    expect(await ask(false, '/app/reseau')).toEqual({ text: 'coquille', matched: ['/app/'] });
+    // La demande d'essai (HEAD) n'est pas servie par le cache : sans réseau elle échoue, et la page reste où elle est.
+    expect((await ask(false, '/app/reseau', 'HEAD')).text).toBeNull();
+    // À l'installation, la page de la direction n'est toujours pas gardée.
+    const w = sw(true);
+    const waits: Promise<unknown>[] = [];
+    w.listeners.install!({ waitUntil: (p: Promise<unknown>) => waits.push(p) });
+    await Promise.all(waits);
+    expect(w.stored).toEqual([...AGENT_APP_SHELL]);
+    expect(w.stored).not.toContain('/app/reseau');
+    // Dans la page : l'adresse de la direction, le contenu de la coquille, pas de réseau. Le démarrage a lieu, sans détour ni boucle.
+    const t = await run('/app/reseau', { 'aimmo.cle': AGENT, 'aimmo.cle.direction': DIRECTION }, 'coupé', 'la coquille');
+    expect(t.calls[0]).toBe('HEAD /app/reseau');
+    expect(t.went).toEqual([]);
+    expect(t.calls).toContain('GET /v1/moi');
+    expect(t.els['reseau-corps']).toBeUndefined();
+    expect(t.storage.get('aimmo.cle')).toBe(AGENT);
+    // Le réseau revenu, la même page mène à la vraie : un seul détour.
+    const back = await run('/app/reseau', { 'aimmo.cle': AGENT, 'aimmo.cle.direction': DIRECTION }, 'là', 'la coquille');
+    expect(back.calls).toEqual(['HEAD /app/reseau']);
+    expect(back.went).toEqual(['/app/reseau']);
   });
 
   it('[R201] se déconnecter efface la marque de l’appareil', async () => {
