@@ -129,12 +129,12 @@ describeWithSqlite('AT09 · routes de M01 et pages publiques', () => {
       for (const query of ['page=2', 'page=x', 'page=0', 'autre=1', 'page=1&page=1']) expect((await t.get(`${NET}${path}?${query}`))!.status, `${path}?${query}`).toBe(404);
       expect((await t.get(`${NET}${path}?page=1`))!.status).toBe(200);
     }
-    const many = Array.from({ length: AGENTS_PER_PAGE + 1 }, (_, i) => ({ agentId: `a${i}`, name: `Agent ${i}`, zone: null, mentions: { rsacNumber: '1', rsacRegistry: 'D', cardNumber: 'C', cardHolder: 'H' } }));
+    const many = Array.from({ length: AGENTS_PER_PAGE + 1 }, (_, i) => ({ agentId: `a${i}`, name: `Agent ${i}`, lastName: 'Agent', zone: null, mentions: { rsacNumber: '1', rsacRegistry: 'D', cardNumber: 'C', cardHolder: 'H' } }));
     const one = renderAgentsList(many)!;
     expect(one).toContain('href="/agents?page=2"');
-    expect(one).not.toContain('/agents/a100"');
+    expect(one).not.toContain(`/agents/a${AGENTS_PER_PAGE}"`);
     const two = renderAgentsList(many, 2)!;
-    expect(two).toContain('/agents/a100"');
+    expect(two).toContain(`/agents/a${AGENTS_PER_PAGE}"`);
     expect(two).toContain('href="/agents"');
     expect(renderAgentsList(many, 3)).toBeNull();
     const towns = Array.from({ length: COMMUNES_PER_PAGE + 1 }, (_, i) => ({ slug: `v${i}`, name: `Ville ${i}` }));

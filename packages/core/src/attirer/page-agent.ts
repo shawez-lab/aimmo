@@ -58,6 +58,8 @@ export interface AgentPageInput {
 export interface PublicAgent {
   agentId: string;
   name: string;
+  /** Le nom de famille : la liste des agents se range et se feuillette par lui. */
+  lastName: string;
   zone: string | null;
   mentions: AgentMentions;
 }
@@ -229,7 +231,7 @@ export class PageAgent {
     return agents
       .filter((a) => a.missing === null && /^[A-Za-z0-9_-]{1,64}$/.test(a.agentId))
       .sort((a, b) => fr(a.lastName, b.lastName) || fr(a.firstName, b.firstName) || fr(a.agentId, b.agentId))
-      .map((a) => ({ agentId: a.agentId, name: a.name, zone: a.zone, mentions: { rsacNumber: a.rsacNumber!, rsacRegistry: a.rsacRegistry!, cardNumber: cardNumber!, cardHolder: holder! } }));
+      .map((a) => ({ agentId: a.agentId, name: a.name, lastName: a.lastName, zone: a.zone, mentions: { rsacNumber: a.rsacNumber!, rsacRegistry: a.rsacRegistry!, cardNumber: cardNumber!, cardHolder: holder! } }));
   }
 
   /** Le titulaire de la carte professionnelle du réseau (la société, H09), réglé par la direction. */

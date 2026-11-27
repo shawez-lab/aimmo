@@ -112,8 +112,8 @@ async function screens(): Promise<{ name: string; html: string; css?: string; js
     { name: 'candidature pas encore ouverte', html: await text(await handleCandidature(get('/rejoindre'), { db: NO_DB, networkId: null })), budget: BUDGETS.page },
     {
       name: 'liste des agents',
-      // Une page pleine, chaque agent différent : des noms et des numéros qui se compressent mal, inventés.
-      html: renderAgentsList(Array.from({ length: 500 }, (_, i) => ({ agentId: `a${i}`, name: `${(i * 7919).toString(36)} ${(i * 104729).toString(36)}`, zone: `Zone ${(i * 31).toString(36)}`, mentions: { rsacNumber: String(100000000 + i * 1299709), rsacRegistry: 'Dijon', cardNumber: 'CPI 0000', cardHolder: 'Société Exemple' } })))!,
+      // Une page pleine, chaque agent différent : des noms et des numéros qui se compressent mal, inventés, rangés par lettre comme la liste les reçoit.
+      html: renderAgentsList(Array.from({ length: 500 }, (_, i) => { const last = `${String.fromCharCode(97 + Math.floor(i / 20))}${(i * 104729).toString(36)}`; return { agentId: `a${i}`, name: `${(i * 7919).toString(36)} ${last}`, lastName: last, zone: `Zone ${(i * 31).toString(36)}`, mentions: { rsacNumber: String(100000000 + i * 1299709), rsacRegistry: 'Dijon', cardNumber: 'CPI 0000', cardHolder: 'Société Exemple' } }; }))!,
       budget: BUDGETS.page,
     },
     { name: 'liste des communes', html: renderPricesList(Array.from({ length: 2000 }, (_, i) => { const n = (i * 7919 + 100000).toString(36); return { slug: `v${n}`, name: `Ville ${n}` }; }))!, budget: BUDGETS.page },

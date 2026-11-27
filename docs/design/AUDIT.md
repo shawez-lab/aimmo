@@ -547,6 +547,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : `packages/core/src/attirer/annuaire-site.ts`
 - Preuve : 500 agents : 17 299 px. 2 000 communes : 21 582 px.
 - Solution : un champ de filtre et un index par lettre, sans script lourd.
+- Suite : corrigé le 2026-11-27 : un index par lettre en haut de chaque liste, qui reste à l'écran et mène à la page où la lettre commence, sans script ; les communes sur deux colonnes au téléphone et six sur ordinateur, les agents sur trois colonnes sur ordinateur, le nom de famille en gras, les mentions gardées sous chaque nom ; des pages plus courtes (40 agents, 200 communes). Sur téléphone : 8,6 écrans au lieu de 24 pour les agents, 7,3 au lieu de 38 pour les communes. Le champ de filtre n'est pas fait : les pages publiques n'ont aucun script, et la seule recherche publique n'accepte que des valeurs d'une liste fermée ; un champ libre demande sa règle, et chercher un agent par commune demande les communes de chaque agent en donnée. Avant et après : `captures/avant-apres/DS075-listes.jpg`.
 
 #### DS076 · Le jargon de la preuve passe avant le contenu
 - Gravité : mineur · Catégorie : site public, microcopie · Effort : S
