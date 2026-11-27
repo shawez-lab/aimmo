@@ -192,6 +192,35 @@ describe('Z03 · système de design d’AIMMO', () => {
     expect(contrastRatio('#777777', '#ffffff')).toBeCloseTo(4.48, 2);
   });
 
+  it('[R201] direction Maison · l’action est l’encre, le rouge reste au danger, le laiton ne porte pas de texte', () => {
+    for (const mode of ['clair', 'sombre'] as const) {
+      const p = PALETTE[mode];
+      // DS030, DS017 : le bouton d'action n'est plus un rouge voisin du danger, et ne vire plus au rose en sombre.
+      expect(p.accent, mode).toBe(p.encre);
+      expect(contrastRatio(p.surAccent, p.accent), mode).toBeGreaterThanOrEqual(7);
+      expect(contrastRatio(p.accent, p.danger), mode).toBeGreaterThanOrEqual(mode === 'clair' ? 2 : 1.5);
+      // Le laiton est un trait : il se voit sur le fond (3 au moins), et aucune règle de la base n'en fait une couleur de texte.
+      expect(contrastRatio(p.moutarde, p.papier), mode).toBeGreaterThanOrEqual(3);
+    }
+    expect(DESIGN_CSS).not.toMatch(/[;{]color:var\(--moutarde\)/);
+  });
+
+  it('[R201] direction Maison · ni frise rayée, ni losange en puce, ni ombre, ni graisse hors de 400, 500, 600 et 700', () => {
+    // DS018, DS020 : la frise est un filet, le losange n'est plus posé devant chaque titre.
+    expect(DESIGN_CSS).not.toContain('repeating-linear-gradient');
+    expect(DESIGN_CSS).not.toMatch(/h3::before|titre-losange/);
+    expect(DESIGN_CSS).not.toContain('rotate(45deg)');
+    expect(DESIGN_CSS).toContain('--ombre:none');
+    // DS028 : une police de système sans axe variable ne sait pas rendre 650.
+    const weights = [...DESIGN_CSS.matchAll(/font-weight:(\d+)|font:(\d{3}) /g)].map((m) => Number(m[1] ?? m[2]));
+    expect(weights.length).toBeGreaterThan(10);
+    expect([...new Set(weights)].sort()).toEqual(expect.arrayContaining([400, 500, 600]));
+    expect(weights.filter((w) => ![400, 500, 600, 700].includes(w))).toEqual([]);
+    // DS015 : les titres dans le caractère à empattements de l'appareil d'abord, sans rien télécharger.
+    expect(DESIGN_CSS).toMatch(/--police-titre:ui-serif,/);
+    expect(DESIGN_CSS).not.toContain('@font-face');
+  });
+
   it('[R201] chaque écran passe le contrôle d’accessibilité automatique', async () => {
     for (const s of await screens()) expect(htmlProblems(s.html, s.print ? { print: true } : {}), s.name).toEqual([]);
   });

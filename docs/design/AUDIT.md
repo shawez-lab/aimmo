@@ -138,6 +138,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Preuve : la pile des titres est Iowan Old Style, Charter, Palatino Linotype, Book Antiqua, Georgia. Un iPhone rend Iowan, un PC Palatino, un téléphone Android aucune des cinq : il tombe sur son serif par défaut, comme le poste d'audit (toutes les captures).
 - Principe : une marque se reconnaît à sa lettre.
 - Solution : une police de titres propre à AIMMO, servie par le Worker lui-même, en sous-ensemble latin de moins de 25 Ko. Demande un changement de R201 : c'est la question posée à Shawez. Sans accord : une pile resserrée, corps et graisses réglés pour que le repli se tienne.
+- Suite : corrigé le 2026-11-27 avec la base du système (direction Maison, sans changer de règle) : la pile commence par le caractère à empattements de l'appareil (`ui-serif`), en graisse normale, corps réglés. Une police servie reste possible si Shawez la demande. Avant et après : `captures/avant-apres/systeme-maison.jpg`, `systeme-maison-sombre.jpg`.
 
 #### DS016 · Pas de logotype
 - Gravité : majeur · Catégorie : identité · Effort : M
@@ -150,12 +151,14 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : `systeme.ts` (`PALETTE.sombre.accent` : `#f0a6b0`)
 - Preuve : `appli-ordinateur-et-sombre.jpg` : le bouton « Noter une rétractation » est rose saumon.
 - Solution : en sombre, le bouton plein garde un bordeaux profond avec un texte clair ; le rose ne sert qu'aux liens et aux contours.
+- Suite : corrigé le 2026-11-27 : l'action n'est plus le bordeaux mais l'encre ; en sombre, le bouton plein est ivoire, texte sombre. Avant et après : `captures/avant-apres/systeme-maison.jpg`, `systeme-maison-sombre.jpg`.
 
 #### DS018 · La frise rayée se lit comme un ruban de chantier
 - Gravité : majeur · Catégorie : identité · Effort : S
 - Où : sous chaque en-tête — `systeme.ts` (`--frise`)
 - Preuve : toutes les captures. Quatre couleurs en biais sur 6 px : le motif n'évoque pas les losanges des toits vernissés.
 - Solution : selon la direction retenue : un vrai motif de losanges, discret, ou plus de frise du tout.
+- Suite : corrigé le 2026-11-27 : plus de frise, un filet. Avant et après : `captures/avant-apres/systeme-maison.jpg`, `systeme-maison-sombre.jpg`.
 
 #### DS019 · Aucune image dans toute l'application
 - Gravité : majeur · Catégorie : images · Effort : L
@@ -169,6 +172,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : devant chaque titre de carte — `systeme.ts` (`.bloc>h3::before`)
 - Preuve : 23 losanges sur l'accueil.
 - Solution : le losange reste le signe de la marque et des moments forts, pas une puce.
+- Suite : corrigé le 2026-11-27 : plus aucun losange devant les titres ni dans la marque. Avant et après : `captures/avant-apres/systeme-maison.jpg`, `systeme-maison-sombre.jpg`.
 
 #### DS021 · Rien ne dit le haut de gamme
 - Gravité : majeur · Catégorie : confiance et prestige · Effort : L
@@ -222,6 +226,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : `systeme.ts` (`strong`, `.pastille`, `.fait`)
 - Preuve : une police de système sans axe variable rend 650 en 600 ou en 700 selon l'appareil.
 - Solution : 600 et 700 seulement.
+- Suite : corrigé le 2026-11-27 : 400, 500, 600 et 700 seulement, avec son test.
 
 #### DS029 · Une seule échelle pour le téléphone et l'ordinateur
 - Gravité : mineur · Catégorie : typographie · Effort : S
@@ -237,6 +242,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Preuve : « Noter une rétractation » (action) et un bouton `.danger` ne se distinguent que par leur largeur.
 - Principe : la couleur du danger ne sert qu'au danger.
 - Solution : le bouton d'action change de teinte selon la direction retenue (encre, ou vert de tuile), et le rouge reste au danger. Ou le danger devient filaire avec une confirmation.
+- Suite : corrigé le 2026-11-27 : l'action est l'encre, le rouge reste au danger, avec son test. Avant et après : `captures/avant-apres/systeme-maison.jpg`, `systeme-maison-sombre.jpg`.
 
 #### DS031 · Le moutarde a quatre sens
 - Gravité : mineur · Catégorie : couleur · Effort : S
