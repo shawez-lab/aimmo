@@ -35,5 +35,5 @@ L'agent a trois onglets, toujours là : Journée, Outils, Chiffres (`<nav id="on
 ## Ajouter un écran
 
 1. Sa feuille commence par `DESIGN_CSS` (ou `PRINT_DESIGN_CSS` pour le papier), puis n'ajoute que de la mise en page en `var(--…)`.
-2. L'ajouter à la liste de `design.test.ts` : accessibilité, budget et appartenance au système y sont vérifiés.
-3. Captures avant et après dans la proposition : `docs/design/captures/`.
+2. L'ajouter à la liste de `packages/api/test/ecrans.ts`, que lisent `design.test.ts` (accessibilité, budget et appartenance au système) et les captures rejouables.
+3. Captures avant et après dans la proposition : `docs/design/captures/`. Pour mesurer tout le produit d'un coup : `node scripts/captures.mjs <dossier>` avant le changement, puis après, et `node scripts/captures.mjs --comparer <avant> <après>` (là où Playwright et Chromium sont installés ; tout y est inventé). Un nouvel écran de l'application s'ajoute au plan `APP_SHOTS` de `packages/api/test/captures.test.ts`, une nouvelle page à `packages/api/test/ecrans.ts`.
