@@ -92,11 +92,7 @@ const STATES: Record<GbpDraftState, string> = {
   texte_a_revoir: 'Ce texte ne passe plus le contrôle et ne peut pas partir : changez le titre de l’annonce, puis préparez une nouvelle publication.',
 };
 
-export const FICHE_GOOGLE_HOME_HTML = `<section class="bloc" aria-labelledby="titre-fiche-google-accueil">
-<h3 id="titre-fiche-google-accueil">Fiche Google</h3>
-<p class="etat">Vos avis et vos publications : préparés pour vous, rien ne part sans vous.</p>
-<button id="fiche-google-ouvrir" type="button" class="secondaire">Ouvrir</button>
-</section>
+export const FICHE_GOOGLE_HOME_HTML = `<button id="fiche-google-ouvrir" type="button" class="secondaire rangee">Fiche Google</button>
 `;
 
 export const FICHE_GOOGLE_HTML = `<section id="fiche-google" hidden>

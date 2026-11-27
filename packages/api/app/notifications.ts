@@ -61,13 +61,9 @@ export const NOTIFICATIONS_SCREEN_REFUSALS: Readonly<Record<string, string>> = O
 /** Une écriture partie sans réponse : les réglages ont pu être rangés. */
 export const NOTIFICATIONS_UNSURE = 'La réponse n’est pas arrivée : vos réglages sont peut-être rangés. Rouvrez le bloc pour les relire.';
 
-export const NOTIFICATIONS_HOME_HTML = `<section class="bloc" aria-labelledby="titre-notifications">
-<h3 id="titre-notifications">Mes notifications</h3>
-<p class="etat">Vos heures calmes, ce qui arrive au téléphone, et ce qui vous a été notifié.</p>
-<button id="notifications-ouvrir" type="button" class="secondaire">Voir et régler</button>
+export const NOTIFICATIONS_HOME_HTML = `<button id="notifications-ouvrir" type="button" class="secondaire rangee">Mes notifications</button>
 <p id="notifications-etat" class="etat" role="status"></p>
 <div id="notifications-corps"></div>
-</section>
 `;
 
 /** Le chargeur, dans l'application : le script n'arrive qu'au premier geste ou par le lien d'une notification. */
@@ -93,7 +89,7 @@ export const NOTIFICATIONS_JS = `
     s.addEventListener('error', function () { notifBusy = false; $('notifications-etat').textContent = mine === session ? 'Pas de réseau. Réessayez dans un moment.' : ''; });
     $('accueil').appendChild(s);
   }
-  function notifLink() { if (typeof location !== 'undefined' && String(location.hash).indexOf('#envoi=') === 0) openNotifications(); }
+  function notifLink() { if (typeof location !== 'undefined' && String(location.hash).indexOf('#envoi=') === 0) { show('outils'); openNotifications(); } }
 `;
 
 /** Le script servi à part (`/app/notifications.js`). Il ne lit et n'écrit que par `/v1/notifications` [R16]. */

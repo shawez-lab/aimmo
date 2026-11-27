@@ -121,7 +121,7 @@ describe('K08 · « Mes chiffres » dans l’application', () => {
     expect(t.byText(t.els['chiffres-corps']!, 'Voir la fiche')).toBeDefined();
   });
 
-  it('la période se choisit en un geste, le bouton choisi est annoncé, et le retour ramène à la journée', async () => {
+  it('la période se choisit en un geste, le bouton choisi est annoncé, et l’onglet « Journée » ramène à la journée', async () => {
     const t = await run({ 'GET /v1/pilotage/mes-chiffres': ok(FIGURES) });
     await t.click(t.els['chiffres-ouvrir']);
     await t.click(t.els['chiffres-annee']);
@@ -130,7 +130,8 @@ describe('K08 · « Mes chiffres » dans l’application', () => {
     const last = t.calls.filter((c) => c.url.startsWith('/v1/pilotage/mes-chiffres')).at(-1)!;
     const [, from, to] = /du=(\d{4}-\d{2}-\d{2})&au=(\d{4}-\d{2}-\d{2})/.exec(last.url)!;
     expect((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / 86_400_000).toBe(364);
-    await t.click(t.els['chiffres-retour']);
+    // DS005 · « Mes chiffres » est un onglet : on le quitte par un autre onglet, plus par un retour.
+    await t.click(t.els['journee-ouvrir']);
     expect(t.els.accueil!.hidden).toBe(false);
     expect(t.els['chiffres-corps']!.children).toHaveLength(0);
   });

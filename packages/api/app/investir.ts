@@ -26,15 +26,11 @@ const DEADLINE_LABELS: Record<(typeof DEADLINES)[number], string> = {
   later: 'Plus tard',
 };
 
-export const INVESTIR_HOME_HTML = `<section class="bloc" aria-labelledby="titre-investir-accueil">
-<h3 id="titre-investir-accueil">Mes investisseurs</h3>
-<p class="etat">Le rendement d’un bien, chaque chiffre prouvé, et une note à valider.</p>
-<button id="investir-ouvrir" type="button" class="secondaire">Ouvrir mes investisseurs</button>
-</section>
+export const INVESTIR_HOME_HTML = `<button id="investir-ouvrir" type="button" class="secondaire rangee">Mes investisseurs</button>
 `;
 
 export const INVESTIR_HTML = `<section id="investir" hidden>
-<button id="investir-retour" type="button" class="retour">Retour à ma journée</button>
+<button id="investir-retour" type="button" class="retour">Retour</button>
 <h2 id="investir-titre">Investir</h2>
 <p class="doux">Chaque chiffre vient du serveur avec sa source, sa date et son hypothèse.</p>
 <p id="investir-etat" class="etat" role="status"></p>

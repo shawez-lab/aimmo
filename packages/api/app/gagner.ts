@@ -56,15 +56,11 @@ const REFUSALS: Record<string, string> = {
   followed_by_other: 'Cette personne est déjà suivie par un autre agent : choisissez-le.',
 };
 
-export const GAGNER_HOME_HTML = `<section class="bloc" aria-labelledby="titre-gagner-accueil">
-<h3 id="titre-gagner-accueil">Gagner des mandats</h3>
-<p class="etat">Dossiers de vos estimations, recommandations à appeler, relances à valider, lettres à déposer.</p>
-<button id="gagner-ouvrir" type="button" class="secondaire">Ouvrir</button>
-</section>
+export const GAGNER_HOME_HTML = `<button id="gagner-ouvrir" type="button" class="secondaire rangee">Gagner des mandats</button>
 `;
 
 export const GAGNER_HTML = `<section id="gagner" hidden>
-<button id="gagner-retour" type="button" class="retour">Retour à ma journée</button>
+<button id="gagner-retour" type="button" class="retour">Retour</button>
 <h2 id="gagner-titre">Gagner des mandats</h2>
 <p class="doux">Chaque ligne vient de la base, avec sa raison. Rien ne part sans vous, et en essai rien ne part du tout.</p>
 <p id="gagner-etat" class="etat" role="status"></p>

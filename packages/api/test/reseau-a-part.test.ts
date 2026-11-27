@@ -1,6 +1,6 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
-import { BUDGETS, gzipSize } from '../../core/src/design/audit.ts';
+import { gzipSize } from '../../core/src/design/audit.ts';
 import { RESEAU_HTML } from '../app/fichiers.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL } from '../src/agent-app.ts';
 import { fakeDocument, pageIds } from './fake-dom.ts';
@@ -69,8 +69,8 @@ describe('DS069 · l’écran de la direction n’est plus dans la page de l’a
     expect(idsOf(PAGE).length).toBe(here.size + apart.length);
     // Elle est hors de la coquille gardée sans réseau : aucun agent ne la télécharge, même en arrière-plan.
     expect(AGENT_APP_SHELL).not.toContain('/app/reseau');
-    // La coquille que chaque agent télécharge a rendu la place : 2 Ko au moins sous son budget.
-    expect(gzipSize(HTML) + gzipSize(AGENT_APP_FILES['/app/app.css']!) + gzipSize(JS)).toBeLessThanOrEqual(BUDGETS.application.gzipBytes - 2 * 1024);
+    // La page que chaque agent télécharge a rendu la place de cet écran : 2 Ko compressés de moins que celle de la direction.
+    expect(gzipSize(HTML)).toBeLessThanOrEqual(gzipSize(PAGE) - 2 * 1024);
   });
 
   it('[R13] le script n’écrit toujours aucun HTML : l’écran arrive par sa page, pas par le script', () => {

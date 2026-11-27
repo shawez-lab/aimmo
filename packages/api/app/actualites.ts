@@ -12,7 +12,7 @@
  */
 
 export const ACTUALITES_REFUSALS: Readonly<Record<string, string>> = Object.freeze({
-  role: 'Les actualités se lisent sur l’accueil d’un agent : la direction les range depuis l’écran du réseau.',
+  role: 'Les actualités se lisent dans les outils d’un agent : la direction les range depuis l’écran du réseau.',
 });
 
 /** Le fil a pu réserver des actualités sans que la réponse arrive : elles ne sont jamais perdues, elles sont dans « Déjà vues ». */
@@ -21,14 +21,10 @@ export const ACTUALITES_LOST = 'La réponse n’est pas arrivée : si des actual
 /** Un changement d'écran a coupé la lecture du fil : elle ne reste jamais « Chargement… », elle renvoie vers « Déjà vues ». */
 export const ACTUALITES_CUT = 'La lecture a été interrompue par un changement d’écran : les actualités qui vous ont été montrées se relisent dans « Déjà vues ».';
 
-export const ACTUALITES_HOME_HTML = `<section class="bloc" aria-labelledby="titre-actualites">
-<h3 id="titre-actualites">Mes actualités</h3>
-<p class="etat">Le juridique et le marché qui touchent vos dossiers, chacun avec sa source. Une actualité n’est montrée qu’une fois, puis se relit dans « Déjà vues ».</p>
-<button id="actualites-ouvrir" type="button" class="secondaire">Lire les nouvelles</button>
-<button id="actualites-vues" type="button" class="secondaire">Déjà vues</button>
+export const ACTUALITES_HOME_HTML = `<button id="actualites-ouvrir" type="button" class="secondaire rangee">Mes actualités</button>
+<button id="actualites-vues" type="button" class="secondaire rangee" aria-label="Actualités déjà vues">Déjà vues</button>
 <p id="actualites-etat" class="etat" role="status"></p>
 <div id="actualites-corps"></div>
-</section>
 `;
 
 /** Le chargeur, dans l'application : le script n'arrive qu'au premier geste, jamais gardé sur l'appareil. */

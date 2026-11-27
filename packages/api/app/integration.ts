@@ -104,14 +104,8 @@ const DEPOT_REFUSALS: Record<string, string> = {
   not_assigned: 'Ce n’est pas dans vos droits.',
 };
 
-export const INTEGRATION_HOME_HTML = `<section class="bloc" aria-labelledby="titre-integration-accueil">
-<h3 id="titre-integration-accueil">Mon intégration</h3>
-<p class="etat">Votre dossier d’agent pièce par pièce, votre référent, votre premier parcours, et l’académie à votre rythme.</p>
-<div class="periodes">
-<button id="integration-ouvrir" type="button" class="secondaire">Mon dossier</button>
-<button id="academie-ouvrir" type="button" class="secondaire">Académie</button>
-</div>
-</section>
+export const INTEGRATION_HOME_HTML = `<button id="integration-ouvrir" type="button" class="secondaire rangee">Mon dossier</button>
+<button id="academie-ouvrir" type="button" class="secondaire rangee">Académie</button>
 `;
 
 /** L'entrée de la direction, posée sur l'écran du réseau (K09). */

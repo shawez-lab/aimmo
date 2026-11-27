@@ -161,7 +161,7 @@ describe('G13 · écran « Gagner des mandats » de l’application', () => {
     expect(texts.length).toBeGreaterThan(500);
     expect(texts.filter((x) => promisesMandates(x))).toEqual([]);
     // Le contrôle voit bien une promesse posée dans un écran.
-    expect(promisesMandates(visible(GAGNER_HOME_HTML.replace('Gagner des mandats</h3>', 'Gagner des mandats</h3><p>5 mandats par mois garantis</p>')))).toBe(true);
+    expect(promisesMandates(visible(GAGNER_HOME_HTML.replace('Gagner des mandats</button>', 'Gagner des mandats</button><p>5 mandats par mois garantis</p>')))).toBe(true);
   });
 
   it('[R35] [R46] les quatre parties dans l’ordre reçu, chaque texte reçu reste du texte, aucune donnée du client hors du prénom', async () => {

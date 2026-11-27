@@ -118,11 +118,12 @@ describe('BR50 · « Mes clés à rendre » sur l’accueil de l’agent', () =>
     expect(JS.split('\n').length).toBeLessThanOrEqual(APP_JS.split('\n').length);
   });
 
-  it('[R272] rien n’est lu avant le geste ; le bloc est sur l’accueil de l’agent', async () => {
+  it('[R272] rien n’est lu avant le geste ; le bloc est dans les outils de l’agent', async () => {
     const t = await run();
     expect(t.calls.some((c) => c.url.startsWith('/v1/trousseaux'))).toBe(false);
-    const accueil = HTML.slice(HTML.indexOf('<section id="accueil"'));
-    expect(accueil.slice(0, accueil.indexOf('<section id=', 10))).toContain('<h3 id="titre-cles-rendre">Mes clés à rendre</h3>');
+    // DS011 · le bloc est dans l'écran « Outils » de l'agent, plus sur sa journée.
+    const outils = HTML.slice(HTML.indexOf('<section id="outils"'));
+    expect(outils.slice(0, outils.indexOf('<section id=', 10))).toContain('<button id="cles-rendre-ouvrir" type="button" class="secondaire rangee">Mes clés à rendre</button>');
   });
 
   it('[R272] [R665] chaque trousseau : le texte du serveur, l’heure du retour, « en retard » une fois passée, dans l’ordre reçu', async () => {

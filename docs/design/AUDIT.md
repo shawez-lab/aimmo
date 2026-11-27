@@ -74,12 +74,14 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Preuve : aucun élément `nav`. Le seul lien entre écrans est « Retour à ma journée ». Passer du mandat aux offres du même bien demande : retour, défilement jusqu'au bien, « Offres ».
 - Principe : on sait toujours où l'on est et comment aller ailleurs.
 - Solution : une barre de cinq onglets en bas sur téléphone (Journée, Clients, Biens, Outils, Chiffres), une colonne à gauche sur ordinateur.
+- Suite : corrigé le 2026-11-27 : une barre d'onglets pour l'agent, Journée, Outils et Chiffres, en bas sur téléphone et en colonne à gauche sur ordinateur ; un écran ouvert depuis un onglet y revient. Clients et Biens auront leur onglet avec leur liste (DS003, DS004). Avant et après : `captures/avant-apres/DS005-onglets.jpg`, `DS005-onglets-ordinateur.jpg`.
 
 #### DS006 · « Se déconnecter » occupe la meilleure place
 - Gravité : majeur · Catégorie : navigation · Effort : S
 - Où : en-tête de chaque écran — `packages/api/app/fichiers.ts` l. 68
 - Preuve : toutes les captures. L'en-tête ne porte que la marque et ce bouton.
 - Solution : l'en-tête porte le titre de l'écran, la recherche et les notifications. La déconnexion passe dans « Mon compte ».
+- Suite : corrigé le 2026-11-27 : l'en-tête ne porte plus que la marque ; « Se déconnecter » est au pied de l'écran « Outils » (du réseau pour la direction, de la conformité, des visites sans réseau). Le titre, la recherche et les notifications dans l'en-tête viendront avec les listes (DS003, DS004).
 
 #### DS007 · Aucun écran n'a d'adresse
 - Gravité : majeur · Catégorie : navigation · Effort : M
@@ -111,6 +113,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : accueil
 - Preuve : remises, panneaux, clés, notifications, actualités, intégration, Fiche Google, locations, investisseurs, commerces : dix blocs sur 23, chacun avec une phrase d'explication permanente.
 - Solution : un onglet « Outils », en grille, sans phrase permanente.
+- Suite : corrigé le 2026-11-27 : les outils ont quitté la journée (de 5,3 à 2,2 écrans sur le parcours de démonstration) pour l'onglet « Outils », un index d'une rangée par outil, en trois groupes, sans phrase permanente : 1,6 écran. La phrase des locations qui portait un engagement est sur l'écran des locations. Avant et après : `captures/avant-apres/DS011-outils.jpg`.
 
 #### DS012 · Des cartes vides, réduites à un bouton
 - Gravité : mineur · Catégorie : composants · Effort : S
@@ -472,11 +475,13 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : « Se déconnecter » — `fichiers.ts` l. 248
 - Preuve : 40 px de haut, pour 48 px promis par le système. WCAG 2.2 demande 24 px au moins : la règle est tenue, la promesse du système ne l'est pas.
 - Solution : 48 px, ou un bouton d'icône de 48 px.
+- Suite : corrigé le 2026-11-27 : le bouton a quitté l'en-tête et fait 48 px, comme les autres ; chaque onglet aussi, mesuré dans Chromium.
 
 #### DS066 · Pas de lien d'évitement ni de repère de navigation
 - Gravité : mineur · Catégorie : accessibilité · Effort : S
 - Où : toute l'application
 - Solution : « Aller au contenu », et un `nav` pour les onglets.
+- Suite : corrigé le 2026-11-27 : les onglets sont un repère `nav`, placé avant le contenu ; « Aller au contenu » est le premier arrêt au clavier et mène au titre de l'écran.
 
 #### DS067 · Les documents imprimés n'ont ni repère principal ni titre de niveau 1
 - Gravité : finition · Catégorie : accessibilité, impression · Effort : S
