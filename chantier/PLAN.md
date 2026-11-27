@@ -7929,8 +7929,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS013 · Un bien n'a pas d'écran à lui
-- Statut : en cours (voie 3)
-- Suivi : proposition #822 ouverte le 2026-11-27 (l'écran d'un bien, une ligne par bien dans la journée, le bien dit par ce qu'il est, un seul « Retour »).
+- Statut : à faire
+- Suivi : fait en partie le 2026-11-27 (#822 fusionnée) : un bien a son écran, ouvert depuis sa ligne ; ses outils y sont des rangées, et leur « Retour » y ramène ; le bien est relu quand son écran rouvre. Restent : le fil d'avancement et les étapes en onglets (voir la Suite de DS013 dans `docs/design/AUDIT.md`).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS013 (majeur, navigation, effort L), endroit : « Mettre en vente », « Mandat », « Offres », « Avis de valeur », « Studio », « Dossier de vente »
 - Constat de l’audit : six écrans séparés, ouverts par cinq boutons pleins de même poids sur l'accueil, chacun avec son « Retour à ma journée ».
@@ -8015,8 +8015,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS023 · Le bien s'appelle « B-E6B8BB51 »
-- Statut : en cours (voie 3)
-- Suivi : proposition #822 ouverte le 2026-11-27 (l'écran d'un bien, une ligne par bien dans la journée, le bien dit par ce qu'il est, un seul « Retour »).
+- Statut : à faire
+- Suivi : fait en partie le 2026-11-27 (#822 fusionnée) : dans la journée et sur l'écran du bien, il se dit par ce qu'il est (« Maison 5 pièces · Talant »), la référence en petit. Restent : les titres des six écrans d'outils, qui portent encore la référence.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS023 (majeur, hiérarchie, microcopie, effort M), endroit : titres de six écrans, carte de l'accueil
 - Constat de l’audit : `appli-mandat-offres-avis.jpg`. 105 occurrences dans les plans des écrans. Le point médian passe seul en début de ligne : « Avis de valeur / · B-E6B8BB51 ».
@@ -8130,8 +8130,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS037 · « Retour » a trois formes
-- Statut : en cours (voie 3)
-- Suivi : proposition #822 ouverte le 2026-11-27 (l'écran d'un bien, une ligne par bien dans la journée, le bien dit par ce qu'il est, un seul « Retour »).
+- Statut : à faire
+- Suivi : fait en partie le 2026-11-27 (#822 fusionnée) : huit écrans ont le même « Retour », fléché, jamais un bouton plein. Restent : le poser dans l'en-tête, et nommer l'écran d'où l'on vient.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS037 (majeur, composants, effort S), endroit : tous les écrans
 - Constat de l’audit : lien fléché « Retour à ma journée » (mandat), bouton plein « Retour à ma journée » (fiche client), « Ma journée d'agent » (réseau), « Retour » (Fiche Google).
@@ -8163,8 +8163,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS041 · Une liste ne se touche que par son bouton
-- Statut : en cours (voie 3)
-- Suivi : proposition #822 ouverte le 2026-11-27 (l'écran d'un bien, une ligne par bien dans la journée, le bien dit par ce qu'il est, un seul « Retour »).
+- Statut : à faire
+- Suivi : fait pour les biens le 2026-11-27 (#822 fusionnée) : une ligne entière à toucher, avec un chevron. Restent : les contacts chauds et les rendez-vous, dont la ligne porte encore un bouton.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS041 (mineur, composants, effort S), endroit : contacts chauds, rendez-vous, biens
 - Constat de l’audit : `appli-accueil-portefeuille-charge.jpg` : chaque ligne fait 185 px, dont un bouton « Voir la fiche » plein.
