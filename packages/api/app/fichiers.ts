@@ -69,7 +69,7 @@ export const INDEX_HTML = `<!doctype html>
 <div class="frise" aria-hidden="true"></div>
 <main>
 <section id="connexion" hidden>
-<h2>Connexion</h2>
+<h2 id="connexion-titre">Connexion</h2>
 <button id="entrer-appareil" type="button" hidden>Entrer avec la clé de cet appareil</button>
 <p>Nouveau téléphone, ou téléphone perdu : demandez à la direction votre lien d’accès. Il ouvre AIMMO d’un appui, rien à taper.</p>
 <details><summary>J’ai une clé personnelle</summary>
@@ -81,7 +81,7 @@ export const INDEX_HTML = `<!doctype html>
 <p id="erreur" role="alert" hidden></p>
 </section>
 <section id="invitation" hidden>
-<h2>Votre accès à AIMMO</h2>
+<h2 id="invitation-titre">Votre accès à AIMMO</h2>
 <p>Ce lien ne sert qu’une fois. Ouvrez-le sur le téléphone que vous garderez pour AIMMO.</p>
 <button id="entrer-invitation" type="button">Entrer sur ce téléphone</button>
 </section>
@@ -2130,7 +2130,7 @@ ${LOUER_JS}
     $('fiche-etat').textContent = '';
   }
   // AU117 · chaque écran ouvert entre dans l'historique du navigateur : Retour et Avancer le rouvrent tel qu'il était.
-  var shownId = null, shownArgs = 'null', fromHistory = false;
+  var shownId = null, shownArgs = 'null', fromHistory = false, seenId = null;
   function show(id, args) {
     ['connexion', 'invitation', 'accueil', 'attente', 'fiche', 'hors-ligne', 'visite', 'bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'].forEach(function (s) { $(s).hidden = s !== id; });
     var out = id === 'connexion' || id === 'attente' || id === 'invitation';
@@ -2140,6 +2140,16 @@ ${LOUER_JS}
     if (!out && !fromHistory && (id !== shownId || a !== shownArgs)) try { history[shownId ? 'pushState' : 'replaceState']({ s: id, a: args || null }, ''); } catch (e) { /* sans historique */ }
     shownId = out ? null : id;
     shownArgs = a;
+    // DS064 · le focus suit l'écran : à chaque changement, il va au titre du nouvel écran, que le lecteur d'écran
+    // annonce. Pas au premier écran ouvert (la page vient de se charger), ni à l'écran d'attente, qui n'a pas de titre.
+    if (id === 'attente') return;
+    var before = seenId;
+    seenId = id;
+    if (!before || before === id) return;
+    var t = $(id === 'accueil' ? 'bonjour' : id === 'fiche' ? 'fiche-nom' : id + '-titre');
+    if (!t || typeof t.focus !== 'function') return;
+    t.setAttribute('tabindex', '-1');
+    t.focus();
   }
   function api(path, key, method, body, extra) {
     var headers = { authorization: 'Bearer ' + key };

@@ -57,6 +57,11 @@ export class FakeElement {
     this.clicks += 1;
     this.listeners.click?.({});
   }
+  /** L'élément qui a le focus, dans le dernier document créé par `fakeDocument`. */
+  static active: FakeElement | null = null;
+  focus(): void {
+    FakeElement.active = this;
+  }
   /** Tous les éléments en dessous, en profondeur. */
   all(): FakeElement[] {
     return this.children.flatMap((c) => [c, ...c.all()]);
@@ -68,7 +73,11 @@ export function fakeDocument(ids: readonly string[]) {
   const els: Record<string, FakeElement> = {};
   for (const id of ids) els[id] = new FakeElement('div', id);
   const listeners: Record<string, () => void> = {};
+  FakeElement.active = null;
   const document = {
+    get activeElement() {
+      return FakeElement.active;
+    },
     getElementById: (id: string) => els[id],
     createElement: (tag: string) => new FakeElement(tag),
     addEventListener: (n: string, f: () => void) => (listeners[n] = f),
