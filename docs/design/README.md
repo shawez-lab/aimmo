@@ -4,7 +4,9 @@ Un seul fichier fait foi : `packages/core/src/design/systeme.ts`. Le contrôle e
 
 ## L'identité
 
-Les toits vernissés de Bourgogne : un papier chaud, une encre presque noire, un bordeaux « lie de vin » pour agir, un jaune moutarde de Dijon pour souligner, un vert de tuile. Un seul motif, le losange des tuiles : devant la marque, devant les titres de carte, et en frise sous l'en-tête. Titres en romain de livre, texte en police du système, chiffres alignés. Aucune police à télécharger.
+Une maison de vente : la direction « Maison » de `docs/design/DIRECTIONS.md`. Une pierre blanche, une encre presque noire qui est aussi la couleur d'action, un trait de laiton qui ne porte jamais de texte. Les titres, les prix et les grands chiffres dans le caractère à empattements de l'appareil, en graisse normale ; le texte dans sa police courante, chiffres alignés. Pas de carte : des filets fins, des angles presque droits. Une seule action pleine par écran. Aucune police à télécharger.
+
+Les noms des jetons n'ont pas changé, pour que chaque écran suive sans être récrit : `--accent` est l'encre, `--moutarde` est le laiton, `--frise` est un filet.
 
 ## Les jetons
 
