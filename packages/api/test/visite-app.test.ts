@@ -238,6 +238,8 @@ describe('T08 · écran des acquéreurs d’un bien', () => {
   });
   const open = async (link = 'https://wa.me/33600000001?text=Bonjour%20Zo%C3%A9') => {
     const t = await openVisit(answers(link));
+    // DS022 · ce geste mène ailleurs : il est filaire, pas un pas de la visite.
+    expect(t.byText(t.els['visite-corps']!, 'Acquéreurs pour ce bien')!.className).toBe('secondaire');
     await t.click(t.byText(t.els['visite-corps']!, 'Acquéreurs pour ce bien'));
     return t;
   };

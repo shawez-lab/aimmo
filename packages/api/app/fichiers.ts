@@ -814,7 +814,8 @@ export const APP_JS = `'use strict';
     if ((v.status === 'booked' || v.status === 'honored') && !(v.report && v.report.status === 'valide')) body.appendChild(lazyBlock('Dicter en sortant de la visite', '/app/dictee.js', 'AIMMO_DICTEE', v.appointmentId));
     body.appendChild(slipBlock(v.slip));
     if (typeof p.id === 'string' && ID.test(p.id)) {
-      body.appendChild(button('Acquéreurs pour ce bien', function () { openBien(p.id, p.reference || 'ce bien'); }));
+      // DS022 · aller voir les acquéreurs du bien n'est pas un pas de la visite : le geste est filaire.
+      body.appendChild(quiet(button('Acquéreurs pour ce bien', function () { openBien(p.id, p.reference || 'ce bien'); })));
     }
   }
   function safetyBlock(v) {
