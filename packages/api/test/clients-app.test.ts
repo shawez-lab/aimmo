@@ -3,6 +3,7 @@ import { runInNewContext } from 'node:vm';
 import { afterAll, describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems, htmlProblems } from '../../core/src/design/audit.ts';
 import { CLIENTS_SCRIPT } from '../app/clients.ts';
+import { OREILLE_JS } from '../app/oreille.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL, handleAgentApp } from '../src/agent-app.ts';
 import { type FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
 
@@ -148,6 +149,56 @@ describe('DS003 · l’agent a la liste de ses clients, et y cherche par nom', (
     await a.click(a.els.sortir!);
     expect(a.body().children).toHaveLength(0);
     expect(a.storage.get('aimmo.cle')).toBeUndefined();
+  });
+
+  it('Jamais vu · chercher un nom comme on l’entend : mal écrit, entendu au téléphone ou dicté, il se trouve, après les noms exacts et dit comme tel', async () => {
+    // Des noms inventés, courants, écrits comme l'état civil les écrit.
+    const heard = [person(1, 'Philippe', 'Dupont', '2026-11-20T08:00:00.000Z'), person(2, 'Jacques', 'Lefebvre', '2026-11-19T08:00:00.000Z'), person(3, 'Wanda', 'Kowalski', '2026-11-18T08:00:00.000Z'), person(4, 'Laurent', 'Martin', '2026-11-17T08:00:00.000Z'), person(5, 'Maëlle', 'Quentin', null), person(6, 'Martine', 'Dupond', null)];
+    const a = await run({ '/v1/fiches': ok(heard) });
+    await a.click(a.els['clients-ouvrir']!);
+    const notes = () => a.rows().map((li) => li.all().find((e) => e.className === 'doux')!.textContent);
+    // Écrit comme on l'a entendu : aucun nom ne contient ces lettres, la recherche à l'oreille le trouve.
+    for (const [typed, found] of [['filip', ['Philippe Dupont']], ['jack lefèvre', ['Jacques Lefebvre']], ['vanda kovalsqui', ['Wanda Kowalski']], ['lauran', ['Laurent Martin']], ['kantin', ['Maëlle Quentin']], ['FILIP DUPON', ['Philippe Dupont']]] as const) {
+      await a.type(typed);
+      expect(a.names(), typed).toEqual(found);
+      expect(a.count(), typed).toBe('1 sur 6, dont 1 à l’oreille');
+      expect(notes()[0], typed).toMatch(/^S’entend pareil\. /);
+    }
+    // Un nom exact passe d'abord, sans la mention ; celui qui s'entend pareil vient après, avec elle.
+    await a.type('dupond');
+    expect(a.names()).toEqual(['Martine Dupond', 'Philippe Dupont']);
+    expect(a.count()).toBe('2 sur 6, dont 1 à l’oreille');
+    expect(notes().map((n) => n.startsWith('S’entend pareil. '))).toEqual([false, true]);
+    // La recherche exacte reste ce qu'elle était : elle ne perd rien, et ne dit rien de l'oreille quand elle suffit.
+    await a.type('martin');
+    expect(a.names()).toEqual(['Laurent Martin', 'Martine Dupond']);
+    expect(a.count()).toBe('2 sur 6');
+    // Moins de trois lettres : pas d'oreille, pour ne pas tout rapprocher.
+    await a.type('fi');
+    expect(a.names()).toEqual([]);
+    expect(a.count()).toBe('Aucun client à ce nom.');
+    // Rien ne part au serveur : tout se fait dans la liste déjà lue.
+    expect(a.reads()).toBe(1);
+    // Le champ dit ce qu'il sait faire.
+    const label = a.body().all().find((e) => e.tagName === 'label')!;
+    expect(label.textContent).toBe('Chercher par nom, même comme on l’entend');
+    expect(label.attributes.for).toBe('clients-chercher');
+  });
+
+  it('Jamais vu · la clé « à l’oreille » : les écritures d’un même son se rejoignent, des noms différents restent différents', () => {
+    const { sound, heardIn } = runInNewContext(`(function () {${OREILLE_JS}; return { sound: sound, heardIn: heardIn }; })()`) as { sound: (text: string) => string; heardIn: (key: string, typed: string) => boolean };
+    const same: [string, string][] = [['Dupont', 'dupond'], ['Durand', 'durant'], ['Philippe', 'filip'], ['Kowalski', 'kovalsqui'], ['Wozniak', 'vozniak'], ['Laurent', 'lauran'], ['Jean', 'jan'], ['Martin', 'martain'], ['Lefebvre', 'lefèvre'], ['Jacques', 'jack'], ['Charles', 'charle'], ['Georges', 'jorje'], ['Quetigny', 'kétini'], ['Chenôve', 'chenove'], ['Thomas', 'toma'], ['Leroy', 'leroi'], ['Christian', 'kristian'], ['Gauthier', 'gotier'], ['Rousseau', 'rousso'], ['Schmitt', 'chmit'], ['Marchand', 'marchan'], ['Françoise', 'fransoise'], ['Exemple', 'exanple']];
+    for (const [written, heard] of same) expect(sound(written), `${written} / ${heard}`).toBe(sound(heard));
+    const apart: [string, string][] = [['Martin', 'marin'], ['Dupont', 'durand'], ['Petit', 'perrin'], ['Bruno', 'bruni'], ['Léa', 'lou'], ['Moreau', 'morel']];
+    for (const [x, y] of apart) expect(sound(x), `${x} / ${y}`).not.toBe(sound(y));
+    // Ce qui est tapé s'entend au début d'un mot : « lefev » dans « Jacques Lefebvre », pas au milieu d'un autre.
+    const key = sound('Jacques Lefebvre');
+    for (const typed of ['lefev', 'jack', 'jak lefèvre', 'Lefèvre']) expect(heardIn(key, typed), typed).toBe(true);
+    for (const typed of ['febvre', 'le', 'ja', 'lefebvre 2', 'jacques@', '']) expect(heardIn(key, typed), typed).toBe(false);
+    // Rien de vide ni d'étrange ne casse la clé ; un texte reçu reste un texte.
+    expect(sound('')).toBe('');
+    expect(sound(INJECTED)).toMatch(/^[a-z ]*$/);
+    expect(OREILLE_JS).not.toMatch(/fetch|XMLHttpRequest|send\(|innerHTML/);
   });
 
   it('une longue liste : cinquante lignes, puis la suite par cinquante ; chercher repart du début', async () => {

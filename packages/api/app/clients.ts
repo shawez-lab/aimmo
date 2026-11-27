@@ -1,3 +1,5 @@
+import { OREILLE_JS } from './oreille.ts';
+
 /**
  * L'écran « Clients » de l'application de l'agent (DS003), en morceaux posés dans `fichiers.ts` : son onglet, sa
  * section de page, son chargeur, et son script servi à part (`/app/clients.js`), chargé à la première ouverture pour
@@ -40,34 +42,38 @@ export const CLIENTS_SCRIPT = `'use strict';
 globalThis.AIMMO_CLIENTS = function (t) {
   var $ = t.$, el = t.el, clear = t.clear;
   var ID = /^[A-Za-z0-9-]{1,64}$/, STEP = 50;
-  var all = [], shown = STEP, query = '', list = null, count = null;
+  var all = [], keys = [], shown = STEP, query = '', list = null, count = null;
   /* Chercher sans tenir compte des accents ni des capitales : « elodie » trouve « Élodie ». */
   function plain(s) { return String(s || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase(); }
   function nameOf(p) { return ((p.first_name || '') + ' ' + (p.last_name || '')).trim() || 'Sans nom'; }
-  function row(p) {
+${OREILLE_JS}
+  function row(p, heard) {
     var b = list.appendChild(el('li')).appendChild(t.button('', function () { t.openFiche(p.id); }));
     b.className = 'secondaire rangee';
     var text = b.appendChild(el('span'));
     text.appendChild(el('strong', nameOf(p)));
     var day = p.last_contact_at ? t.date(p.last_contact_at) : '';
-    text.appendChild(el('span', day ? 'Dernier échange le ' + day : 'Aucun échange noté', 'doux'));
+    text.appendChild(el('span', (heard ? 'S’entend pareil. ' : '') + (day ? 'Dernier échange le ' + day : 'Aucun échange noté'), 'doux'));
   }
   function draw() {
     var q = plain(query).trim();
-    var found = q ? all.filter(function (p) { return plain(nameOf(p)).indexOf(q) !== -1; }) : all;
+    var exact = q ? all.filter(function (p) { return plain(nameOf(p)).indexOf(q) !== -1; }) : all;
+    /* « À l'oreille » : un nom entendu ou dicté se trouve même mal écrit. Après les noms exacts, et dit comme tel. */
+    var heard = q ? all.filter(function (p, i) { return exact.indexOf(p) < 0 && heardIn(keys[i], query.trim()); }) : [];
+    var found = exact.concat(heard);
     clear(list);
-    found.slice(0, shown).forEach(row);
+    found.slice(0, shown).forEach(function (p, i) { row(p, i >= exact.length); });
     if (found.length > shown) {
       var rest = found.length - shown;
       var more = list.appendChild(el('li')).appendChild(t.button('Voir la suite : ' + rest + (rest > 1 ? ' autres' : ' autre'), function () { shown += STEP; draw(); }));
       more.className = 'secondaire';
     }
-    count.textContent = !all.length ? 'Aucun client pour le moment.' : !found.length ? 'Aucun client à ce nom.' : q ? found.length + ' sur ' + all.length : all.length + (all.length > 1 ? ' clients' : ' client');
+    count.textContent = !all.length ? 'Aucun client pour le moment.' : !found.length ? 'Aucun client à ce nom.' : q ? found.length + ' sur ' + all.length + (heard.length ? ', dont ' + heard.length + ' à l’oreille' : '') : all.length + (all.length > 1 ? ' clients' : ' client');
   }
   function build() {
     var body = $('clients-corps');
     clear(body);
-    var label = body.appendChild(el('label', 'Chercher par nom'));
+    var label = body.appendChild(el('label', 'Chercher par nom, même comme on l’entend'));
     label.setAttribute('for', 'clients-chercher');
     var input = body.appendChild(el('input'));
     input.setAttribute('id', 'clients-chercher');
@@ -92,6 +98,7 @@ globalThis.AIMMO_CLIENTS = function (t) {
         var x = a.last_contact_at || '', y = b.last_contact_at || '';
         return x === y ? nameOf(a).localeCompare(nameOf(b), 'fr') : x < y ? 1 : -1;
       });
+      keys = all.map(function (p) { return sound(nameOf(p)); });
       shown = STEP;
       build();
       draw();
@@ -99,7 +106,7 @@ globalThis.AIMMO_CLIENTS = function (t) {
     });
   }
   /* Quitter l'onglet efface la liste ; la recherche en cours revient avec l'onglet, sauf à la fin de la session. */
-  function wipe(everything) { all = []; list = count = null; if (everything) query = ''; }
+  function wipe(everything) { all = []; keys = []; list = count = null; if (everything) query = ''; }
   return { open: open, wipe: wipe };
 };
 `;
