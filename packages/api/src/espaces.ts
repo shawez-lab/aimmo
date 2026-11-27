@@ -218,9 +218,29 @@ const euros = (n: number): string => `${new Intl.NumberFormat('fr-FR').format(n)
 type F = { value: unknown; source?: string; at?: string; label?: string };
 const isF = (x: unknown): x is F => !!x && typeof x === 'object' && 'value' in x && ('source' in x || 'label' in x);
 
-/** Une donnée avec sa source et sa date, ou « non communiquée » [R163]. */
-function shown(f: unknown, money = false): string {
-  if (!isF(f) || f.value === null) return '<span class="doux">non communiquée</span>';
+/**
+ * DS079 · La preuve se donne à qui la demande : dans la page, une valeur se lit seule ; sa source et sa date sont juste
+ * dessous, derrière « D’où viennent ces informations ? », regroupées par source [R163]. Rien n'est retiré de la page :
+ * chaque chiffre, chaque date et chaque statut y garde sa source et sa date, et le relevé prouvé reste entier.
+ */
+class Preuve {
+  private readonly by = new Map<string, string[]>();
+  note(label: string, f: F): void {
+    const key = `${f.source ?? ''}, ${frenchDate(f.at ?? '')}`;
+    const labels = this.by.get(key) ?? [];
+    if (!labels.includes(label)) labels.push(label);
+    this.by.set(key, labels);
+  }
+  html(): string {
+    if (this.by.size === 0) return '';
+    const lines = [...this.by].map(([source, labels]) => `<li>${escape(labels.join(', '))} : ${escape(source)}</li>`);
+    return `<details class="preuve"><summary>D’où viennent ces informations ?</summary><ul>${lines.join('')}</ul></details>`;
+  }
+}
+
+/** La valeur d'une donnée, en mots, déjà sûre pour la page ; `null` si elle n'est pas communiquée. */
+function plain(f: unknown, money = false): string | null {
+  if (!isF(f) || f.value === null) return null;
   const v = f.value;
   const text =
     typeof v === 'boolean'
@@ -240,23 +260,57 @@ function shown(f: unknown, money = false): string {
             : typeof v === 'object' && v && 'lowEur' in v
               ? `de ${euros((v as unknown as { lowEur: number }).lowEur)} à ${euros((v as unknown as { highEur: number }).highEur)} le m²`
               : String(v);
-  const safe = Array.isArray(v) ? text : escape(text);
-  return `${safe} <small class="doux">${escape(f.source ?? '')}, ${escape(frenchDate(f.at ?? ''))}</small>`;
+  return Array.isArray(v) ? text : escape(text);
+}
+
+/** Une donnée, seule ; sa source et sa date vont à la preuve du bloc, sous le nom donné. Absente : « non communiquée » [R163]. */
+function shown(f: unknown, proof: Preuve, label: string, money = false): string {
+  const text = plain(f, money);
+  if (text === null) return '<span class="doux">non communiquée</span>';
+  proof.note(label, f as F);
+  return text;
 }
 
 const row = (label: string, value: string): string => `<dt>${escape(label)}</dt><dd>${value}</dd>`;
-const list = (title: string, items: string[], empty: string): string => `<h3>${escape(title)}</h3>${items.length === 0 ? `<p class="doux">${escape(empty)}</p>` : `<ul>${items.join('')}</ul>`}`;
+
+/**
+ * Les listes d'un bloc : une liste remplie a son titre, ses lignes et sa preuve ; les listes vides ne prennent plus un
+ * titre chacune, leurs phrases se lisent ensemble à la fin.
+ */
+class Listes {
+  private readonly full: string[] = [];
+  private readonly empty: string[] = [];
+  add(title: string, items: string[], none: string, proof: Preuve): void {
+    if (items.length === 0) {
+      if (none) this.empty.push(none);
+    } else this.full.push(`<h3>${escape(title)}</h3><ul>${items.join('')}</ul>${proof.html()}`);
+  }
+  html(): string {
+    return `${this.full.join('')}${this.empty.length > 0 ? `<p class="doux">${this.empty.map(escape).join(' ')}</p>` : ''}`;
+  }
+}
+
+/** « Votre bien à Dijon », et sa référence dessous : le client lit son bien, pas un code (DS080). */
+const bienTitle = (reference: string, city: string): string => `<h2>Votre bien${city && city !== 'non communiquée' ? ` à ${escape(city)}` : ''}</h2><p class="doux">Réf. ${escape(reference)}</p>`;
 
 function sellerHtml(biens: Extract<Awaited<ReturnType<EspaceVendeur['vue']>>, { ok: true }>['value'], keys: boolean): string {
   return biens
-    .map(
-      (b) => `<section><h2>${escape(b.reference)} · ${escape(b.city)}</h2>${keys ? `<p><a href="${ESPACE_PATH}cles?bien=${encodeURIComponent(b.propertyId)}">Qui a les clés de ce bien</a></p>` : ''}<dl>${row('Statut', shown(b.status))}${row('Prix du mandat', shown(b.price, true))}${row('Acte au plus tôt', shown(b.deed.date))}${row('Ce qui le retient', shown(b.deed.holds))}</dl>
-${list('Visites', b.visits.map((v) => `<li>${shown(v.at)} · ${shown(v.state)}<br>${shown(v.report)}</li>`), 'Aucune visite pour l’instant.')}
-${list('Offres', b.offers.map((o) => `<li>${shown(o.amount, true)} · net vendeur ${shown(o.netSeller, true)} · ${shown(o.state)}<br>Conditions : ${shown(o.conditions)} · valable jusqu’au ${shown(o.validUntil)}</li>`), 'Aucune offre pour l’instant.')}
-${list('Documents', b.documents.map((d) => `<li>${escape(d.title)} · ${shown(d.signature)}${d.number.value === null ? '' : ` · n° ${shown(d.number)}`}</li>`), 'Aucun document.')}
-${list('Rendez-vous', b.appointments.map((a) => `<li>${escape(a.kind)} · ${shown(a.at)} · ${shown(a.state)}</li>`), 'Aucun rendez-vous.')}
-${list('Points de la semaine', b.weeklyPoints.map((w) => `<li>${shown(w.weekOf)}<br>${shown(w.text)}</li>`), 'Aucun point pour l’instant.')}</section>`,
-    )
+    .map((b) => {
+      const facts = new Preuve();
+      const dl = `<dl>${row('Statut', shown(b.status, facts, 'Statut'))}${row('Prix du mandat', shown(b.price, facts, 'Prix du mandat', true))}${row('Acte au plus tôt', shown(b.deed.date, facts, 'Acte au plus tôt'))}${row('Ce qui le retient', shown(b.deed.holds, facts, 'Ce qui le retient'))}</dl>${facts.html()}`;
+      const lists = new Listes();
+      const visits = new Preuve();
+      lists.add('Visites', b.visits.map((v) => { const name = `Visite du ${plain(v.at) ?? 'jour non communiqué'}`; return `<li>${shown(v.at, visits, name)} · ${shown(v.state, visits, name)}<br>${shown(v.report, visits, name)}</li>`; }), 'Aucune visite pour l’instant.', visits);
+      const offers = new Preuve();
+      lists.add('Offres', b.offers.map((o) => { const name = `Offre de ${plain(o.amount, true) ?? 'montant non communiqué'}`; return `<li>${shown(o.amount, offers, name, true)} · net vendeur ${shown(o.netSeller, offers, name, true)} · ${shown(o.state, offers, name)}<br>Conditions : ${shown(o.conditions, offers, name)} · valable jusqu’au ${shown(o.validUntil, offers, name)}</li>`; }), 'Aucune offre pour l’instant.', offers);
+      const documents = new Preuve();
+      lists.add('Documents', b.documents.map((d) => `<li>${escape(d.title)} · ${shown(d.signature, documents, d.title)}${d.number.value === null ? '' : ` · n° ${shown(d.number, documents, d.title)}`}</li>`), 'Aucun document.', documents);
+      const appointments = new Preuve();
+      lists.add('Rendez-vous', b.appointments.map((a) => { const name = `${a.kind} du ${plain(a.at) ?? 'jour non communiqué'}`; return `<li>${escape(a.kind)} · ${shown(a.at, appointments, name)} · ${shown(a.state, appointments, name)}</li>`; }), 'Aucun rendez-vous.', appointments);
+      const points = new Preuve();
+      lists.add('Points de la semaine', b.weeklyPoints.map((w) => { const name = `Point du ${plain(w.weekOf) ?? 'jour non communiqué'}`; return `<li>${shown(w.weekOf, points, name)}<br>${shown(w.text, points, name)}</li>`; }), 'Aucun point pour l’instant.', points);
+      return `<section>${bienTitle(b.reference, b.city)}${keys ? `<p><a href="${ESPACE_PATH}cles?bien=${encodeURIComponent(b.propertyId)}">Qui a les clés de ce bien</a></p>` : ''}${dl}${lists.html()}</section>`;
+    })
     .join('');
 }
 
@@ -264,29 +318,43 @@ function ownerHtml(biens: Extract<Awaited<ReturnType<EspaceProprietaire['vue']>>
   return biens
     .map((b) => {
       const rentals = b.rentals
-        .map(
-          (r) => `<h3>Location ouverte le ${shown(r.openedAt)}</h3><dl>${row('État', shown(r.state))}${row('Loyer du bail', shown(r.lease.rent, true))}${row('Bail signé le', shown(r.lease.signedAt))}${row('Dossiers encore incomplets', String(r.waiting))}</dl>
-${list('Candidatures complètes, dans l’ordre d’arrivée', r.applications.map((a) => `<li>N° ${a.rank} · reçue le ${shown(a.receivedAt)} · ${a.guarantors} garant${a.guarantors > 1 ? 's' : ''}<br>${a.pieces.map((p) => escape(p.label)).join(' ; ') || 'aucune pièce'}</li>`), 'Aucune candidature complète pour l’instant.')}`,
-        )
+        .map((r) => {
+          const facts = new Preuve();
+          const dl = `<h3>Location ouverte le ${shown(r.openedAt, facts, 'Ouverture')}</h3><dl>${row('État', shown(r.state, facts, 'État'))}${row('Loyer du bail', shown(r.lease.rent, facts, 'Loyer du bail', true))}${row('Bail signé le', shown(r.lease.signedAt, facts, 'Bail signé le'))}${row('Dossiers encore incomplets', String(r.waiting))}</dl>${facts.html()}`;
+          const lists = new Listes();
+          const applications = new Preuve();
+          lists.add('Candidatures complètes, dans l’ordre d’arrivée', r.applications.map((a) => `<li>N° ${a.rank} · reçue le ${shown(a.receivedAt, applications, `Candidature n° ${a.rank}`)} · ${a.guarantors} garant${a.guarantors > 1 ? 's' : ''}<br>${a.pieces.map((x) => escape(x.label)).join(' ; ') || 'aucune pièce'}</li>`), 'Aucune candidature complète pour l’instant.', applications);
+          return `${dl}${lists.html()}`;
+        })
         .join('');
-      const value = b.value ? `<dl>${row(`Valeur à ${b.value.city}`, shown(b.value.range))}${row('Sources', b.value.sources.map(escape).join(' ; '))}</dl>` : '';
-      return `<section><h2>${escape(b.reference)} · ${escape(b.city)}</h2>${value}${rentals}${list('Vos documents', b.documents.map((d) => `<li>${escape(d.title)} · ${shown(d.addedAt)}</li>`), 'Aucun document.')}</section>`;
+      const worth = new Preuve();
+      const value = b.value ? `<dl>${row(`Valeur à ${b.value.city}`, shown(b.value.range, worth, 'Valeur'))}${row('Sources', b.value.sources.map(escape).join(' ; '))}</dl>${worth.html()}` : '';
+      const lists = new Listes();
+      const documents = new Preuve();
+      lists.add('Vos documents', b.documents.map((d) => `<li>${escape(d.title)} · ${shown(d.addedAt, documents, d.title)}</li>`), 'Aucun document.', documents);
+      return `<section>${bienTitle(b.reference, b.city)}${value}${rentals}${lists.html()}</section>`;
     })
     .join('');
 }
 
 function buyerHtml(v: Extract<Awaited<ReturnType<EspaceAcquereur['vue']>>, { ok: true }>['value']): string {
+  const lists = new Listes();
+  const proposed = new Preuve();
   const props = v.properties.map(
-    (p) => `<li><strong>${escape(p.reference)}</strong> · ${escape(p.kind)} à ${escape(p.city)} · ${shown(p.price, true)} · ${shown(p.surface)} m²${
-      p.investor ? `<br>Rendement brut ${shown(p.investor.grossYield)} points de base · hypothèses : ${p.investor.hypotheses.map(escape).join(' ; ')}` : ''
-    }<form method="post" action="${ESPACE_PATH}favori"><input type="hidden" name="bien" value="${escape(p.propertyId)}"><input type="hidden" name="favori" value="${p.favorite ? 'non' : 'oui'}"><button type="submit">${p.favorite ? 'Retirer des favoris' : 'Mettre en favori'}</button></form></li>`,
+    (p) => `<li><strong>${escape(p.kind)} à ${escape(p.city)}</strong> · ${shown(p.price, proposed, p.reference, true)} · ${shown(p.surface, proposed, p.reference)} m²<br><span class="doux">Réf. ${escape(p.reference)}</span>${
+      p.investor ? `<br>Rendement brut ${shown(p.investor.grossYield, proposed, p.reference)} points de base · hypothèses : ${p.investor.hypotheses.map(escape).join(' ; ')}` : ''
+    }<form method="post" action="${ESPACE_PATH}favori"><input type="hidden" name="bien" value="${escape(p.propertyId)}"><input type="hidden" name="favori" value="${p.favorite ? 'non' : 'oui'}"><button type="submit" class="secondaire">${p.favorite ? 'Retirer des favoris' : 'Mettre en favori'}</button></form></li>`,
   );
-  return `<section><h2>Votre recherche</h2><p>Alertes : ${v.alerts.requested ? 'demandées' : 'non demandées'}.</p>
-${list('Biens proposés', props, 'Aucun bien proposé pour l’instant.')}
-${list('Vos visites', v.visits.map((x) => `<li>${shown(x.at)} · ${shown(x.state)}</li>`), 'Aucune visite.')}
-${list('Vos offres', v.offers.map((x) => `<li>${shown(x.amount, true)} · ${shown(x.state)}</li>`), 'Aucune offre.')}
-${list('Vos dossiers', v.files.map((f) => `<li>Acte au plus tôt : ${shown(f.deedDate)} · prêt : ${shown(f.loan)}<br>${f.pieces.map((x) => `${escape(x.kind)} : ${shown(x.state)}`).join(' ; ')}</li>`), 'Aucun dossier.')}
-${v.rentals.length > 0 ? list('Vos candidatures', v.rentals.map((r) => `<li>${escape(r.reference)} à ${escape(r.city)} · ${shown(r.state)}</li>`), '') : ''}</section>`;
+  lists.add('Biens proposés', props, 'Aucun bien proposé pour l’instant.', proposed);
+  const visits = new Preuve();
+  lists.add('Vos visites', v.visits.map((x) => { const name = `Visite du ${plain(x.at) ?? 'jour non communiqué'}`; return `<li>${shown(x.at, visits, name)} · ${shown(x.state, visits, name)}</li>`; }), 'Aucune visite.', visits);
+  const offers = new Preuve();
+  lists.add('Vos offres', v.offers.map((x) => { const name = `Offre de ${plain(x.amount, true) ?? 'montant non communiqué'}`; return `<li>${shown(x.amount, offers, name, true)} · ${shown(x.state, offers, name)}</li>`; }), 'Aucune offre.', offers);
+  const files = new Preuve();
+  lists.add('Vos dossiers', v.files.map((f) => `<li>Acte au plus tôt : ${shown(f.deedDate, files, 'Acte au plus tôt')} · prêt : ${shown(f.loan, files, 'Prêt')}<br>${f.pieces.map((x) => `${escape(x.kind)} : ${shown(x.state, files, x.kind)}`).join(' ; ')}</li>`), 'Aucun dossier.', files);
+  const rentals = new Preuve();
+  if (v.rentals.length > 0) lists.add('Vos candidatures', v.rentals.map((r) => `<li>${escape(r.reference)} à ${escape(r.city)} · ${shown(r.state, rentals, r.reference)}</li>`), '', rentals);
+  return `<section><h2>Votre recherche</h2><p>Alertes : ${v.alerts.requested ? 'demandées' : 'non demandées'}.</p>${lists.html()}</section>`;
 }
 
 /** Au plus tant de sorties dans la page, les plus récentes : la page tient son budget [R201]. */
@@ -362,7 +430,7 @@ export async function handleEspacePublic(request: Request, s: EspacesServices): 
     if (!viewer) return page(200, 'Votre espace', requestForm());
     const { html } = await spaceHtml(s, viewer);
     const releve = c.releve.available ? `<p><a href="${ESPACE_PATH}releve">Télécharger le relevé prouvé de mon espace</a></p>` : '';
-    return page(200, 'Votre espace', `${html || '<p>Rien à montrer pour l’instant.</p>'}${releve}<form method="post" action="${ESPACE_PATH}sortie"><button type="submit">Me déconnecter</button></form>`);
+    return page(200, 'Votre espace', `${html || '<p>Rien à montrer pour l’instant.</p>'}${releve}<form method="post" action="${ESPACE_PATH}sortie"><button type="submit" class="discret">Me déconnecter</button></form>`);
   }
 
   if (path === 'demande' && writing) {

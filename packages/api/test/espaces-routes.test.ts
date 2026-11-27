@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, SqlJournalStore, applyMigrations, fromSyncSqlite, type SqlDatabase, type Viewer } from '@aimmo/core';
-import { BUDGETS, budgetProblems, htmlProblems } from '../../core/src/design/audit.ts';
+import { BUDGETS, budgetProblems, filledButtons, htmlProblems } from '../../core/src/design/audit.ts';
 import type { ClientSide, GestesAcquereur, SourcesAcquereur, SourcesProprietaire, SourcesVendeur } from '../../core/src/espaces/index.ts';
 import type { SellerKeyEntry } from '../../core/src/cles/cles.ts';
 import { ESPACE_PATH, MAX_KEY_ENTRIES, SESSION_COOKIE, espacesRoutes, frenchDate, handleEspacePublic, type EspacesServices } from '../src/espaces.ts';
@@ -230,11 +230,56 @@ describeWithSqlite('EC06 · routes et page de l’espace', () => {
     const home = await t.pub('GET', ESPACE_PATH, { cookie });
     expect(home.status).toBe(200);
     // Le constat de l'audit, « Statut : available » et « Mandat de vente · signe », ne se reproduit plus.
-    expect(home.text).toContain('<dt>Statut</dt><dd>en vente ');
-    expect(home.text).toContain('Mandat de vente · signé ');
-    expect(home.text).toMatch(/5 juin 2027 à 16 h 00 <small[^>]*>[^<]*<\/small> · faite /);
+    expect(home.text).toContain('<dt>Statut</dt><dd>en vente</dd>');
+    expect(home.text).toContain('<li>Mandat de vente · signé</li>');
+    expect(home.text).toContain('<li>5 juin 2027 à 16 h 00 · faite<br>');
     const words = home.text.replace(/<[^>]+>/g, ' ');
     for (const code of ['available', 'under_offer', 'prevue', 'annulee', 'a_signer', 'signe', 'deposee', 'validee']) expect(words, code).not.toMatch(new RegExp(`(^|[^\\p{L}_])${code}([^\\p{L}_]|$)`, 'u'));
+  });
+
+  it('[R163] DS079 · une valeur se lit seule ; sa source et sa date sont dessous, à qui les demande, et aucune ne manque', async () => {
+    const t = await setup();
+    const c = await t.client('vendeur');
+    const cookie = await t.enter(c.token);
+    const home = await t.pub('GET', ESPACE_PATH, { cookie });
+    // Le constat de l'audit, « 245 000 € mandat en vigueur, 1 mai 2027 à 12 h 00 », ne se reproduit plus.
+    expect(home.text).not.toContain('<small');
+    expect(home.text).toContain('<dt>Prix du mandat</dt><dd>245\u202f000 €</dd>');
+    // Hors des preuves, la page ne dit plus une seule source : elle dit les valeurs.
+    const visible = home.text.replace(/<details class="preuve">[\s\S]*?<\/details>/g, '');
+    for (const source of ['fiche du bien', 'mandat en vigueur', 'agenda du bien', 'compte rendu validé', 'dossier de vente']) expect(visible, source).not.toContain(source);
+    // Chaque bloc a sa preuve, regroupée par source, avec la date de chacune.
+    const proofs = [...home.text.matchAll(/<details class="preuve"><summary>D’où viennent ces informations \?<\/summary><ul>([\s\S]*?)<\/ul><\/details>/g)].map((m) => m[1]);
+    expect(proofs).toEqual([
+      '<li>Statut : fiche du bien, 2 mai 2027 à 11 h 00</li><li>Prix du mandat : mandat en vigueur, 1 mai 2027 à 12 h 00</li>',
+      '<li>Visite du 5 juin 2027 à 16 h 00 : agenda du bien, 5 juin 2027 à 16 h 00</li><li>Visite du 5 juin 2027 à 16 h 00 : compte rendu validé par l’agent, 5 juin 2027 à 20 h 00</li>',
+      '<li>Mandat de vente : dossier de vente, 1 mai 2027 à 12 h 30</li>',
+    ]);
+    // Une donnée absente reste dite, sans preuve à montrer.
+    expect(home.text).toContain('<dt>Acte au plus tôt</dt><dd><span class="doux">non communiquée</span></dd>');
+    // Le relevé prouvé reste entier : il part des mêmes données, sources et dates comprises [R164].
+    expect(home.text).toContain('Télécharger le relevé prouvé de mon espace');
+  });
+
+  it('DS080, DS081, DS082 · le client lit son bien, les listes vides tiennent en une phrase, et aucun bouton plein ne va à la déconnexion', async () => {
+    const t = await setup();
+    const c = await t.client('vendeur');
+    const cookie = await t.enter(c.token);
+    const home = await t.pub('GET', ESPACE_PATH, { cookie });
+    expect(home.text).toContain('<section><h2>Votre bien à Dijon</h2><p class="doux">Réf. REF-V1</p>');
+    expect(home.text).not.toContain('REF-V1 · Dijon');
+    // Trois listes vides : une phrase, plus trois titres.
+    expect(home.text).toContain('<p class="doux">Aucune offre pour l’instant. Aucun rendez-vous. Aucun point pour l’instant.</p>');
+    for (const title of ['Offres', 'Rendez-vous', 'Points de la semaine']) expect(home.text, title).not.toContain(`<h3>${title}</h3>`);
+    expect(home.text).toContain('<h3>Visites</h3>');
+    // « Me déconnecter » est un bouton de texte, en bas ; la page du vendeur n'a aucun bouton plein.
+    expect(home.text).toContain('<button type="submit" class="discret">Me déconnecter</button></form>');
+    expect(filledButtons(home.text)).toEqual([]);
+    // L'acquéreur : « Mettre en favori » est au trait, et le bien se lit avant sa référence.
+    const buyer = await t.client('acquereur');
+    const view = await t.pub('GET', ESPACE_PATH, { cookie: await t.enter(buyer.token) });
+    expect(filledButtons(view.text)).toEqual([]);
+    expect(view.text).not.toContain('<small');
   });
 
   it('[R161] une donnée des sources est toujours échappée dans la page', async () => {

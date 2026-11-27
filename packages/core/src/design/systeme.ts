@@ -258,8 +258,12 @@ export const PUBLIC_PAGE_CSS =
   '.tete{display:flex;align-items:center;justify-content:space-between;gap:var(--e-4);padding:var(--e-4)}' +
   'main{max-width:var(--colonne);margin:0 auto;padding:var(--e-6) var(--e-4) var(--e-8)}' +
   '.carte{padding:var(--e-6) var(--e-5)}.carte h1{font-size:var(--t-xl)}' +
-  '.carte form button[type=submit]{width:100%;margin-top:var(--e-4)}' +
-  'ul{padding-left:1.2rem}';
+  '.carte form button[type=submit]{width:100%;margin-top:var(--e-4)}.carte form button.secondaire,.carte form button.discret{width:auto}' +
+  'ul{padding-left:1.2rem}' +
+  // DS079 · l'espace d'un client : une donnée sous son nom, et sa preuve derrière « D’où viennent ces informations ? ».
+  'section+section{margin-top:var(--e-6);padding-top:var(--e-5);border-top:1px solid var(--trait)}h3{margin-top:var(--e-5)}' +
+  'dl{margin:var(--e-4) 0 0}dt{font-size:var(--t-s);color:var(--doux)}dd{margin:0 0 var(--e-3);font-size:var(--t-l)}' +
+  '.preuve{font-size:var(--t-s);color:var(--doux)}.preuve summary{min-height:var(--cible);padding:var(--e-3) 0;cursor:pointer;font-weight:500}.preuve ul{margin:0 0 var(--e-3)}';
 
 /**
  * Les deux étiquettes du diagnostic de performance énergétique (AU006) [R43, R201] : l'échelle « énergie » de A à G,
