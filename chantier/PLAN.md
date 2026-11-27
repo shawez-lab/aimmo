@@ -8329,8 +8329,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS061 · Une panne ressemble à une information
-- Statut : en cours (voie 3)
-- Suivi : proposition #821 ouverte le 2026-11-27 (coquille : bandeau de panne avec « Réessayer », titre de la page par écran, essai de l'écran de connexion).
+- Statut : à faire
+- Suivi : fait pour la coquille avec #821 (2026-11-27) : la journée, la fiche d'un client, la visite, les acquéreurs d'un bien, la mise en vente, les ventes conclues et « Mes chiffres » écrivent une panne dans un bandeau d'une ligne avec « Réessayer ». Restent les écrans des modules (Studio, partenaires, finances…), qui écrivent encore leur phrase eux-mêmes.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS061 (majeur, états, effort S), endroit : fiche client, Studio, partenaires
 - Constat de l’audit : `appli-fiche-client.jpg` : « La liste des biens n'a pas pu être lue. » est en gris, sous un bouton, comme une aide.
@@ -8338,8 +8338,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS062 · L'écran de connexion est nu
-- Statut : en cours (voie 3)
-- Suivi : proposition #821 ouverte le 2026-11-27 (coquille : bandeau de panne avec « Réessayer », titre de la page par écran, essai de l'écran de connexion).
+- Statut : fait (2026-11-27)
+- Suivi : #821 fusionnée : l'écran de connexion porte la marque, un titre, une phrase et la clé personnelle repliée depuis la base du système ; un essai le garde.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS062 (mineur, états, identité, effort S), endroit : connexion — `fichiers.ts` (`#connexion`)
 - Constat de l’audit : `appli-reseau-chiffres-connexion.jpg` : un titre, une phrase, un lien.
@@ -8347,8 +8347,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS063 · Le titre de la page ne change jamais
-- Statut : en cours (voie 3)
-- Suivi : proposition #821 ouverte le 2026-11-27 (coquille : bandeau de panne avec « Réessayer », titre de la page par écran, essai de l'écran de connexion).
+- Statut : à faire
+- Suivi : fait en partie avec #821 (2026-11-27) : le titre de la page dit l'écran, suit la référence d'un bien, et ne porte jamais une personne. Reste le niveau des titres : le seul `h1` est la marque, chaque écran garde un `h2` ; les changer touche tous les modules à la fois.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS063 (mineur, accessibilité, effort S), endroit : toute l'application
 - Constat de l’audit : `document.title` vaut « AIMMO » sur chaque écran. Le seul `h1` est la marque.
