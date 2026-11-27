@@ -248,7 +248,14 @@ describe('A04 · « Ma semaine » dans l’application', () => {
   it('[R14] l’agent voit ses seuls jours d’usage du matin, sans comparaison', async () => {
     const days = ['04', '05', '06', '07', '08', '09', '10'].map((d) => ({ day: `2026-11-${d}`, opened: d !== '06' && d !== '10' }));
     const { els } = await run({ ...DAY, '/v1/usage/matin': ok({ scope: 'agent', days, openedDays: 5 }) });
-    expect(items(els.semaine!)).toEqual(['Plan ouvert avant midi : 5 jour(s) sur 7.', '04/11 oui · 05/11 oui · 06/11 non · 07/11 oui · 08/11 oui · 09/11 oui · 10/11 non']);
+    // DS055 · en mots : le nombre s'accorde, et les jours se disent par leur nom, les moins nombreux des deux.
+    expect(items(els.semaine!)).toEqual(['Plan ouvert avant midi : 5 jours sur 7.', 'Pas ouvert vendredi 6 ni mardi 10.']);
+    const few = await run({ ...DAY, '/v1/usage/matin': ok({ scope: 'agent', days: days.map((d) => ({ ...d, opened: !d.opened })), openedDays: 2 }) });
+    expect(items(few.els.semaine!)).toEqual(['Plan ouvert avant midi : 2 jours sur 7.', 'Ouvert vendredi 6 et mardi 10.']);
+    const none = await run({ ...DAY, '/v1/usage/matin': ok({ scope: 'agent', days: days.map((d) => ({ ...d, opened: false })), openedDays: 0 }) });
+    expect(items(none.els.semaine!)).toEqual(['Plan ouvert avant midi : 0 jour sur 7.']);
+    const all = await run({ ...DAY, '/v1/usage/matin': ok({ scope: 'agent', days: days.map((d) => ({ ...d, opened: true })), openedDays: 7 }) });
+    expect(items(all.els.semaine!)).toEqual(['Plan ouvert avant midi : 7 jours sur 7.']);
     // Une réponse du réseau n'est pas montrée dans l'écran de l'agent.
     const network = await run({ ...DAY, '/v1/usage/matin': ok({ scope: 'network', days: [], daysUsed: 0, activeAgents: 3 }) });
     expect(network.els['semaine-etat']!.textContent).toBe('Mesure indisponible.');
@@ -308,6 +315,6 @@ describe('A04 · la semaine est lue après le plan', () => {
     const { els } = await pending;
     for (let i = 0; i < 6; i++) await new Promise((r) => setTimeout(r, 0));
     expect(order).toEqual(['plan lu', 'semaine demandée']);
-    expect(els.semaine!.children[0]!.textContent).toBe('Plan ouvert avant midi : 1 jour(s) sur 1.');
+    expect(els.semaine!.children[0]!.textContent).toBe('Plan ouvert avant midi : 1 jour sur 1.');
   });
 });

@@ -139,6 +139,7 @@ export const INDEX_HTML = `<!doctype html>
 </section>
 <section id="accueil" hidden>
 <h2 id="bonjour"></h2>
+<p id="jour" class="doux"></p>
 <button id="vers-reseau" type="button" class="secondaire" hidden>Voir le réseau</button>
 <div id="dictee-accueil"></div>
 <section class="bloc" aria-labelledby="titre-reprendre">
@@ -146,7 +147,12 @@ export const INDEX_HTML = `<!doctype html>
 <p id="reprendre-etat" class="etat"></p>
 <ul id="reprendre" class="liste"></ul>
 </section>
-${A_TENIR_HOME_HTML}<section class="bloc" aria-labelledby="titre-plan">
+<section class="bloc" aria-labelledby="titre-rdv">
+<h3 id="titre-rdv">Rendez-vous du jour</h3>
+<p id="rdv-etat" class="etat"></p>
+<ul id="rdv" class="liste"></ul>
+</section>
+<section class="bloc" aria-labelledby="titre-plan">
 <h3 id="titre-plan">Mon plan du jour</h3>
 <p id="plan-etat" class="etat"></p>
 <ol id="plan" class="liste"></ol>
@@ -156,12 +162,7 @@ ${A_TENIR_HOME_HTML}<section class="bloc" aria-labelledby="titre-plan">
 <p id="chauds-etat" class="etat"></p>
 <ul id="chauds" class="liste"></ul>
 </section>
-<section class="bloc" aria-labelledby="titre-rdv">
-<h3 id="titre-rdv">Rendez-vous du jour</h3>
-<p id="rdv-etat" class="etat"></p>
-<ul id="rdv" class="liste"></ul>
-</section>
-<section class="bloc" aria-labelledby="titre-biens">
+${A_TENIR_HOME_HTML}<section class="bloc" aria-labelledby="titre-biens">
 <h3 id="titre-biens">Mes biens à mettre en vente</h3>
 <p id="biens-etat" class="etat"></p>
 <ul id="biens" class="liste"></ul>
@@ -170,7 +171,6 @@ ${A_TENIR_HOME_HTML}<section class="bloc" aria-labelledby="titre-plan">
 <h3 id="titre-apres-jour">Après mes ventes</h3>
 <p id="apres-jour-etat" class="etat"></p>
 <ul id="apres-jour" class="liste"></ul>
-<button id="apres-ouvrir" type="button" class="secondaire">Mes ventes conclues</button>
 </section>
 <section class="bloc" aria-labelledby="titre-semaine">
 <h3 id="titre-semaine">Ma semaine</h3>
@@ -181,7 +181,8 @@ ${A_TENIR_HOME_HTML}<section class="bloc" aria-labelledby="titre-plan">
 <section id="outils" hidden>
 <h2 id="outils-titre">Outils</h2>
 <h3>Mes dossiers</h3>
-${GAGNER_HOME_HTML}${LOUER_HOME_HTML}${COMMERCES_HOME_HTML}${INVESTIR_HOME_HTML}<button id="partenaires-ouvrir" type="button" class="secondaire rangee">Mes partenaires</button>
+${GAGNER_HOME_HTML}${LOUER_HOME_HTML}${COMMERCES_HOME_HTML}${INVESTIR_HOME_HTML}<button id="apres-ouvrir" type="button" class="secondaire rangee">Mes ventes conclues</button>
+<button id="partenaires-ouvrir" type="button" class="secondaire rangee">Mes partenaires</button>
 <h3>Au quotidien</h3>
 ${CLES_A_RENDRE_HOME_HTML}<div id="remises-accueil"></div>
 ${FICHE_GOOGLE_HOME_HTML}${ACTUALITES_HOME_HTML}<h3>Mon compte</h3>
@@ -214,7 +215,7 @@ ${INTEGRATION_HOME_HTML}${NOTIFICATIONS_HOME_HTML}${clesEntryHtml('accueil')}</s
 <div id="vente-corps"></div>
 </section>
 <section id="apres" hidden>
-<button id="apres-retour" type="button" class="retour">Retour à ma journée</button>
+<button id="apres-retour" type="button" class="retour">Retour</button>
 <h2 id="apres-titre">Mes ventes conclues</h2>
 <p id="apres-etat" class="etat" role="status"></p>
 <div id="apres-corps"></div>
@@ -267,6 +268,11 @@ body { min-height: 100dvh; }
 .onglets:not([hidden]) ~ main { padding-bottom: calc(var(--e-8) + var(--cible) + var(--e-2) + env(safe-area-inset-bottom)); }
 .onglets:not([hidden]) ~ main #note { bottom: calc(var(--cible) + var(--e-5) + env(safe-area-inset-bottom)); }
 #sortir { margin-top: var(--e-7); }
+#jour:not(:empty) { margin: calc(var(--e-2) * -1) 0 var(--e-4); }
+#accueil > .bloc:has(> .liste:empty) { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--e-2); margin: 0; padding: var(--e-3) 0; }
+#accueil > .bloc:has(> .liste:empty) > h3 { margin: 0; font: 500 var(--t-s)/1.5 var(--police-texte); letter-spacing: 0; }
+#accueil > .bloc:has(> .liste:empty) > .etat { margin: 0; }
+#accueil > .bloc:has(> .liste:empty) + .bloc { margin-top: 0; }
 #outils > h3 { margin: var(--e-6) 0 var(--e-2); font: 500 var(--t-s)/1.3 var(--police-texte); letter-spacing: 0; color: var(--doux); }
 button.rangee, #remises-accueil > .bloc > button { width: 100%; justify-content: space-between; min-height: calc(var(--cible) + var(--e-2)); margin: 0; padding: var(--e-3) 0; border-top: 1px solid var(--trait); border-radius: 0; box-shadow: none; color: var(--encre); text-align: left; }
 button.rangee::after, #remises-accueil > .bloc > button::after { content: "›"; color: var(--doux); font-size: 1.4em; line-height: .8; font-weight: 400; }
@@ -688,10 +694,27 @@ export const APP_JS = `'use strict';
   // L'usage du matin : pour l'agent seul, ses propres jours ; aucune comparaison avec les autres [R14].
   function renderWeek(list, data) {
     if (!data || data.scope !== 'agent' || !Array.isArray(data.days)) return 'Mesure indisponible.';
-    list.appendChild(el('li', 'Plan ouvert avant midi : ' + data.openedDays + ' jour(s) sur ' + data.days.length + '.'));
-    var marks = data.days.map(function (d) { return date(d.day + 'T12:00:00Z').slice(0, 5) + (d.opened ? ' oui' : ' non'); }).join(' · ');
-    list.appendChild(el('li', marks, 'doux'));
+    list.appendChild(el('li', 'Plan ouvert avant midi : ' + data.openedDays + (data.openedDays > 1 ? ' jours' : ' jour') + ' sur ' + data.days.length + '.'));
+    // DS055 · les jours se disent en mots, par leur nom : ceux où le plan a été ouvert, ou ceux qui manquent s'ils sont moins nombreux.
+    var opened = data.days.filter(function (d) { return d.opened; }), missed = data.days.filter(function (d) { return !d.opened; });
+    var less = opened.length <= missed.length, names = (less ? opened : missed).map(function (d) { return dayLabel(d.day + 'T12:00:00Z').split(' ').slice(0, 2).join(' '); }).filter(function (n) { return n; });
+    if (opened.length && missed.length && names.length) list.appendChild(el('li', (less ? 'Ouvert ' : 'Pas ouvert ') + (names.length > 1 ? names.slice(0, -1).join(', ') + (less ? ' et ' : ' ni ') : '') + names[names.length - 1] + '.', 'doux'));
     return null;
+  }
+  // DS002 · une liste montre ce qu'on peut traiter, puis propose la suite : cinq lignes, puis vingt de plus par geste.
+  function fold(list) {
+    var rest = Array.prototype.slice.call(list.children, 5);
+    if (rest.length < 2) return;
+    rest.forEach(function (k) { list.removeChild(k); });
+    var li = el('li'), b = button('', function () {
+      rest.splice(0, 20).forEach(function (k) { list.insertBefore(k, li); });
+      if (rest.length) name(); else list.removeChild(li);
+    });
+    function name() { b.textContent = 'Voir la suite : ' + rest.length + (rest.length > 1 ? ' autres' : ' autre'); }
+    b.className = 'secondaire';
+    name();
+    li.appendChild(b);
+    list.appendChild(li);
   }
   function part(id, request, render, mine) {
     var list = $(id);
@@ -711,6 +734,7 @@ export const APP_JS = `'use strict';
       if (res.failed || !res.body || res.body.ok !== true) { state.textContent = 'Indisponible pour le moment. Réessayez plus tard.'; return true; }
       var empty = render(list, res.body.data);
       state.textContent = empty || '';
+      if (id === 'chauds' || id === 'biens') fold(list);
       return true;
     }, function () {
       if (mine !== session) return true;
@@ -2322,6 +2346,8 @@ ${LOUER_JS}
       var directionKey = readDirectionKey();
       $('vers-reseau').hidden = !directionKey || directionKey === key;
       $('bonjour').textContent = me.firstName ? 'Bonjour ' + me.firstName : 'Bonjour';
+      var today = dayLabel(new Date().toISOString());
+      $('jour').textContent = today.charAt(0).toUpperCase() + today.slice(1);
       $('erreur').hidden = true;
       currentKey = key;
       agentIn = true;
@@ -2473,7 +2499,7 @@ ${LOUER_JS}
       currentKey = null;
       forgetKey();
       try { localStorage.removeItem('aimmo.brouillons'); } catch (e) { /* rien */ }
-      $('bonjour').textContent = '';
+      $('bonjour').textContent = $('jour').textContent = '';
       agentIn = false;
       tab = 'accueil';
       wipe();

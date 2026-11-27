@@ -156,7 +156,7 @@ describe('DS005 · une barre d’onglets, toujours là pour l’agent', () => {
 describe('DS011 · les outils ont leur écran, la journée garde la journée', () => {
   const HOME = between(HTML, '<section id="accueil"', '<section id="outils"');
   const TOOLS = between(HTML, '<section id="outils"', '<section id="fiche"');
-  const ENTRIES = ['gagner-ouvrir', 'louer-ouvrir', 'commerces-ouvrir', 'investir-ouvrir', 'partenaires-ouvrir', 'cles-rendre-ouvrir', 'remises-accueil', 'fiche-google-ouvrir', 'actualites-ouvrir', 'actualites-vues', 'integration-ouvrir', 'academie-ouvrir', 'notifications-ouvrir', 'cles-accueil-voir'];
+  const ENTRIES = ['gagner-ouvrir', 'louer-ouvrir', 'commerces-ouvrir', 'investir-ouvrir', 'apres-ouvrir', 'partenaires-ouvrir', 'cles-rendre-ouvrir', 'remises-accueil', 'fiche-google-ouvrir', 'actualites-ouvrir', 'actualites-vues', 'integration-ouvrir', 'academie-ouvrir', 'notifications-ouvrir', 'cles-accueil-voir'];
 
   it('chaque outil a quitté l’accueil pour l’écran « Outils », avec ses identifiants : aucun branchement ne change', () => {
     expect(TOOLS).toMatch(/^<section id="outils" hidden>\n<h2 id="outils-titre">Outils<\/h2>/);
@@ -166,7 +166,7 @@ describe('DS011 · les outils ont leur écran, la journée garde la journée', (
     }
     // L'accueil garde ce qui fait la journée, dans cet ordre.
     const titles = [...HOME.matchAll(/<h3 id="[a-z-]+">([^<]+)<\/h3>/g)].map((m) => m[1]);
-    expect(titles).toEqual(['À reprendre', 'À tenir sur mes ventes', 'Mon plan du jour', 'Contacts chauds à rappeler', 'Rendez-vous du jour', 'Mes biens à mettre en vente', 'Après mes ventes', 'Ma semaine']);
+    expect(titles).toEqual(['À reprendre', 'Rendez-vous du jour', 'Mon plan du jour', 'Contacts chauds à rappeler', 'À tenir sur mes ventes', 'Mes biens à mettre en vente', 'Après mes ventes', 'Ma semaine']);
     // « Mes chiffres » n'est plus un bloc de l'accueil : c'est un onglet, et sa phrase l'a suivi sur son écran.
     expect(HOME).not.toContain('Mes chiffres');
     expect(between(HTML, '<section id="chiffres"', '<section id="reseau"')).toContain('<p class="doux">Chaque chiffre s’ouvre sur les lignes qui le font : vous pouvez tout recompter.</p>');
@@ -176,13 +176,13 @@ describe('DS011 · les outils ont leur écran, la journée garde la journée', (
   it('l’écran « Outils » est un index : trois groupes, une rangée par outil, à son nom, sans phrase permanente', () => {
     const groups = [...TOOLS.matchAll(/<h3>([^<]+)<\/h3>([\s\S]*?)(?=<h3>|<\/section>\n$)/g)].map((m) => [m[1], [...m[2]!.matchAll(/<button id="[a-z-]+" type="button" class="secondaire rangee"(?: aria-label="[^"]+")?>([^<]+)<\/button>/g)].map((b) => b[1])]);
     expect(groups).toEqual([
-      ['Mes dossiers', ['Gagner des mandats', 'Mes locations', 'Mes commerces', 'Mes investisseurs', 'Mes partenaires']],
+      ['Mes dossiers', ['Gagner des mandats', 'Mes locations', 'Mes commerces', 'Mes investisseurs', 'Mes ventes conclues', 'Mes partenaires']],
       // « Mes remises négociées » et « Mes panneaux » s'y posent avec la journée, dans `remises-accueil`.
       ['Au quotidien', ['Mes clés à rendre', 'Fiche Google', 'Mes actualités', 'Déjà vues']],
       ['Mon compte', ['Mon dossier', 'Académie', 'Mes notifications', 'Clés de mes appareils']],
     ]);
     // Aucun bouton hors de ces rangées, aucun bloc, aucune phrase toujours affichée : seuls des états, vides au départ.
-    expect(TOOLS.match(/<button\b/g)).toHaveLength(13);
+    expect(TOOLS.match(/<button\b/g)).toHaveLength(14);
     expect(TOOLS).not.toContain('class="bloc"');
     expect([...TOOLS.matchAll(/<p\b[^>]*>([^<]*)<\/p>/g)].filter((m) => m[1] !== '').map((m) => m[0])).toEqual(['<p class="doux">L’empreinte, le visage ou le code de l’appareil protège chaque clé. Elle ne quitte jamais l’appareil.</p>']);
     // « Déjà vues » garde le nom que ses messages citent [R269] ; seul, il se dit en entier à qui ne voit pas la rangée du dessus.
@@ -291,7 +291,7 @@ describe('DS005 · dans Chromium', () => {
       // DS011 · l'index des outils tient en deux écrans de téléphone, chaque rangée fait 48 px au moins.
       expect(await page.evaluate(() => (globalThis as any).document.documentElement.scrollHeight)).toBeLessThanOrEqual(2 * 844);
       const rows = await page.evaluate(() => [...(globalThis as any).document.querySelectorAll('#outils button')].map((b: any) => b.getBoundingClientRect().height));
-      expect(rows.length).toBeGreaterThanOrEqual(15);
+      expect(rows.length).toBeGreaterThanOrEqual(16);
       expect(Math.min(...rows)).toBeGreaterThanOrEqual(48);
       // « Se déconnecter », dernier élément de l'écran : une fois la page défilée jusqu'au bout, il est au-dessus de la barre.
       await page.evaluate(() => (globalThis as any).scrollTo(0, (globalThis as any).document.documentElement.scrollHeight));
