@@ -8392,7 +8392,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 - Suivi : à faire en tête de l’étape 5, avec la nouvelle coquille : les écrans de la direction lisent leurs éléments au chargement, et une centaine de tests s’appuient sur la page entière. DS063, DS064, DS065 et DS066 viennent juste après, dans la place libérée.
 - Suivi : prise le 2026-11-27 par la voie 3 : ouvre la refonte de la coquille (étape 5, famille « agent au quotidien »), avant DS005, DS001 et DS006.
-- Suivi : proposition #811 : l’écran est servi à part (`/app/reseau.html`), posé avant tout branchement sur l’appareil de la direction ; la coquille passe de 48 611 à 45 859 octets. Vérifié dans Chrome sur trois parcours.
+- Suivi : proposition #811 : l’écran n’est plus que dans la page de la direction (`/app/reseau`), que son appareil ouvre ; le script n’écrit aucun HTML (R13) ; la coquille passe de 48 611 à 45 792 octets. Vérifié dans Chrome sur cinq parcours.
 
 ### DS070 · Les gestes sont hors de portée du pouce
 - Statut : à faire
