@@ -145,7 +145,9 @@ describe('F07 · après la vente dans l’application', () => {
     expect(empty.els['apres-etat']!.textContent).toBe('Aucune vente conclue pour le moment.');
     const offline = await run({ 'GET /v1/apres-vente/dossiers': () => Promise.reject(new TypeError('hors ligne')) });
     await offline.click(offline.els['apres-ouvrir']);
-    expect(offline.els['apres-etat']!.textContent).toBe('Pas de réseau. Réessayez dans un moment.');
+    // DS061 · hors ligne se voit dans un bandeau, avec « Réessayer ».
+    expect(offline.els['apres-etat']!.textContent).toBe('Pas de réseau.Réessayer');
+    expect(offline.els['apres-etat']!.children[0]!.className).toBe('alerte');
     expect(offline.storage.get('aimmo.cle')).toBe(KEY);
   });
 });
