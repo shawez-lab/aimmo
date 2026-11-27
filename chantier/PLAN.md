@@ -8336,7 +8336,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS064 · Le focus se perd à chaque changement d'écran
-- Statut : à faire
+- Statut : en cours (voie 2)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS064 (mineur, accessibilité, effort S), endroit : fonction `show`
 - Constat de l’audit : après l'ouverture de « Mandat », l'élément actif est `body`.
