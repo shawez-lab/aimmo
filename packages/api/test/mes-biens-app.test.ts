@@ -80,7 +80,9 @@ async function run(answers: Record<string, Answer | null> = {}) {
   const rows = () => list().children.filter((li) => li.children[0]?.className === 'secondaire rangee');
   const names = () => rows().map((li) => li.all().find((e) => e.tagName === 'strong')!.textContent);
   const notes = () => rows().map((li) => li.all().find((e) => e.className === 'doux')!.textContent);
-  const count = () => body().children.find((e) => e.tagName === 'p')!.textContent;
+  const count = () => body().children.find((e) => e.tagName === 'p' && e.attributes.role === 'status')!.textContent;
+  /** Ce que la recherche dit avoir compris, sous le champ. */
+  const understood = () => body().children.find((e) => e.tagName === 'p' && e.attributes.role !== 'status')!.textContent;
   const filter = () => body().all().find((e) => e.tagName === 'select');
   const type = async (text: string) => {
     const input = body().all().find((e) => e.tagName === 'input')!;
@@ -99,7 +101,7 @@ async function run(answers: Record<string, Answer | null> = {}) {
     onPop!({ state });
     await settle();
   };
-  return { els, calls, table, states, storage, click, body, list, rows, names, notes, count, filter, type, choose, reads, scripts, pop };
+  return { els, calls, table, states, storage, click, body, list, rows, names, notes, count, understood, filter, type, choose, reads, scripts, pop };
 }
 
 describe('DS004 · l’agent a la liste de ses biens, y cherche et la filtre', () => {
@@ -141,15 +143,16 @@ describe('DS004 · l’agent a la liste de ses biens, y cherche et la filtre', (
     expect(a.els['mes-biens']!.hidden).toBe(false);
   });
 
-  it('chercher par genre, commune ou référence, sans accents ni capitales ; filtrer par état de l’annonce ; les deux reviennent avec l’onglet', async () => {
+  it('chercher par commune ou référence, sans accents ni capitales ; filtrer par état de l’annonce ; les deux reviennent avec l’onglet', async () => {
     const a = await run();
     await a.click(a.els['mes-biens-ouvrir']!);
     const reads = a.reads();
-    await a.type('fontaine les');
-    expect(a.names()).toEqual([]);
     await a.type('fontaine-les');
     expect(a.names()).toEqual(['Appartement 4 pièces · Fontaine-lès-Dijon']);
     expect(a.count()).toBe('1 sur 5');
+    // Un petit mot ne compte pas : « fontaine les dijon » se cherche comme « fontaine dijon ».
+    await a.type('fontaine les dijon');
+    expect(a.names()).toEqual(['Appartement 4 pièces · Fontaine-lès-Dijon']);
     await a.type('DIJON');
     expect(a.names()).toEqual(['Appartement 1 pièce · Dijon', 'Appartement 4 pièces · Fontaine-lès-Dijon', 'Local commercial · Dijon']);
     await a.type('ref-5');
@@ -179,6 +182,57 @@ describe('DS004 · l’agent a la liste de ses biens, y cherche et la filtre', (
     await a.click(a.els.sortir!);
     expect(a.body().children).toHaveLength(0);
     expect(a.storage.get('aimmo.cle')).toBeUndefined();
+  });
+
+  it('Jamais vu · chercher comme on parle : le genre, les pièces et l’état de l’annonce sont compris, le reste est la commune ou la référence ; l’écran dit ce qu’il a compris', async () => {
+    const a = await run();
+    await a.click(a.els['mes-biens-ouvrir']!);
+    const reads = a.reads();
+    const M5 = 'Maison 5 pièces · Talant', A1 = 'Appartement 1 pièce · Dijon', A4 = 'Appartement 4 pièces · Fontaine-lès-Dijon', LOCAL = 'Local commercial · Dijon', LAND = 'Terrain';
+    for (const [typed, found, said] of [
+      ['t4 fontaine sous offre', [A4], 'Compris : annonce sous offre, 4 pièces, « fontaine ».'],
+      ['maison talant', [M5], 'Compris : maison, « talant ».'],
+      ['Maison 5 pièces à Talant', [M5], 'Compris : 5 pièces, maison, « talant ».'],
+      ['studio dijon', [A1], 'Compris : 1 pièce, « dijon ».'],
+      ['appart pas publié', [A1], 'Compris : pas encore publiée, appartement.'],
+      ['appartements', [A1, A4], 'Compris : appartement.'],
+      ['local commercial en vente', [LOCAL], 'Compris : annonce en vente, local commercial.'],
+      ['terrain', [LAND], 'Compris : terrain.'],
+      ['publiés', [M5, A4, LOCAL], 'Compris : annonce publiée.'],
+      ['f5', [M5], 'Compris : 5 pièces.'],
+      ['5p', [M5], 'Compris : 5 pièces.'],
+      ['T 4', [A4], 'Compris : 4 pièces.'],
+      ['maison dijon', [], 'Compris : maison, « dijon ».'],
+      ['dijon', [A1, A4, LOCAL], ''],
+      ['ref-4', [LOCAL], ''],
+    ] as const) {
+      await a.type(typed);
+      expect(a.names(), typed).toEqual(found);
+      expect(a.understood(), typed).toBe(said);
+      if (!found.length) expect(a.count(), typed).toBe('Aucun bien ne correspond.');
+    }
+    // Une commune entendue ou dictée se trouve aussi : « fontène » pour Fontaine, « talan » pour Talant.
+    await a.type('t4 fontène');
+    expect(a.names()).toEqual([A4]);
+    // Le mot est redit tel qu'il a été tapé, avec son accent.
+    expect(a.understood()).toBe('Compris : 4 pièces, « fontène ».');
+    await a.type('maison talan');
+    expect(a.names()).toEqual([M5]);
+    // Le filtre par état s'ajoute à ce qui est tapé ; les deux ensemble peuvent ne rien laisser, et le disent.
+    await a.type('appart');
+    await a.choose('sous_offre');
+    expect(a.names()).toEqual([A4]);
+    await a.type('appart pas publié');
+    expect(a.names()).toEqual([]);
+    expect(a.count()).toBe('Aucun bien ne correspond.');
+    // Rien ne part au serveur, et le champ donne un exemple de ce qu'il comprend.
+    expect(a.reads()).toBe(reads);
+    const input = a.body().all().find((e) => e.tagName === 'input')!;
+    expect(input.attributes.placeholder).toBe('t3 dijon sous offre');
+    expect(a.body().all().find((e) => e.tagName === 'label')!.textContent).toBe('Chercher comme on parle');
+    // Des mots fixes, lus dans la liste déjà reçue : ni envoi, ni devinette.
+    const search = MES_BIENS_SCRIPT.slice(MES_BIENS_SCRIPT.indexOf('function understand'), MES_BIENS_SCRIPT.indexOf('function row'));
+    expect(search).not.toMatch(/send\(|fetch|Math\.random/);
   });
 
   it('un seul état dans la liste : pas de filtre ; un état inconnu se dit « Publiée » ; une longue liste se déroule par cinquante', async () => {
@@ -262,7 +316,7 @@ describe('DS004 · l’agent a la liste de ses biens, y cherche et la filtre', (
   it('[R201] l’écran est servi à part, chargé une fois, hors de la coquille ; l’application tient son budget', async () => {
     expect(AGENT_APP_FILES['/app/mes-biens.js']).toBe(MES_BIENS_SCRIPT);
     expect(AGENT_APP_SHELL).not.toContain('/app/mes-biens.js');
-    expect(JS).not.toContain('Chercher par genre');
+    expect(JS).not.toContain('Chercher comme on parle');
     expect(budgetProblems({ html: '', js: MES_BIENS_SCRIPT }, BUDGETS.page)).toEqual([]);
     expect(budgetProblems({ html: HTML, css: CSS, js: JS }, BUDGETS.application)).toEqual([]);
     const a = await run();
@@ -326,11 +380,15 @@ describe('DS004 · dans Chromium', () => {
         expect(row.full).toBe(true);
       }
       expect(await page.evaluate(() => (globalThis as any).document.documentElement.scrollWidth > (globalThis as any).innerWidth)).toBe(false);
-      // Le champ et le filtre ont leur libellé ; choisir un état filtre aussitôt.
+      // Le champ et le filtre ont leur libellé ; choisir un état filtre aussitôt ; « t4 sous offre » se comprend.
       await page.getByLabel('État de l’annonce').selectOption('sous_offre');
       await page.waitForFunction(() => (globalThis as any).document.querySelectorAll('#mes-biens-liste > li').length === 1);
       await page.getByLabel('État de l’annonce').selectOption('');
-      await page.getByLabel('Chercher par genre, commune ou référence').fill('terrain');
+      await page.getByLabel('Chercher comme on parle').fill('t4 fontène sous offre');
+      await page.waitForFunction(() => (globalThis as any).document.querySelectorAll('#mes-biens-liste > li').length === 1);
+      expect(await page.evaluate(() => (globalThis as any).document.querySelector('#mes-biens-liste strong').textContent)).toBe('Appartement 4 pièces · Fontaine-lès-Dijon');
+      expect(await page.evaluate(() => [...(globalThis as any).document.querySelectorAll('#mes-biens-corps > p')].map((p: any) => p.textContent))).toEqual(['Compris : annonce sous offre, 4 pièces, « fontène ».', '1 sur 5']);
+      await page.getByLabel('Chercher comme on parle').fill('terrain');
       await page.waitForFunction(() => (globalThis as any).document.querySelectorAll('#mes-biens-liste > li').length === 1);
       // La ligne ouvre l'écran du bien ; « Retour » ramène à la liste, la recherche gardée.
       await page.click('#mes-biens-liste button.rangee');
