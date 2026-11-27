@@ -38,11 +38,12 @@ const CSS =
   '.lettres a{flex:1 0 2.75rem;display:grid;place-items:center;min-height:var(--cible);padding:0 var(--e-2);font:400 var(--t-l)/1 var(--police-titre);text-decoration:none}' +
   'main h2{margin:var(--e-6) 0 0;padding-bottom:var(--e-2);border-bottom:1px solid var(--trait)}' +
   '.suite{display:flex;justify-content:space-between;gap:var(--e-4)}.suite a{display:inline-flex;align-items:center;min-height:var(--cible);min-width:var(--cible)}' +
-  '.annuaire{display:grid;grid-template-columns:repeat(auto-fill,minmax(19rem,1fr));gap:var(--e-4) var(--e-6);margin:var(--e-3) 0 var(--e-5);padding:0;list-style:none}' +
+  '.annuaire{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(19rem,100%),1fr));gap:var(--e-4) var(--e-6);margin:var(--e-3) 0 var(--e-5);padding:0;list-style:none}' +
   '.annuaire a{display:inline-block;min-width:var(--cible);padding:var(--e-3) 0;text-decoration:none}.annuaire a:hover{text-decoration:underline}.annuaire strong{font-weight:700}' +
   '.annuaire p{margin:0}.annuaire .doux{margin-top:var(--e-1);font-size:var(--t-xs)}' +
   // Les communes : autant de colonnes que la largeur en porte, et l'alphabet se lit de gauche à droite, sans remonter.
-  '.communes{grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr));gap:0 var(--e-5)}.communes a{display:block}';
+  // Une colonne ne demande jamais plus que la largeur offerte : sur un écran très étroit, la grille rétrécit au lieu de déborder.
+  '.communes{grid-template-columns:repeat(auto-fill,minmax(min(9.5rem,100%),1fr));gap:0 var(--e-5)}.communes a{display:block}';
 
 function page(title: string, intro: string, body: string): string {
   return (

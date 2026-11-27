@@ -96,7 +96,7 @@ describe('DS075 · les listes d’agents et de communes se feuillettent par lett
   it('les communes : des colonnes, lettre par lettre ; ce qui ne commence pas par une lettre est rangé sous « Autres »', () => {
     const all = [{ slug: 'c-x', name: '2 Vallées' }, ...communes(COMMUNES_PER_PAGE + 80)];
     const one = renderPricesList(all)!;
-    expect(one).toContain('.communes{grid-template-columns:repeat(auto-fill,minmax(9.5rem,1fr))');
+    expect(one).toContain('.communes{grid-template-columns:repeat(auto-fill,minmax(min(9.5rem,100%),1fr))');
     expect(letters(one)[0]).toEqual(['Autres', '#lettre-autres']);
     expect(one).toContain('<h2 id="lettre-autres">Autres</h2><ul class="annuaire communes"><li><a href="/prix/c-x">2 Vallées</a></li></ul><h2 id="lettre-a">A</h2>');
     // Chaque commune de la page est dans un groupe, une fois.
@@ -212,5 +212,24 @@ describe('DS075 · les listes, dans Chromium', () => {
     const size = await page.evaluate(() => parseFloat((globalThis as any).getComputedStyle((globalThis as any).document.querySelector('.annuaire .doux')).fontSize));
     expect(size).toBeGreaterThanOrEqual(13);
     await page.close();
+  });
+
+  it.skipIf(navigateur === null)('sur le plus petit téléphone, 320 px, et jusqu’à 240 px : la grille rétrécit, aucune des deux listes ne déborde', async () => {
+    for (const width of [320, 280, 240]) {
+      for (const html of [renderAgentsList(agents(500))!, renderAgentsList(agents(3))!, renderPricesList(communes(2000))!, renderPricesList(communes(12))!]) {
+        const page = await ouvrir({ width, height: 640 }, html);
+        const m = await mesures(page);
+        expect(m.wide, `${width} px`).toBe(false);
+        // Aucun élément de la liste ne mord sur la marge de droite de la page.
+        const beyond = await page.evaluate(() => {
+          const d = (globalThis as any).document;
+          const main = d.querySelector('main');
+          const edge = main.getBoundingClientRect().right - parseFloat((globalThis as any).getComputedStyle(main).paddingRight);
+          return [...d.querySelectorAll('.annuaire li')].filter((e: any) => e.getBoundingClientRect().right > edge + 0.5).length;
+        });
+        expect(beyond, `${width} px`).toBe(0);
+        await page.close();
+      }
+    }
   });
 });
