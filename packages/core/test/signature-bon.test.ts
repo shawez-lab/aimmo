@@ -1,6 +1,8 @@
 import { expect, it } from 'vitest';
 import { Acces, FicheClient, FicheUnique, RendezVous, SignatureBon, SqlJournalStore, Visites, applyMigrations, fromSyncSqlite, renderSlipCopy, type SqlDatabase } from '../src/index.ts';
 import { BUDGETS, budgetProblems, htmlProblems } from '../src/design/audit.ts';
+import { renderDocument } from '../src/documents/modeles.ts';
+import { slipParagraphs } from '../src/visites/signature-bon.ts';
 import { MASKED_SECRET } from '../src/envoi/controle.ts';
 import { enClair, tablesContenant } from './boite-essai.ts';
 import { loadMigrations } from './migrations.ts';
@@ -326,4 +328,10 @@ it('[R506] l’exemplaire est rendu par le code, sans rien venu d’ailleurs', (
   expect(html).toContain('08/12/2026 10:30');
   expect(html).toContain('e'.repeat(64));
   expect(htmlProblems(html)).toEqual([]);
+});
+
+it('DS067 · le titre caché du bon rangé ne se mêle pas au premier paragraphe lu par le visiteur', () => {
+  const content = renderDocument('Bon de visite de test.\n\nDeuxième paragraphe.', {}, { title: 'Bon de visite · REF-T-1', trial: true });
+  expect(content).toContain('<h1 class="cache">Bon de visite · REF-T-1</h1>');
+  expect(slipParagraphs(content)).toEqual(['DOCUMENT D’ESSAI : modèle non validé, sans aucune valeur juridique.', 'Bon de visite de test.', 'Deuxième paragraphe.']);
 });
