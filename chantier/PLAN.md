@@ -8268,7 +8268,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS055 · Une écriture de tableur
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS055 (mineur, microcopie, effort S), endroit : « Ma semaine »
 - Constat de l’audit : « Plan ouvert avant midi : 0 jour(s) sur 7. », « 05/06 non · 06/06 non · 07/06 non… ».
@@ -8384,7 +8384,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS069 · Chaque agent télécharge l'écran de la direction
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-27)
+- Suivi : fusionnée (#811, `004432e3`). L'écran du réseau est dans la page de la direction, `/app/reseau`, hors de la coquille gardée ; sans réseau, cette adresse se replie sur la coquille (R278). Codex : 1 P2 et 1 P0 corrigés, puis rien à signaler.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS069 (majeur, performance, effort M), endroit : `fichiers.ts` (`#reseau`)
 - Constat de l’audit : la section `#reseau` fait 16 457 des 33 722 caractères de la page d'accueil de l'application.
