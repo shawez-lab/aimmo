@@ -134,10 +134,15 @@ const M2 = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
 /**
  * DS072 · Les faits du bien en une ligne, lus dans la version publiée seule : les surfaces que le site affiche (AU063) et
  * les deux classes du diagnostic, telles que les mentions les disent [R43]. Rien n'est déduit ni arrondi ; sans eux, rien.
+ *
+ * Un local, des murs ou un fonds se disent d'abord par leur surface utile (AU063, R47) : la version publiée la range en
+ * tête pour eux, et la page la garde en tête, suivie des autres. Pour un logement, le site dit l'habitable et la Carrez.
  */
 export function keyFacts(p: ListingPayload): string {
-  const facts: [string, string][] = (p.surfaces ?? [])
-    .filter((x) => SURFACE_DISPLAY.site.includes(x.kind))
+  const published = p.surfaces ?? [];
+  const commerce = published[0]?.kind === 'utile';
+  const facts: [string, string][] = published
+    .filter((x) => commerce || SURFACE_DISPLAY.site.includes(x.kind))
     .map((x) => [SURFACE_LABEL[x.kind].replace(/^s/, 'S'), `${M2.format(x.m2)}\u00a0m²`]);
   const classes = energyClassesOf(p.mentions);
   if (classes) facts.push(['Classe énergie', classes.energy], ['Classe climat', classes.climate]);

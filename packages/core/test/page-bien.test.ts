@@ -3,6 +3,7 @@ import { DESIGN_CSS, ETIQUETTES_CSS, ETIQUETTES_DPE } from '../src/design/system
 import { contrastRatio, filledButtons, htmlProblems, screenCssProblems } from '../src/design/audit.ts';
 import { PageBien, computeMentions, energyClassesOf, energyLabels, renderListingPage, renderListingPrint, type PageInput } from '../src/annonces/index.ts';
 import { keyFacts } from '../src/annonces/page-bien.ts';
+import { surfacesFor } from '../src/annonces/fiche-bien.ts';
 import { setupAnnonce } from './annonces-jeu.ts';
 import { describeWithSqlite } from './sqlite.ts';
 
@@ -120,6 +121,13 @@ describe('DS072 · la page du bien vend le bien', () => {
     expect(keyFacts(payload)).toBe(
       `<dl class="faits"><div><dt>Surface habitable</dt><dd>118${N}m²</dd></div><div><dt>Surface Carrez</dt><dd>60,5${N}m²</dd></div><div><dt>Classe énergie</dt><dd>D</dd></div><div><dt>Classe climat</dt><dd>B</dd></div></dl>`,
     );
+    // Un local, des murs ou un fonds : la version publiée range la surface utile en tête, et la page la dit d'abord (AU063, R47).
+    const shop = { ...INPUT.payload, surfaces: surfacesFor('portails', { kind: 'commercial', surfaceM2: 40, usableM2: 85.25 }).map((x) => ({ kind: x.kind, m2: x.m2, source: x.source })) };
+    expect(shop.surfaces.map((x) => x.kind)).toEqual(['utile', 'habitable']);
+    expect(keyFacts(shop)).toBe(`<dl class="faits"><div><dt>Surface utile</dt><dd>85,25${N}m²</dd></div><div><dt>Surface habitable</dt><dd>40${N}m²</dd></div></dl>`);
+    expect(keyFacts({ ...INPUT.payload, surfaces: [{ kind: 'utile', m2: 120, source: 'acte' }] })).toBe(`<dl class="faits"><div><dt>Surface utile</dt><dd>120${N}m²</dd></div></dl>`);
+    // Un logement, lui, garde l'ordre du site : la surface utile que les portails reçoivent n'y est pas dite.
+    expect(surfacesFor('portails', { kind: 'home', surfaceM2: 118, carrezM2: 60.5, usableM2: 40 }).map((x) => x.kind)).toEqual(['habitable', 'carrez', 'utile']);
     // Sans surface ni diagnostic dans la version : aucun fait, rien d'inventé ni de déduit du titre.
     expect(keyFacts(INPUT.payload)).toBe('');
     const html = renderListingPage({ ...INPUT, payload });
