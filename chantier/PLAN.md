@@ -8326,6 +8326,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS061 · Une panne ressemble à une information
 - Statut : en cours (voie 3)
+- Suivi : proposition #821 ouverte le 2026-11-27 (coquille : bandeau de panne avec « Réessayer », titre de la page par écran, essai de l'écran de connexion).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS061 (majeur, états, effort S), endroit : fiche client, Studio, partenaires
 - Constat de l’audit : `appli-fiche-client.jpg` : « La liste des biens n'a pas pu être lue. » est en gris, sous un bouton, comme une aide.
@@ -8334,6 +8335,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS062 · L'écran de connexion est nu
 - Statut : en cours (voie 3)
+- Suivi : proposition #821 ouverte le 2026-11-27 (coquille : bandeau de panne avec « Réessayer », titre de la page par écran, essai de l'écran de connexion).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS062 (mineur, états, identité, effort S), endroit : connexion — `fichiers.ts` (`#connexion`)
 - Constat de l’audit : `appli-reseau-chiffres-connexion.jpg` : un titre, une phrase, un lien.
@@ -8342,6 +8344,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS063 · Le titre de la page ne change jamais
 - Statut : en cours (voie 3)
+- Suivi : proposition #821 ouverte le 2026-11-27 (coquille : bandeau de panne avec « Réessayer », titre de la page par écran, essai de l'écran de connexion).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS063 (mineur, accessibilité, effort S), endroit : toute l'application
 - Constat de l’audit : `document.title` vaut « AIMMO » sur chaque écran. Le seul `h1` est la marque.
