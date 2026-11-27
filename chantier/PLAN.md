@@ -8436,7 +8436,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS074 · « Rejoindre AIMMO » demande d'agir par un lien souligné
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : proposition #817 (`packages/api/src/candidature.ts`).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS074 (majeur, site public, effort M), endroit : `packages/api/src/candidature.ts`
 - Constat de l’audit : `site-candidature-estimation-dossier.jpg`. Le texte est bon. L'appel à l'action est « Déposer ma candidature » en lien. Aucun chiffre prouvé, aucun visage. 6 621 px sur téléphone.
