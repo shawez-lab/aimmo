@@ -225,7 +225,7 @@ export function templateFields(body: string): string[] {
 /** Les documents suivent le système de design d'AIMMO pour le papier (Z03), en jetons seulement [R201]. */
 const PRINT_CSS =
   PRINT_DESIGN_CSS +
-  'body{font:12pt/1.5 var(--police-titre);max-width:42rem;margin:2rem auto;padding:0 1rem}p{margin:0 0 .8em}.evidence{border:2px solid var(--encre);padding:.6em;font-weight:bold}.essai{border:3px dashed var(--danger);color:var(--danger);padding:.6em;font-weight:bold}.manque{background:var(--moutarde);color:var(--sur-moutarde)}.a-signer{font-style:italic}@media print{body{margin:0}}';
+  'body{font:12pt/1.5 var(--police-titre);max-width:42rem;margin:2rem auto;padding:0 1rem}p{margin:0 0 .8em}.evidence{border:2px solid var(--encre);padding:.6em;font-weight:bold}.essai{border:3px dashed var(--danger);color:var(--danger);padding:.6em;font-weight:bold}.manque{background:var(--moutarde);color:var(--sur-moutarde)}.a-signer{font-style:italic}.cache{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}@media print{body{margin:0}}';
 
 /**
  * Le document rendu en HTML imprimable. Le texte du modèle et chaque valeur sont échappés ; un champ absent est
@@ -260,7 +260,7 @@ export function renderDocument(
     })
     .join('\n');
   const banner = options.trial ? '<p class="essai">DOCUMENT D’ESSAI : modèle non validé, sans aucune valeur juridique.</p>\n' : '';
-  return `<!doctype html>\n<html lang="fr">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>${escapeHtml(options.title)}</title>\n<style>${PRINT_CSS}</style>\n</head>\n<body>\n${banner}${html}\n</body>\n</html>\n`;
+  return `<!doctype html>\n<html lang="fr">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n<title>${escapeHtml(options.title)}</title>\n<style>${PRINT_CSS}</style>\n</head>\n<body>\n<main>\n<h1 class="cache">${escapeHtml(options.title)}</h1>\n${banner}${html}\n</main>\n</body>\n</html>\n`;
 }
 
 export const signatureSpan = (name: string): string => `<span class="a-signer">[${escapeHtml(TEMPLATE_FIELDS[name]!.label)} à la signature]</span>`;
