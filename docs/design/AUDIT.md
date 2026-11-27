@@ -518,6 +518,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : `packages/core/src/attirer/accueil-site.ts`
 - Preuve : `site-accueil-et-bien-telephone.jpg`. Un titre, un champ de recherche, sept liens soulignés avec leur explication. Ni image, ni promesse, ni preuve, ni visage. iad ouvre son estimation sur « 4,9/5 » et 271 107 avis, avec les dernières ventes en photo.
 - Solution : une promesse, la recherche en grand, les derniers biens en photo, la preuve (le compte public de Dijon, les avis), l'agent, puis les outils.
+- Suite : corrigé le 2026-11-27 avec ce que la page reçoit : une ouverture (le titre, une phrase qui dit ce que le site prouve et dont chaque mot a sa page, la recherche en grand, « Estimer mon logement »), les derniers biens en photo (cartes refaites, communes à la liste des biens), la garantie des mandats, puis les pages du site en rangées entières à toucher. Restent, faute de donnée sur la page : la note et le nombre d'avis, le visage de l'agent, les chiffres du compte public. Avant et après : `captures/avant-apres/DS071-accueil-du-site.jpg`.
 
 #### DS072 · La page d'un bien ne vend pas le bien
 - Gravité : bloquant · Catégorie : site public · Effort : L
