@@ -7827,8 +7827,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Suivi : pas de réponse à l’échéance du 2026-11-25 à 1 h. Direction retenue : A · Maison, sans changer de règle (titres dans la police de l’appareil, aucune police téléchargée). Appliquée le 2026-11-27 seulement : la séance de la voie 3 est restée en pause du 24 au 27. Shawez a écrit le 27 à 16 h 40 pour demander si c’était terminé, sans choisir : le choix par défaut tient ; il peut encore écrire « 1 » pour la police servie.
 
 ### DS001 · L'accueil est une pile de 23 cartes égales
-- Statut : en cours (voie 3)
-- Suivi : proposition #816, avec DS002 et DS055 (ordre de la journée, date, blocs vides sur une ligne, listes à cinq lignes puis la suite, « Ma semaine » en mots) et les deux P2 de #812.
+- Statut : fait (2026-11-27)
+- Suivi : #816 fusionnée, avec DS002 et DS055 : la journée dans l'ordre du jour, la date, les blocs vides sur une ligne, cinq lignes par liste puis « Voir la suite », « Ma semaine » en mots. Parcours de démonstration : 1,6 écran au lieu de 5,3.
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS001 (bloquant, architecture de l'information, effort L), endroit : « Ma journée » — `packages/api/app/fichiers.ts` (`#accueil`)
 - Constat de l’audit : `appli-accueil.jpg`. Sans aucun dossier, l'accueil fait 5,4 écrans et compte 23 blocs, dont 6 vides. Avec un bien, 5,7 écrans.
@@ -7836,7 +7836,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS002 · L'accueil n'a pas de limite
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-27)
+- Suivi : #816 fusionnée : avec 1 000 rappels et 400 biens, 4 écrans et 35 boutons au lieu de 288 écrans et 2 019 boutons.
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS002 (bloquant, architecture de l'information, effort M), endroit : « Contacts chauds à rappeler », « Mes biens à mettre en vente » — `packages/api/app/fichiers.ts`
 - Constat de l’audit : `appli-accueil-portefeuille-charge.jpg`. Avec 1 000 rappels en attente et 400 biens, l'accueil fait 243 424 px, soit 288 écrans, et porte 2 019 boutons. Les 1 000 contacts sont listés d'un bloc, 4,5 par écran. Tout ce qui suit est hors d'atteinte.
@@ -8272,7 +8273,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS055 · Une écriture de tableur
-- Statut : en cours (voie 3)
+- Statut : fait (2026-11-27)
+- Suivi : #816 fusionnée : « Ma semaine » se lit en une phrase, les jours nommés.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS055 (mineur, microcopie, effort S), endroit : « Ma semaine »
 - Constat de l’audit : « Plan ouvert avant midi : 0 jour(s) sur 7. », « 05/06 non · 06/06 non · 07/06 non… ».
@@ -8419,8 +8421,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS072 · La page d'un bien ne vend pas le bien
-- Statut : en cours (voie 3)
-- Suivi : proposition #813 (`packages/core/src/annonces/page-bien.ts` : galerie, faits en une ligne, deux gestes de l'agent). Restent, faute de donnée dans la version publiée : pièces et étage, visage de l'agent, carte du quartier.
+- Statut : fait (2026-11-27)
+- Suivi : #813 fusionnée (galerie de photos, faits clés en une ligne, « Demander une visite » et « Appeler » toujours sous le pouce). Restent, faute de donnée dans la version publiée : pièces et étage, visage de l'agent, carte du quartier.
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS072 (bloquant, site public, effort L), endroit : `packages/core/src/annonces/page-bien.ts`
 - Constat de l’audit : `site-accueil-et-bien-telephone.jpg`, `site-accueil-et-bien-ordinateur.jpg`. Une seule photo, en vignette sur ordinateur. Pas de galerie, pas de faits clés (surface, pièces, étage), pas de bouton « Visiter ». Le contact de l'agent est un numéro et une adresse en liens nus.
@@ -8522,7 +8524,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS084 · L'avis de valeur ne porte pas la marque
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS084 (majeur, impression, effort M), endroit : `packages/core/src/estimation/avis-imprime.ts`
 - Constat de l’audit : `documents-imprimes.jpg`. Le document qui fait signer le mandat est une page de texte avec un tableau.
