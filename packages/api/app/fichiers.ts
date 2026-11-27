@@ -809,6 +809,8 @@ export const APP_JS = `'use strict';
     ['reprendre', 'a-tenir', 'plan', 'chauds', 'rdv', 'semaine', 'biens', 'apres-jour'].forEach(function (id) { clear($(id)); $(id + '-etat').textContent = ''; });
     clear($('dictee-accueil'));
     clear($('remises-accueil'));
+    place = null;
+    places = {};
     wipeFiche();
     wipeM08();
     wipeApres();
@@ -1218,10 +1220,11 @@ export const APP_JS = `'use strict';
   function placeState(reference, state) { return 'Réf. ' + reference + (state ? ', annonce ' + (LISTING_STATES[state] || 'publiée') + '.' : ', pas encore publiée.'); }
   // DS013 · un bien a son écran : son nom, où il en est, et ses outils en rangées. La journée n'en garde qu'une ligne,
   // entière à toucher (DS041), au lieu de cinq boutons pleins.
-  var place = null;
+  var place = null, places = {};
   function openPlace(id, reference, name, state) {
     if (!ID.test(id)) return;
-    place = [id, reference, name, state];
+    // Chaque bien ouvert est retenu par son identifiant : le « Retour » d'un outil retrouve le bien de cet outil-là.
+    place = places[id] = [id, reference, name, state];
     $('un-bien-titre').textContent = name;
     $('un-bien-etat').textContent = placeState(reference, state);
     $('un-bien-vente').textContent = state ? 'Voir l’annonce' : 'Mettre en vente';
@@ -2513,7 +2516,8 @@ ${LOUER_JS}
     $('commerces-ouvrir').addEventListener('click', function () { openCommerces(''); });
     // DS013 · un outil ouvert depuis l'écran d'un bien y revient ; ouvert d'ailleurs, il revient à la journée.
     function back() {
-      var p = place;
+      // Le bien de l'outil montré, pas le dernier bien ouvert : un outil rouvert par l'historique revient au sien.
+      var a = JSON.parse(shownArgs), p = a && places[a[0]];
       if (!p) { home(); return; }
       leave();
       openPlace.apply(null, p);

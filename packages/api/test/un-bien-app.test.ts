@@ -148,16 +148,37 @@ describe('DS013 · un bien a son écran : son nom, où il en est, ses outils en 
     expect(a.calls).not.toContain(`/v1/annonces/${B1}/controle`);
   });
 
-  it('le bien ouvert s’oublie quand on le quitte : un outil ouvert d’ailleurs revient à la journée, pas à un ancien bien', async () => {
+  it('un outil revient au bien qui est le sien, pas au dernier bien ouvert ; sans écran de bien ouvert pour lui, à la journée', async () => {
     const a = await run();
     await a.click(rowsOf(a.els.biens!)[0]!);
     await a.click(a.els['outils-ouvrir']!);
     expect(a.shown()).toEqual(['outils']);
-    // Un écran de bien ouvert par l'historique, sans passer par l'écran du bien : son « Retour » va à la journée.
+    // Un outil du second bien, ouvert par l'historique sans être passé par son écran : son « Retour » va à la journée.
     await a.pop({ s: 'vente', a: [B2, 'REF-2'], t: 'accueil' });
     expect(a.shown()).toEqual(['vente']);
     await a.click(a.els['vente-retour']!);
     expect(a.shown()).toEqual(['accueil']);
+    // Le mandat du premier bien, puis la journée, puis l'écran du second bien, puis deux Retours du navigateur :
+    // le mandat rouvert est celui du premier bien, et son « Retour » ramène au premier bien, pas au second.
+    await a.click(rowsOf(a.els.biens!)[0]!);
+    await a.click(a.els['un-bien-mandat']!);
+    const mandate = a.states.at(-1)!;
+    expect(mandate).toEqual({ s: 'mandat', a: [B1, 'REF-1'], t: 'accueil' });
+    await a.click(a.els['journee-ouvrir']!);
+    await a.click(rowsOf(a.els.biens!)[1]!);
+    expect(a.els['un-bien-titre']!.textContent).toBe('Appartement 1 pièce · Dijon');
+    await a.pop(mandate);
+    expect(a.shown()).toEqual(['mandat']);
+    await a.click(a.els['mandat-retour']!);
+    expect(a.shown()).toEqual(['un-bien']);
+    expect(a.els['un-bien-titre']!.textContent).toBe('Maison 5 pièces · Talant');
+    // Et les rangées agissent de nouveau sur le premier bien.
+    await a.click(a.els['un-bien-vente']!);
+    expect(a.states.at(-1)).toEqual({ s: 'vente', a: [B1, 'REF-1'], t: 'accueil' });
+    // La session finie, plus aucun bien n'est retenu.
+    await a.click(a.els['outils-ouvrir']!);
+    await a.click(a.els.sortir!);
+    expect(a.els.connexion!.hidden).toBe(false);
   });
 
   it('le bouton Retour du navigateur rouvre l’écran du bien, avec son nom et son état', async () => {
