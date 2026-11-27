@@ -134,6 +134,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : `packages/api/app/gagner.ts` et ses modules (pige, tournée, veille, site, calendrier, neuf, viager)
 - Preuve : 11 blocs, 8 boutons pleins, 3,1 écrans avant toute ouverture, 3,5 après.
 - Solution : une page d'entrée qui liste les sept outils, chacun ouvert sur son propre écran.
+- Suite : corrigé en partie le 2026-11-27 : chaque outil fermé est une rangée à son nom (la pige, la tournée, la veille, le site, le calendrier, les programmes neufs, le viager) ; son titre et sa phrase reviennent quand il s'ouvre, à sa place. Un bloc sans rien à montrer tient en une ligne. Sur le parcours : 1,4 écran au lieu de 2,8, et plus aucun bouton plein au lieu de huit. Reste à ouvrir chaque outil sur son propre écran : il s'ouvre encore dans la page, sous sa rangée. Avant et après : `captures/avant-apres/DS014-gagner.jpg`.
 
 ### B. Identité et marque
 
