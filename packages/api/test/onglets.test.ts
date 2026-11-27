@@ -394,3 +394,17 @@ describe('DS005 · dans Chromium', () => {
 });
 
 afterAll(async () => { await navigateur?.close(); });
+
+describe('DS054 · un bouton nomme ce qu’il ouvre', () => {
+  it('aucun bouton de la page ne dit seulement « Ouvrir » ou « Voir » ; chaque rangée des outils porte le nom de son outil', () => {
+    const labels = [...HTML.matchAll(/<button[^>]*>([^<]*)<\/button>/g)].map((m) => m[1]!.trim());
+    expect(labels.length).toBeGreaterThan(30);
+    // Les libellés que l'audit relevait : deux « Ouvrir », « Voir et régler », « Voir mes clés à rendre ».
+    for (const bare of ['Ouvrir', 'Voir', 'Voir et régler', 'Voir mes clés à rendre', 'Régler', 'Afficher']) expect(labels, bare).not.toContain(bare);
+    const tools = [...between(HTML, '<section id="outils"', '<section id="fiche"').matchAll(/<button[^>]*class="secondaire rangee"[^>]*>([^<]+)<\/button>/g)].map((m) => m[1]!);
+    expect(tools.length).toBeGreaterThanOrEqual(12);
+    // Un nom, pas un verbe d'ouverture ; et jamais deux fois le même.
+    for (const name of tools) expect(name, name).not.toMatch(/^(Ouvrir|Voir|Afficher)\b/);
+    expect(new Set(tools).size).toBe(tools.length);
+  });
+});

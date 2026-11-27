@@ -410,6 +410,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : accueil
 - Preuve : deux boutons « Ouvrir » (Gagner des mandats, Fiche Google), « Voir et régler », « Voir mes clés », « Voir mes clés à rendre ».
 - Solution : le bouton nomme ce qu'il ouvre. Avec les onglets, la plupart disparaissent.
+- Suite : le constat ne se reproduit plus depuis l'onglet « Outils » (2026-11-27) : chaque rangée porte le nom de son outil, plus aucun bouton ne dit seulement « Ouvrir » ou « Voir ». Un essai le garde.
 
 #### DS055 · Une écriture de tableur
 - Gravité : mineur · Catégorie : microcopie · Effort : S
