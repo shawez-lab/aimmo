@@ -25,6 +25,8 @@ const between = (html: string, from: string, to: string): string => html.slice(h
 
 /** L'application ouverte par une clé gardée : le rôle est celui que `/v1/moi` rend. */
 async function run(role: 'agent' | 'direction' | 'compliance', options: { hash?: string; answers?: Record<string, Answer> } = {}) {
+  const states: { s: string; a: unknown; t: string }[] = [];
+  let onPop: ((e: { state: unknown }) => void) | null = null;
   const direction = role === 'direction';
   const { els, listeners, document } = fakeDocument(pageIds(HTML, direction));
   const storage = new Map<string, string>([['aimmo.cle', KEY]]);
@@ -41,7 +43,8 @@ async function run(role: 'agent' | 'direction' | 'compliance', options: { hash?:
     },
     Intl,
     Date,
-    history: { pushState: () => undefined, replaceState: () => undefined },
+    history: { pushState: (state: { s: string; a: unknown; t: string }) => states.push(state), replaceState: (state: { s: string; a: unknown; t: string }) => states.push(state) },
+    addEventListener: (type: string, f: (e: { state: unknown }) => void) => { if (type === 'popstate') onPop = f; },
     location: { origin: 'https://app.aimmo.test', pathname: direction ? '/app/reseau' : '/app/', hash: options.hash ?? '', replace: () => undefined },
     setTimeout: () => 0,
     navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
@@ -54,7 +57,12 @@ async function run(role: 'agent' | 'direction' | 'compliance', options: { hash?:
   };
   const current = () => Object.fromEntries(['journee', 'outils', 'chiffres'].map((t) => [t, els[`${t}-ouvrir`]!.attributes['aria-current'] ?? null]));
   const dayReads = () => calls.filter((c) => c === 'GET /v1/plan-du-jour').length;
-  return { els, document, calls, click, current, dayReads };
+  /** Retour ou Avancer du navigateur, vers un écran déjà ouvert. */
+  const pop = async (state: unknown) => {
+    onPop!({ state });
+    await settle();
+  };
+  return { els, document, calls, click, current, dayReads, states, pop };
 }
 
 describe('DS005 · une barre d’onglets, toujours là pour l’agent', () => {
@@ -131,6 +139,37 @@ describe('DS005 · une barre d’onglets, toujours là pour l’agent', () => {
     expect(a.els.accueil!.hidden).toBe(false);
     expect(a.dayReads()).toBe(3);
     for (const id of ['partenaires', 'louer', 'investir', 'commerces', 'gagner']) expect(HTML, id).toContain(`<button id="${id}-retour" type="button" class="retour">Retour</button>`);
+  });
+
+  it('Retour du navigateur : l’écran rouvert retrouve son onglet, et « Mes chiffres » est relu, jamais rouvert vide', async () => {
+    const figures: Answer = async () => Response.json({ ok: true, mode: 'essai', data: null });
+    const a = await run('agent', { answers: { '/v1/pilotage/mes-chiffres': figures } });
+    await a.click('outils-ouvrir');
+    await a.click('partenaires-ouvrir');
+    // Chaque écran ouvert garde, dans l'historique, l'onglet d'où il vient.
+    expect(a.states.map((x) => `${x.s}@${x.t}`)).toEqual(['accueil@accueil', 'outils@outils', 'partenaires@outils']);
+    await a.click('chiffres-ouvrir');
+    expect(a.current()).toEqual({ journee: null, outils: null, chiffres: 'page' });
+    // Retour : les partenaires reviennent, sous l'onglet « Outils », relus ; leur « Retour » ramène aux outils.
+    const before = a.calls.filter((c) => c.startsWith('GET /v1/partenaires/projets')).length;
+    await a.pop(a.states[2]);
+    expect(a.els.partenaires!.hidden).toBe(false);
+    expect(a.current()).toEqual({ journee: null, outils: 'true', chiffres: null });
+    expect(a.calls.filter((c) => c.startsWith('GET /v1/partenaires/projets')).length).toBe(before + 1);
+    await a.click('partenaires-retour');
+    expect(a.els.outils!.hidden).toBe(false);
+    // Avancer jusqu'aux chiffres, vidés par le changement d'onglet : ils sont redemandés.
+    const read = () => a.calls.filter((c) => c.startsWith('GET /v1/pilotage/mes-chiffres')).length;
+    const reads = read();
+    await a.pop({ s: 'chiffres', a: null, t: 'chiffres' });
+    expect(a.els.chiffres!.hidden).toBe(false);
+    expect(a.current().chiffres).toBe('page');
+    expect(read()).toBe(reads + 1);
+    // Parcourir l'historique n'y ajoute rien.
+    const length = a.states.length;
+    await a.pop(a.states[1]);
+    expect(a.els.outils!.hidden).toBe(false);
+    expect(a.states).toHaveLength(length);
   });
 
   it('[R16] ni la direction ni la conformité n’ont les onglets de l’agent ; avant d’entrer, personne ne les a', async () => {

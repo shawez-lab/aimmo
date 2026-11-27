@@ -2217,7 +2217,7 @@ ${LOUER_JS}
       if (r === tab) b.setAttribute('aria-current', r === id ? 'page' : 'true'); else b.removeAttribute('aria-current');
     });
     var a = JSON.stringify(args || null);
-    if (!out && !fromHistory && (id !== shownId || a !== shownArgs)) try { history[shownId ? 'pushState' : 'replaceState']({ s: id, a: args || null }, ''); } catch (e) { /* sans historique */ }
+    if (!out && !fromHistory && (id !== shownId || a !== shownArgs)) try { history[shownId ? 'pushState' : 'replaceState']({ s: id, a: args || null, t: tab }, ''); } catch (e) { /* sans historique */ }
     shownId = out ? null : id;
     shownArgs = a;
     // DS064 · le focus suit l'écran : à chaque changement, il va au titre du nouvel écran, que le lecteur d'écran
@@ -2362,14 +2362,18 @@ ${LOUER_JS}
   }
   try {
     addEventListener('popstate', function (e) {
-      var s = e.state && e.state.s, a = e.state && e.state.a;
+      var s = e.state && e.state.s, a = e.state && e.state.a, t = e.state && e.state.t;
       if (!currentKey || !s || !document.getElementById(s)) return;
       // Une fiche, un bien, une visite ou une mise en vente se rouvrent, relus ; les autres écrans gardent ce qu'ils montraient.
       var again = { fiche: openFiche, bien: openBien, visite: openVisit, vente: openVente, mandat: openMandat, dossier: openDossier, offres: openOffres, avis: openAvis, studio: openStudio }[s];
       // Une lecture encore en route pour l'écran quitté ne s'affiche plus.
       session += 1;
       fromHistory = true;
-      if (again && Array.isArray(a)) again.apply(null, a); else show(s);
+      // DS005 · l'écran rouvert retrouve l'onglet d'où il avait été ouvert : son « Retour » y ramène.
+      if (ROOTS[t]) tab = t;
+      // Un écran que le changement d'onglet a vidé est relu, pas rouvert vide.
+      var reread = { chiffres: function () { openChiffres(); }, partenaires: function () { openPartenaires('', 0); }, apres: function () { openApres(); }, louer: function () { openLouer('', 0); }, investir: function () { openInvestir(''); }, commerces: function () { openCommerces(''); }, gagner: function () { openGagner(); } }[s];
+      if (again && Array.isArray(a)) again.apply(null, a); else if (reread) reread(); else show(s);
       fromHistory = false;
     });
   } catch (e) { /* sans historique */ }
