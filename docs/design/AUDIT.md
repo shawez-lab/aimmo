@@ -47,6 +47,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Preuve : `appli-accueil.jpg`. Sans aucun dossier, l'accueil fait 5,4 écrans et compte 23 blocs, dont 6 vides. Avec un bien, 5,7 écrans.
 - Principe : ce qui presse d'abord. « Contacts chauds » et « Rendez-vous du jour » ont le même poids que « Mes panneaux » et « Clés de mes appareils ».
 - Solution : l'accueil ne garde que la journée : à faire maintenant, rendez-vous, biens en cours. Tout le reste passe dans les onglets (DS005). Un bloc vide ne s'affiche pas.
+- Suite : corrigé le 2026-11-27 : la journée ne garde que la journée (les outils sont dans leur onglet), les rendez-vous remontent en deuxième, la date du jour se lit sous le bonjour, et un bloc vide tient sur une ligne avec son état. Sur le parcours de démonstration : 1,6 écran au lieu de 5,3 ; journée vide : 1,2 écran au lieu de 5,4. Avant et après : `captures/avant-apres/DS001-journee.jpg`.
 
 #### DS002 · L'accueil n'a pas de limite
 - Gravité : bloquant · Catégorie : architecture de l'information · Effort : M
@@ -54,6 +55,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Preuve : `appli-accueil-portefeuille-charge.jpg`. Avec 1 000 rappels en attente et 400 biens, l'accueil fait 243 424 px, soit 288 écrans, et porte 2 019 boutons. Les 1 000 contacts sont listés d'un bloc, 4,5 par écran. Tout ce qui suit est hors d'atteinte.
 - Principe : une liste montre ce qu'on peut traiter, puis propose la suite.
 - Solution : cinq lignes par liste, triées par urgence, puis « Tout voir » vers la liste complète (DS003). Les retards sont regroupés : « 37 en retard ».
+- Suite : corrigé le 2026-11-27 : « Contacts chauds à rappeler » et « Mes biens à mettre en vente » montrent cinq lignes, puis « Voir la suite : 995 autres » en déroule vingt de plus. Avec 1 000 rappels et 400 biens : 4 écrans et 35 boutons, au lieu de 288 écrans et 2 019 boutons ; la hauteur est mesurée dans Chromium par un test. Restent pour DS003 et DS004 : la liste complète avec sa recherche, et les retards regroupés.
 
 #### DS003 · Aucune liste ni recherche de clients
 - Gravité : bloquant · Catégorie : navigation · Effort : L
@@ -408,6 +410,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : « Ma semaine »
 - Preuve : « Plan ouvert avant midi : 0 jour(s) sur 7. », « 05/06 non · 06/06 non · 07/06 non… ».
 - Solution : sept pastilles, une par jour, et « Aucun jour cette semaine ».
+- Suite : corrigé le 2026-11-27 : « Plan ouvert avant midi : 5 jours sur 7. », puis les jours par leur nom, les moins nombreux des deux : « Pas ouvert vendredi 6 ni mardi 10. »
 
 #### DS056 · Des dates au format des machines dans un document remis au vendeur
 - Gravité : majeur · Catégorie : microcopie, impression · Effort : S

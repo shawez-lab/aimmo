@@ -23,7 +23,8 @@ Les noms des jetons n'ont pas changé, pour que chaque écran suive sans être r
 
 L'agent a trois onglets, toujours là : Journée, Outils, Chiffres (`<nav id="onglets">`, avant le contenu ; en bas sur téléphone, en colonne à gauche à partir de 64 rem). L'onglet en cours porte `aria-current` et se lit sans la couleur : un trait d'encre. Un écran ouvert depuis un onglet y revient par son « Retour ». Au clavier, le premier arrêt est « Aller au contenu ». Ni la direction, ni la conformité, ni l'écran sans réseau n'ont ces onglets.
 
-- La journée ne garde que ce qui se fait aujourd'hui. Un nouvel outil de l'agent se pose dans l'écran « Outils », jamais sur la journée.
+- La journée ne garde que ce qui se fait aujourd'hui, dans cet ordre : à reprendre, rendez-vous, plan, contacts chauds, ventes à tenir, biens, après-vente. Un nouvel outil de l'agent se pose dans l'écran « Outils », jamais sur la journée.
+- Un bloc de la journée dont la liste est vide tient sur une ligne, son titre et son état côte à côte (`:has(> .liste:empty)`) : rien n'est caché, « Indisponible » se lit toujours. Une liste longue montre cinq lignes, puis « Voir la suite » en déroule vingt de plus (`fold`) ; les rendez-vous du jour et le plan ne sont jamais repliés.
 - L'écran « Outils » est un index : une rangée par outil (`<button class="secondaire rangee">`), à son nom, dans l'un de ses trois groupes (« Mes dossiers », « Au quotidien », « Mon compte »). Pas de phrase toujours affichée : ce qu'un outil promet se dit sur son écran. Un outil qui se lit sur place pose son état et son contenu juste sous sa rangée.
 - L'en-tête ne porte que la marque. « Se déconnecter » se tient au pied de l'écran de départ de chaque rôle : « Outils » pour l'agent, le réseau pour la direction, la conformité, et l'écran des visites sans réseau.
 - Clients et Biens auront leur onglet avec leur liste (DS003, DS004).

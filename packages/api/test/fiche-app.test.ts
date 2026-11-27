@@ -102,10 +102,10 @@ describe('A03 · fiche du client dans l’application', () => {
       replaceState: (state: unknown) => states.push({ how: 'replace', state }),
     };
     const a = await app({ ...base(), '/v1/fiches/p-1/resume': ok(FICHE) }, { history, addEventListener: (type: string, f: (e: { state: unknown }) => void) => { if (type === 'popstate') onPop = f; } });
-    expect(states).toEqual([{ how: 'replace', state: { s: 'accueil', a: null } }]);
+    expect(states).toEqual([{ how: 'replace', state: { s: 'accueil', a: null, t: 'accueil' } }]);
     buttons(a.els.plan!, 'Voir la fiche')[0]!.listeners.click!({});
     await a.tick();
-    expect(states.at(-1)).toEqual({ how: 'push', state: { s: 'fiche', a: ['p-1'] } });
+    expect(states.at(-1)).toEqual({ how: 'push', state: { s: 'fiche', a: ['p-1'], t: 'accueil' } });
     // Retour du navigateur : la journée, sans rien pousser de plus.
     onPop!({ state: { s: 'accueil', a: null } });
     await a.tick();
