@@ -1814,3 +1814,4 @@ Une ligne par séance : date et heure de Paris · tâche · résultat · prochai
 - 2026-11-27 06:53 · VOIE 2 : relance refusée, question 2 (les séances voie 2 de 04:54 et 05:55 n'ont rien produit) et question 3 (aucune tâche à cette séance)
 - 2026-11-27 06:53 · VOIE 2 : aucune tâche, rien, relancé non
 - 2026-11-27 07:30 · voie 1 · DS067 fusionnée (#805 : un main et un h1 dans la fiche imprimable, les lettres de quartier et le document à signer ; axe-core sans remarque ; Codex sans remarque) ; prise à la voie 3 dont le verrou est figé depuis le 23 ; corrigé au passage le statut de DS052 qui rendait main rouge (fondations.test.ts) · prochaine : une tâche DS sans dépendance hors coquille (DS076, DS077, DS086, DS087)
+- 2026-11-27 07:32 · voie 1 · relance de la séance suivante refusée par le contrôle des permissions (fire_trigger), un essai ; la voie 1 repart à son prochain horaire
