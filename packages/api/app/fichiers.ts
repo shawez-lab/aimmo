@@ -2371,9 +2371,10 @@ ${LOUER_JS}
       fromHistory = true;
       // DS005 · l'écran rouvert retrouve l'onglet d'où il avait été ouvert : son « Retour » y ramène.
       if (ROOTS[t]) tab = t;
-      // Un écran que le changement d'onglet a vidé est relu, pas rouvert vide.
+      // Un écran que le changement d'onglet a vidé est relu, pas rouvert vide ; s'il montre encore quelque chose (un dossier
+      // ouvert, un formulaire commencé), il le garde, comme avant.
       var reread = { chiffres: function () { openChiffres(); }, partenaires: function () { openPartenaires('', 0); }, apres: function () { openApres(); }, louer: function () { openLouer('', 0); }, investir: function () { openInvestir(''); }, commerces: function () { openCommerces(''); }, gagner: function () { openGagner(); } }[s];
-      if (again && Array.isArray(a)) again.apply(null, a); else if (reread) reread(); else show(s);
+      if (again && Array.isArray(a)) again.apply(null, a); else if (reread && !$(s + '-corps').firstChild) reread(); else show(s);
       fromHistory = false;
     });
   } catch (e) { /* sans historique */ }

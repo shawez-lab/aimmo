@@ -2,7 +2,7 @@ import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { afterAll, describe, expect, it } from 'vitest';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
-import { fakeDocument, pageIds } from './fake-dom.ts';
+import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
 
 // DS005, DS006, DS011, DS065, DS066 · les onglets de l'agent. Tout est inventé : clés de test, prénom, réponses.
 const HTML = AGENT_APP_FILES['/app/']!;
@@ -170,6 +170,15 @@ describe('DS005 · une barre d’onglets, toujours là pour l’agent', () => {
     await a.pop(a.states[1]);
     expect(a.els.outils!.hidden).toBe(false);
     expect(a.states).toHaveLength(length);
+    // Un écran qui montre encore quelque chose le garde : Retour puis Avancer ne rouvrent pas sa liste, rien n'est relu.
+    await a.pop(a.states[2]);
+    a.els['partenaires-corps']!.appendChild(new FakeElement('p'));
+    const kept = a.calls.filter((c) => c.startsWith('GET /v1/partenaires/projets')).length;
+    await a.pop(a.states[1]);
+    await a.pop(a.states[2]);
+    expect(a.els.partenaires!.hidden).toBe(false);
+    expect(a.els['partenaires-corps']!.children).toHaveLength(1);
+    expect(a.calls.filter((c) => c.startsWith('GET /v1/partenaires/projets')).length).toBe(kept);
   });
 
   it('[R16] ni la direction ni la conformité n’ont les onglets de l’agent ; avant d’entrer, personne ne les a', async () => {
