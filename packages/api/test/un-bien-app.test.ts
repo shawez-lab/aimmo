@@ -181,6 +181,42 @@ describe('DS013 · un bien a son écran : son nom, où il en est, ses outils en 
     expect(a.els.connexion!.hidden).toBe(false);
   });
 
+  it('le bien est relu quand son écran rouvre : une fiche changée dans un outil se voit au retour, et par l’historique', async () => {
+    const answers = DAY();
+    const a = await run(answers);
+    const reads = () => a.calls.filter((c) => c === '/v1/annonces').length;
+    // Depuis la journée, le bien vient d'être lu : l'écran s'ouvre sans rien relire.
+    const before = reads();
+    await a.click(rowsOf(a.els.biens!)[0]!);
+    expect(reads()).toBe(before);
+    const state = a.states.at(-1)!;
+    await a.click(a.els['un-bien-vente']!);
+    // Dans l'outil, la fiche du bien change : c'est un appartement de quatre pièces, et l'annonce est retirée.
+    answers['/v1/annonces'] = ok([{ ...PLACES[0]!, dwelling: 'apartment', rooms: 4, state: null }, PLACES[1]!]);
+    await a.click(a.els['vente-retour']!);
+    expect(a.shown()).toEqual(['un-bien']);
+    expect(reads()).toBe(before + 1);
+    expect(a.els['un-bien-titre']!.textContent).toBe('Appartement 4 pièces · Talant');
+    expect(a.els['un-bien-etat']!.textContent).toBe('Réf. REF-1, pas encore publiée.');
+    expect(a.els['un-bien-vente']!.textContent).toBe('Mettre en vente');
+    expect(a.title()).toBe('Appartement 4 pièces · Talant · AIMMO');
+    // L'historique a gardé l'ancien nom : l'écran rouvert le relit aussi.
+    await a.click(a.els['un-bien-mandat']!);
+    await a.pop(state);
+    expect(a.shown()).toEqual(['un-bien']);
+    expect(a.els['un-bien-titre']!.textContent).toBe('Appartement 4 pièces · Talant');
+    // Et l'outil suivant revient au bien relu, pas à l'ancien.
+    await a.click(a.els['un-bien-offres']!);
+    await a.click(a.els['offres-retour']!);
+    expect(a.els['un-bien-titre']!.textContent).toBe('Appartement 4 pièces · Talant');
+    // [R10] Une relecture ratée se dit : l'écran garde ce qu'il savait, et ne le fait pas passer pour relu.
+    delete answers['/v1/annonces'];
+    await a.click(a.els['un-bien-avis']!);
+    await a.click(a.els['avis-retour']!);
+    expect(a.els['un-bien-titre']!.textContent).toBe('Appartement 4 pièces · Talant');
+    expect(a.els['un-bien-etat']!.textContent).toBe('Réf. REF-1, pas encore publiée. Non relu : réessayez dans un moment.');
+  });
+
   it('le bouton Retour du navigateur rouvre l’écran du bien, avec son nom et son état', async () => {
     const a = await run();
     await a.click(rowsOf(a.els.biens!)[0]!);

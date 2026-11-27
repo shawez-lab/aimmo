@@ -1221,20 +1221,35 @@ export const APP_JS = `'use strict';
   // DS013 · un bien a son écran : son nom, où il en est, et ses outils en rangées. La journée n'en garde qu'une ligne,
   // entière à toucher (DS041), au lieu de cinq boutons pleins.
   var place = null, places = {};
-  function openPlace(id, reference, name, state) {
+  function paintPlace(p, unread) {
+    $('un-bien-titre').textContent = p[2];
+    $('un-bien-etat').textContent = placeState(p[1], p[3]) + (unread ? ' Non relu : réessayez dans un moment.' : '');
+    $('un-bien-vente').textContent = p[3] ? 'Voir l’annonce' : 'Mettre en vente';
+  }
+  // « fresh » : le bien vient d'être lu avec la journée. Sinon l'écran s'ouvre sur ce qui était connu, puis relit le
+  // bien : sa fiche a pu changer dans un outil, ou depuis que l'historique a gardé cet écran.
+  function openPlace(id, reference, name, state, fresh) {
     if (!ID.test(id)) return;
     // Chaque bien ouvert est retenu par son identifiant : le « Retour » d'un outil retrouve le bien de cet outil-là.
     place = places[id] = [id, reference, name, state];
-    $('un-bien-titre').textContent = name;
-    $('un-bien-etat').textContent = placeState(reference, state);
-    $('un-bien-vente').textContent = state ? 'Voir l’annonce' : 'Mettre en vente';
+    paintPlace(place);
     show('un-bien', place);
+    if (fresh === true) return;
+    send('/v1/annonces', 'GET').then(function (res) {
+      if (res.gone || !place || place[0] !== id) return;
+      if (!res.ok) { paintPlace(place, true); return; }
+      (res.body.data || []).forEach(function (b) {
+        if (b.id !== id) return;
+        paintPlace(place = places[id] = [id, b.reference, placeName(b), b.state || '']);
+        if (shownId === 'un-bien') retitle('un-bien');
+      });
+    });
   }
   function renderBiens(list, data) {
     var items = Array.isArray(data) ? data : [];
     items.forEach(function (b) {
       if (!ID.test(b.id)) return;
-      var row = list.appendChild(el('li')).appendChild(button('', function () { openPlace(b.id, b.reference, placeName(b), b.state || ''); }));
+      var row = list.appendChild(el('li')).appendChild(button('', function () { openPlace(b.id, b.reference, placeName(b), b.state || '', true); }));
       row.className = 'secondaire rangee';
       var text = row.appendChild(el('span'));
       text.appendChild(el('strong', placeName(b)));
