@@ -57,27 +57,41 @@ const decimal = (n: number): string => String(n).replace('.', ',');
 /** Une voie qui commence par un chiffre pourrait en porter le numéro : elle n'est pas citée [R29]. */
 const safeStreet = (street: string | undefined): string | null => (street && !/^\s*\d/.test(street) ? street : null);
 
+// Le dessin (DS084). Une couverture : la marque, le titre, la date, la fourchette en grand, et l'agent au pied de la
+// page. Puis le texte de l'avis, et ce qui fonde la fourchette en tableau lisible. Rien de collé ni de répété par le
+// navigateur : la couverture a la hauteur d'une page moins une marge de sûreté, pour ne jamais en ouvrir une blanche.
+// Un montant ne se coupe jamais : la fourchette tient sur une ligne, ou un montant par ligne sur un écran étroit.
 const CSS =
   PRINT_DESIGN_CSS +
   `@page{size:A4;margin:16mm}
-body{font:10.5pt/1.5 var(--police-titre)}
-.marque{display:flex;justify-content:space-between;gap:6mm;font:600 8pt/1 var(--police-texte);letter-spacing:.12em;text-transform:uppercase;color:var(--accent);border-bottom:1pt solid var(--accent);padding-bottom:4mm}
-h1{font-size:20pt;line-height:1.15;margin:8mm 0 2mm}
-h2{font-size:12pt;margin:7mm 0 2mm;break-after:avoid;page-break-after:avoid}
-.prix{font-size:26pt;font-weight:700;color:var(--accent);margin:3mm 0 6mm;letter-spacing:-.01em}
-.prix span{font-size:12pt;font-weight:400}
-.date{font:400 9pt var(--police-texte);color:var(--doux);margin:0}
-.texte p{margin:0 0 3mm}
-table{width:100%;border-collapse:collapse;font:400 9pt/1.35 var(--police-texte)}
-caption{text-align:left;color:var(--doux);padding-bottom:2mm}
-th{text-align:left;font-weight:600;border-bottom:1pt solid var(--encre);padding:1mm 2mm 1mm 0}
-td{border-bottom:.5pt solid var(--trait);padding:1mm 2mm 1mm 0}
+body{font:11pt/1.55 var(--police-titre)}
+.marque{margin:0;font:400 13pt/1 var(--police-titre);letter-spacing:.2em;text-transform:uppercase}
+.couverture{border-bottom:.5pt solid var(--trait);margin-bottom:8mm;padding-bottom:10mm}
+.ouverture{margin-top:16mm}
+.ouverture::before{content:"";display:block;width:24mm;border-top:1.5pt solid var(--moutarde);margin-bottom:8mm}
+h1{font:400 20pt/1.1 var(--police-titre);margin:0 0 2mm}
+.date{font:400 9.5pt var(--police-texte);color:var(--doux);margin:0}
+.prix{font:400 44pt/1.1 var(--police-titre);letter-spacing:-.02em;margin:10mm 0 0;white-space:nowrap}
+.prix span{font-size:18pt;letter-spacing:0;color:var(--doux)}
+h2{font:400 15pt/1.2 var(--police-titre);margin:10mm 0 3mm;break-after:avoid;page-break-after:avoid}
+.texte{max-width:150mm}.texte p{margin:0 0 3.5mm}
+table{width:100%;border-collapse:collapse;font:400 9.5pt/1.35 var(--police-texte);font-variant-numeric:tabular-nums}
+caption{text-align:left;font-size:10pt;line-height:1.5;padding-bottom:4mm;max-width:150mm}
+th{text-align:left;font-weight:600;border-bottom:.75pt solid var(--encre);padding:2mm 3mm 2mm 0}
+td{border-bottom:.5pt solid var(--trait);padding:2mm 3mm 2mm 0}
+th:last-child,td:last-child{padding-right:0}
 tr{break-inside:avoid;page-break-inside:avoid}
+caption,thead{break-inside:avoid;page-break-inside:avoid;break-after:avoid;page-break-after:avoid}
 .nombre{text-align:right;white-space:nowrap}
-ul{margin:0;padding-left:5mm}
-.agent{border-top:1pt solid var(--accent);margin-top:6mm;padding-top:3mm;font-size:9.5pt;break-inside:avoid;page-break-inside:avoid}.agent p{margin:0}.agent a{color:inherit;text-decoration:none}`;
+ul{margin:0;padding:0;list-style:none;font:400 10pt/1.4 var(--police-texte);max-width:150mm}
+li{border-bottom:.5pt solid var(--trait);padding:2mm 0}
+.agent{display:flex;flex-wrap:wrap;align-items:baseline;gap:1mm 7mm;border-top:.5pt solid var(--encre);margin-top:12mm;padding-top:3mm;font:400 9.5pt/1.3 var(--police-texte)}
+.agent p{margin:0}.agent a{color:inherit;text-decoration:none}
+@media screen{body{max-width:178mm;margin:0 auto;padding:8mm 5mm}}
+@media screen and (max-width:40em){.prix{font-size:30pt}.prix span{display:block;margin:1mm 0}}
+@media print{.couverture{display:flex;flex-direction:column;min-height:255mm;border:0;margin:0;padding:0;break-after:page;page-break-after:always}.ouverture{margin-top:72mm}.agent{margin-top:auto}}`;
 
-/** La page à imprimer d'un avis validé : la fourchette d'abord, le texte, l'agent, puis ce qui fonde la fourchette. */
+/** La page à imprimer d'un avis validé : la couverture avec la fourchette et l'agent, le texte, puis ce qui fonde la fourchette. */
 export function renderValuationPrint(input: ValuationPrintInput): string {
   const { facts, agent } = input;
   const paragraphs = input.text
@@ -113,12 +127,11 @@ export function renderValuationPrint(input: ValuationPrintInput): string {
     : '';
   return (
     `<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Avis de valeur</title><style>${CSS}</style></head><body><main>` +
-    `<div class="marque"><span>AIMMO</span><span>${escapeHtml(`${agent.firstName} ${agent.lastName}`)}</span></div>` +
-    `<h1>Avis de valeur</h1><p class="date">Validé le ${escapeHtml(dayLabel(input.validatedOn))}</p>` +
-    `<p class="prix">${escapeHtml(euros(input.low))} <span>à</span> ${escapeHtml(euros(input.high))}</p>` +
+    `<header class="couverture"><p class="marque">AIMMO</p><div class="ouverture"><h1>Avis de valeur</h1><p class="date">Validé le ${escapeHtml(dayLabel(input.validatedOn))}</p>` +
+    `<p class="prix">${escapeHtml(euros(input.low))} <span>à</span> ${escapeHtml(euros(input.high))}</p></div>` +
+    // L'agent au pied de la couverture : jamais seul sur une dernière page, quelle que soit la longueur du tableau.
+    `${agentBlock(agent)}</header>` +
     `<section class="texte">${paragraphs}</section>` +
-    // L'agent juste après le texte : jamais seul sur une dernière page, quelle que soit la longueur du tableau.
-    agentBlock(agent) +
     adjustments +
     (sales ? `<h2>Ventes réelles comparables</h2>${sales}` : '') +
     references +
