@@ -1,1 +1,1 @@
-occupé depuis 2026-11-27 16:45 (heure de Paris), DS00 étape 5 : le système de design en direction Maison (packages/core/src/design/systeme.ts, docs/design/README.md), puis les écrans par familles. La séance de la voie 3 était en pause du 24 au 27 : elle a repris.
+occupé depuis 2026-11-27 19:04 (heure de Paris), DS00 étape 5, famille « agent au quotidien » : la coquille de l'application (packages/api/app/fichiers.ts) — barre d'onglets, écran « Outils », « Se déconnecter » hors de l'en-tête (DS005, DS006, DS011, DS065, DS066). #811 (DS069) attend sa vérification.

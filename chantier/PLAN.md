@@ -7859,7 +7859,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS005 · Aucune navigation permanente
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS005 (majeur, navigation, effort L), endroit : toute l'application
 - Constat de l’audit : aucun élément `nav`. Le seul lien entre écrans est « Retour à ma journée ». Passer du mandat aux offres du même bien demande : retour, défilement jusqu'au bien, « Offres ».
@@ -7867,7 +7867,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS006 · « Se déconnecter » occupe la meilleure place
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS006 (majeur, navigation, effort S), endroit : en-tête de chaque écran — `packages/api/app/fichiers.ts` l. 68
 - Constat de l’audit : toutes les captures. L'en-tête ne porte que la marque et ce bouton.
@@ -7907,7 +7907,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS011 · Les outils secondaires pèsent autant que le cœur du métier
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS011 (majeur, hiérarchie, effort M), endroit : accueil
 - Constat de l’audit : remises, panneaux, clés, notifications, actualités, intégration, Fiche Google, locations, investisseurs, commerces : dix blocs sur 23, chacun avec une phrase d'explication permanente.
@@ -8351,7 +8351,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS065 · Une cible de 40 px dans l'en-tête
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS065 (mineur, accessibilité, effort S), endroit : « Se déconnecter » — `fichiers.ts` l. 248
 - Constat de l’audit : 40 px de haut, pour 48 px promis par le système. WCAG 2.2 demande 24 px au moins : la règle est tenue, la promesse du système ne l'est pas.
@@ -8359,7 +8359,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS066 · Pas de lien d'évitement ni de repère de navigation
-- Statut : à faire
+- Statut : en cours (voie 3)
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS066 (mineur, accessibilité, effort S), endroit : toute l'application
 - Constat de l’audit : Pas de lien d'évitement ni de repère de navigation.
