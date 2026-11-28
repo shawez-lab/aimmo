@@ -272,9 +272,26 @@ globalThis.AIMMO_MANDAT = function (t) {
     keys.forEach(function (k) { var o = el('option', names[k] || k); o.value = k; f.appendChild(o); });
     return f;
   }
+  // DS049 · le fil du mandat : les étapes faites le disent, la première qui ne l'est pas est l'étape en cours.
+  var fil = null, at = 0, passed = {};
+  function rail(done) {
+    clear(fil);
+    ['Préparer', 'Contrôler', 'Signer', 'Inscrit'].forEach(function (name, i) {
+      var li = fil.appendChild(el('li', name + (i < done ? ' · fait' : ''), i < done ? 'fait' : null));
+      if (i === done) li.setAttribute('aria-current', 'step');
+    });
+  }
+  // Le fil suit l'écran : un contrôle qui échoue, ou le document relu, ramène à l'étape lue à l'ouverture.
+  function step(d, ok) {
+    if (d.kind === 'avenant_mandat') return;
+    passed[d.id] = ok;
+    rail(at < 2 && Object.keys(passed).some(function (k) { return passed[k]; }) ? 2 : at);
+  }
   function draw(data) {
     var m = data.mandate;
     cur.owners = Array.isArray(data.owners) ? data.owners.filter(function (o) { return o && ID.test(o.personId); }) : [];
+    fil = body().appendChild(el('ol', null, 'parcours'));
+    fil.setAttribute('aria-label', 'Étapes du mandat');
     var box = bloc('Mandat en cours');
     if (!m) box.appendChild(el('p', 'Aucun mandat signé pour ce bien.', 'doux'));
     else {
@@ -294,6 +311,12 @@ globalThis.AIMMO_MANDAT = function (t) {
     list.forEach(function (d) { if (ID.test(d.id)) drawDocument(docs, d, free, amendable); });
     if (free) drawDesignation(data.designation || null, Array.isArray(data.owners) ? data.owners : []);
     var waiting = list.some(function (d) { return ID.test(d.id) && /^mandat_/.test(String(d.kind)) && !(d.signature && d.signature.complete); });
+    // En cours : tout est fait. Enregistrement commencé : contrôle passé. Préparé : à contrôler.
+    passed = {};
+    // Le résumé « mandat » ne parle que de la vente : un mandat de location signé en entier est inscrit lui aussi.
+    var rented = list.some(function (d) { return ID.test(d.id) && d.kind === 'mandat_location' && d.signature && d.signature.complete; });
+    at = !free ? 4 : list.some(function (d) { return ID.test(d.id) && /^mandat_/.test(String(d.kind)) && d.signature && !d.signature.complete; }) ? 2 : waiting ? 1 : rented ? 4 : 0;
+    rail(at);
     if (free) drawGenerate(Array.isArray(data.owners) ? data.owners : [], waiting);
     else if (amendable) drawAmend(m, Array.isArray(data.owners) ? data.owners : []);
   }
@@ -436,7 +459,7 @@ globalThis.AIMMO_MANDAT = function (t) {
     var zone = el('div');
     if (s && s.complete) card.appendChild(el('p', 'Signé le ' + date(s.signedAt) + ', ' + (PLACES[s.place] || '').toLowerCase() + (s.number ? ', n° ' + s.number : '') + '.'));
     if (s && !s.complete) card.appendChild(el('p', 'Enregistrement arrêté en route : ce mandat n’est pas encore signé.'));
-    card.appendChild(quiet(button('Lire le document', function () { return read(zone, doc(d.id), 'Le document ne se lit pas : réessayez.'); })));
+    card.appendChild(quiet(button('Lire le document', function () { step(d, false); return read(zone, doc(d.id), 'Le document ne se lit pas : réessayez.'); })));
     var isMandate = d.kind === 'mandat_vente_simple' || d.kind === 'mandat_vente_exclusif' || d.kind === 'mandat_location';
     if (s && s.complete) card.appendChild(quiet(button('Voir l’exemplaire', function () { return read(zone, doc(d.id) + '/exemplaire', 'L’exemplaire ne se lit pas : réessayez.'); })));
     else if (s && isMandate) card.appendChild(button('Reprendre l’enregistrement', function () { clear(zone); drawResume(zone, d, s); }));
@@ -476,12 +499,13 @@ globalThis.AIMMO_MANDAT = function (t) {
     return send(doc(d.id) + '/controle', 'POST', {}).then(function (res) {
       if (res.gone || mine !== seq) return false;
       clear(zone);
-      if (!res.ok || !res.body.data) { state(why(res, 'Le contrôle n’a pas abouti : réessayez.')); return false; }
+      if (!res.ok || !res.body.data) { step(d, false); state(why(res, 'Le contrôle n’a pas abouti : réessayez.')); return false; }
       var check = res.body.data;
       drawCheck(zone, check);
       // Un seul échec, et il n'y a rien à signer [R41].
-      if (check.passed !== true) { state('Un point au moins n’est pas réglé : rien ne se signe.'); return true; }
+      if (check.passed !== true) { step(d, false); state('Un point au moins n’est pas réglé : rien ne se signe.'); return true; }
       state('Contrôle réussi : vous pouvez enregistrer la signature.');
+      step(d, true);
       drawSign(zone, d);
       if (d.kind !== 'avenant_mandat') online(zone, d);
       return true;
