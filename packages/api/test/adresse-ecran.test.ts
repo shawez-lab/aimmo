@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { afterAll, describe, expect, it } from 'vitest';
+import { NOTIFICATIONS_SCRIPT } from '../app/notifications.ts';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
 import { FakeElement, fakeDocument, pageIds, placeTool } from './fake-dom.ts';
 
@@ -22,6 +23,9 @@ const DAY: Record<string, Answer> = {
   '/v1/annonces/b1/controle': ok({ complete: false, publishedPriceEur: null, text: '', items: [] }),
   '/v1/annonces/b1/brouillon': ok(null),
   '/v1/annonces/b1/publication': ok(null),
+  '/v1/notifications/envois/e1': ok([{ id: 'n1', personId: 'p1', kind: 'contact_chaud', urgency: 'immediate', status: 'envoyee', pushId: 'e1', createdAt: '2027-03-02T09:30:00.000Z', sentAt: '2027-03-02T09:30:20.000Z' }]),
+  '/v1/notifications': ok([]),
+  '/v1/notifications/reglages': ok(null),
 
 };
 type Entry = { how: 'push' | 'replace'; s: string | null; url: string | undefined };
@@ -40,7 +44,7 @@ async function run(hash = '', role: 'agent' | 'direction' = 'agent') {
     if (url !== undefined) location.hash = url.startsWith('#') ? url : '';
   };
   const history: { state: unknown; pushState: ReturnType<typeof write>; replaceState: ReturnType<typeof write> } = { state: null, pushState: write('push'), replaceState: write('replace') };
-  runInNewContext(JS, {
+  const context: Record<string, unknown> = {
     document,
     localStorage: { getItem: (k: string) => storage.get(k) ?? null, setItem: (k: string, v: string) => storage.set(k, v), removeItem: (k: string) => storage.delete(k) },
     fetch: (url: string, init: { method?: string } = {}) => {
@@ -57,7 +61,8 @@ async function run(hash = '', role: 'agent' | 'direction' = 'agent') {
     },
     setTimeout: () => 0,
     navigator: { serviceWorker: { register: () => Promise.resolve({}) } },
-  });
+  };
+  runInNewContext(JS, context);
   listeners.DOMContentLoaded!();
   await settle();
   const click = async (id: string) => {
@@ -76,7 +81,15 @@ async function run(hash = '', role: 'agent' | 'direction' = 'agent') {
     onPop!({ state });
     await settle();
   };
-  return { els, calls, entries, urls, location, history, click, tap, shown, pop };
+  /** Le script des notifications, servi à part : chargé comme le ferait la page, une fois que l'application le demande. */
+  const loadNotifications = async () => {
+    const asked = els.accueil!.all().filter((e) => e.tagName === 'script' && e.attributes.src === '/app/notifications.js');
+    expect(asked).toHaveLength(1);
+    runInNewContext(NOTIFICATIONS_SCRIPT, context);
+    asked[0]!.listeners.load!({});
+    await settle();
+  };
+  return { els, calls, entries, urls, location, history, click, tap, shown, pop, loadNotifications };
 }
 const ADDRESS = /^(\/app\/|#[a-z-]+(\/[A-Za-z0-9_-]{1,64}){0,2})$/;
 
@@ -159,13 +172,25 @@ describe('DS007 · une adresse par écran', () => {
     }
   });
 
-  it('un lien d’envoi se lit encore après l’ouverture de la journée, qui n’efface pas l’adresse : il ouvre les outils', async () => {
-    const t = await run('#envoi=abc');
+  it('[R225] un lien d’envoi ouvre encore le détail de son envoi : ni la journée ni les outils n’effacent sa cible avant qu’elle soit lue', async () => {
+    const t = await run('#envoi=e1');
     expect(t.shown()).toEqual(['outils']);
+    // Les outils ont écrit leur adresse, puis la cible du lien a été remise sur cette même entrée.
     expect(t.entries.map((e) => [e.how, e.s, e.url])).toEqual([
       ['replace', 'accueil', undefined],
       ['push', 'outils', '#outils'],
+      ['replace', 'outils', '#envoi=e1'],
     ]);
+    expect(t.location.hash).toBe('#envoi=e1');
+    // Le détail la lit, une fois, puis la retire de la barre d'adresse.
+    await t.loadNotifications();
+    expect(t.calls.filter((c) => c === 'GET /v1/notifications/envois/e1')).toHaveLength(1);
+    expect(Object.values(t.els).some((e) => e.all().some((x) => x.tagName === 'h4' && x.textContent === 'Cette notification'))).toBe(true);
+    expect(t.location.hash).toBe('');
+    // Sans lien d'envoi, rien de tout cela : la journée s'ouvre, les notifications ne sont pas demandées.
+    const plain = await run();
+    expect(plain.shown()).toEqual(['accueil']);
+    expect(plain.calls.some((c) => c.includes('/v1/notifications'))).toBe(false);
   });
 
   it('à la sortie, l’adresse redevient celle de l’application : le suivant sur cet appareil ne rouvre rien', async () => {
@@ -251,6 +276,15 @@ describe('DS007 · dans Chromium', () => {
       await page.reload();
       await page.waitForSelector('#accueil:not([hidden])');
       expect(await visible('onglets')).toBe(true);
+      // [R225] Un lien d'envoi : dans un vrai navigateur, l'adresse écrite par les outils n'efface pas sa cible ; le
+      // détail de cet envoi est lu, puis l'adresse est nettoyée.
+      const detail = page.waitForRequest((r: any) => new URL(r.url()).pathname === '/v1/notifications/envois/e1');
+      await page.goto('https://aimmo.example.test/app/#envoi=e1');
+      await page.reload();
+      await detail;
+      await page.waitForSelector('#outils:not([hidden])');
+      await page.waitForFunction(() => Array.from((globalThis as any).document.querySelectorAll('h4')).some((h: any) => h.textContent === 'Cette notification'));
+      expect(await hash()).toBe('');
       expect(errors).toEqual([]);
     } finally {
       await page.close();

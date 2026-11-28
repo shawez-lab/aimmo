@@ -89,7 +89,15 @@ export const NOTIFICATIONS_JS = `
     s.addEventListener('error', function () { notifBusy = false; $('notifications-etat').textContent = mine === session ? 'Pas de réseau. Réessayez dans un moment.' : ''; });
     $('accueil').appendChild(s);
   }
-  function notifLink() { if (typeof location !== 'undefined' && String(location.hash).indexOf('#envoi=') === 0) { show('outils'); openNotifications(); } }
+  // DS007 · l'écran des outils écrit son adresse en s'ouvrant : celle du lien d'envoi est remise aussitôt sur cette entrée,
+  // pour que le détail la lise encore, une fois, avant de la retirer [R225].
+  function notifLink() {
+    var h = typeof location === 'undefined' ? '' : String(location.hash);
+    if (h.indexOf('#envoi=') !== 0) return;
+    show('outils');
+    try { history.replaceState(history.state, '', h); } catch (e) { /* sans historique */ }
+    openNotifications();
+  }
 `;
 
 /** Le script servi à part (`/app/notifications.js`). Il ne lit et n'écrit que par `/v1/notifications` [R16]. */
