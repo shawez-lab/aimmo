@@ -8236,7 +8236,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS049 · La signature du mandat n'a pas de fil
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : branche voie3/DS049 en cours (le fil « Préparer, Contrôler, Signer, Inscrit » en tête de l'écran du mandat) ; en fin de pile. Restent le dossier de vente et l'offre.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS049 (majeur, parcours, effort M), endroit : mandat — `packages/api/app/mandat.ts`
 - Constat de l’audit : questionnaire, document, contrôle, signature papier ou en ligne, rétractation et avenant sont des cartes de même rang. Le fil d'étapes `.parcours` existe, pour la location seulement.
