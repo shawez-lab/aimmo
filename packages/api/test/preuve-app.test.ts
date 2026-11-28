@@ -91,6 +91,10 @@ describe('IN05 · la preuve à l’écran de la direction', () => {
     expect(text).toContain('mars 2027 : 3 sur 10, mois en cours');
     // Janvier et février finis, pas scellés : un geste chacun ; mars : aucun.
     expect(t.buttons().map((b) => b.textContent)).toEqual(['Comparer et sceller', 'Comparer et sceller']);
+    // DS022 · sceller un mois s'ouvre au geste : chaque formulaire vit dans son volet, son bouton plein ne se voit qu'ouvert.
+    const folds = t.corps().all().filter((e) => e.tagName === 'details' && e.children[0]?.tagName === 'summary' && /^Sceller /.test(e.children[0].textContent));
+    expect(folds.map((d) => d.children[0]!.textContent)).toEqual(['Sceller février 2027', 'Sceller janvier 2027']);
+    for (const b of t.buttons()) expect(folds.some((d) => d.all().includes(b))).toBe(true);
   });
 
   it('[R212] sceller envoie le mois et le comptage, puis relit ; un seul envoi à la fois ; un comptage illisible ne part pas', async () => {
