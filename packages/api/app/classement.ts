@@ -83,7 +83,11 @@ globalThis.AIMMO_CLASSEMENT = function (t) {
     }));
     form.appendChild(el('p', 'La correction est gardée pour mesurer le classement. Elle ne change ni le projet ni les rappels.', 'doux'));
     form.appendChild(state);
-    section.appendChild(form);
+    // DS010 · la correction ne s'ouvre qu'au geste : le bloc dit d'abord le classement.
+    var more = el('details');
+    more.appendChild(el('summary', 'Corriger'));
+    more.appendChild(form);
+    section.appendChild(more);
     box.appendChild(section);
   };
 };

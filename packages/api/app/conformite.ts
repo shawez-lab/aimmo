@@ -89,9 +89,10 @@ export const CONFORMITE_CSS = `
 `;
 
 /**
- * La part de l'écran posée dans le script de l'application : les outils partagés, le chargement à la demande du
- * script du responsable, et le bloc du coffre sur la fiche d'un client, chargé au geste (BR102). Un agent ne reçoit jamais le code de l'écran
- * du responsable : il n'est chargé que pour la clé du responsable.
+ * La part de l'écran posée dans le script de l'application : les outils partagés et le chargement à la demande du
+ * script du responsable. Le bloc du coffre sur la fiche d'un client, chargé au geste (BR102), est demandé par la fiche
+ * servie à part (`/app/fiche.js`, DS010). Un agent ne reçoit jamais le code de l'écran du responsable : il n'est chargé
+ * que pour la clé du responsable.
  */
 export const COFFRE_JS = `
   /* ---------- M12 : le dépôt au coffre depuis la fiche, et l'écran « Conformité » chargé à la demande (L10). ---------- */
@@ -135,9 +136,6 @@ export const COFFRE_JS = `
       $('conformite').appendChild(script);
     });
   }
-
-  // BR102 : le dépôt au coffre se charge au geste, dans son script servi à part, /app/coffre.js [R201].
-  function coffreBlock(personId) { return lazyBlock('Pièces au coffre', '/app/coffre.js', 'AIMMO_COFFRE', personId); }
 `;
 
 /**

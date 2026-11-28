@@ -66,7 +66,12 @@ describe('A01 · fichiers de l’application', () => {
     expect(js).toContain("'x-aimmo-sha256': sha");
     // `base` est toujours une adresse fixe de l'API.
     for (const b of js.match(/var base = [^;]+;/g) ?? []) expect(b).toMatch(/^var base = '\/v1\//);
-    expect(js.match(/(?:api|fetch)\(([^,)]+)/g)?.sort()).toEqual(['api(path', 'api(path', 'api(path', 'fetch(path', 'fetch(path', "fetch('/v1/acces/invitation'", "fetch('/app/reseau'", "api('/v1/plan-du-jour'", "api('/v1/alertes-agent'", "api('/v1/offres/a-tenir'", "api('/v1/contacts-chauds'", "api('/v1/annonces'", "api('/v1/rendez-vous/jour'", "api('/v1/usage/matin'", "api('/v1/apres-vente/journee'", "api('/v1/moi'", "api('/v1/fiches/' + encodeURIComponent(personId", "api('/v1/rappels/' + encodeURIComponent(taskId"].sort());
+    expect(js.match(/(?:api|fetch)\(([^,)]+)/g)?.sort()).toEqual(['api(path', 'api(path', 'api(path', 'fetch(path', 'fetch(path', "fetch('/v1/acces/invitation'", "fetch('/app/reseau'", "api('/v1/plan-du-jour'", "api('/v1/alertes-agent'", "api('/v1/offres/a-tenir'", "api('/v1/contacts-chauds'", "api('/v1/annonces'", "api('/v1/rendez-vous/jour'", "api('/v1/usage/matin'", "api('/v1/apres-vente/journee'", "api('/v1/moi'"].sort());
+    // DS010 · la fiche et « Rappel fait » passent par `send` : la fiche est lue dans l'application, le rappel dans la fiche servie à part.
+    const fiche = AGENT_APP_FILES['/app/fiche.js']!;
+    expect(fiche.match(/(?:api|fetch)\(/g)).toBeNull();
+    for (const call of fiche.match(/\bsend\(([^,)]+)/g) ?? []) expect(call).toMatch(/^send\((?:base|'\/v1\/)/);
+    expect(fiche).not.toMatch(/innerHTML|outerHTML|insertAdjacentHTML|document\.write|eval\(|new Function/);
     // BR102 : le dépôt au coffre a quitté le script de l'application ; servi à part, il passe par `send`, sous `/v1/conformite/personnes/`.
     const coffre = AGENT_APP_FILES['/app/coffre.js']!;
     expect(coffre.match(/(?:api|fetch)\(/g)).toBeNull();

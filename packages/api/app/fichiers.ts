@@ -2,7 +2,6 @@ import { DESIGN_CSS, DESIGN_ICON_SVG, PALETTE, THEME_COLOR } from '@aimmo/core';
 import { CERTIFIED_DOMAINS, PARTNER_TRADES } from '../../core/src/partenaires/annuaire.ts';
 import { STUDIO_OPTIONS } from '../../core/src/studio/options.ts';
 import { SORT_LABELS } from '../src/partenaires-sortes.ts';
-import { ACCORDS_JS } from './accords.ts';
 import { COFFRE_JS, CONFORMITE_CSS, CONFORMITE_HTML } from './conformite.ts';
 import { LOUER_CSS, LOUER_HOME_HTML, LOUER_HTML, LOUER_JS, LOUER_MODELES_ENTRY_HTML } from './louer.ts';
 import { INVESTIR_CSS, INVESTIR_HOME_HTML, INVESTIR_HTML, INVESTIR_JS } from './investir.ts';
@@ -16,6 +15,7 @@ import { OFFRES_HTML, OFFRES_JS } from './offres.ts';
 import { DOSSIER_HTML, DOSSIER_JS } from './dossier.ts';
 import { MANDAT_HTML, MANDAT_JS } from './mandat.ts';
 import { CLIENTS_HTML, CLIENTS_JS, CLIENTS_TAB_HTML } from './clients.ts';
+import { FICHE_JS } from './fiche.ts';
 import { STUDIO_HTML, STUDIO_JS } from './studio.ts';
 import { ATTIRER_ENTRY_HTML, ATTIRER_HTML, ATTIRER_JS } from './attirer.ts';
 import { BASCULE_ENTRY_HTML, BASCULE_JS } from './bascule.ts';
@@ -31,12 +31,7 @@ import { LICENCES_ENTRY_HTML, LICENCES_JS } from './licences.ts';
 import { CLES_JS, clesEntryHtml } from './cles.ts';
 import { PHASES_ENTRY_HTML, PHASES_JS } from './phases.ts';
 import { GUIDES_PHOTO_ENTRY_HTML, GUIDES_PHOTO_JS } from './guides-photo.ts';
-import { FIN_DE_BAIL_JS } from './fin-de-bail.ts';
-import { APPELS_RECUS_JS } from './appels-recus.ts';
 import { CHARGEUR_JS } from './chargeur.ts';
-import { RECLAMATIONS_JS } from './reclamations.ts';
-import { NOTES_VOCALES_JS } from './notes-vocales.ts';
-import { RECOMMANDATION_JS } from './recommandation.ts';
 import { COMMISSIONS_ENTRY_HTML, EUROS_ENTRY_HTML, FINANCES_JS, RAPPORT_AGENT_HTML, RAPPORT_DIRECTION_HTML, REGLAGES_ENTRY_HTML } from './finances.ts';
 import { FICHE_GOOGLE_HOME_HTML, FICHE_GOOGLE_HTML, FICHE_GOOGLE_JS } from './fiche-google.ts';
 import { GAGNER_CSS, GAGNER_HOME_HTML, GAGNER_HTML, GAGNER_JS } from './gagner.ts';
@@ -323,6 +318,13 @@ main > section > h2 { font-size: var(--t-xxl); margin: var(--e-2) 0 var(--e-4); 
 .liste button, #fiche-corps button { margin-top: var(--e-3); }
 .liste button + button { margin-inline-start: var(--e-2); }
 .appel { margin-top: var(--e-3); }
+.gestes { display: flex; flex-wrap: wrap; gap: 0 var(--e-2); }
+.gestes > button { padding-inline: var(--e-4); }
+.gestes > p { flex: 1 0 100%; }
+#fiche-corps .periodes button { margin-top: 0; }
+#fiche-corps summary::before { content: "+"; width: 1em; font-weight: 400; }
+#fiche-corps details[open] > summary::before { content: "–"; }
+#fiche-corps li > button { display: flex; width: fit-content; }
 details { margin-top: var(--e-2); }
 summary { min-height: var(--cible); display: flex; align-items: center; cursor: pointer; color: var(--accent); font-weight: 600; list-style-position: inside; }
 h4 { margin: var(--e-4) 0 var(--e-1); }
@@ -507,14 +509,12 @@ export const APP_JS = `'use strict';
   }
   var currentKey = null;
   var ID = /^[A-Za-z0-9_-]{1,64}$/;
-  var TEL = /^tel:[+]?[0-9]{6,15}$/;
   var PROJECTS = { sell: 'Vendre', buy: 'Acheter', rent_out: 'Mettre en location', rent: 'Louer', invest: 'Investir', sell_business: 'Céder une entreprise', buy_business: 'Reprendre une entreprise', valuation: 'Faire estimer' };
   var STAGES = { new: 'nouveau', recue: 'demande reçue', appele: 'appelé' };
   var CHANNELS = { email: 'mail', phone: 'téléphone', sms: 'SMS', instagram: 'Instagram', facebook: 'Facebook', whatsapp: 'WhatsApp', site: 'site', gohighlevel: 'reprise de GoHighLevel', manychat: 'reprise de ManyChat', exclusion_list: 'liste d’exclusion' };
   // Les codes internes ne s'affichent jamais : un code inconnu prend un libellé général.
   function stage(code) { return STAGES[code] || 'en cours'; }
   function channel(code) { return CHANNELS[code] || 'autre canal'; }
-  var EXCLUSIONS = { network_list: 'sur la liste d’exclusion', stop: 'a demandé l’arrêt', refused: 'a dit non', sold: 'a déjà vendu', followed_elsewhere: 'suivi par quelqu’un d’autre' };
   function date(iso) {
     var d = new Date(iso);
     if (isNaN(d.getTime())) return '';
@@ -539,174 +539,6 @@ export const APP_JS = `'use strict';
     var li = el('li', text);
     if (note) li.appendChild(el('p', note, 'doux'));
     return li;
-  }
-  var appelsDraw = null;
-  function appelGestes(personId, body) {
-    var box = el('div');
-    body.appendChild(box);
-    if (appelsDraw) return appelsDraw(box, personId);
-    var s = el('script');
-    s.setAttribute('src', '/app/appels.js');
-    s.addEventListener('load', function () {
-      appelsDraw = globalThis.AIMMO_APPELS({ $: $, el: el, send: send, cState: cState, accordButton: accordButton, accordFailed: accordFailed, openFiche: openFiche });
-      appelsDraw(box, personId);
-    });
-    s.addEventListener('error', function () { box.textContent = 'Pas de réseau : les gestes d’appel reviendront.'; });
-    box.appendChild(s);
-  }
-  var classementDraw = null;
-  function classementBlock(personId, body, q) {
-    var box = el('div');
-    body.appendChild(box);
-    if (classementDraw) return classementDraw(box, personId, q);
-    var s = el('script');
-    s.setAttribute('src', '/app/classement.js');
-    s.addEventListener('load', function () {
-      classementDraw = globalThis.AIMMO_CLASSEMENT({ el: el, send: send, $: $, date: date, ID: ID, cState: cState, cSeq: cSeq, cSelect: cSelect, accordButton: accordButton, accordFailed: accordFailed, openFiche: openFiche });
-      classementDraw(box, personId, q);
-    });
-    s.addEventListener('error', function () { box.textContent = 'Pas de réseau : le classement reviendra.'; });
-    box.appendChild(s);
-  }
-  var biensDraw = null;
-  function biensBlock(personId, body, f) {
-    var box = el('div');
-    body.appendChild(box);
-    if (biensDraw) return biensDraw(box, personId, f);
-    var s = el('script');
-    s.setAttribute('src', '/app/biens-fiche.js');
-    s.addEventListener('load', function () {
-      biensDraw = globalThis.AIMMO_BIENS_FICHE({ el: el, send: send, cState: cState, cSeq: cSeq, cSelect: cSelect, accordButton: accordButton, accordFailed: accordFailed, openFiche: openFiche, $: $ });
-      biensDraw(box, personId, f);
-    });
-    s.addEventListener('error', function () { box.textContent = 'Pas de réseau : les biens du client reviendront.'; });
-    box.appendChild(s);
-  }
-  function renderFiche(f, personId) {
-    var body = $('fiche-corps');
-    clear(body);
-    $('fiche-nom').textContent = [f.firstName, f.lastName].filter(function (x) { return x; }).join(' ') || 'Nom inconnu';
-    var contact = f.contact || { allowed: false, reasons: [] };
-    // Personne exclue ou qui a demandé l'arrêt : signalée, sans bouton d'appel [R02, R04].
-    if (!contact.allowed) {
-      var reasons = (contact.reasons || []).map(function (r) { return EXCLUSIONS[r] || 'autre raison'; }).join(', ');
-      body.appendChild(el('p', 'Ne plus contacter : ' + (reasons || 'exclusion active') + '.', 'alerte'));
-    } else if (typeof f.call === 'string' && TEL.test(f.call)) {
-      var a = el('a', 'Appeler', 'appel');
-      a.setAttribute('href', f.call);
-      // L'application peut rester ouverte : passé la fin du créneau, l'appel ne part plus [R203].
-      var closes = typeof f.callClosesAt === 'string' ? Date.parse(f.callClosesAt) : NaN;
-      if (!isNaN(closes)) {
-        a.addEventListener('click', function (event) {
-          if (Date.now() < closes) return;
-          event.preventDefault();
-          a.removeAttribute('href');
-          a.textContent = 'Appel fermé à cette heure : du lundi au vendredi, de 10 h à 13 h et de 14 h à 20 h, hors jours fériés.';
-        });
-      }
-      body.appendChild(a);
-    } else if (f.callRefusal === 'no_consent') {
-      // Pas d'appel sans accord ni demande de la personne [R03].
-      body.appendChild(el('p', 'Appel fermé : aucun accord ni demande de rappel enregistrés. Notez-les plus bas si la personne vous les a donnés.', 'alerte'));
-    } else if (f.callRefusal === 'outside_hours') {
-      // Une prospection acceptée s'appelle aux heures permises [R203].
-      body.appendChild(el('p', 'Appel fermé à cette heure : du lundi au vendredi, de 10 h à 13 h et de 14 h à 20 h, hors jours fériés.', 'alerte'));
-    } else if (f.callRefusal === 'refused_request') {
-      body.appendChild(el('p', 'Appel fermé : la personne a refusé. Il ne rouvre que si elle redemande à être rappelée.', 'alerte'));
-    } else if (f.callReopensAt) {
-      // L'écran dit quand l'appel rouvre [R204].
-      body.appendChild(el('p', 'Appel fermé : ' + (f.callRefusal === 'refused_recently' ? 'la personne a refusé' : 'trop d’appels récents') + '. Il rouvre le ' + date(f.callReopensAt) + ' à ' + hour(f.callReopensAt) + '.', 'alerte'));
-    } else {
-      body.appendChild(el('p', 'Aucun numéro sur la fiche.', 'doux'));
-    }
-    if (contact.allowed && (f.call || (f.callRefusal && f.callRefusal !== 'no_phone'))) appelGestes(personId, body);
-    var callbacks = (f.callbacks || []).map(function (c) {
-      var li = line(c.reason, c.doneAt ? 'Fait le ' + date(c.doneAt) : 'À rappeler avant le ' + date(c.dueAt) + ' à ' + hour(c.dueAt));
-      if (!c.doneAt && ID.test(c.taskId)) {
-        var b = el('button', 'Rappel fait');
-        b.setAttribute('type', 'button');
-        b.addEventListener('click', function () { callbackDone(c.taskId, personId); });
-        li.appendChild(b);
-      }
-      return li;
-    });
-    body.appendChild(block('Rappels', callbacks));
-    body.appendChild(block('Projets', (f.projects || []).map(function (p) {
-      var budget = p.budgetMaxEur ? ', budget jusqu’à ' + p.budgetMaxEur + ' €' : '';
-      var li = line((PROJECTS[p.kind] || 'Autre projet') + ' (étape : ' + stage(p.stage) + ')' + budget, p.deadline ? 'Échéance le ' + date(p.deadline) : null);
-      if (p.kind === 'buy' && ID.test(p.id)) var still = li.appendChild(button('Recherche toujours d’actualité', function () {
-        send('/v1/acquereurs/projets/' + p.id + '/recherche/confirmation', 'POST').then(function (r) { if (!r.gone) still.textContent = r.ok ? 'Confirmée' : 'Échec, réessayez'; });
-      }));
-      return li;
-    })));
-    body.appendChild(block('Origines', (f.sources || []).map(function (s) { return line(channel(s.channel) + (s.detail ? ' (' + s.detail + ')' : ''), 'Le ' + date(s.occurredAt)); })));
-    if (f.qualification) classementBlock(personId, body, f.qualification);
-    biensBlock(personId, body, f);
-    body.appendChild(accordsBlock(personId, f));
-    body.appendChild(block('Derniers messages', (f.messages || []).map(function (m) {
-      return line(m.body, (m.direction === 'in' ? 'Reçu' : 'Envoyé') + ' par ' + channel(m.channel) + ', le ' + date(m.occurredAt) + ' à ' + hour(m.occurredAt));
-    })));
-    // Les appels reçus, relus au geste (BR61) [R16, R243].
-    body.appendChild(appelsRecusBlock(personId));
-    // Les notes vocales transcrites, relues au geste (BR62) [R16, R240].
-    body.appendChild(notesVocalesBlock(personId));
-    // Les réclamations de la fiche : ranger, échéance, réponse, médiateur (BR69) [R16, R606, R607].
-    body.appendChild(reclamationsBlock(personId));
-    // Le dépôt d'une pièce au coffre par l'agent de la fiche (L10), chargé au geste (BR102) [R90].
-    body.appendChild(coffreBlock(personId));
-    // La fin de bail connue, raison écrite d'une relance d'ancien contact (G15) [R143].
-    body.appendChild(finDeBailBlock(personId));
-    // Un proche recommandé par ce client (X22) [R03, R142].
-    body.appendChild(recommandationBlock(personId));
-  }
-  // La réponse d'une demande de fiche : clé refusée, fiche hors des droits, panne, ou la fiche.
-  function ficheAnswer(r) {
-    if (r.status === 401) return { refused: true };
-    return r.json().then(function (body) {
-      if (r.status === 403 && body && body.code === 'agent_inactive') return { refused: true };
-      if (r.status === 403 || r.status === 404) return { denied: true };
-      if (!r.ok || !body || body.ok !== true) return { failed: true };
-      return { body: body };
-    }, function () { return { failed: true }; });
-  }
-  function openFiche(personId) {
-    if (!currentKey || typeof personId !== 'string' || !ID.test(personId)) return Promise.resolve(false);
-    var mine = session;
-    var key = currentKey;
-    wipeFiche();
-    // DS064 · le focus rejoint ce titre à l'ouverture : il dit déjà quel écran s'ouvre, le nom vient avec la réponse.
-    $('fiche-nom').textContent = 'Fiche du client';
-    $('fiche-etat').textContent = 'Chargement…';
-    show('fiche', [personId]);
-    return api('/v1/fiches/' + encodeURIComponent(personId) + '/resume', key).then(ficheAnswer).then(function (res) {
-      if (mine !== session) return false;
-      if (res.refused) { forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return false; }
-      if (res.denied) { $('fiche-etat').textContent = 'Cette fiche n’est pas dans vos droits.'; return false; }
-      if (res.failed) { down($('fiche-etat')); return false; }
-      $('fiche-etat').textContent = '';
-      renderFiche(res.body.data, personId);
-      return true;
-    }, function () {
-      if (mine !== session) return false;
-      down($('fiche-etat'));
-      return false;
-    });
-  }
-  // « Rappel fait » : rien n'est envoyé ; la fiche est relue pour montrer la ligne gardée.
-  function callbackDone(taskId, personId) {
-    if (!currentKey || !ID.test(taskId)) return Promise.resolve(false);
-    var mine = session;
-    var key = currentKey;
-    return api('/v1/rappels/' + encodeURIComponent(taskId) + '/fait', key, 'POST').then(function (r) {
-      if (mine !== session) return false;
-      if (r.status === 401) { forgetKey(currentKey); refuse('Clé refusée. Vérifiez-la ou demandez-en une nouvelle.'); return false; }
-      if (!r.ok) { $('fiche-etat').textContent = 'Le rappel n’a pas pu être marqué fait.'; return false; }
-      return openFiche(personId);
-    }, function () {
-      if (mine !== session) return false;
-      $('fiche-etat').textContent = 'Pas de réseau : le rappel n’est pas marqué fait.';
-      return false;
-    });
   }
   // Chaque entrée, sortie ou refus ouvre une nouvelle session : une réponse d'une session finie n'est jamais montrée.
   var session = 0;
@@ -2248,7 +2080,7 @@ export const APP_JS = `'use strict';
       $(host).appendChild(s);
     });
   }
-${CLIENTS_JS}${COFFRE_JS}${ACCORDS_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${A_TENIR_JS}${ACTUALITES_JS}${CLES_A_RENDRE_JS}${NOTIFICATIONS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${MANDAT_MODELES_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${PHASES_JS}${LICENCES_JS}${CLES_JS}${GUIDES_PHOTO_JS}${FIN_DE_BAIL_JS}${CHARGEUR_JS}${APPELS_RECUS_JS}${NOTES_VOCALES_JS}${RECLAMATIONS_JS}${RECOMMANDATION_JS}${FINANCES_JS}
+${CLIENTS_JS}${FICHE_JS}${COFFRE_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${A_TENIR_JS}${ACTUALITES_JS}${CLES_A_RENDRE_JS}${NOTIFICATIONS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${MANDAT_MODELES_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${PHASES_JS}${LICENCES_JS}${CLES_JS}${GUIDES_PHOTO_JS}${CHARGEUR_JS}${FINANCES_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });

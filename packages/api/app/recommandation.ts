@@ -6,11 +6,7 @@
  * reste la même tant que la saisie ne change pas : une réponse perdue se renvoie sans rien doubler.
  */
 
-/** Le bloc de la fiche et son chargeur, posés dans le script de l'application. */
-export const RECOMMANDATION_JS = `
-  function recommandationBlock(personId) { return lazyBlock('Recommandation d’un proche', '/app/recommandation.js', 'AIMMO_RECOMMANDATION', personId, 'reco'); }
-`;
-
+/** Le bloc de la fiche n'est plus posé dans l'application : la fiche servie à part (`/app/fiche.js`) le demande au chargeur commun (DS010). */
 /** Le script servi à part. Il ne lit et n'écrit que les recommandations de cette fiche [R16]. */
 export const RECOMMANDATION_SCRIPT = `'use strict';
 globalThis.AIMMO_RECOMMANDATION = function (t) {

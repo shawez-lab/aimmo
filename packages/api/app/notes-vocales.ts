@@ -30,11 +30,7 @@ export const NOTES_VOCALES_LANGUAGES = Object.freeze({
   ro: 'roumain',
 });
 
-/** Le bloc de la fiche, posé dans le script de l'application par le chargeur commun (BR69) : le moins possible [R201]. */
-export const NOTES_VOCALES_JS = `
-  function notesVocalesBlock(personId) { return lazyBlock('Notes vocales', '/app/notes-vocales.js', 'AIMMO_NOTES_VOCALES', personId); }
-`;
-
+/** Le bloc de la fiche n'est plus posé dans l'application : la fiche servie à part (`/app/fiche.js`) le demande au chargeur commun (DS010). */
 /** Le script servi à part. Il ne lit que la route des notes vocales de cette fiche [R16]. */
 export const NOTES_VOCALES_SCRIPT = `'use strict';
 globalThis.AIMMO_NOTES_VOCALES = function (t) {
