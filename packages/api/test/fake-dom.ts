@@ -61,6 +61,9 @@ export class FakeElement {
   removeAttribute(name: string): void {
     delete this.attributes[name];
   }
+  getAttribute(name: string): string | null {
+    return this.attributes[name] ?? null;
+  }
 
   setAttribute(name: string, value: string): void {
     this.attributes[name] = String(value);

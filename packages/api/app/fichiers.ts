@@ -355,6 +355,8 @@ main > section > h2 { font-size: var(--t-xxl); margin: var(--e-2) 0 var(--e-4); 
 #fiche-corps .periodes button { margin-top: 0; }
 summary::before { content: "+"; width: 1em; font-weight: 400; }
 summary > .doux { margin-left: var(--e-1); font-weight: 400; font-size: inherit; }
+[aria-invalid="true"] { border-color: var(--danger); box-shadow: inset 0 0 0 1px var(--danger); }
+[aria-invalid="true"] + .retard { margin: var(--e-3) 0 0; font-size: var(--t-s); }
 details[open] > summary::before { content: "–"; }
 #fiche-corps li > button { display: flex; width: fit-content; }
 details { margin-top: var(--e-2); }

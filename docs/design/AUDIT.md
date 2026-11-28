@@ -449,6 +449,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : tous les formulaires
 - Preuve : le refus s'écrit dans la zone d'état, sous le bouton. Aucun champ ne porte `aria-invalid`.
 - Solution : le message sous le champ fautif, le champ marqué, le focus posé dessus.
+- Suite : corrigé pour la fiche du bien le 2026-11-28 : le champ à vérifier est marqué (`aria-invalid`, cerné de la couleur du refus), le refus s'écrit juste dessous et le décrit (`aria-describedby`), le curseur y va, et la saisie dans ce champ efface la marque. Un seul champ marqué à la fois, dans l'ordre de la fiche. Un refus du serveur va au champ qu'il nomme, avec ses mots ; un groupe de cases ou un champ inconnu ouvre sa partie sans rien marquer. Le refus reste dit près du bouton, pour qui vient d'appuyer. Une surface mal écrite se dit avec sa forme (« en m², au centième au plus ») : elle se disait « un nombre entier sans lettre ». Restent les autres formulaires (offre reçue, mandat, dossier de vente, candidature, conformité) : le même geste, à porter dans la coquille quand son poids le permet. Avant et après : `captures/avant-apres/DS058-refus-sous-le-champ.jpg`.
 
 #### DS059 · Le bouton d'envoi est au bout du formulaire
 - Gravité : mineur · Catégorie : formulaires, une main · Effort : S
