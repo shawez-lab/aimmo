@@ -148,7 +148,7 @@ async function run(answers: Record<string, Answer> = {}) {
   };
   /** Changer l'adresse du site du réseau : deux appuis, espacés. */
   const changer = async (url: string) => {
-    input('Changer l’adresse du site du réseau').value = url;
+    input('Adresse du site du réseau').value = url;
     const b = buttons('Changer l’adresse')[0];
     await click(b);
     later(2000);
@@ -401,6 +401,32 @@ describe('AT12 · écran « Attirer » de la direction', () => {
     const before = t.calls.length;
     await t.ouvrir();
     expect(t.calls.slice(before).some((c) => c.url === `/v1/attirer/origine/${MONTH}`)).toBe(true);
+  });
+
+  it('DS022 · rien n’est « le pas à faire » sur cet écran de réglages : aucun bouton plein hors d’un formulaire ouvert au geste', async () => {
+    const t = await run();
+    await t.ouvrir();
+    const all = t.body().all();
+    const folded = all.filter((e) => e.tagName === 'details');
+    const inForm = (b: FakeElement) => folded.some((d) => d.all().includes(b));
+    const filled = all.filter((e) => e.tagName === 'button' && !/(^| )(secondaire|second|retour|discret)( |$)/.test(e.className));
+    // L'audit comptait onze boutons pleins de même poids. Ceux qui restent sont l'envoi d'un formulaire, replié tant qu'on ne l'ouvre pas.
+    expect(filled.filter((b) => !inForm(b)).map((b) => b.textContent)).toEqual([]);
+    expect(filled.length).toBeGreaterThan(0);
+    // Ouvrir, recalculer, mettre hors service : filaires, chacun à sa place.
+    for (const text of ['Recalculer les prix', 'Ouvrir les statistiques', 'Ouvrir la publicité payante', 'Ouvrir la lettre et le magazine', 'Enregistrer le titulaire', 'Mentions légales du site', 'Fiche Google de cet agent', 'Voir le plan', 'Mettre hors service', 'Remettre en service', 'Ouvrir', 'Retirer']) {
+      const found = t.buttons(text);
+      expect(found.length, text).toBeGreaterThan(0);
+      for (const b of found) expect(b.className, text).toBe('secondaire');
+    }
+    // Le site du réseau se change dans un formulaire qui s'ouvre au geste ; son bouton y garde la confirmation en deux appuis.
+    const site = folded.find((d) => d.children[0]!.textContent === 'Changer l’adresse du site du réseau')!;
+    expect(site.all().filter((e) => e.tagName === 'label').map((l) => l.textContent)).toEqual(['Adresse du site du réseau']);
+    expect(site.all().filter((e) => e.tagName === 'button').map((b) => b.textContent)).toEqual(['Changer l’adresse']);
+    // Sans site du réseau encore, le même formulaire propose de le mettre en service.
+    const none = await run({ 'GET /v1/attirer/sites': ok([]) });
+    await none.ouvrir();
+    expect(none.body().all().some((e) => e.tagName === 'summary' && e.textContent === 'Mettre le site du réseau en service')).toBe(true);
   });
 
   it('pas de réseau : c’est dit, rien n’est inventé', async () => {
