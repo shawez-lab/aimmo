@@ -249,9 +249,13 @@ describeWithSqlite('AU003 · la signature en ligne réelle, distincte de l’ess
     class Bloque {
       readonly channel = 'email' as const;
       hang = false;
+      held = 0;
       readonly sent: OutboundMessage[] = [];
       deliver(message: OutboundMessage): Promise<DeliveryReceipt> {
-        if (this.hang && message.body.includes('pièces jointes')) return new Promise(() => {});
+        if (this.hang && message.body.includes('pièces jointes')) {
+          this.held += 1;
+          return new Promise(() => {});
+        }
         this.sent.push(message);
         return Promise.resolve({ externalId: `bloque-${this.sent.length}` });
       }
@@ -260,6 +264,12 @@ describeWithSqlite('AU003 · la signature en ligne réelle, distincte de l’ess
     let clock = T0;
     const now = () => new Date(clock);
     const canal = new Bloque();
+    // On attend que l'envoi soit vraiment bloqué, pas un quart de seconde : sur une machine chargée, le travail
+    // n'avait pas toujours atteint le canal, et l'essai suivant n'était pas encore réservé.
+    const blocked = async (n: number): Promise<void> => {
+      for (let i = 0; i < 1500 && canal.held < n; i++) await new Promise((r) => setTimeout(r, 5));
+      expect(canal.held).toBe(n);
+    };
     const online = new SignatureEnLigne(t.db, t.acces, t.journal, { now, channels: [canal] });
     expect((await online.recordValidation(t.direction, AVIS)).ok).toBe(true);
     const s = await online.start(t.agent, t.documentId, CONSENT);
@@ -268,7 +278,7 @@ describeWithSqlite('AU003 · la signature en ligne réelle, distincte de l’ess
     await online.sign(t.agent, s.value.sessionId, { code });
     canal.hang = true;
     void online.finish(t.agent, t.documentId, SOURCE);
-    for (let i = 0; i < 50; i++) await new Promise((r) => setTimeout(r, 5));
+    await blocked(1);
     canal.hang = false;
     // Tout de suite : l'essai en cours n'est ni dit remis, ni doublé.
     expect(await online.finish(t.agent, t.documentId)).toMatchObject({ ok: true, value: { remises: [{ position: 1, sent: false }] } });
@@ -277,7 +287,7 @@ describeWithSqlite('AU003 · la signature en ligne réelle, distincte de l’ess
     clock = T0 + 61 * 60_000;
     canal.hang = true;
     void online.finish(t.agent, t.documentId);
-    for (let i = 0; i < 50; i++) await new Promise((r) => setTimeout(r, 5));
+    await blocked(2);
     canal.hang = false;
     expect(await t.db.first('SELECT status, attempt FROM signature_remises')).toEqual({ status: 'a_envoyer', attempt: 2 });
     // Encore une heure : le troisième essai part, avec les pièces et un texte qui n'est pas celui des deux autres.
