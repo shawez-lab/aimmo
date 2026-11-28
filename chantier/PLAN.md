@@ -7890,7 +7890,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS008 · « Le réseau » empile 35 blocs
 - Statut : en cours (voie 3)
-- Suivi : branche voie3/DS008 prête (cinq rubriques, une seule visible ; une phrase dit ce qui attend) ; proposée après les écrans d'un bien (DS022), mêmes fichiers.
+- Suivi : proposition #829 ouverte le 2026-11-28 (cinq rubriques, une seule visible ; une phrase dit ce qui attend).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS008 (majeur, architecture de l'information, effort L), endroit : console de la direction — `packages/api/app/fichiers.ts` (`#reseau`)
 - Constat de l’audit : `appli-reseau-chiffres-connexion.jpg`. 12 écrans, 35 blocs dont 11 vides, 33 boutons. Alertes, factures, réglages du mandat, loyers, sauvegardes et preuve à Dijon se suivent sans ordre.
@@ -8012,7 +8012,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS022 · Trop de boutons pleins : aucune action ne domine
 - Statut : en cours (voie 3)
-- Suivi : la fiche du client est faite (#826). Proposition #828 ouverte le 2026-11-28 pour les écrans d'un bien (mettre en vente, mandat, avis de valeur, visite). Branche voie3/DS022-attirer prête pour « Attirer », proposée après les blocs vides (DS060).
+- Suivi : la fiche du client est faite (#826) ; les écrans d'un bien aussi (#828, `7b5be55b`, fusionnée le 2026-11-28 : mettre en vente, mandat, avis de valeur, visite ; Codex sans remarque). Branches prêtes, proposées à leur tour : voie3/DS022-attirer (« Attirer »), voie3/DS022-dossier (dossier de vente, acquéreurs d'un bien, preuve à Dijon).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS022 (majeur, hiérarchie, effort M), endroit : fiche client (9 boutons pleins), « Gagner des mandats » (8), conformité (7), « Mettre en vente » (5), carte d'un bien sur l'accueil (5), mandat (4), offres (4)
 - Constat de l’audit : `appli-accueil.jpg`, `appli-mettre-en-vente.jpg` : « Rédiger de nouveau » et « Corriger le texte » sont pleins tous les deux.
