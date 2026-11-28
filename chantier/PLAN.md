@@ -7898,7 +7898,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS009 · « Conformité » empile 13 blocs
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : branche voie3/DS009 prête (trois rubriques, la première échéance dite en tête, formulaires au geste) ; proposée après « Le réseau » (DS008), mêmes fichiers.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS009 (majeur, architecture de l'information, effort M), endroit : écran du responsable de la conformité — `packages/api/app/conformite.ts`
 - Constat de l’audit : 6,3 écrans, 13 blocs, 7 boutons pleins.
