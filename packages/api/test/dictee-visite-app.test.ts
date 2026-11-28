@@ -121,7 +121,8 @@ describe('BR103 · la dictée en sortant d’une visite, depuis l’écran de la
     // La place faite par BR102 reste en grande partie libre pour la suite ; la visite sans réseau (AU018) en a pris environ 200 octets, pour son chargeur,
     // le focus qui suit l'écran (DS064) environ 110, pour l'accessibilité de chaque écran, et l'onglet « Clients » (DS003) environ 80, avec le
     // chargeur qui laisse gagner le dernier geste. La fiche du client, servie à part (DS010), en a rendu plus de 3 000 : la réserve remonte.
-    expect(gzipSize(HTML) + gzipSize(AGENT_APP_FILES['/app/app.css']!) + gzipSize(JS)).toBeLessThan(BUDGETS.application.gzipBytes - 3000);
+    // Les cinq rubriques de la direction (DS008) en reprennent environ 650, pour la phrase de ce qui attend et le choix de la rubrique.
+    expect(gzipSize(HTML) + gzipSize(AGENT_APP_FILES['/app/app.css']!) + gzipSize(JS)).toBeLessThan(BUDGETS.application.gzipBytes - 2800);
     await t.open();
     expect(t.scripts()).toHaveLength(1);
     expect(t.part().textContent).toContain('ce que le visiteur a pensé du bien');

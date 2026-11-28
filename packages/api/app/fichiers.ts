@@ -33,7 +33,7 @@ import { CLES_JS, clesEntryHtml } from './cles.ts';
 import { PHASES_ENTRY_HTML, PHASES_JS } from './phases.ts';
 import { GUIDES_PHOTO_ENTRY_HTML, GUIDES_PHOTO_JS } from './guides-photo.ts';
 import { CHARGEUR_JS } from './chargeur.ts';
-import { COMMISSIONS_ENTRY_HTML, EUROS_ENTRY_HTML, FINANCES_JS, RAPPORT_AGENT_HTML, RAPPORT_DIRECTION_HTML, REGLAGES_ENTRY_HTML } from './finances.ts';
+import { COMMISSIONS_ENTRY_HTML, EUROS_ENTRY_HTML, FINANCES_JS, FACTURES_ENTRY_HTML, GRILLE_ENTRY_HTML, RAPPORT_AGENT_HTML, RAPPORT_CHIFFRES_HTML, RAPPORT_DIRECTION_HTML, RAPPORT_TECHNIQUE_HTML } from './finances.ts';
 import { FICHE_GOOGLE_HOME_HTML, FICHE_GOOGLE_HTML, FICHE_GOOGLE_JS } from './fiche-google.ts';
 import { GAGNER_CSS, GAGNER_HOME_HTML, GAGNER_HTML, GAGNER_JS } from './gagner.ts';
 import { REPRISE_ENTRY_HTML, REPRISE_JS } from './reprise.ts';
@@ -52,16 +52,21 @@ const DOMAIN_NAMES: Record<string, string> = { ...Object.fromEntries(CERTIFIED_D
  * DS069 · l'écran de la direction. Il n'est plus dans la page de l'agent (`/app/`), qui ne le télécharge donc plus :
  * il est dans la page de la direction (`/app/reseau`, `RESEAU_PAGE_HTML`), la même page avec cet écran en plus.
  */
-export const RESEAU_HTML = `<button id="vers-journee" type="button" class="retour" hidden>Ma journée d’agent</button>
-<h2 id="reseau-titre">Le réseau</h2>
-<div class="periodes" role="group" aria-label="Période">
-<button id="reseau-mois" type="button" class="secondaire" aria-pressed="true">Ce mois-ci</button>
-<button id="reseau-precedent" type="button" class="secondaire" aria-pressed="false">Mois dernier</button>
-<button id="reseau-annee" type="button" class="secondaire" aria-pressed="false">12 derniers mois</button>
-</div>
-<p id="reseau-etat" class="etat" role="status"></p>
-<div id="reseau-corps"></div>
-<section class="bloc" aria-labelledby="titre-reseau-alertes">
+/**
+ * DS008 · l'écran de la direction en cinq rubriques, une seule à la fois : ce qui attend aujourd'hui, les chiffres,
+ * les agents, les réglages, la technique. Chaque bloc vit dans une rubrique et une seule.
+ *
+ * Sous le titre, une phrase dit ce qui attend la direction, quelle que soit la rubrique ouverte (`sayDue`) : chaque
+ * compte vient de sa lecture, dans un ordre fixe ; une lecture manquée se dit, et la phrase ne dit jamais « rien » à
+ * sa place. Une facture validée la fait baisser.
+ *
+ * Les blocs qui se relisent avec le rapport du matin le sont à l'ouverture de leur rubrique (`showRubrique`), chacun
+ * jugé pour lui-même : pas encore lu, ou lu en panne (son état dit « Réessayez… »), la rubrique relit ; un bloc lu, même
+ * sans rien à montrer, ne redemande rien, et rien ne part pendant qu'une lecture est en route. Personne ne retourne
+ * chercher « Lire le rapport » dans une autre rubrique.
+ */
+export const RESEAU_RUBRIQUES: readonly (readonly [id: string, name: string])[] = [['jour', 'Aujourd’hui'], ['chiffres', 'Chiffres'], ['agents', 'Agents'], ['reglages', 'Réglages'], ['technique', 'Technique']];
+const RESEAU_JOUR_HTML = `<section class="bloc" aria-labelledby="titre-reseau-alertes">
 <h3 id="titre-reseau-alertes">Alertes</h3>
 <p id="reseau-alertes-etat" class="etat" role="status"></p>
 <ul id="reseau-alertes" class="liste"></ul>
@@ -78,7 +83,15 @@ export const RESEAU_HTML = `<button id="vers-journee" type="button" class="retou
 <p id="reseau-brouillons-etat" class="etat" role="status"></p>
 <ul id="reseau-brouillons" class="liste"></ul>
 </section>
-<section class="bloc" aria-labelledby="titre-reseau-export">
+${GUIDES_PHOTO_ENTRY_HTML}${RAPPORT_DIRECTION_HTML}`;
+const RESEAU_CHIFFRES_HTML = `<div class="periodes" role="group" aria-label="Période">
+<button id="reseau-mois" type="button" class="secondaire" aria-pressed="true">Ce mois-ci</button>
+<button id="reseau-precedent" type="button" class="secondaire" aria-pressed="false">Mois dernier</button>
+<button id="reseau-annee" type="button" class="secondaire" aria-pressed="false">12 derniers mois</button>
+</div>
+<p id="reseau-etat" class="etat" role="status"></p>
+<div id="reseau-corps"></div>
+${COMMISSIONS_ENTRY_HTML}${FACTURES_ENTRY_HTML}<section class="bloc" aria-labelledby="titre-reseau-export">
 <h3 id="titre-reseau-export">Export du jour</h3>
 <p class="doux">Les chiffres d’un jour, au format tableur, pour les comparer au comptage manuel.</p>
 <label for="reseau-export-jour">Jour</label>
@@ -86,13 +99,25 @@ export const RESEAU_HTML = `<button id="vers-journee" type="button" class="retou
 <button id="reseau-export" type="button" class="secondaire">Télécharger l’export</button>
 <p id="reseau-export-etat" class="etat" role="status"></p>
 </section>
-<section class="bloc" aria-labelledby="titre-reseau-cas">
+${MESURE_SOURCES_ENTRY_HTML}${RAPPORT_CHIFFRES_HTML}`;
+const RESEAU_AGENTS_HTML = `${CANDIDATURES_ENTRY_HTML}${ENGAGEMENTS_ENTRY_HTML}${PHASES_ENTRY_HTML}${LICENCES_ENTRY_HTML}${ANNUAIRE_ENTRY_HTML}${PROSPECTION_ENTRY_HTML}`;
+const RESEAU_REGLAGES_HTML = `${REGLAGES_MANDAT_ENTRY_HTML}${MANDAT_MODELES_ENTRY_HTML}${LOUER_MODELES_ENTRY_HTML}${GRILLE_ENTRY_HTML}${LOYERS_ENTRY_HTML}${ATTIRER_ENTRY_HTML}${BIBLIOTHEQUE_ENTRY_HTML}`;
+const RESEAU_TECHNIQUE_HTML = `${BASCULE_ENTRY_HTML}${REPRISE_ENTRY_HTML}${RAPPORT_TECHNIQUE_HTML}<section class="bloc" aria-labelledby="titre-reseau-cas">
 <h3 id="titre-reseau-cas">Mesure du classement</h3>
 <p class="doux">Les 150 derniers classements corrigés par les agents, sans coordonnées, pour relancer la mesure. Un nom peut rester : à relire, et à garder hors du dépôt.</p>
 <button id="reseau-cas" type="button" class="secondaire">Télécharger les cas corrigés</button>
 <p id="reseau-cas-etat" class="etat" role="status"></p>
 </section>
-${ATTIRER_ENTRY_HTML}${CANDIDATURES_ENTRY_HTML}${REPRISE_ENTRY_HTML}${REGLAGES_MANDAT_ENTRY_HTML}${MANDAT_MODELES_ENTRY_HTML}${LOYERS_ENTRY_HTML}${MESURE_SOURCES_ENTRY_HTML}${ANNUAIRE_ENTRY_HTML}${PROSPECTION_ENTRY_HTML}${BIBLIOTHEQUE_ENTRY_HTML}${ENGAGEMENTS_ENTRY_HTML}${GUIDES_PHOTO_ENTRY_HTML}${LOUER_MODELES_ENTRY_HTML}${BASCULE_ENTRY_HTML}${RAPPORT_DIRECTION_HTML}${PHASES_ENTRY_HTML}${LICENCES_ENTRY_HTML}${clesEntryHtml('reseau')}${COMMISSIONS_ENTRY_HTML}${REGLAGES_ENTRY_HTML}`;
+${clesEntryHtml('reseau')}`;
+const RESEAU_PARTS: Record<string, string> = { jour: RESEAU_JOUR_HTML, chiffres: RESEAU_CHIFFRES_HTML, agents: RESEAU_AGENTS_HTML, reglages: RESEAU_REGLAGES_HTML, technique: RESEAU_TECHNIQUE_HTML };
+export const RESEAU_HTML = `<button id="vers-journee" type="button" class="retour" hidden>Ma journée d’agent</button>
+<h2 id="reseau-titre">Le réseau</h2>
+<p id="reseau-attend" class="etat" role="status"></p>
+<div class="rubriques" role="group" aria-label="Rubrique">
+${RESEAU_RUBRIQUES.map(([id, name], i) => `<button id="reseau-r-${id}" type="button" class="secondaire" aria-pressed="${i === 0}">${name}</button>`).join('\n')}
+</div>
+${RESEAU_RUBRIQUES.map(([id], i) => `<div id="reseau-p-${id}"${i === 0 ? '' : ' hidden'}>\n${RESEAU_PARTS[id]}</div>`).join('\n')}
+`;
 
 export const INDEX_HTML = `<!doctype html>
 <html lang="fr">
@@ -353,6 +378,11 @@ legend { font-weight: 600; margin-bottom: var(--e-2); }
 .periodes button { flex: 1 1 0; margin: 0; min-height: 44px; padding: var(--e-2) var(--e-3); border-radius: var(--r-rond); font-size: var(--t-s); }
 .periodes button.secondaire { box-shadow: none; }
 .periodes button[aria-pressed="true"] { background: var(--accent); color: var(--sur-accent); }
+.rubriques { display: flex; flex-wrap: wrap; gap: 0 clamp(var(--e-1), 2vw, var(--e-6)); margin: var(--e-2) 0 0; border-bottom: 1px solid var(--trait); }
+.rubriques ~ div > .bloc:first-child { margin-top: 0; border-top: 0; }
+.rubriques ~ div > .periodes { margin-top: var(--e-5); }
+.rubriques button { margin: 0; padding: 0; border-radius: 0; box-shadow: none; color: var(--doux); font-size: var(--t-xs); }
+.rubriques button[aria-pressed="true"] { color: var(--encre); box-shadow: inset 0 -2px 0 var(--encre); }
 .chiffre { border-top: 1px solid var(--trait); }
 .chiffre:first-child { border-top: 0; }
 .chiffre summary { justify-content: space-between; gap: var(--e-3); color: var(--encre); font-weight: 400; }
@@ -1838,7 +1868,7 @@ export const APP_JS = `'use strict';
   var MANDATE_SOURCES = { site: 'site', online_valuation: 'estimation en ligne', value_tracking: 'suivi de la valeur', referral: 'recommandation', social: 'réseaux sociaux', portal: 'portail', agent_network: 'réseau de l’agent', neighbourhood_letter: 'lettre de quartier', other: 'autre origine' };
   var INDICATORS = { contacts: 'les contacts reçus', appointments: 'les rendez-vous tenus', mandates: 'les mandats signés', sales: 'les ventes' };
   var PIECES = { contrat_agent_commercial: 'contrat d’agent commercial', attestation_habilitation: 'attestation d’habilitation', immatriculation_rsac: 'immatriculation au RSAC', assurance_rcp: 'assurance de responsabilité civile professionnelle', attestation_vigilance: 'attestation de vigilance' };
-  var reseauRange = 'mois';
+  var reseauRange = 'mois', rubrique = 'jour', due = [], RUBRIQUES = ${JSON.stringify(RESEAU_RUBRIQUES.map(([id]) => id))};
   function agentName(id) { return id ? 'Agent ' + id : 'Direction, sans agent'; }
   function count(n) { var x = Number(n); return isFinite(x) ? x : 0; }
   function percent(bp) { return (count(bp) / 100).toLocaleString('fr-FR') + ' %'; }
@@ -1959,6 +1989,7 @@ export const APP_JS = `'use strict';
       }
       var v = res.body.data;
       li.removeChild(b);
+      if (due[3]) { due[3][0] -= 1; sayDue(); }
       state.textContent = 'Facture émise en mode essai' + (v && v.content && typeof v.content.label === 'string' ? ' : ' + v.content.label : '') + '.';
       return true;
     });
@@ -1967,7 +1998,8 @@ export const APP_JS = `'use strict';
     wipeModeles();
     wipeMandatModeles();
     ['reseau-corps', 'reseau-alertes', 'reseau-reversements', 'reseau-brouillons'].forEach(function (id) { clear($(id)); });
-    ['reseau-etat', 'reseau-sans-agent', 'reseau-alertes-etat', 'reseau-reversements-etat', 'reseau-brouillons-etat', 'reseau-export-etat', 'reseau-cas-etat'].forEach(function (id) { $(id).textContent = ''; });
+    due = [];
+    ['reseau-attend', 'reseau-etat', 'reseau-sans-agent', 'reseau-alertes-etat', 'reseau-reversements-etat', 'reseau-brouillons-etat', 'reseau-export-etat', 'reseau-cas-etat'].forEach(function (id) { $(id).textContent = ''; });
     wipeReprise();
     wipeBascule();
     wipeReglagesMandat();
@@ -1992,7 +2024,28 @@ export const APP_JS = `'use strict';
       return true;
     });
   }
-  function openReseau(range) {
+  function sayDue() {
+    var said = [], missed = 0;
+    for (var i = 0; i < 4; i += 1) {
+      var d = due[i];
+      if (!d) missed = 1;
+      else if (d[0] > 0) said.push((d[3] ? 'au moins ' : '') + d[0] + ' ' + plural(d[0], d[1], d[2]));
+    }
+    var out = said.length ? ['En attente : ' + said.join(', ') + '.'] : missed ? [] : ['Rien en attente.'];
+    if (missed) out.push('Une partie n’a pas pu être relue.');
+    $('reseau-attend').textContent = out.join(' ');
+  }
+  function showRubrique(name) {
+    rubrique = name;
+    RUBRIQUES.forEach(function (r) {
+      $('reseau-r-' + r).setAttribute('aria-pressed', r === name ? 'true' : 'false');
+      $('reseau-p-' + r).hidden = r !== name;
+    });
+    var ids = name === 'chiffres' ? ['preuve', 'indicateurs', 'engagements-tenus', 'temps-reseau'] : name === 'technique' ? ['disponibilite', 'copies', 'restauration', 'parcours-mois'] : [];
+    var said = ids.map(function (id) { return $(id + '-etat').textContent; });
+    if (said.indexOf('Chargement…') === -1 && ids.some(function (id, i) { return /Réessayez/.test(said[i]) || (!said[i] && !$(id + '-corps').firstChild); })) withFinances(ids[0] + '-etat', 'reseau', function (f) { return f.report('direction'); });
+  }
+  function openReseau(range, part) {
     if (!currentKey) return Promise.resolve(false);
     reseauRange = range || reseauRange;
     session += 1;
@@ -2003,16 +2056,25 @@ export const APP_JS = `'use strict';
     if (!$('reseau-export-jour').value) $('reseau-export-jour').value = shiftDay(parisToday(), -1);
     var p = periodOf(reseauRange);
     var list = function (x) { return Array.isArray(x) ? x : []; };
-    return Promise.all([
+    var all = Promise.all([
       reseauPart('reseau-etat', send('/v1/pilotage/reseau?du=' + p.from + '&au=' + p.to, 'GET'), function (data) {
         $('reseau-etat').textContent = 'Du ' + date(p.from + 'T12:00:00Z') + ' au ' + date(p.to + 'T12:00:00Z') + '.';
         renderReseau(data || {});
       }, mine),
-      reseauPart('reseau-alertes-etat', send('/v1/pilotage/alertes', 'GET'), function (d) { renderAlertes(list(d)); }, mine),
-      reseauPart('reseau-sans-agent', send('/v1/alertes-agent/sans-agent', 'GET'), function (d) { $('reseau-sans-agent').textContent = d && (d.total || d.more) ? 'Conversations à reprendre sans agent : ' + (d.more ? 'au moins ' : '') + d.total + '. Attribuez leurs fiches.' : ''; }, mine),
-      reseauPart('reseau-reversements-etat', send('/v1/pilotage/reversements', 'GET'), function (d) { renderReversements(list(d)); }, mine),
-      reseauPart('reseau-brouillons-etat', send('/v1/pilotage/factures/brouillons', 'GET'), function (d, m) { renderBrouillons(list(d), m); }, mine),
-    ]).then(function (done) { return done.every(function (x) { return x; }); });
+      reseauPart('reseau-alertes-etat', send('/v1/pilotage/alertes', 'GET'), function (d) { renderAlertes(list(d)); due[0] = [list(d).length, 'alerte', 'alertes']; }, mine),
+      reseauPart('reseau-sans-agent', send('/v1/alertes-agent/sans-agent', 'GET'), function (d) {
+        var some = d && (d.total || d.more);
+        $('reseau-sans-agent').textContent = some ? 'Conversations à reprendre sans agent : ' + (d.more ? 'au moins ' : '') + d.total + '. Attribuez leurs fiches.' : '';
+        due[1] = [some ? count(d.total) : 0, 'conversation sans agent', 'conversations sans agent', some && d.more];
+      }, mine),
+      reseauPart('reseau-reversements-etat', send('/v1/pilotage/reversements', 'GET'), function (d) { renderReversements(list(d)); due[2] = [list(d).length, 'reversement à faire', 'reversements à faire']; }, mine),
+      reseauPart('reseau-brouillons-etat', send('/v1/pilotage/factures/brouillons', 'GET'), function (d, m) { renderBrouillons(list(d), m); due[3] = [list(d).length, 'facture à valider', 'factures à valider']; }, mine),
+    ]).then(function (done) {
+      if (mine === session) sayDue();
+      return done.every(function (x) { return x; });
+    });
+    showRubrique(part || rubrique);
+    return all;
   }
   /** L'export se télécharge avec la clé dans l'en-tête, jamais dans l'adresse [R13] ; le fichier reste sur l'appareil de la direction. */
   function downloadExport() {
@@ -2264,7 +2326,7 @@ ${LOUER_JS}
         currentKey = key;
         var agentKey = readKey();
         $('vers-journee').hidden = !agentKey || agentKey === key;
-        return openReseau('mois');
+        return openReseau('mois', 'jour');
       }
       var directionKey = readDirectionKey();
       $('vers-reseau').hidden = !directionKey || directionKey === key;
@@ -2434,6 +2496,7 @@ ${LOUER_JS}
     ['mois', 'precedent', 'annee'].forEach(function (r) { $('chiffres-' + r).addEventListener('click', function () { openChiffres(r); }); });
     $('vente-retour').addEventListener('click', back);
     ['mois', 'precedent', 'annee'].forEach(function (r) { $('reseau-' + r).addEventListener('click', function () { openReseau(r); }); });
+    RUBRIQUES.forEach(function (r) { $('reseau-r-' + r).addEventListener('click', function () { showRubrique(r); }); });
     $('reseau-export').addEventListener('click', function () { downloadExport(); });
     $('rapport-agent-lire').addEventListener('click', function () { readReport('agent', 'chiffres'); });
     $('rapport-direction-lire').addEventListener('click', function () { readReport('direction', 'reseau'); });
