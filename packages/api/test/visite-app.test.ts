@@ -277,6 +277,12 @@ describe('T08 · écran des acquéreurs d’un bien', () => {
     expect(corps.textContent).toContain('3 écarté(s) par un seul critère : budget.');
     const rows = corps.all().filter((e) => e.className === 'acquereur');
     expect(rows.map((r) => r.children[0]!.textContent)).toEqual(['1. Zoé · remplit tous les critères', `2. ${INJECTED} · dans les tolérances écrites`]);
+    // DS022 · prévenir l'acquéreur est le pas à faire, seul bouton plein de sa ligne ; lire sa fiche est filaire.
+    for (const r of rows) {
+      const buttons = r.all().filter((e) => e.tagName === 'button');
+      expect(buttons.filter((b) => !/(^| )secondaire( |$)/.test(b.className)).map((b) => b.textContent)).toEqual(['Alerte WhatsApp']);
+      expect(buttons.filter((b) => b.className === 'secondaire').map((b) => b.textContent)).toEqual(['Voir la fiche']);
+    }
     expect(corps.all().map((e) => e.tagName).filter((x) => !['section', 'h3', 'p', 'ol', 'li', 'strong', 'ul', 'button'].includes(x))).toEqual([]);
   });
 
