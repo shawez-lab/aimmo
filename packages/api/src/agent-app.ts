@@ -55,6 +55,7 @@ import { CLIENTS_SCRIPT } from '../app/clients.ts';
 import { FICHE_SCRIPT } from '../app/fiche.ts';
 import { RESEAU_SCRIPT } from '../app/reseau.ts';
 import { MES_BIENS_SCRIPT } from '../app/mes-biens.ts';
+import { PARTENAIRES_SCRIPT } from '../app/partenaires.ts';
 import { REGLAGES_MANDAT_SCRIPT } from '../app/reglages-mandat.ts';
 import { LOYERS_SCRIPT } from '../app/loyers.ts';
 import { MESURE_SOURCES_SCRIPT } from '../app/mesure-sources.ts';
@@ -248,6 +249,7 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/reseau.js': { body: RESEAU_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // DS004 · la liste des biens de l'agent, chargée au premier geste, jamais gardée sur l'appareil [R201].
   '/app/mes-biens.js': { body: MES_BIENS_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  '/app/partenaires.js': { body: PARTENAIRES_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les réglages du mandat pour la direction (D13), chargés au premier geste, jamais gardés sur l'appareil [R201].
   '/app/reglages-mandat.js': { body: REGLAGES_MANDAT_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les loyers de marché pour la direction (Y10), chargés au premier geste, jamais gardés sur l'appareil [R201].
