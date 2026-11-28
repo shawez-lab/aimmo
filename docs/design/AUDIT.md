@@ -93,6 +93,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Preuve : ouvrir « Mandat », recharger : l'accueil revient, l'adresse est restée `/app/`.
 - Principe : sur ordinateur, on recharge, on ouvre deux onglets, on met en favori.
 - Solution : une adresse par écran (`/app/#bien=<id>/mandat`), relue à l'ouverture. Aucune donnée de client dans l'adresse, seulement des identifiants internes.
+- Suite : corrigé pour l'agent le 2026-11-28 : chaque écran qui sait se rouvrir a son adresse, écrite à chaque changement d'écran (`/app/#mandat/<identifiant>/<référence>`, `#fiche/<identifiant>`, `#clients`, `#chiffres`…) ; la journée garde celle de l'application. À l'ouverture (recharger, second onglet, favori), la journée se lit puis l'écran de l'adresse revient par-dessus : « Retour » du navigateur ramène à la journée. L'adresse ne porte que le nom de l'écran et des identifiants internes, jamais un nom, une ville ni un état ; rien d'autre n'entre par elle (écran inconnu, identifiant mal formé, nombre d'identifiants faux : la journée, sans rien lire de plus). À la sortie, elle redevient celle de l'application. Restent : les écrans de la direction et du responsable de la conformité, et les écrans qui ne savent pas encore se rouvrir (fiche Google, mon dossier). Avant et après : `captures/avant-apres/DS007-adresse-par-ecran.jpg`.
 
 #### DS008 · « Le réseau » empile 35 blocs
 - Gravité : majeur · Catégorie : architecture de l'information · Effort : L

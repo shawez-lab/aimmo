@@ -46,7 +46,12 @@ async function run(answers: Record<string, Answer> = {}, hash = '') {
     Promise,
     location,
     // Comme un navigateur : sans adresse donnée, l'adresse ne change pas (l'historique des écrans, AU117).
-    history: { replaceState: (_s: unknown, _t: string, url?: string) => { if (url === undefined) return; replaced.push(url); location.hash = ''; }, pushState: () => undefined },
+    // Un historique fidèle : une adresse écrite, par un ajout comme par un remplacement, change celle que la page lit (DS007).
+    history: {
+      state: null,
+      replaceState: (_s: unknown, _t: string, url?: string) => { if (url === undefined) return; replaced.push(url); location.hash = url.startsWith('#') ? url : ''; },
+      pushState: (_s: unknown, _t: string, url?: string) => { if (url !== undefined) location.hash = url.startsWith('#') ? url : ''; },
+    },
     localStorage: { getItem: () => KEY, setItem: () => undefined, removeItem: () => undefined },
     fetch: (url: string, init: { method?: string; body?: string } = {}) => {
       const method = init.method ?? 'GET';
@@ -200,7 +205,8 @@ describe('BR67 · « Mes notifications » sur l’accueil de l’agent', () => {
     // Sans geste : le lien charge le bloc une fois l'agent entré.
     expect(t.scripts()).toHaveLength(1);
     await t.load();
-    expect(t.replaced).toEqual(['/app/']);
+    // Les outils ont écrit leur adresse en s'ouvrant : la cible du lien est remise, lue une fois, puis retirée (DS007).
+    expect(t.replaced).toEqual(['#envoi=e1', '/app/']);
     expect(t.count('GET', '/v1/notifications/envois/e1')).toBe(1);
     const first = t.body().all().find((e) => e.tagName === 'h4')!;
     expect(first.textContent).toBe('Cette notification');
@@ -216,14 +222,14 @@ describe('BR67 · « Mes notifications » sur l’accueil de l’agent', () => {
     await bad.load();
     expect(bad.calls.some((c) => c.url.startsWith('/v1/notifications/envois/'))).toBe(false);
     expect(bad.body().textContent).toContain(NOTIFICATIONS_SCREEN_REFUSALS.unknown);
-    expect(bad.replaced).toEqual(['/app/']);
+    expect(bad.replaced).toEqual(['#envoi=pas%20bon', '/app/']);
   });
 
   it('[R415] un réseau coupé à l’ouverture du lien ne perd pas l’envoi : le geste suivant le montre', async () => {
     const t = await run({ 'GET /v1/notifications/envois/e1': offline }, '#envoi=e1');
     await t.load();
     expect(t.status()).toBe('Pas de réseau. Réessayez dans un moment.');
-    expect(t.replaced).toEqual(['/app/']);
+    expect(t.replaced).toEqual(['#envoi=e1', '/app/']);
     t.table['GET /v1/notifications/envois/e1'] = ok([HOT]);
     await t.open(false);
     expect(t.count('GET', '/v1/notifications/envois/e1')).toBe(2);

@@ -1710,7 +1710,10 @@ ${LOUER_JS}
       else if (args && args[1]) $(s + '-bien').textContent = placeLine(args[0], args[1]);
     });
     var a = JSON.stringify(args || null);
-    if (!out && !fromHistory && (id !== shownId || a !== shownArgs)) try { history[shownId ? 'pushState' : 'replaceState']({ s: id, a: args || null, t: tab }, ''); } catch (e) { /* sans historique */ }
+    // DS007 · l'adresse suit l'écran. Le premier écran garde celle qui l'a ouvert (un lien d'envoi s'y lit encore) ; à
+    // la sortie, elle redevient celle de l'application.
+    if (!out && !fromHistory && (id !== shownId || a !== shownArgs)) try { history[shownId ? 'pushState' : 'replaceState']({ s: id, a: args || null, t: tab }, '', shownId ? address(id, args) : undefined); } catch (e) { /* sans historique */ }
+    if (out && shownId) try { history.replaceState(null, '', here()); } catch (e) { /* sans historique */ }
     shownId = out ? null : id;
     shownArgs = a;
     retitle(id);
@@ -1846,7 +1849,7 @@ ${LOUER_JS}
       currentKey = key;
       agentIn = true;
       show('accueil');
-      return day(key, mine).then(function () { if (mine === session) { notifLink(); offline(function (H) { if (mine === session) H.preparer(key, show, enter); }); } return true; });
+      return day(key, mine).then(function () { if (mine === session) { notifLink(); offline(function (H) { if (mine === session) H.preparer(key, show, enter); }); openWanted(); } return true; });
     }, function () {
       if (mine !== session) return false;
       // AU018 : sans réseau, la visite préparée s'ouvre ; sans paquet du jour, le message d'avant.
@@ -1854,17 +1857,47 @@ ${LOUER_JS}
       return offline(function (H) { return H.start(key, show, enter, function () { return mine === session; }, no); }).then(function (r) { return r === false ? no() : !!r; });
     });
   }
+  // Les écrans qui savent se rouvrir : avec leurs identifiants (une fiche, un bien, une visite, un outil d'un bien), ou
+  // relus tels quels.
+  var AGAIN = { fiche: openFiche, bien: openBien, 'un-bien': openPlace, visite: openVisit, vente: openVente, mandat: openMandat, dossier: openDossier, offres: openOffres, avis: openAvis, studio: openStudio };
+  var REREAD = { clients: function () { openClients(); }, 'mes-biens': function () { openMesBiens(); }, chiffres: function () { openChiffres(); }, partenaires: function () { openPartenaires('', 0); }, apres: function () { openApres(); }, louer: function () { openLouer('', 0); }, investir: function () { openInvestir(''); }, commerces: function () { openCommerces(''); }, gagner: function () { openGagner(); } };
+  function own(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+  // DS007 · une adresse par écran : son nom et ses identifiants internes, jamais une donnée de client. Seuls les écrans
+  // qui savent se rouvrir en ont une ; les autres gardent celle de l'application.
+  function here() { return typeof location === 'undefined' ? undefined : location.pathname; }
+  function address(id, args) {
+    var a = (args || []).slice(0, 2);
+    return (own(AGAIN, id) ? a.length && a.every(function (x) { return ID.test(x); }) : (own(REREAD, id) || id === 'outils') && !a.length) ? '#' + [id].concat(a).join('/') : here();
+  }
+  // L'adresse lue à l'ouverture (recharger, second onglet, favori) : un écran qui sait se rouvrir, avec le bon nombre
+  // d'identifiants internes. Rien d'autre n'entre par là.
+  function wantedAt(hash) {
+    var p = String(hash || '').slice(1).split('/'), s = p[0], n = p.length - 1;
+    return p.every(function (x) { return ID.test(x); }) && (own(AGAIN, s) ? n === (s === 'fiche' || s === 'visite' ? 1 : 2) : (own(REREAD, s) || s === 'outils') && !n) ? p : null;
+  }
+  var wanted = null;
+  // L'écran demandé s'ouvre par-dessus la journée, une fois : le bouton Retour du navigateur y ramène.
+  function openWanted() {
+    var w = wanted;
+    wanted = null;
+    if (!w) return;
+    // La journée, dessous, reprend l'adresse de l'application : « Retour » y ramène sans garder celle de l'écran quitté.
+    try { history.replaceState(history.state, '', here()); } catch (e) { /* sans historique */ }
+    // La page vient de se charger : comme le premier écran, celui-ci ne déplace pas le focus (DS064).
+    seenId = null;
+    if (own(AGAIN, w[0])) AGAIN[w[0]].apply(null, w.slice(1)); else if (own(REREAD, w[0])) REREAD[w[0]](); else show('outils');
+  }
   // Un écran se rouvre, relu : par le bouton Retour du navigateur, ou par « Réessayer » après une panne (DS061).
   var goHome = null;
   function reopen(s, a, force) {
     // Une fiche, un bien, une visite ou une mise en vente se rouvrent, relus ; les autres écrans gardent ce qu'ils montraient.
-    var again = { fiche: openFiche, bien: openBien, 'un-bien': openPlace, visite: openVisit, vente: openVente, mandat: openMandat, dossier: openDossier, offres: openOffres, avis: openAvis, studio: openStudio }[s];
+    var again = own(AGAIN, s) && AGAIN[s];
     // Une lecture encore en route pour l'écran quitté ne s'affiche plus.
     session += 1;
     fromHistory = true;
     // Un écran que le changement d'onglet a vidé est relu, pas rouvert vide ; s'il montre encore quelque chose (un dossier
     // ouvert, un formulaire commencé), il le garde, comme avant.
-    var reread = { clients: function () { openClients(); }, 'mes-biens': function () { openMesBiens(); }, chiffres: function () { openChiffres(); }, partenaires: function () { openPartenaires('', 0); }, apres: function () { openApres(); }, louer: function () { openLouer('', 0); }, investir: function () { openInvestir(''); }, commerces: function () { openCommerces(''); }, gagner: function () { openGagner(); } }[s];
+    var reread = own(REREAD, s) && REREAD[s];
     if (again && Array.isArray(a)) again.apply(null, a); else if (reread && (force || !$(s + '-corps').firstChild)) reread(); else show(s);
     fromHistory = false;
   }
@@ -2030,6 +2063,7 @@ ${LOUER_JS}
     $('vers-journee').addEventListener('click', function () { var k = readKey(); if (k) enter(k); });
     $('conformite-actualiser').addEventListener('click', function () { if (currentKey) { session += 1; wipeModeles(); wipeMandatModeles(); openConformite(); } });
     var hash = typeof location !== 'undefined' ? String(location.hash || '') : '';
+    wanted = wantedAt(hash);
     var invited = INVITATION.exec(hash);
     if (hash.indexOf('#invitation=') === 0) {
       // Le jeton quitte aussitôt la barre d'adresse et l'historique, qu'il ait servi ou non.
