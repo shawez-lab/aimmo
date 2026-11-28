@@ -1356,11 +1356,12 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU120 · L'écran du mandat dit « Aucun mandat signé pour ce bien » quand le bien a un mandat de location signé
-- Statut : à faire
-- Qui : Claude · Relecture : forte · Dépend de : rien
+- Statut : en cours (voie 3)
+- Suivi : branche voie3/AU120 : la lecture rend `rental`, de même forme que `mandate` ; l'écran dit le mandat de location et son état sur une ligne, le fil lit cet état. Restent, hors de cette tâche : les gestes sur un mandat de location depuis cet écran (rétractation, début anticipé, avenant).
+- Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Cahier : M06 Mandats et documents ; M15 Louer ; endroit : `packages/core/src/documents/mandat-du-bien.ts` (`PropertyMandates.read`), `packages/api/app/mandat.ts` (bloc « Mandat en cours »).
 - Constat : relevé par Codex le 2026-11-28 sur #834. La lecture du mandat d'un bien appelle `canDiffuse` sans objet, donc pour la vente seule : pour un bien dont le seul mandat signé est un mandat de location, « mandate » est vide. Le bloc « Mandat en cours » dit « Aucun mandat signé pour ce bien » alors que le document, juste dessous, porte sa signature et son numéro ; l'écran propose d'en préparer un autre, et ne sait pas si le mandat de location a été rétracté ou est échu.
-- Objectif : la lecture résume aussi le mandat de location du bien (numéro, date, état), et l'écran le dit, avec ses arrêts.
+- Objectif : la lecture résume aussi le mandat de location du bien (numéro, date, état), et l'écran le dit.
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; un mandat de location rétracté ou échu se lit comme tel (test) ; le fil de DS049 lit cet état au lieu du seul document (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
 
@@ -7910,7 +7911,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS007 · Aucun écran n'a d'adresse
 - Statut : en cours (voie 3)
-- Suivi : branche voie3/DS007 en cours, pour l'agent (une adresse par écran qui sait se rouvrir, relue à l'ouverture ; aucun nom dans l'adresse) ; en fin de pile. Restent la direction et la conformité.
+- Suivi : proposition #847 ouverte le 2026-11-28, pour l'agent (une adresse par écran qui sait se rouvrir, relue à l'ouverture ; aucun nom dans l'adresse). Restent la direction et la conformité.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS007 (majeur, navigation, effort M), endroit : toute l'application — fonction `show`
 - Constat de l’audit : ouvrir « Mandat », recharger : l'accueil revient, l'adresse est restée `/app/`.
