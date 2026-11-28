@@ -112,8 +112,9 @@ describe('DS001 · la journée dit d’abord le jour, et un bloc vide se réduit
   });
 
   it('[R201] un bloc dont la liste est vide tient sur une ligne, son titre et son état côte à côte, sans rien cacher', () => {
-    expect(CSS).toContain('#accueil > .bloc:has(> .liste:empty) { display: flex;');
-    expect(CSS).toMatch(/#accueil > \.bloc:has\(> \.liste:empty\) > h3 \{ margin: 0; font: 500 var\(--t-s\)\/1\.5 var\(--police-texte\);/);
+    // DS060 : la même règle sert « Aujourd'hui » de la direction et « À décider » du responsable de la conformité.
+    expect(CSS).toContain(':is(#accueil, #reseau-p-jour, #conformite-corps) > .bloc:has(> .liste:empty) { display: flex;');
+    expect(CSS).toMatch(/:is\(#accueil, #reseau-p-jour, #conformite-corps\) > \.bloc:has\(> \.liste:empty\) > h3 \{ margin: 0; font: 500 var\(--t-s\)\/1\.5 var\(--police-texte\);/);
     // Aucun bloc n'est caché : « Indisponible » ou « Chargement… » se lisent toujours, à côté de leur titre.
     expect(CSS).not.toMatch(/#accueil[^{]*\{[^}]*display: none/);
     // Chaque liste de la journée est écrite vide dans la page, sans blanc : la règle s'applique dès l'ouverture.
