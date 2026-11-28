@@ -384,6 +384,45 @@ describe('N13 · faire avancer le dossier depuis l’écran', () => {
   });
 });
 
+describe('DS022, DS038 · sur le dossier de vente, un formulaire s’ouvre au geste, et son bouton plein ne se voit qu’ouvert', () => {
+  const folds = (root: FakeElement) => root.all().filter((e) => e.tagName === 'details' && e.children[0]?.tagName === 'summary') as (FakeElement & { open?: boolean })[];
+  const filled = (root: FakeElement) => root.all().filter((e) => e.tagName === 'button' && !/(^| )(secondaire|second|retour|discret)( |$)/.test(e.className));
+
+  it('chaque saisie a son volet ; tant qu’il manque une pièce, la déposer est le pas à faire, seul formulaire ouvert', async () => {
+    const t = await run({ 'GET /v1/dossiers/f1/echeancier': ok({ ...SCHEDULE, dates: { compromis_signe: { day: '2027-03-10', version: 1 } } }) });
+    await t.open();
+    const all = folds(t.body());
+    expect(all.map((d) => d.children[0]!.textContent).filter((x) => ['Ranger une date', 'Déclarer une étape', 'Dire le jour de la signature', 'Déposer une pièce', 'Arrêter le dossier'].includes(x))).toEqual(['Déposer une pièce', 'Ranger une date', 'Déclarer une étape', 'Dire le jour de la signature', 'Arrêter le dossier']);
+    // Une pièce manque : son dépôt est ouvert, les autres saisies restent repliées.
+    expect(all.filter((d) => d.open === true).map((d) => d.children[0]!.textContent)).toEqual(['Déposer une pièce']);
+    // Aucun bouton plein hors d'un volet : chaque « Ranger… » vit dans le sien.
+    const inFold = (b: FakeElement) => all.some((d) => d.all().includes(b));
+    expect(filled(t.body()).filter((b) => !inFold(b)).map((b) => b.textContent)).toEqual([]);
+    expect(filled(t.body()).map((b) => b.textContent)).toEqual(['Ranger la pièce', 'Ranger la date', 'Ranger l’étape', 'Ranger l’acte signé', 'Arrêter ce dossier']);
+    // La liste des pièces reste ouverte tant qu'il en manque : on lit d'un coup d'œil laquelle.
+    expect(all.some((d) => /^Voir les \d+ pièces$/.test(d.children[0]!.textContent))).toBe(false);
+    // Ouvrir et lire sont filaires.
+    for (const text of ['Lire le résumé de copropriété et d’urbanisme', 'Préparer un nouveau résumé depuis les PDF', 'Ouvrir l’avant-contrat : note, projet du notaire, dépôt']) expect(t.find(t.body(), text)!.className, text).toBe('secondaire');
+  });
+
+  it('dossier complet : la liste des pièces se replie, son titre a tout dit, et le dépôt d’une nouvelle version reste à portée, fermé', async () => {
+    const whole = { ...PIECES, missing: [], complete: true, identity: 'verifiee', lines: PIECES.lines.map((l) => ({ ...l, received: l.received ?? { piece: l.piece, version: 1, ref: 'dossiers/f1/y.pdf', issuedOn: '2027-03-09', receivedAt: '2027-03-10T08:00:00.000Z' } })) };
+    const t = await run({ 'GET /v1/dossiers/f1/pieces': ok(whole) });
+    await t.open();
+    expect(t.body().textContent).toContain('Pièces reçues : 2 sur 2');
+    const all = folds(t.body());
+    const list = all.find((d) => d.children[0]!.textContent === 'Voir les 2 pièces')!;
+    expect(list.all().filter((e) => e.tagName === 'li')).toHaveLength(2);
+    expect(list.open).not.toBe(true);
+    expect(all.find((d) => d.children[0]!.textContent === 'Déposer une pièce')!.open).toBe(false);
+    // Un dossier clos par l'acte : plus aucune saisie, la liste repliée de même.
+    const closed = await run({ 'GET /v1/dossiers/f1/pieces': ok(whole), 'GET /v1/dossiers/f1/acte': ok({ signedOn: '2027-06-01' }) });
+    await closed.open();
+    expect(folds(closed.body()).map((d) => d.children[0]!.textContent)).toEqual(['Voir les 2 pièces']);
+    expect(filled(closed.body())).toEqual([]);
+  });
+});
+
 describe('BR88 · la copropriété et l’urbanisme, depuis le dossier', () => {
   it('[R201] le bloc se charge au premier geste, une seule fois, et ne fait que lire', async () => {
     const t = await run({

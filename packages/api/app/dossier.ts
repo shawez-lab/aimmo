@@ -185,6 +185,9 @@ globalThis.AIMMO_DOSSIER = function (t) {
       return true;
     });
   }
+  // DS038, DS022 · un formulaire s'ouvre au geste, dans un volet ; son bouton plein ne se voit qu'ouvert, et c'est alors
+  // le pas à faire. Ouvrir et lire sont filaires.
+  function fold(box, title) { var d = el('details'); d.appendChild(el('summary', title)); box.appendChild(d); return d; }
   /* BR88, BR90, BR91 : un bloc dont le script est servi à part et chargé au premier geste, une seule fois [R201]. */
   var lazy = {};
   function drawLazy(title, src, name, gestures) {
@@ -214,6 +217,7 @@ globalThis.AIMMO_DOSSIER = function (t) {
     }
     gestures.forEach(function (g) {
       var b = button(g[0], function () { withScript(b, function (c) { c[g[1]](inner, id); }); });
+      b.className = 'secondaire';
       buttons.push(b);
       box.appendChild(b);
     });
@@ -253,13 +257,13 @@ globalThis.AIMMO_DOSSIER = function (t) {
   // L'arrêt rend le bien à la vente et ne se reprend pas : il se confirme, sur la raison montrée [R233].
   function drawStop() {
     var box = el('section', null, 'bloc');
-    box.appendChild(el('h3', 'Arrêter le dossier'));
-    box.appendChild(el('p', 'Si la vente ne se fera pas. L’arrêt est définitif : une reprise demande une nouvelle offre.', 'doux'));
-    var which = choice(box, 'dossier-arret-raison', 'La raison', Object.keys(STOPS), function (k) { return STOPS[k]; });
-    var proof = picker(box, 'dossier-arret-preuve', 'La preuve : lettre reçue, refus de prêt, accord écrit', '/preuves', 'Joignez la preuve de l’arrêt.');
+    var form = fold(box, 'Arrêter le dossier');
+    form.appendChild(el('p', 'Si la vente ne se fera pas. L’arrêt est définitif : une reprise demande une nouvelle offre.', 'doux'));
+    var which = choice(form, 'dossier-arret-raison', 'La raison', Object.keys(STOPS), function (k) { return STOPS[k]; });
+    var proof = picker(form, 'dossier-arret-preuve', 'La preuve : lettre reçue, refus de prêt, accord écrit', '/preuves', 'Joignez la preuve de l’arrêt.');
     var sure = null;
-    function drop() { if (sure) { box.removeChild(sure); sure = null; } }
-    box.appendChild(button('Arrêter ce dossier', function () {
+    function drop() { if (sure) { form.removeChild(sure); sure = null; } }
+    form.appendChild(button('Arrêter ce dossier', function () {
       drop();
       if (!which.value) { state('Choisissez la raison.'); return; }
       if (!proof.input.files || !proof.input.files[0]) { state('Joignez la preuve de l’arrêt.'); return; }
@@ -272,7 +276,7 @@ globalThis.AIMMO_DOSSIER = function (t) {
           return post('/arret', { reason: chosen, proofRef: ref }, 'Dossier arrêté.', 'Le dossier n’est pas arrêté : réessayez.', proof);
         });
       }));
-      box.appendChild(sure);
+      form.appendChild(sure);
     }));
     body().appendChild(box);
   }
@@ -320,7 +324,7 @@ globalThis.AIMMO_DOSSIER = function (t) {
       done.forEach(function (k) { seen.appendChild(el('li', DATES[k] + ' : ' + day(dates[k].day) + (dates[k].version > 1 ? ', version ' + dates[k].version : ''))); });
       box.appendChild(seen);
     }
-    if (open) dateForm(box, s);
+    if (open) dateForm(fold(box, 'Ranger une date'), s);
     body().appendChild(box);
   }
   // Seules les dates qui peuvent se saisir sont proposées ; le serveur garde le dernier mot sur l'ordre [R61].
@@ -415,13 +419,14 @@ globalThis.AIMMO_DOSSIER = function (t) {
       });
     }
     if (open) {
-      var which = choice(box, 'dossier-pret-etape', 'Étape déclarée', STEPS, function (k) { return STEP[k]; });
-      var when = dayField(box, 'dossier-pret-jour', 'Le jour');
-      box.appendChild(el('p', 'Pour une offre de prêt, le jour où l’acquéreur l’a reçue : le délai de réflexion en part.', 'doux'));
-      var who = choice(box, 'dossier-pret-qui', 'Qui la déclare', BYS, function (k) { var n = BY[k]; return n.charAt(0).toUpperCase() + n.slice(1); });
-      var bank = field(box, 'dossier-pret-demande', 'Banque ou courtier (facultatif)');
-      box.appendChild(el('p', 'Quand deux banques étudient le dossier, dites laquelle : un refus ne clôt que sa demande. Jamais de numéro de compte ni de dossier.', 'doux'));
-      box.appendChild(button('Ranger l’étape', act(function () {
+      var form = fold(box, 'Déclarer une étape');
+      var which = choice(form, 'dossier-pret-etape', 'Étape déclarée', STEPS, function (k) { return STEP[k]; });
+      var when = dayField(form, 'dossier-pret-jour', 'Le jour');
+      form.appendChild(el('p', 'Pour une offre de prêt, le jour où l’acquéreur l’a reçue : le délai de réflexion en part.', 'doux'));
+      var who = choice(form, 'dossier-pret-qui', 'Qui la déclare', BYS, function (k) { var n = BY[k]; return n.charAt(0).toUpperCase() + n.slice(1); });
+      var bank = field(form, 'dossier-pret-demande', 'Banque ou courtier (facultatif)');
+      form.appendChild(el('p', 'Quand deux banques étudient le dossier, dites laquelle : un refus ne clôt que sa demande. Jamais de numéro de compte ni de dossier.', 'doux'));
+      form.appendChild(button('Ranger l’étape', act(function () {
         if (!which.value) { state('Choisissez l’étape.'); return false; }
         if (!when.value) { state('Dites le jour.'); return false; }
         if (!who.value) { state('Dites qui la déclare.'); return false; }
@@ -455,11 +460,12 @@ globalThis.AIMMO_DOSSIER = function (t) {
       body().appendChild(box);
       return;
     }
-    var when = dayField(box, 'dossier-acte-jour', 'Le jour de la signature');
-    var proof = picker(box, 'dossier-acte-preuve', 'L’attestation du notaire', '/preuves', 'Joignez l’attestation du notaire.');
+    var form = fold(box, 'Dire le jour de la signature');
+    var when = dayField(form, 'dossier-acte-jour', 'Le jour de la signature');
+    var proof = picker(form, 'dossier-acte-preuve', 'L’attestation du notaire', '/preuves', 'Joignez l’attestation du notaire.');
     var sure = null;
-    function drop() { if (sure) { box.removeChild(sure); sure = null; } }
-    box.appendChild(button('Ranger l’acte signé', function () {
+    function drop() { if (sure) { form.removeChild(sure); sure = null; } }
+    form.appendChild(button('Ranger l’acte signé', function () {
       drop();
       if (!when.value) { state('Dites le jour de la signature.'); return; }
       if (!proof.input.files || !proof.input.files[0]) { state('Joignez l’attestation du notaire.'); return; }
@@ -472,7 +478,7 @@ globalThis.AIMMO_DOSSIER = function (t) {
           return post('/acte', { signedOn: chosen, proofRef: ref }, 'Acte rangé : le dossier est clos.', 'L’acte n’est pas rangé : réessayez.', proof, incomplete);
         });
       }));
-      box.appendChild(sure);
+      form.appendChild(sure);
     }));
     body().appendChild(box);
   }
@@ -489,8 +495,15 @@ globalThis.AIMMO_DOSSIER = function (t) {
       var who = l.side === 'acquereur' ? 'acquéreur' : 'vendeur';
       ul.appendChild(el('li', (PIECES[l.piece] || 'Pièce') + ' (' + who + ') : ' + (l.received ? 'reçue, datée du ' + day(l.received.issuedOn) + (l.received.version > 1 ? ', version ' + l.received.version : '') + (stale.indexOf(l.piece) >= 0 ? ', à renouveler' : '') : 'à recevoir')));
     });
-    box.appendChild(ul);
-    if (open && lines.length) deposit(box, lines);
+    // Complet, sans rien à renouveler ni à compléter : la liste se replie, son titre a déjà tout dit.
+    if (lines.length && f.complete && !stale.length && !(f.unknown || []).length) fold(box, 'Voir les ' + lines.length + ' pièces').appendChild(ul);
+    else box.appendChild(ul);
+    if (open && lines.length) {
+      var form = fold(box, 'Déposer une pièce');
+      // Tant qu'il manque une pièce, la déposer est le pas à faire : le formulaire est ouvert.
+      form.open = missing > 0;
+      deposit(form, lines);
+    }
     body().appendChild(box);
   }
   function hex(buf) { return Array.from(new Uint8Array(buf), function (b) { return (b + 256).toString(16).slice(1); }).join(''); }
