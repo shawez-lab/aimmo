@@ -119,8 +119,9 @@ describe('BR103 · la dictée en sortant d’une visite, depuis l’écran de la
     expect(budgetProblems({ html: '', js: DICTEE_SCRIPT }, BUDGETS.page)).toEqual([]);
     expect(budgetProblems({ html: HTML, css: AGENT_APP_FILES['/app/app.css']!, js: JS }, BUDGETS.application)).toEqual([]);
     // La place faite par BR102 reste en grande partie libre pour la suite ; la visite sans réseau (AU018) en a pris environ 200 octets, pour son chargeur,
-    // et le focus qui suit l'écran (DS064) environ 110, pour l'accessibilité de chaque écran.
-    expect(gzipSize(HTML) + gzipSize(AGENT_APP_FILES['/app/app.css']!) + gzipSize(JS)).toBeLessThan(BUDGETS.application.gzipBytes - 580);
+    // le focus qui suit l'écran (DS064) environ 110, pour l'accessibilité de chaque écran, et l'onglet « Clients » (DS003) environ 80, avec le
+    // chargeur qui laisse gagner le dernier geste. La fiche du client, servie à part (DS010), en rend ensuite plus de 3 000.
+    expect(gzipSize(HTML) + gzipSize(AGENT_APP_FILES['/app/app.css']!) + gzipSize(JS)).toBeLessThan(BUDGETS.application.gzipBytes - 500);
     await t.open();
     expect(t.scripts()).toHaveLength(1);
     expect(t.part().textContent).toContain('ce que le visiteur a pensé du bien');
