@@ -310,6 +310,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : mandat (« Préparer un avenant » : 6 champs), fiche client (« Biens du client » : 7 champs, « Accords » : 4 champs)
 - Preuve : `appli-mandat-offres-avis.jpg`, `appli-fiche-client.jpg`.
 - Solution : le geste s'annonce par un bouton, le formulaire s'ouvre dans une feuille. Une feuille par geste.
+- Suite : fait en partie, par un volet qui s'ouvre au geste plutôt qu'une feuille : la fiche du client (« Corriger », « Régler le secteur », « Ajouter un bien », « Noter un accord », DS010), l'avenant du mandat (« Dire ce qui change », DS022), la conformité (« Enregistrer une demande reçue », « Noter une relecture », DS009), le site du réseau dans « Attirer ». Le 2026-11-28, un volet se reconnaît partout à son « + », qui devient « – » une fois ouvert : avant, hors de la fiche et du mandat, un volet fermé ressemblait à un intertitre. Restent : les formulaires encore ouverts de « Louer », des commerces et de la preuve à Dijon, et la feuille elle-même. Une ligne de chiffres qui se déplie n'a pas de marque, ouverte comme fermée : sa valeur tient la place. Avant et après : `captures/avant-apres/DS038-volets.jpg`.
 
 #### DS039 · La fiche du bien : 42 champs d'un seul tenant
 - Gravité : majeur · Catégorie : formulaires · Effort : M

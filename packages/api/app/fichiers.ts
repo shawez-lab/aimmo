@@ -345,8 +345,8 @@ main > section > h2 { font-size: var(--t-xxl); margin: var(--e-2) 0 var(--e-4); 
 .gestes > button { padding-inline: var(--e-4); }
 .gestes > :not(button) { flex: 1 0 100%; }
 #fiche-corps .periodes button { margin-top: 0; }
-#fiche-corps summary::before, #mandat-corps summary::before, #conformite summary::before { content: "+"; width: 1em; font-weight: 400; }
-#fiche-corps details[open] > summary::before, #mandat-corps details[open] > summary::before, #conformite details[open] > summary::before { content: "–"; }
+summary::before { content: "+"; width: 1em; font-weight: 400; }
+details[open] > summary::before { content: "–"; }
 #fiche-corps li > button { display: flex; width: fit-content; }
 details { margin-top: var(--e-2); }
 summary { min-height: var(--cible); display: flex; align-items: center; cursor: pointer; color: var(--accent); font-weight: 600; list-style-position: inside; }
@@ -383,6 +383,7 @@ legend { font-weight: 600; margin-bottom: var(--e-2); }
 .chiffre { border-top: 1px solid var(--trait); }
 .chiffre:first-child { border-top: 0; }
 .chiffre summary { justify-content: space-between; gap: var(--e-3); color: var(--encre); font-weight: 400; }
+details.chiffre > summary::before { content: none; }
 .chiffre .valeur { font: 600 var(--t-xl)/1 var(--police-titre); color: var(--accent); }
 .chiffre ul { margin: 0 0 var(--e-3); padding-left: var(--e-5); }
 .chiffre li { padding: var(--e-1) 0; }
