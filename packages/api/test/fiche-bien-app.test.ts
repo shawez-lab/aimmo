@@ -1,5 +1,6 @@
+import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { BUDGETS, budgetProblems } from '../../core/src/design/audit.ts';
 import { FICHE_BIEN_SCRIPT } from '../app/fiche-bien.ts';
 import { AGENT_APP_FILES, AGENT_APP_SHELL } from '../src/agent-app.ts';
@@ -508,3 +509,211 @@ describe('AU105 · une saisie de la fiche du bien non enregistrée se retrouve, 
   });
 });
 
+describe('DS039 · la fiche du bien se remplit par parties, chacune dit où elle en est', () => {
+  const SUBJECTS = { 'GET /v1/annonces/b1/photos/sujets': ok({ photos: [{ ref: MEDIA[0]!.ref, subject: null }], allowed: ['cuisine'] }) };
+  type T = Awaited<ReturnType<typeof run>>;
+  const parts = (t: T) => t.body().all().filter((e: FakeElement) => e.tagName === 'details');
+  const titles = (t: T) => parts(t).map((d) => d.children[0]!.textContent);
+  const opened = (t: T) => parts(t).filter((d) => (d as unknown as { open: boolean }).open).map((d) => d.children[0]!.textContent.split(' · ')[0]);
+  const type = (t: T, id: string, value: string) => {
+    const f = t.f(id);
+    f.value = value;
+    f.listeners.input!({});
+  };
+
+  it('six parties, la première ouverte ; chaque titre compte ce qui est rempli, ou coché ; un seul « Enregistrer la fiche », hors des volets', async () => {
+    const t = await run(SUBJECTS);
+    await t.open();
+    expect(titles(t)).toEqual(['Le logement · 7 sur 10', 'Extérieurs et équipements · 1 coché', 'Surfaces · 0 sur 5', 'Diagnostic énergétique · 6 sur 9', 'Copropriété et risques · 5 sur 5', 'Photos et vidéos']);
+    expect(opened(t)).toEqual(['Le logement']);
+    // Tout champ est dans une partie, et le seul bouton plein de la fiche reste dessous, à portée quel que soit le volet ouvert.
+    const inside = parts(t).flatMap((d) => d.all());
+    expect(t.body().all().filter((e: FakeElement) => /^fiche-bien-/.test(e.attributes.id ?? '')).every((e: FakeElement) => inside.includes(e))).toBe(true);
+    const go = t.body().all().filter((e: FakeElement) => e.tagName === 'button' && e.textContent === 'Enregistrer la fiche');
+    expect(go).toHaveLength(1);
+    expect(inside).not.toContain(go[0]);
+    expect(go[0]!.className).toBe('');
+  });
+
+  it('sans fiche ni photo : cinq parties, toutes à zéro, et rien n’est compté d’avance', async () => {
+    const t = await run({ [GET]: no(404, { ok: false, rule: null, code: 'no_sheet' }) });
+    await t.open();
+    expect(titles(t)).toEqual(['Le logement · 0 sur 10', 'Extérieurs et équipements', 'Surfaces · 0 sur 5', 'Diagnostic énergétique · 0 sur 9', 'Copropriété et risques · 0 sur 5']);
+    expect(opened(t)).toEqual(['Le logement']);
+  });
+
+  it('le compte suit la saisie, champ après champ, et une case cochée se compte', async () => {
+    const t = await run(SUBJECTS);
+    await t.open();
+    type(t, 'fiche-bien-landM2', '420');
+    expect(titles(t)[0]).toBe('Le logement · 8 sur 10');
+    type(t, 'fiche-bien-landM2', '');
+    expect(titles(t)[0]).toBe('Le logement · 7 sur 10');
+    const box = t.f('fiche-bien-ext-terrasse');
+    box.checked = true;
+    box.listeners.change!({});
+    expect(titles(t)[1]).toBe('Extérieurs et équipements · 2 cochés');
+    type(t, 'fiche-bien-carrez', '61,4');
+    expect(titles(t)[2]).toBe('Surfaces · 1 sur 5');
+  });
+
+  it('[R10] un nombre mal écrit dans une partie repliée ouvre cette partie et reçoit le curseur : l’erreur n’est jamais derrière un volet', async () => {
+    const t = await run({ ...SUBJECTS, [POST]: ok({ version: 5 }) });
+    await t.open();
+    type(t, 'fiche-bien-charges', '12,5');
+    await t.save();
+    expect(t.posts()).toEqual([]);
+    expect(t.body().textContent).toContain('À vérifier : Charges annuelles');
+    expect(opened(t)).toEqual(['Le logement', 'Copropriété et risques']);
+    expect(FakeElement.active).toBe(t.f('fiche-bien-charges'));
+  });
+
+  it('des lots sans « en copropriété : oui » ouvrent la copropriété, le curseur sur la question', async () => {
+    const t = await run({ [GET]: no(404, { ok: false, rule: null, code: 'no_sheet' }) });
+    await t.open();
+    type(t, 'fiche-bien-lots', '12');
+    await t.save();
+    expect(t.posts()).toEqual([]);
+    expect(opened(t)).toEqual(['Le logement', 'Copropriété et risques']);
+    expect(FakeElement.active).toBe(t.f('fiche-bien-copro'));
+  });
+
+  it('un refus du socle ouvre la partie du champ qu’il nomme ; sans champ nommé, toutes', async () => {
+    const named = await run({ ...SUBJECTS, [POST]: no(400, { ok: false, rule: null, code: 'invalid', field: 'energy.diagnosedOn' }) });
+    await named.open();
+    type(named, 'fiche-bien-bedrooms', '5');
+    await named.save();
+    expect(named.body().textContent).toContain('À vérifier : Jour du diagnostic, jamais dans le futur.');
+    expect(opened(named)).toEqual(['Le logement', 'Diagnostic énergétique']);
+
+    const surface = await run({ ...SUBJECTS, [POST]: no(400, { ok: false, rule: null, code: 'invalid', field: 'characteristics.carrezM2' }) });
+    await surface.open();
+    type(surface, 'fiche-bien-bedrooms', '5');
+    await surface.save();
+    expect(opened(surface)).toEqual(['Le logement', 'Surfaces']);
+
+    const bare = await run({ ...SUBJECTS, [POST]: no(400, { ok: false, rule: null, code: 'invalid' }) });
+    await bare.open();
+    type(bare, 'fiche-bien-bedrooms', '5');
+    await bare.save();
+    expect(bare.body().textContent).toContain('Une valeur de la fiche est refusée : rien n’est rangé.');
+    expect(opened(bare)).toHaveLength(6);
+  });
+
+  it('AU114 · une lecture ratée des légendes ouvre la partie des photos : elle n’attend pas derrière un volet', async () => {
+    const t = await run();
+    await t.open();
+    expect(opened(t)).toEqual(['Le logement', 'Photos et vidéos']);
+    expect(parts(t)[5]!.textContent).toContain('Pas de réseau : ce que montre chaque photo n’a pas pu être lu.');
+  });
+
+  it('[R276] une saisie reprise se compte dans les titres comme si elle venait d’être tapée', async () => {
+    const t = await run(SUBJECTS);
+    await t.open();
+    type(t, 'fiche-bien-landM2', '420');
+    const again = await run(SUBJECTS, { 'aimmo.brouillons': t.storage.get('aimmo.brouillons')! });
+    await again.open();
+    expect(titles(again)[0]).toBe('Le logement · 7 sur 10');
+    await again.click(again.find('Reprendre la saisie'));
+    expect(titles(again)[0]).toBe('Le logement · 8 sur 10');
+  });
+});
+
+/** Dans Chromium, là où Playwright et son navigateur sont installés : sinon l'essai se signale sauté. */
+type Navigateur = { newPage(o?: object): Promise<any>; close(): Promise<void> };
+async function lancer(): Promise<Navigateur | null> {
+  try {
+    const { chromium } = createRequire(import.meta.url)('playwright') as { chromium: { launch(): Promise<Navigateur> } };
+    return await chromium.launch();
+  } catch {
+    return null;
+  }
+}
+const navigateur = await lancer();
+afterAll(async () => {
+  await navigateur?.close();
+});
+
+describe('DS039 · dans Chromium', () => {
+  it.skipIf(navigateur === null)('sur un téléphone, dix champs à l’écran et les autres à un geste ; chaque titre tient sur une ligne ; un champ à vérifier se montre', async () => {
+    const answers: Record<string, Answer> = {
+      '/v1/moi': ok({ role: 'agent', firstName: 'Alex' }),
+      '/v1/plan-du-jour': ok(null),
+      '/v1/contacts-chauds': ok({ contacts: [] }),
+      '/v1/rendez-vous/jour': ok({ appointments: [] }),
+      '/v1/usage/matin': ok(null),
+      '/v1/annonces': ok([{ id: 'b1', reference: 'REF-T-1', city: 'Dijon', state: null }]),
+      '/v1/annonces/b1/controle': ok(CHECK),
+      '/v1/annonces/b1/brouillon': ok(DRAFT),
+      '/v1/annonces/b1/publication': ok(null),
+      '/v1/annonces/b1/fiche': ok({ propertyId: 'b1', version: 4, sheet: SHEET }),
+      '/v1/annonces/b1/photos/sujets': ok({ photos: [{ ref: MEDIA[0]!.ref, subject: null }], allowed: ['cuisine'] }),
+    };
+    for (const width of [360, 390]) {
+      const page = await navigateur!.newPage({ viewport: { width, height: 844 } });
+      try {
+        page.setDefaultTimeout(5000);
+        await page.addInitScript((k: string) => (globalThis as any).localStorage.setItem('aimmo.cle', k), KEY);
+        await page.route('**/*', async (route: any) => {
+          const path = new URL(route.request().url()).pathname;
+          const file = AGENT_APP_FILES[path];
+          if (file !== undefined) return route.fulfill({ status: 200, contentType: path.endsWith('.js') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : path === '/app/' ? 'text/html' : 'application/octet-stream', body: file });
+          const answer = answers[path];
+          if (!answer || route.request().method() !== 'GET') return route.fulfill({ status: 503, contentType: 'application/json', body: '{"ok":false}' });
+          return route.fulfill({ status: 200, contentType: 'application/json', body: await (await answer()).text() });
+        });
+        await page.goto('https://aimmo.example.test/app/');
+        await page.waitForSelector('#accueil:not([hidden])');
+        await page.evaluate(() => (globalThis as any).dispatchEvent(new (globalThis as any).PopStateEvent('popstate', { state: { s: 'vente', a: ['b1', 'REF-T-1'], t: 'accueil' } })));
+        await page.click('text=Remplir la fiche du bien');
+        await page.waitForSelector('#fiche-bien-bedrooms');
+        const measure = () =>
+          page.evaluate(() => {
+            const d = (globalThis as any).document;
+            const seen = (e: any) => e.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true });
+            const go = [...d.querySelectorAll('button')].find((b: any) => b.textContent === 'Enregistrer la fiche');
+            const zone = go.parentElement;
+            return {
+              fields: [...zone.querySelectorAll('input, select')].filter(seen).length,
+              all: zone.querySelectorAll('input, select').length,
+              open: [...zone.querySelectorAll('details[open] > summary')].map((x: any) => x.textContent),
+              rows: [...zone.querySelectorAll('summary')].map((x: any) => Math.round(x.getBoundingClientRect().height)),
+              screens: zone.getBoundingClientRect().height / (globalThis as any).innerHeight,
+              save: seen(go) && go.className === '',
+              overflow: d.documentElement.scrollWidth > (globalThis as any).innerWidth,
+              focus: d.activeElement && d.activeElement.id,
+            };
+          });
+        const first = await measure();
+        expect(first.all, String(width)).toBe(42);
+        expect(first.fields).toBe(10);
+        expect(first.open).toEqual(['Le logement · 7 sur 10']);
+        // Un titre et son compte sur une seule ligne, à la taille du doigt.
+        expect(first.rows).toHaveLength(6);
+        for (const h of first.rows) {
+          expect(h).toBeGreaterThanOrEqual(44);
+          expect(h).toBeLessThan(60);
+        }
+        expect(first.screens).toBeLessThanOrEqual(2.2);
+        expect(first.save).toBe(true);
+        expect(first.overflow).toBe(false);
+        // Une partie s'ouvre au geste : ses champs se voient, les autres parties ne bougent pas.
+        await page.click('summary:has-text("Surfaces")');
+        expect((await measure()).fields).toBe(15);
+        // Un nombre mal écrit dans une partie repliée : elle s'ouvre, le champ se voit et reçoit le curseur.
+        await page.evaluate(() => {
+          const f = (globalThis as any).document.getElementById('fiche-bien-charges');
+          f.value = '12,5';
+          f.dispatchEvent(new (globalThis as any).Event('input', { bubbles: true }));
+        });
+        await page.click('text=Enregistrer la fiche');
+        const after = await measure();
+        expect(after.open).toContain('Copropriété et risques · 5 sur 5');
+        expect(after.focus).toBe('fiche-bien-charges');
+        expect(await page.isVisible('#fiche-bien-charges')).toBe(true);
+      } finally {
+        await page.close();
+      }
+    }
+  });
+});
