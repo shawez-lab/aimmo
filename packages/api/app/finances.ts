@@ -359,7 +359,9 @@ globalThis.AIMMO_FINANCES = function (t) {
     return (b.rule === 'R16' ? SEAL_REFUSALS.role : SEAL_REFUSALS[b.code]) || 'Réponse perdue : ce mois est peut-être scellé. Relisez avant de recommencer.';
   }
   function sealForm(li, m) {
-    var box = el('div');
+    /* DS022 : sceller un mois s'ouvre au geste ; son bouton plein ne se voit qu'ouvert. */
+    var box = el('details');
+    box.appendChild(el('summary', 'Sceller ' + monthName(m.month)));
     var count = field(box, 'Votre comptage manuel de ' + monthName(m.month), 'text');
     count.setAttribute('inputmode', 'numeric');
     var state = el('p', '', 'etat');
