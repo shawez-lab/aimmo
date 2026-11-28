@@ -1041,7 +1041,8 @@ export const APP_JS = `'use strict';
       state.setAttribute('role', 'status');
       li.appendChild(state);
       if (ID.test(b.projectId)) li.appendChild(button('Alerte WhatsApp', function () { prepareWhatsApp(propertyId, b.projectId, li, state); }));
-      if (ID.test(b.personId)) li.appendChild(ficheButton(b.personId));
+      // DS022 · prévenir l'acquéreur est le pas à faire ; lire sa fiche est filaire.
+      if (ID.test(b.personId)) li.appendChild(quiet(ficheButton(b.personId)));
       ul.appendChild(li);
     });
     if (ul.children.length === 0) box.appendChild(el('p', 'Aucun de vos acquéreurs ne cherche ce bien pour le moment.', 'etat'));
