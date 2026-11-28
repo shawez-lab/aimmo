@@ -1,4 +1,5 @@
 import { FICHE_SCRIPT } from '../app/fiche.ts';
+import { RESEAU_SCRIPT } from '../app/reseau.ts';
 import { RESEAU_HTML } from '../app/fichiers.ts';
 /**
  * Un petit document inventé pour faire tourner le script de l'application de l'agent dans les tests, sans
@@ -35,7 +36,7 @@ export class FakeElement {
    * d'un client (DS010), que presque tous les essais de la fiche traversent. Un essai qui veut voir le script ne pas
    * arriver vide cette table. Les autres scripts servis à part restent chargés à la main par l'essai qui les étudie.
    */
-  static served: Record<string, string> = { '/app/fiche.js': FICHE_SCRIPT };
+  static served: Record<string, string> = { '/app/fiche.js': FICHE_SCRIPT, '/app/reseau.js': RESEAU_SCRIPT };
   appendChild(child: FakeElement): FakeElement {
     this.children.push(child);
     const source = child.tagName === 'script' ? FakeElement.served[child.attributes.src ?? ''] : undefined;

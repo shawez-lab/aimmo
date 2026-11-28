@@ -1,7 +1,8 @@
 import { createRequire } from 'node:module';
 import { runInNewContext } from 'node:vm';
 import { afterAll, describe, expect, it } from 'vitest';
-import { RESEAU_HTML, RESEAU_RUBRIQUES } from '../app/fichiers.ts';
+import { RESEAU_HTML } from '../app/fichiers.ts';
+import { RESEAU_RUBRIQUES } from '../app/reseau.ts';
 import { FINANCES_SCRIPT } from '../app/finances.ts';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
 import { FakeElement, fakeDocument, pageIds } from './fake-dom.ts';
