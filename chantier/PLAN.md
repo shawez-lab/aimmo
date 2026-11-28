@@ -7854,8 +7854,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS004 · Aucune liste de biens
-- Statut : en cours (voie 3)
-- Suivi : proposition #827 ouverte le 2026-11-28 (l'onglet « Biens », la liste de ses biens, chercher comme on parle, filtre par état).
+- Statut : à faire
+- Suivi : fait en partie le 2026-11-28, fusionnée (#827, `ee57edf9`) : l'onglet « Biens », la liste de ses biens, la recherche « comme on parle » (genre, pièces, état de l'annonce, commune même entendue) et le filtre par état. Codex : 1 P2 juste, corrigé (dix pièces ou plus), puis rien à signaler. Restent : la photo, l'adresse et le prix sur chaque ligne, les biens vendus, et au-delà de 200 biens.
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS004 (bloquant, navigation, effort L), endroit : toute l'application
 - Constat de l’audit : un bien n'apparaît que dans « Mes biens à mettre en vente », plafonné à 200 lignes sans recherche. Une fois vendu, il n'est plus que dans « Mes ventes conclues ».
@@ -8012,7 +8012,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS022 · Trop de boutons pleins : aucune action ne domine
 - Statut : en cours (voie 3)
-- Suivi : la fiche du client est faite dans la branche de DS010 ; branche voie3/DS022 prête pour les écrans d'un bien (mettre en vente, mandat, avis de valeur) ; proposée après l'onglet « Biens » (DS004), mêmes fichiers.
+- Suivi : la fiche du client est faite (#826). Proposition #828 ouverte le 2026-11-28 pour les écrans d'un bien (mettre en vente, mandat, avis de valeur, visite). Branche voie3/DS022-attirer prête pour « Attirer », proposée après les blocs vides (DS060).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS022 (majeur, hiérarchie, effort M), endroit : fiche client (9 boutons pleins), « Gagner des mandats » (8), conformité (7), « Mettre en vente » (5), carte d'un bien sur l'accueil (5), mandat (4), offres (4)
 - Constat de l’audit : `appli-accueil.jpg`, `appli-mettre-en-vente.jpg` : « Rédiger de nouveau » et « Corriger le texte » sont pleins tous les deux.
