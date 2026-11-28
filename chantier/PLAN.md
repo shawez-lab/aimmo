@@ -8400,7 +8400,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS068 · Les budgets de poids sont pleins
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : branche voie3/DS068 prête (le dessin de l'écran de la direction servi à part, `/app/reseau.js` : environ 3 000 octets rendus à chaque agent) ; proposée après « Conformité » (DS009), mêmes fichiers.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS068 (majeur, performance, système de design, effort L), endroit : `packages/core/src/design/audit.ts` (`BUDGETS`)
 - Constat de l’audit : la coquille pèse 48 446 octets compressés pour 49 152 permis. `mandat.js` 13 036, `louer.js` 13 431, `finances.js` 14 074, `commerces.js` 14 162, pour 14 336 permis.
