@@ -8359,7 +8359,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS059 · Le bouton d'envoi est au bout du formulaire
 - Statut : en cours (voie 3)
-- Suivi : branche voie3/DS059 en cours, pour la fiche du bien (« Enregistrer la fiche » collé au-dessus des onglets pendant la saisie) ; proposée après DS058, même fichier. L'offre reçue suit, branche voie3/DS058-offre.
+- Suivi : proposition #850 ouverte le 2026-11-28, pour la fiche du bien (« Enregistrer la fiche » collé au-dessus des onglets pendant la saisie), à part de #849. L'offre reçue suit, branche voie3/DS058-offre.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS059 (mineur, formulaires, une main, effort S), endroit : fiche du bien (42 champs), offre reçue (16 champs)
 - Constat de l’audit : Le bouton d'envoi est au bout du formulaire.
