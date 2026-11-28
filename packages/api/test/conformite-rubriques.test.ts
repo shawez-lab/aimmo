@@ -259,6 +259,33 @@ describe('DS009 · « Conformité » en trois rubriques', () => {
     expect(form(filed).children[0]!.textContent).toBe('Revoir l’évaluation');
     expect(form(filed).open).toBe(false);
   });
+
+  it('DS022 · une fuite a un pas à la fois : l’évaluer, puis prévenir la CNIL ; couper reste l’urgence, en rouge, tant que tout n’est pas coupé', async () => {
+    type T = Awaited<ReturnType<typeof run>>;
+    const item = (t: T) => t.els['conformite-corps']!.all().find((e) => e.tagName === 'li' && /Fuite connue/.test(e.textContent))!;
+    const looks = (t: T) => Object.fromEntries(item(t).all().filter((e) => e.tagName === 'button').map((b) => [b.textContent, b.className || 'plein']));
+    // À évaluer : l'évaluation est le pas ; prévenir la CNIL reste possible, filaire.
+    const fresh = await run({ ...CALM, 'GET /v1/conformite/fuites': ok([breach()]) });
+    await fresh.arrive();
+    expect(looks(fresh)).toEqual({ 'Couper tous les accès maintenant': 'danger', 'Ranger l’évaluation (tout le réseau)': 'plein', 'Noter la CNIL prévenue maintenant': 'secondaire' });
+    // Évaluée, la CNIL à prévenir : c'est le pas ; l'évaluation se revoit dans son volet fermé.
+    const filed = await run({ ...CALM, 'GET /v1/conformite/fuites': ok([breach({ evaluation: { risk: 'eleve' } })]) });
+    await filed.arrive();
+    expect(looks(filed)['Noter la CNIL prévenue maintenant']).toBe('plein');
+    expect(looks(filed)['Couper tous les accès maintenant']).toBe('danger');
+    // Tout est coupé : couper n'est plus l'urgence ; rétablir un accès n'est jamais le pas à faire.
+    const cut = await run({ ...CALM, 'GET /v1/conformite/fuites': ok([breach({ evaluation: { risk: 'eleve' }, cuts: [{ id: 'c1', scope: 'tous', cutAt: '2026-11-01T07:00:00.000Z', restoredAt: null }] })]) });
+    await cut.arrive();
+    expect(looks(cut)).toMatchObject({ 'Couper tous les accès maintenant': 'secondaire', 'Rétablir cet accès': 'secondaire', 'Noter la CNIL prévenue maintenant': 'plein' });
+    // Un seul accès coupé, ou tout rétabli : couper tout reste l'urgence.
+    const part = await run({ ...CALM, 'GET /v1/conformite/fuites': ok([breach({ cuts: [{ id: 'c1', scope: 'un', cutAt: '2026-11-01T07:00:00.000Z', restoredAt: null }, { id: 'c2', scope: 'tous', cutAt: '2026-11-01T07:00:00.000Z', restoredAt: '2026-11-01T09:00:00.000Z' }] })]) });
+    await part.arrive();
+    expect(looks(part)['Couper tous les accès maintenant']).toBe('danger');
+    // CNIL prévenue : plus rien de plein hors du volet de l'évaluation.
+    const told = await run({ ...CALM, 'GET /v1/conformite/fuites': ok([breach({ evaluation: { risk: 'eleve' }, notified: { cnil: { at: '2026-11-01T10:00:00.000Z', late: false }, personnes: null }, cuts: [{ id: 'c1', scope: 'tous', cutAt: '2026-11-01T07:00:00.000Z', restoredAt: null }] })]) });
+    await told.arrive();
+    expect(Object.entries(looks(told)).filter(([, look]) => look !== 'secondaire').map(([name]) => name)).toEqual(['Ranger l’évaluation (tout le réseau)']);
+  });
 });
 
 /** Dans Chromium, là où Playwright et son navigateur sont installés : sinon l'essai se signale sauté. */
