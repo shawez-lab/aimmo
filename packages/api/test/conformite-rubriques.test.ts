@@ -176,6 +176,43 @@ describe('DS009 · « Conformité » en trois rubriques', () => {
     expect(leaked.deadline()).toContain('prévenir la CNIL');
   });
 
+  it('un jour du calendrier finit à Paris, quel que soit le fuseau de l’appareil : l’ordre des échéances et « passée » en dépendent', async () => {
+    // L'essai tranche sur toute machine qui n'est pas à l'heure de Paris ; celle de « Vérifier » est en temps universel.
+    const asked = { 'GET /v1/conformite/demandes': ok([request()]) };
+    const leak = (deadlineAt: string) => ({ 'GET /v1/conformite/fuites': ok([breach({ deadlineAt })]) });
+    // En hiver, le 20 novembre finit à 22:59:59 en temps universel : une échéance de la CNIL à 23:30 vient après la demande…
+    const winter = await run({ ...CALM, ...asked, ...leak('2026-11-20T23:30:00.000Z') });
+    await winter.arrive();
+    expect(winter.deadline()).toBe('Première échéance : répondre à une demande d’une personne avant le 20/11/2026.');
+    // … et à 22:30, avant.
+    const earlier = await run({ ...CALM, ...asked, ...leak('2026-11-20T22:30:00.000Z') });
+    await earlier.arrive();
+    expect(earlier.deadline()).toContain('Première échéance : prévenir la CNIL d’une fuite avant le 20/11/2026');
+    // En été, le jour finit à 21:59:59 en temps universel.
+    const summer = { ...CALM, 'GET /v1/conformite/demandes': ok([request({ dueOn: '2027-07-10' })]), 'GET /v1/conformite/registre': ok({ ...REGISTER, dueOn: '2027-10-28' }) };
+    const july = await run({ ...summer, ...leak('2027-07-10T22:30:00.000Z') }, '2027-07-01T09:00:00.000Z');
+    await july.arrive();
+    expect(july.deadline()).toBe('Première échéance : répondre à une demande d’une personne avant le 10/07/2027.');
+    const julyEarlier = await run({ ...summer, ...leak('2027-07-10T21:30:00.000Z') }, '2027-07-01T09:00:00.000Z');
+    await julyEarlier.arrive();
+    expect(julyEarlier.deadline()).toContain('Première échéance : prévenir la CNIL d’une fuite avant le 10/07/2027');
+    // Passée dès minuit à Paris : à 23:10 en temps universel le 20 novembre, il est 0 h 10 le 21 ; à 22:50, pas encore.
+    const past = await run({ ...CALM, ...asked }, '2026-11-20T23:10:00.000Z');
+    await past.arrive();
+    expect(past.deadline()).toBe('Échéance passée : répondre à une demande d’une personne avant le 20/11/2026.');
+    const notYet = await run({ ...CALM, ...asked }, '2026-11-20T22:50:00.000Z');
+    await notYet.arrive();
+    expect(notYet.deadline()).toBe('Première échéance : répondre à une demande d’une personne avant le 20/11/2026.');
+    // La relecture du registre se compte de la même façon.
+    const registry = await run({ ...CALM, 'GET /v1/conformite/registre': ok({ ...REGISTER, dueOn: '2026-11-20' }) }, '2026-11-20T23:10:00.000Z');
+    await registry.arrive();
+    expect(registry.deadline()).toBe('Échéance passée : relire le registre des traitements avant le 20/11/2026.');
+    // Un jour illisible ne compte pas, et ne casse rien : l'échéance suivante est dite.
+    const odd = await run({ ...CALM, 'GET /v1/conformite/demandes': ok([request({ dueOn: 'bientôt' })]) });
+    await odd.arrive();
+    expect(odd.deadline()).toBe('Première échéance : relire le registre des traitements avant le 28/01/2027.');
+  });
+
   it('Jamais vu · une échéance passée se dit passée ; une lecture manquée, et la phrase dit qu’elle n’est pas sûre', async () => {
     const late = await run({ ...CALM, 'GET /v1/conformite/demandes': ok([request()]) }, '2026-12-01T09:00:00.000Z');
     await late.arrive();

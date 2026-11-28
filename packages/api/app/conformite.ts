@@ -379,19 +379,28 @@ globalThis.AIMMO_CONFORMITE = function (t) {
   // la CNIL après une fuite (72 heures), la relecture du registre. Une échéance passée se dit passée. Si une de ces
   // trois lectures a manqué, la phrase dit qu'elle n'est pas sûre : elle ne donne jamais pour première une échéance
   // qui ne l'est peut-être pas.
+  // Un jour du calendrier finit à Paris, quel que soit le fuseau de l'appareil : le serveur compte ses jours à Paris,
+  // et l'écran les écrit à Paris. L'écart de Paris ce jour-là est lu dans Intl ; sans lui, la fin du jour universel.
+  function cDayEnd(day) {
+    var utc = Date.parse(day + 'T23:59:59Z');
+    try {
+      var v = {};
+      new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(new Date(utc)).forEach(function (x) { v[x.type] = Number(x.value); });
+      return 2 * utc - Date.UTC(v.year, v.month - 1, v.day, v.hour, v.minute, v.second);
+    } catch (e) { return utc; }
+  }
   function cDeadline(data) {
     var first = null;
-    function due(at, text) {
-      var ms = Date.parse(at);
+    function due(ms, text) {
       if (isFinite(ms) && (!first || ms < first.ms)) first = { ms: ms, text: text };
     }
     (data.demandes || []).forEach(function (d) {
-      if (!d.answeredOn) due(d.dueOn + 'T23:59:59', 'répondre à une demande d’une personne avant le ' + date(d.dueOn));
+      if (!d.answeredOn) due(cDayEnd(d.dueOn), 'répondre à une demande d’une personne avant le ' + date(d.dueOn));
     });
     (data.fuites || []).forEach(function (f) {
-      if (!f.notified.cnil && f.due.cnil) due(f.deadlineAt, 'prévenir la CNIL d’une fuite avant le ' + date(f.deadlineAt) + ' à ' + hour(f.deadlineAt));
+      if (!f.notified.cnil && f.due.cnil) due(Date.parse(f.deadlineAt), 'prévenir la CNIL d’une fuite avant le ' + date(f.deadlineAt) + ' à ' + hour(f.deadlineAt));
     });
-    if (data.registre) due(data.registre.dueOn + 'T23:59:59', 'relire le registre des traitements avant le ' + date(data.registre.dueOn));
+    if (data.registre) due(cDayEnd(data.registre.dueOn), 'relire le registre des traitements avant le ' + date(data.registre.dueOn));
     var sure = Array.isArray(data.demandes) && Array.isArray(data.fuites) && !!data.registre;
     var said = first ? (first.ms < Date.now() ? 'Échéance passée : ' : sure ? 'Première échéance : ' : 'Échéance connue : ') + first.text + '.' : '';
     $('conformite-echeance').textContent = said + (sure ? '' : (said ? ' ' : '') + 'Une partie n’a pas pu être lue : une échéance plus proche est possible.');
