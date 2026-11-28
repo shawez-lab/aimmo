@@ -8022,7 +8022,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS023 · Le bien s'appelle « B-E6B8BB51 »
 - Statut : en cours (voie 3)
-- Suivi : fait en partie le 2026-11-27 (#822 fusionnée) : dans la journée et sur l'écran du bien, il se dit par ce qu'il est (« Maison 5 pièces · Talant »), la référence en petit. Restent : les titres des six écrans d'outils, qui portent encore la référence. Branche voie3/DS023-titres prête pour ces écrans (le titre dit l'outil, une ligne dessous dit le bien et sa référence) ; proposée après « Attirer » (DS022), mêmes fichiers.
+- Suivi : proposition #837 ouverte le 2026-11-28 (sous le titre de chaque outil d'un bien, le bien se dit par ce qu'il est), à part. Restent la rue, et « l'étape est l'onglet ».
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS023 (majeur, hiérarchie, microcopie, effort M), endroit : titres de six écrans, carte de l'accueil
 - Constat de l’audit : `appli-mandat-offres-avis.jpg`. 105 occurrences dans les plans des écrans. Le point médian passe seul en début de ligne : « Avis de valeur / · B-E6B8BB51 ».
@@ -8164,7 +8164,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS040 · La preuve de chaque phrase est toujours dépliée
 - Statut : en cours (voie 3)
-- Suivi : branche voie3/DS040 prête (l'annonce se lit d'un trait, les preuves s'ouvrent au geste) ; proposée après le dossier de vente (DS022), mêmes fichiers.
+- Suivi : proposition #838 ouverte le 2026-11-28 (l'annonce se lit d'un trait, les preuves s'ouvrent au geste), à part.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS040 (majeur, composants, effort S), endroit : « L'annonce, phrase par phrase » — `packages/api/app/fichiers.ts` (`#vente`)
 - Constat de l’audit : `appli-mettre-en-vente.jpg` : « 3 : pièces, lu dans la fiche du bien » sous chaque phrase. L'écran fait 3,6 écrans.
@@ -8409,7 +8409,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS068 · Les budgets de poids sont pleins
 - Statut : en cours (voie 3)
-- Suivi : premier pas fusionné (#831, 8e755737) : le dessin de l'écran de la direction servi à part, `/app/reseau.js`, environ 3 000 octets rendus à chaque agent. Second pas en cours, branche voie3/DS068-partenaires (l'écran « Partenaires » servi à part, `/app/partenaires.js` : environ 4 400 octets rendus), en fin de pile.
+- Suivi : premier pas fusionné (#831, 8e755737) : le dessin de l'écran de la direction servi à part, `/app/reseau.js`, environ 3 000 octets rendus à chaque agent. Second pas : proposition #839 ouverte le 2026-11-28 (l'écran « Partenaires » servi à part, `/app/partenaires.js`, environ 4 400 octets rendus), à part.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS068 (majeur, performance, système de design, effort L), endroit : `packages/core/src/design/audit.ts` (`BUDGETS`)
 - Constat de l’audit : la coquille pèse 48 446 octets compressés pour 49 152 permis. `mandat.js` 13 036, `louer.js` 13 431, `finances.js` 14 074, `commerces.js` 14 162, pour 14 336 permis.
