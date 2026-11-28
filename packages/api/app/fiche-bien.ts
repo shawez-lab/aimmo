@@ -207,6 +207,15 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
     // AU114 · ce que montre chaque photo : sa légende sur la page publique, la fiche imprimable et les portails [R478].
     var shown = el('div');
     album.appendChild(shown);
+    // DS058 · chaque champ sous le nom que le serveur lui donne : un refus va au champ, pas seulement à la partie.
+    var named = {
+      'characteristics.heating': heating, 'characteristics.elevator': elevator, 'characteristics.dwelling': dwelling, 'characteristics.condition': condition,
+      'characteristics.carrezM2': surfaces.carrez, 'characteristics.usableM2': surfaces.utile,
+      'energy.costReferenceYears': energy.costReferenceYear,
+      'coownership.isCoownership': isCo, 'coownership.lots': lots, 'coownership.annualChargesEur': charges, 'coownership.proceedings': proceedings, 'risks.inRiskZone': risk,
+    };
+    NUMBERS.forEach(function (n) { named['characteristics.' + n[0]] = nums[n[0]]; });
+    Object.keys(energy).forEach(function (k) { named['energy.' + k] = energy[k]; });
     function subjects() {
       clear(shown);
       return send(o.base + '/photos/sujets', 'GET').then(function (res) {
@@ -239,7 +248,7 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       function int(f, label) {
         var v = String(f.value || '').trim().replace(/\\s/g, '');
         if (v === '') return null;
-        if (!/^-?\\d+$/.test(v)) { at = at || f; bad = bad || label; return null; }
+        if (!/^-?\\d+$/.test(v)) { at = at || f; bad = bad || label + ', un nombre entier sans lettre'; return null; }
         return Number(v);
       }
       var out = { bedrooms: null, floor: null, floorsTotal: null, buildYear: null, heating: heating.value || null, outdoor: Object.keys(OUTDOOR).filter(function (x) { return outs[x].checked; }), landM2: null, parkingSpaces: null, elevator: bool(elevator.value) };
@@ -250,7 +259,7 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       function m2(f, label) {
         var v = String(f.value || '').trim().replace(/\\s/g, '').replace(',', '.');
         if (v === '') return null;
-        if (!/^\\d+(\\.\\d{1,2})?$/.test(v) || Number(v) <= 0) { at = at || f; bad = bad || label; return null; }
+        if (!/^\\d+(\\.\\d{1,2})?$/.test(v) || Number(v) <= 0) { at = at || f; bad = bad || label + ', en m², au centième au plus'; return null; }
         return Number(v);
       }
       var carrez = m2(surfaces.carrez, 'Surface Carrez'), utile = m2(surfaces.utile, 'Surface utile');
@@ -276,7 +285,7 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
         ['primaryEnergyKwhM2', 'ghgKgM2'].forEach(function (k) { if (String(energy[k].value || '').trim() !== '') en[k] = int(energy[k], k === 'ghgKgM2' ? 'Émissions' : 'Énergie primaire'); });
         if (e.documentRef) en.documentRef = e.documentRef;
         var ys = String(energy.costReferenceYear.value || '').split(/[^0-9]+/).filter(Boolean).map(Number);
-        if (!ys.length) { at = at || energy.costReferenceYear; bad = bad || 'Année des prix de l’énergie'; }
+        if (!ys.length) { at = at || energy.costReferenceYear; bad = bad || 'Année des prix de l’énergie, un nombre entier sans lettre'; }
         en.costReferenceYear = ys.length ? ys[ys.length - 1] : null;
         if (ys.length > 1) en.costReferenceYears = ys;
       }
@@ -306,12 +315,30 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
         p.count.textContent = all ? ' · ' + n + ' sur ' + all : ticked ? ' · ' + ticked + (ticked > 1 ? ' cochés' : ' coché') : '';
       });
     }
-    // Un champ à vérifier ouvre sa partie et reçoit le curseur : l'erreur ne reste jamais derrière un volet fermé.
-    function reveal(f) {
+    // DS058 · l'erreur se dit sous le champ fautif : sa partie s'ouvre, il est marqué, décrit et reçoit le curseur. Elle ne
+    // reste jamais derrière un volet fermé, et la saisie suivante dans ce champ l'efface.
+    var flagged = null;
+    function unflag() {
+      if (!flagged) return;
+      flagged.f.removeAttribute('aria-invalid');
+      flagged.f.removeAttribute('aria-describedby');
+      flagged.box.removeChild(flagged.note);
+      flagged = null;
+    }
+    function reveal(f, text) {
+      unflag();
+      var box = zone;
       parts.forEach(function (p, i) {
         var to = parts[i + 1] ? parts[i + 1].from : fields.length;
-        for (var j = p.from; j < to; j += 1) if (fields[j].f === f) p.box.open = true;
+        for (var j = p.from; j < to; j += 1) if (fields[j].f === f) box = p.box;
       });
+      box.open = true;
+      var note = el('p', text, 'retard');
+      note.setAttribute('id', f.getAttribute('id') + '-erreur');
+      f.setAttribute('aria-invalid', 'true');
+      f.setAttribute('aria-describedby', f.getAttribute('id') + '-erreur');
+      box.insertBefore(note, box.children[Array.prototype.indexOf.call(box.children, f) + 1] || null);
+      flagged = { f: f, note: note, box: box };
       f.focus();
     }
     // Refusé par le serveur : la partie du champ nommé s'ouvre ; sans champ nommé, toutes.
@@ -335,8 +362,11 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       if (JSON.stringify(now) === pristine) { drafts.drop(key); return; }
       if (!drafts.set(key, { version: version, raw: now })) said.textContent = 'Cet appareil ne peut pas garder cette saisie : enregistrez-la avant de quitter l’écran.';
     }
-    function touched() { keep(); progress(); }
-    fields.forEach(function (x) { x.f.addEventListener('input', touched); x.f.addEventListener('change', touched); });
+    fields.forEach(function (x) {
+      function touched() { if (flagged && flagged.f === x.f) unflag(); keep(); progress(); }
+      x.f.addEventListener('input', touched);
+      x.f.addEventListener('change', touched);
+    });
     if (resumed && resumed.raw) {
       fields.forEach(function (x) {
         if (!(x.id in resumed.raw)) return;
@@ -361,8 +391,9 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
     var go = button('Enregistrer la fiche', function () {
       if (t.sending()) return;
       var form = read();
-      if (form.bad) { reveal(form.at); said.textContent = 'À vérifier : ' + form.bad + ', un nombre entier sans lettre.'; return; }
-      if (form.loose) { reveal(form.coAt); said.textContent = 'À vérifier : les lots, les charges et la procédure vont avec « en copropriété : oui ». Choisissez oui, ou videz-les.'; return; }
+      if (form.bad) { said.textContent = 'À vérifier : ' + form.bad + '.'; reveal(form.at, said.textContent); return; }
+      if (form.loose) { said.textContent = 'À vérifier : les lots, les charges et la procédure vont avec « en copropriété : oui ». Choisissez oui, ou videz-les.'; reveal(form.coAt, said.textContent); return; }
+      unflag();
       if (JSON.stringify(form.sheet) === start) { said.textContent = 'Rien n’a changé : aucune version ajoutée.'; return; }
       var mine = t.current();
       t.sending(true);
@@ -381,11 +412,18 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
         if (res.status === 403) { said.textContent = 'Ce bien n’est pas dans vos droits.'; return false; }
         if (!res.ok) {
           var code = res.body.code;
-          if (code === 'invalid') unfold(res.body.field);
           said.textContent = code === 'invalid' ? (LABELS[res.body.field] ? 'À vérifier : ' + LABELS[res.body.field] + '.' : 'Une valeur de la fiche est refusée : rien n’est rangé.')
             : code === 'stale' ? 'La fiche a changé entre-temps, rien n’est rangé : rouvrez-la pour repartir de la dernière version.'
             : code === 'busy' ? 'Un enregistrement est déjà en cours : réessayez dans un instant.'
             : 'La fiche n’a pas pu être rangée.';
+          // Le champ que le serveur nomme reçoit le refus ; s'il n'en nomme pas, ou si c'est un groupe de cases, la partie s'ouvre.
+          if (code === 'invalid') {
+            var at = named[res.body.field];
+            // Une source dite pour une surface vide : c'est cette surface qu'il faut remplir. Sinon, le refus vaut pour
+            // le groupe des sources, et leur partie s'ouvre sans rien marquer.
+            if (res.body.field === 'characteristics.surfaceSources') at = ['carrez', 'utile'].map(function (k) { return surfaceSrc[k].value && !surfaces[k].value.trim() ? surfaces[k] : null; }).filter(Boolean)[0];
+            if (at) reveal(at, said.textContent); else unfold(res.body.field === 'characteristics.surfaceSources' ? 'surfaceSources' : res.body.field);
+          }
           return false;
         }
         // Seule la saisie envoyée s'efface : une saisie plus récente, d'un autre onglet, reste gardée.
