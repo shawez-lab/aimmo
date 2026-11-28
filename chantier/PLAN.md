@@ -8292,7 +8292,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Suivi : proposition #803 pour l’élision (« d’Alex »). Les mots « Réponse immédiate… » sont la formule acceptée par Shawez le 2026-10-24 : ils ne changent pas sans lui ; cette partie reste ouverte.
 
 ### DS053 · Une référence interne dans un mot de remerciement
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : proposition #841 ouverte le 2026-11-28 : la demande d'avis nomme le bien par sa ville, sans sa référence. Restent, hors de l'endroit nommé par l'audit, les mêmes mots dans cinq autres textes (mot de remerciement préparé, relances d'après-vente, carnet du bien, relances et alerte du dossier de vente).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS053 (mineur, mails et SMS, effort S), endroit : demande d'avis — `packages/core/src/apres-vente/demandes-avis.ts`
 - Constat de l’audit : « …la vente de votre bien à Dijon, référence B-CCD5185A. »
