@@ -46,7 +46,8 @@ interface Known {
 /**
  * Un écran : qui l'ouvre, sur quelle page, à quel moment du parcours, et comment on y arrive. `state` est l'état
  * d'historique que l'application sait rouvrir (AU117) : le même chemin que le bouton Retour du navigateur, sans dépendre
- * d'un bouton. `clicks` suit des gestes, dans l'ordre.
+ * d'un bouton. `clicks` suit des gestes, dans l'ordre : `#id` pour un bouton de la page servie, `text=…` pour un bouton
+ * que le script de l'application pose lui-même.
  */
 interface AppShot {
   name: string;
@@ -71,6 +72,8 @@ export const APP_SHOTS: readonly AppShot[] = [
   { name: 'application · fiche du client', role: 'agent', page: '/app/', screen: 'fiche', state: (k) => ({ s: 'fiche', a: [k.seller], t: 'accueil' }) },
   { name: 'application · un bien', role: 'agent', page: '/app/', screen: 'un-bien', state: (k) => ({ s: 'un-bien', a: [k.property.id, k.property.reference, k.property.name, k.property.state], t: 'accueil' }) },
   tool('application · mettre en vente', 'vente'),
+  // DS039 · la fiche du bien s'ouvre d'un geste dans « Mettre en vente » : elle a sa capture, formulaire ouvert.
+  { ...tool('application · fiche du bien', 'vente'), clicks: ['text=Remplir la fiche du bien'] },
   tool('application · mandat', 'mandat'),
   tool('application · offres', 'offres'),
   tool('application · avis de valeur', 'avis'),
@@ -210,7 +213,8 @@ async function openShot(page: any, shot: AppShot, known: Known): Promise<boolean
     await page.evaluate((s: unknown) => (globalThis as any).dispatchEvent(new (globalThis as any).PopStateEvent('popstate', { state: s })), state);
   }
   for (const selector of shot.clicks ?? []) {
-    if (selector === shot.clicks![0]) await page.waitForSelector(`${home}:not([hidden])`);
+    // Après un état d'historique, l'accueil n'est plus à l'écran : le geste attend son bouton, pas l'accueil.
+    if (!shot.state && selector === shot.clicks![0]) await page.waitForSelector(`${home}:not([hidden])`);
     await page.click(selector);
   }
   await page.waitForSelector(`#${shot.screen}:not([hidden])`);
@@ -234,7 +238,10 @@ describe('DS086 · le plan des captures', () => {
     for (const shot of APP_SHOTS) {
       const html = pageOf(shot);
       expect(sectionsOf(html), shot.name).toContain(shot.screen);
-      for (const selector of shot.clicks ?? []) expect(html, `${shot.name} ${selector}`).toContain(`id="${selector.slice(1)}"`);
+      for (const selector of shot.clicks ?? []) {
+        if (selector.startsWith('text=')) expect(AGENT_APP_FILES['/app/app.js'], `${shot.name} ${selector}`).toContain(`'${selector.slice(5)}'`);
+        else expect(html, `${shot.name} ${selector}`).toContain(`id="${selector.slice(1)}"`);
+      }
     }
   });
 
