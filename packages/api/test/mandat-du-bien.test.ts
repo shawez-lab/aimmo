@@ -9,6 +9,7 @@ import { sha256Hex } from '../src/index.ts';
 import worker, { type Env } from '../src/worker.ts';
 import { fakeD1 } from './fake-d1.ts';
 import { designerTout } from '../../core/test/designation-jeu.ts';
+import { signRentalMandate } from '../../core/test/mandat-location-jeu.ts';
 
 // Clés, personnes et biens inventés.
 const BASE = 'https://aimmo-api.example.workers.dev';
@@ -295,7 +296,45 @@ describeWithSqlite('D11 · lire et déposer depuis le téléphone', () => {
 
   it('un bien sans document : listes vides, aucun mandat', async () => {
     const empty = (await (await w.call(`/biens/${w.bien.id}/mandat`, KEYS.alex)).json()) as { data: unknown };
-    expect(empty.data).toMatchObject({ propertyId: w.bien.id, documents: [], mandate: null });
+    expect(empty.data).toMatchObject({ propertyId: w.bien.id, documents: [], mandate: null, rental: null });
+  });
+
+  it('AU120 · [R42] la lecture résume aussi le mandat de location, par sa propre porte : en cours, à côté d’un mandat de vente, puis rétracté', async () => {
+    type Summary = { id: string; number: string | null; signedAt: string | null; allowed: boolean; reason: string; withdrawalLastDay: string | null; withdrawalUnfinished: boolean } | null;
+    const read = async () => ((await (await w.call(`/biens/${w.bien.id}/mandat`, KEYS.alex)).json()) as { data: { mandate: Summary; rental: Summary; documents: { kind: string; signature: { complete: boolean } | null }[] } }).data;
+    const days = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
+    const base = { networkId: w.network.id, agentId: w.alex.id, personId: w.lea.id, propertyId: w.bien.id };
+    // Le constat : le seul mandat signé du bien est un mandat de location. Avant, la lecture ne disait rien de lui.
+    const signedAt = days(10);
+    const rent = await signRentalMandate(w.db, { ...base, signedAt });
+    const alone = await read();
+    expect(alone.mandate).toBeNull();
+    expect(alone.rental).toMatchObject({ id: rent, signedAt, allowed: true, reason: 'allowed', withdrawalLastDay: null, withdrawalUnfinished: false });
+    expect(alone.rental?.number).toMatch(/^L-\d+$/);
+    expect(alone.documents).toMatchObject([{ kind: 'mandat_location', signature: { complete: true } }]);
+    // Un mandat de vente à côté : chacun a son résumé, l'un ne dit rien de l'autre.
+    const sale = await signRentalMandate(w.db, { ...base, signedAt: days(5), kind: 'mandat_vente_simple' });
+    const both = await read();
+    expect(both.mandate).toMatchObject({ id: sale, allowed: true, reason: 'allowed' });
+    expect(both.rental).toMatchObject({ id: rent, reason: 'allowed' });
+    // Le bailleur se rétracte (la ligne est posée ici comme le ferait la route, le registre du jeu d'essai n'étant pas chaîné) :
+    // le document garde sa signature, la lecture dit que le mandat de location est fini.
+    await w.db.run("INSERT INTO mandate_withdrawals (mandate_id, network_id, proof, received_at, recorded_by, created_at) VALUES (?, ?, 'courrier test', ?, 'test', ?)", [rent, w.network.id, days(1), days(1)]);
+    const after = await read();
+    expect(after.rental).toMatchObject({ id: rent, allowed: false, reason: 'withdrawn' });
+    expect(after.mandate).toMatchObject({ id: sale, reason: 'allowed' });
+    expect(after.documents.filter((d) => d.kind === 'mandat_location')).toMatchObject([{ signature: { complete: true } }]);
+  });
+
+  it('AU120 · [R42] un mandat de location arrivé à échéance se lit échu', async () => {
+    const days = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString();
+    const rent = await signRentalMandate(w.db, { networkId: w.network.id, agentId: w.alex.id, personId: w.lea.id, propertyId: w.bien.id, signedAt: days(400), months: 12 });
+    const read = ((await (await w.call(`/biens/${w.bien.id}/mandat`, KEYS.alex)).json()) as { data: { mandate: unknown; rental: { id: string; allowed: boolean; reason: string } | null } }).data;
+    expect(read.mandate).toBeNull();
+    expect(read.rental).toMatchObject({ id: rent, allowed: false, reason: 'expired' });
+    // La conformité lit le même résumé ; un autre agent n'en lit rien [R16].
+    expect(((await (await w.call(`/biens/${w.bien.id}/mandat`, KEYS.compliance)).json()) as { data: { rental: { reason: string } } }).data.rental.reason).toBe('expired');
+    expect((await w.call(`/biens/${w.bien.id}/mandat`, KEYS.sam)).status).toBe(403);
   });
 });
 

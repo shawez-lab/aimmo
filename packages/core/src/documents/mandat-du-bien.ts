@@ -43,6 +43,11 @@ export interface PropertyMandate {
   }[];
   /** La décision de diffusion dit l'état du mandat ; `mandate` est nul s'il n'y en a aucun. */
   mandate: { id: string; number: string | null; signedAt: string | null; allowed: boolean; reason: DiffusionDecision['reason']; withdrawalLastDay: string | null; withdrawalUnfinished: boolean } | null;
+  /**
+   * Le mandat de location du bien, lu de la même façon par la porte de la location (AU120) : un mandat de vente n'ouvre pas
+   * la location, ni l'inverse, et l'un ne dit rien de l'autre. Nul s'il n'y en a aucun.
+   */
+  rental: PropertyMandate['mandate'];
   /** Chaque propriétaire vu en entier, avec son domicile repris par le mandat (AU002), ou null s'il manque. */
   owners: { personId: string; firstName: string | null; lastName: string | null; domicile: PostalAddress | null }[];
   /** L'adresse et les parcelles du bien que reprend chaque mandat de vente (AU002), ou null si elles manquent. */
@@ -93,9 +98,14 @@ export class MandatDuBien {
       [viewer.networkId, propertyId, PROPERTY_DOCUMENTS_MAX],
     );
     const diffusion = new Diffusion(this.db, this.acces, this.journal, { now: this.now });
-    const decision = await diffusion.canDiffuse(viewer.networkId, propertyId);
-    const unfinished = decision.reason === 'withdrawn' && decision.mandateId !== null && (await diffusion.withdrawalUnfinished(viewer.networkId, decision.mandateId));
-    const signed = decision.mandateId ? await this.db.first<{ number: string | null; signed_at: string }>('SELECT number, signed_at FROM signed_documents WHERE mandate_id = ?', [decision.mandateId]) : null;
+    // Le mandat que retient la porte de la diffusion, pour la vente puis pour la location : son numéro, sa date, son état.
+    const summary = async (object: 'vente' | 'location'): Promise<PropertyMandate['mandate']> => {
+      const decision = await diffusion.canDiffuse(viewer.networkId, propertyId, undefined, object);
+      if (decision.mandateId === null) return null;
+      const unfinished = decision.reason === 'withdrawn' && (await diffusion.withdrawalUnfinished(viewer.networkId, decision.mandateId));
+      const signed = await this.db.first<{ number: string | null; signed_at: string }>('SELECT number, signed_at FROM signed_documents WHERE mandate_id = ?', [decision.mandateId]);
+      return { id: decision.mandateId, number: signed?.number ?? null, signedAt: signed?.signed_at ?? null, allowed: decision.allowed, reason: decision.reason, withdrawalLastDay: decision.withdrawalLastDay, withdrawalUnfinished: unfinished };
+    };
 
     const links = await this.db.all<{ person_id: string }>(
       `SELECT DISTINCT p.person_id AS person_id FROM project_properties l JOIN projects p ON p.id = l.project_id
@@ -124,7 +134,8 @@ export class MandatDuBien {
           mandateId: r.mandate_id,
           signature: r.signed_at ? { signedAt: r.signed_at, place: r.place as string, number: r.number, complete: r.complete === 1 } : null,
         })),
-        mandate: decision.mandateId ? { id: decision.mandateId, number: signed?.number ?? null, signedAt: signed?.signed_at ?? null, allowed: decision.allowed, reason: decision.reason, withdrawalLastDay: decision.withdrawalLastDay, withdrawalUnfinished: unfinished } : null,
+        mandate: await summary('vente'),
+        rental: await summary('location'),
         owners: [...owners.values()],
         designation: await (async () => {
           const d = await latestDesignation(this.db, viewer.networkId, propertyId);
