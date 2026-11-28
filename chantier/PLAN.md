@@ -7893,7 +7893,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS005 · Aucune navigation permanente
 - Statut : fait (2026-11-27)
-- Suivi : fusionnée (#812, `787d4320`) : une barre de trois onglets pour l'agent (Journée, Outils, Chiffres), en bas sur téléphone, en colonne à gauche sur ordinateur. Clients et Biens auront leur onglet avec leur liste (DS003, DS004). Codex : 2 P2 (historique du navigateur), corrigés dans la proposition suivante.
+- Suivi : fusionnée (#812, `787d4320`) : une barre de trois onglets pour l'agent (Journée, Outils, Chiffres), en bas sur téléphone, en colonne à gauche sur ordinateur. Clients et Biens auront leur onglet avec leur liste (DS003, DS004). Codex : 2 P2 (historique du navigateur), corrigés dans la proposition suivante. Le 2026-11-28, en rejouant les mesures de l'audit : à 200 % de texte, le cinquième onglet sortait de l'écran ; la barre défile maintenant dans sa largeur, proposition #851 (voie 3).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS005 (majeur, navigation, effort L), endroit : toute l'application
 - Constat de l’audit : aucun élément `nav`. Le seul lien entre écrans est « Retour à ma journée ». Passer du mandat aux offres du même bien demande : retour, défilement jusqu'au bien, « Offres ».
