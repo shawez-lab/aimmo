@@ -8183,8 +8183,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS039 · La fiche du bien : 42 champs d'un seul tenant
-- Statut : en cours (voie 3)
-- Suivi : proposition #844 ouverte le 2026-11-28 (la fiche en six parties repliées, chacune avec son compte ; un seul « Enregistrer la fiche »). Reste l'enregistrement partie par partie.
+- Statut : à faire
+- Suivi : #844 fusionnée le 2026-11-28 (b54c5c56, voie 3, Codex sans remarque) : la fiche en six parties repliées, chacune avec son compte ; un seul « Enregistrer la fiche ». Sur le jeu de capture : 10 champs visibles à l'arrivée au lieu de 42. Reste l'enregistrement partie par partie.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS039 (majeur, formulaires, effort M), endroit : « Remplir la fiche du bien » — `packages/api/app/fiche-bien.ts`
 - Constat de l’audit : 42 champs, 7 214 px, soit 8,5 écrans, un seul bouton « Enregistrer la fiche » tout en bas.
