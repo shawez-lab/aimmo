@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { dictatedIban, fundSignals } from '../src/dossiers/bouclier.ts';
+import { expectLinear } from './lineaire.ts';
 
 // RC72 : les deux derniers détours connus du bouclier, le leet épelé (« R 1 B ») et le groupe d'IBAN dicté juste
 // après un nombre composé (« quatre-vingt-dix sept mille »). Textes et IBAN inventés : la clé est calculée ici.
@@ -77,10 +78,7 @@ it('[R62] la lecture d\'avant reste faite, et une clé fausse n\'alerte jamais',
   expect(fundSignals('il reste quatre-vingt-dix sept mille euros à financer')).toEqual([]);
 });
 
-it('[R62] lecture linéaire : 40 000 caractères en moins de 500 ms', () => {
+it('[R62] lecture linéaire : 40 000 caractères, sans emballement', () => {
   const words = 'trois mille quatre-vingt-dix sept mille vingt six cent r 1 b v.1.r.3 @ c 0 ';
-  const t = words.repeat(Math.ceil(40000 / words.length));
-  const start = performance.now();
-  fundSignals(t);
-  expect(performance.now() - start).toBeLessThan(500);
+  expectLinear((n) => words.repeat(Math.ceil(n / words.length)), fundSignals);
 });

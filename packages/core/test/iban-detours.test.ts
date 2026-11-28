@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { dictatedIban, spelledIban } from '../src/dossiers/bouclier.ts';
 import { hiddenIbanSpans } from '../src/envoi/iban-detours.ts';
 import { IBAN, IBAN_MASK, bankDetailsIn, fundsInOutgoing, maskIban } from '../src/envoi/texte.ts';
+import { expectLinear } from './lineaire.ts';
 
 // BR106 : un IBAN épelé, dicté en mots ou déguisé par des sosies est masqué dans tout message rangé et refusé dans tout
 // texte qui sort. IBAN inventés : la clé est calculée ici.
@@ -187,15 +188,13 @@ it('tout IBAN que le bouclier lit dans un texte épelé ou dicté est masqué pa
   }
 });
 
-it('lecture linéaire : 40 000 caractères épelés ou en mots masqués en moins de 500 ms', () => {
-  const spelled = '0 6 1 2 3 4 5 6 7 8 F R 7 6 a b c d '.repeat(2_500).slice(0, 40_000);
-  const words = 'neuf mille neuf cent quatre-vingt-dix-neuf trois cents mil cent and hundred thousand '
-    .repeat(500)
-    .slice(0, 40_000);
-  for (const text of [spelled, words]) {
-    const t0 = performance.now();
-    expect(maskIban(text)).toBe(text);
-    expect(performance.now() - t0).toBeLessThan(500);
+it('lecture linéaire : 40 000 caractères épelés ou en mots masqués, sans emballement', () => {
+  const spelled = '0 6 1 2 3 4 5 6 7 8 F R 7 6 a b c d ';
+  const words = 'neuf mille neuf cent quatre-vingt-dix-neuf trois cents mil cent and hundred thousand ';
+  for (const chunk of [spelled, words]) {
+    const build = (n: number): string => chunk.repeat(Math.ceil(n / chunk.length)).slice(0, n);
+    expect(maskIban(build(40_000))).toBe(build(40_000));
+    expectLinear(build, maskIban);
   }
 });
 
