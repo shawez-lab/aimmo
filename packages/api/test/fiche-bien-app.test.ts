@@ -734,7 +734,7 @@ describe('DS058 · dans la fiche du bien, le refus se dit sous le champ fautif',
     // Une source dite pour une surface vide : le refus va à la surface à remplir, jamais à la source de la surface
     // habitable, qui n'y est pour rien ; la remplir efface la marque.
     const SOURCES = no(400, { ok: false, rule: null, code: 'invalid', field: 'characteristics.surfaceSources' });
-    const opened = (t: T) => t.body().all().filter((e: FakeElement) => e.tagName === 'details' && e.open).map((d: FakeElement) => d.children[0]!.textContent.split(' · ')[0]);
+    const opened = (t: T) => t.body().all().filter((e: FakeElement) => e.tagName === 'details' && (e as FakeElement & { open?: boolean }).open === true).map((d: FakeElement) => d.children[0]!.textContent.split(' · ')[0]);
     const carrez = await run({ ...SUBJECTS, [POST]: SOURCES });
     await carrez.open();
     carrez.f('fiche-bien-source-carrez').value = 'mesurage';
