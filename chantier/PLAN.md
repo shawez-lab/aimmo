@@ -7855,7 +7855,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS004 · Aucune liste de biens
 - Statut : en cours (voie 3)
-- Suivi : branche voie3/DS004-biens prête (l'onglet « Biens », recherche et filtre par état) ; proposée après la fiche du client (DS010), mêmes fichiers.
+- Suivi : proposition #827 ouverte le 2026-11-28 (l'onglet « Biens », la liste de ses biens, chercher comme on parle, filtre par état).
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS004 (bloquant, navigation, effort L), endroit : toute l'application
 - Constat de l’audit : un bien n'apparaît que dans « Mes biens à mettre en vente », plafonné à 200 lignes sans recherche. Une fois vendu, il n'est plus que dans « Mes ventes conclues ».
@@ -7907,8 +7907,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS010 · La fiche d'un client fait cinq écrans, sans synthèse
-- Statut : en cours (voie 3)
-- Suivi : proposition #826 ouverte le 2026-11-28 (la fiche ouvre sur l'essentiel, en quatre parties, servie à part ; avec DS050 et la fiche de DS022).
+- Statut : à faire
+- Suivi : fait en partie le 2026-11-28, fusionnée (#826, `e73b5965`) : la fiche ouvre sur une phrase, l'appel et les rappels à faire, puis quatre parties dont une seule se voit ; formulaires au geste ; 2,2 écrans et 1 bouton plein au lieu de 5,8 et 11 ; son dessin est servi à part (`/app/fiche.js`). Codex : rien à signaler. Restent : le rôle et le bien lié dits en tête (la lecture de la fiche ne les donne pas).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS010 (majeur, architecture de l'information, effort L), endroit : fiche client — `packages/api/app/fichiers.ts` (`#fiche`) et modules chargés
 - Constat de l’audit : `appli-fiche-client.jpg`. 5,2 écrans, 14 blocs dont 6 réduits à un bouton, 9 boutons pleins. La fiche ouvre sur un prénom et un nom, sans rôle, sans coordonnées, sans dernier échange.
@@ -8241,8 +8241,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS050 · La fiche n'ouvre pas sur le geste du jour
-- Statut : en cours (voie 3)
-- Suivi : avec DS010, même proposition (#826).
+- Statut : à faire
+- Suivi : fait en partie le 2026-11-28, fusionnée avec DS010 (#826, `e73b5965`) : « Appeler » est le geste du jour, seul bouton plein, avec la raison quand l'appel est fermé. Restent : écrire un message ou un mail depuis la fiche (un lien `sms:` ou `mailto:` passerait à côté du contrôle central des envois : c'est au cahier de le dire).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS050 (majeur, parcours, effort M), endroit : fiche client
 - Constat de l’audit : `appli-fiche-client.jpg` : aucune coordonnée en tête, aucun lien `tel:`, `sms:` ni `mailto:`. Les gestes sont « J'ai appelé » et « La personne a refusé ».
