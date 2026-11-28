@@ -60,8 +60,10 @@ const DOMAIN_NAMES: Record<string, string> = { ...Object.fromEntries(CERTIFIED_D
  * compte vient de sa lecture, dans un ordre fixe ; une lecture manquée se dit, et la phrase ne dit jamais « rien » à
  * sa place. Une facture validée la fait baisser.
  *
- * Les blocs qui se relisent avec le rapport du matin le sont à l'ouverture de leur rubrique tant qu'ils sont vides
- * (`showRubrique`) : personne ne retourne chercher « Lire le rapport » dans une autre rubrique.
+ * Les blocs qui se relisent avec le rapport du matin le sont à l'ouverture de leur rubrique (`showRubrique`), chacun
+ * jugé pour lui-même : pas encore lu, ou lu en panne (son état dit « Réessayez… »), la rubrique relit ; un bloc lu, même
+ * sans rien à montrer, ne redemande rien, et rien ne part pendant qu'une lecture est en route. Personne ne retourne
+ * chercher « Lire le rapport » dans une autre rubrique.
  */
 export const RESEAU_RUBRIQUES: readonly (readonly [id: string, name: string])[] = [['jour', 'Aujourd’hui'], ['chiffres', 'Chiffres'], ['agents', 'Agents'], ['reglages', 'Réglages'], ['technique', 'Technique']];
 const RESEAU_JOUR_HTML = `<section class="bloc" aria-labelledby="titre-reseau-alertes">
@@ -2039,8 +2041,9 @@ export const APP_JS = `'use strict';
       $('reseau-r-' + r).setAttribute('aria-pressed', r === name ? 'true' : 'false');
       $('reseau-p-' + r).hidden = r !== name;
     });
-    var first = name === 'chiffres' ? 'preuve' : name === 'technique' ? 'disponibilite' : '';
-    if (first && !$(first + '-corps').firstChild && $(first + '-etat').textContent !== 'Chargement…') withFinances(first + '-etat', 'reseau', function (f) { return f.report('direction'); });
+    var ids = name === 'chiffres' ? ['preuve', 'indicateurs', 'engagements-tenus', 'temps-reseau'] : name === 'technique' ? ['disponibilite', 'copies', 'restauration', 'parcours-mois'] : [];
+    var said = ids.map(function (id) { return $(id + '-etat').textContent; });
+    if (said.indexOf('Chargement…') === -1 && ids.some(function (id, i) { return /Réessayez/.test(said[i]) || (!said[i] && !$(id + '-corps').firstChild); })) withFinances(ids[0] + '-etat', 'reseau', function (f) { return f.report('direction'); });
   }
   function openReseau(range, part) {
     if (!currentKey) return Promise.resolve(false);

@@ -56,6 +56,27 @@ const REPORT: Record<string, Answer> = {
   'GET /v1/pilotage/preuve/sceaux': ok({ months: [], seals: [], chainSound: true }),
   'GET /v1/pilotage/disponibilite': ok({ targetPercent: 99.9, connected: false, services: [] }),
 };
+// Les quatre blocs de « Chiffres » qui se relisent avec le rapport, lus sans panne, sans rien de compté.
+const NONE = { numerator: 0, denominator: 0, bp: null };
+const NO_LAPSE = { values: [], median: null };
+const CHIFFRES: Record<string, Answer> = {
+  'GET /v1/pilotage/rapport-matin': ok(null),
+  'GET /v1/pilotage/preuve': ok(COUNTER),
+  'GET /v1/pilotage/preuve/sceaux': ok({ months: [], seals: [], chainSound: true }),
+  'GET /v1/pilotage/parcours': ok({ conversion: { appointmentsPerContact: NONE, mandatesPerAppointment: NONE, salesPerMandate: NONE }, mandateToOfferDays: NO_LAPSE, offerToActDays: NO_LAPSE, valuationToMandateMinutes: { ...NO_LAPSE, underTarget: 0, targetMinutes: 30 }, networkReferredMandates: NONE }),
+  'GET /v1/pilotage/agents-actifs': ok({ activeSigners: 0, retainedAfterYear: { ...NONE, cohortMonth: '2026-05' } }),
+  'GET /v1/pilotage/contacts-par-zone': ok({ zones: [], otherZones: null }),
+  'GET /v1/pilotage/engagements-tenus': ok({ month: '2027-05', lines: [], overall: NONE }),
+  'GET /v1/pilotage/temps-gagne/reseau': ok({ minutes: null, declared: 0, notDeclared: 0, withoutGesture: 0 }),
+};
+// Les quatre blocs de « Technique », lus sans panne. Deux n'ont rien à montrer : leur état le dit, leur corps reste vide.
+const TECHNIQUE: Record<string, Answer> = {
+  'GET /v1/pilotage/rapport-matin': ok(null),
+  'GET /v1/pilotage/disponibilite': ok({ targetPercent: 99.9, connected: false, services: [] }),
+  'GET /v1/pilotage/copies': ok({ state: 'jamais', missedNights: [], activation: 'non_prouvee', lastFailure: null }),
+  'GET /v1/pilotage/copies/restauration': ok({ state: 'manquant', receipt: null, expectedMonth: '2027-05' }),
+  'GET /v1/pilotage/parcours-du-mois': ok({ state: 'manquant', receipt: null, expectedMonth: '2027-05' }),
+};
 const IDS = RESEAU_RUBRIQUES.map(([id]) => id);
 
 /** L'écran de la direction, dans sa page, avec le script des finances servi comme par le réseau. */
@@ -203,7 +224,7 @@ describe('DS008 · « Le réseau » en cinq rubriques', () => {
   });
 
   it('« Chiffres » et « Technique » relisent à leur ouverture ce qui se relit avec le rapport du matin, une seule fois ; « Aujourd’hui » attend le geste', async () => {
-    const t = await run({ ...QUIET, ...REPORT });
+    const t = await run({ ...QUIET, ...CHIFFRES, ...TECHNIQUE });
     expect(t.reads('/v1/pilotage/rapport-matin')).toBe(0);
     expect(t.reads('/v1/pilotage/preuve')).toBe(0);
     await t.open('agents');
@@ -213,12 +234,15 @@ describe('DS008 · « Le réseau » en cinq rubriques', () => {
     expect(t.reads('/v1/pilotage/rapport-matin')).toBe(1);
     expect(t.reads('/v1/pilotage/preuve')).toBe(1);
     expect(t.els['preuve-corps']!.firstChild).not.toBeNull();
+    for (const id of ['preuve', 'indicateurs', 'engagements-tenus', 'temps-reseau', 'disponibilite', 'copies', 'restauration', 'parcours-mois']) expect(t.els[`${id}-etat`]!.textContent, id).not.toMatch(/Réessayez|Chargement/);
     // Déjà lus : ni « Technique » ni un retour sur « Chiffres » ne redemandent rien.
     await t.open('technique');
     await t.open('chiffres');
     await t.open('jour');
+    await t.open('technique');
     expect(t.reads('/v1/pilotage/rapport-matin')).toBe(1);
     expect(t.reads('/v1/pilotage/disponibilite')).toBe(1);
+    expect(t.reads('/v1/pilotage/preuve')).toBe(1);
   });
 
   it('une lecture manquée se dit dans la rubrique ouverte, et se refait en y revenant ; deux appuis ne font pas deux lectures', async () => {
@@ -239,6 +263,55 @@ describe('DS008 · « Le réseau » en cinq rubriques', () => {
     await settle();
     expect(slow.reads('/v1/pilotage/preuve')).toBe(1);
     expect(slow.els['preuve-etat']!.textContent).toBe('Chargement…');
+  });
+
+  it('chaque bloc est jugé pour lui-même : un seul en panne, et revenir sur la rubrique le relit (remarque de Codex)', async () => {
+    // La disponibilité se lit, la copie de la base est en panne : la rubrique n'est pas « lue » pour autant.
+    const partial = { ...QUIET, ...TECHNIQUE };
+    delete partial['GET /v1/pilotage/copies'];
+    const t = await run(partial);
+    await t.open('technique');
+    expect(t.els['disponibilite-corps']!.firstChild).not.toBeNull();
+    expect(t.els['copies-etat']!.textContent).toBe('Pas de réseau. Réessayez dans un moment.');
+    expect(t.reads('/v1/pilotage/copies')).toBe(1);
+    // Le réseau revient : rouvrir la rubrique relit, et la copie se montre.
+    Object.assign(t.table, TECHNIQUE);
+    await t.open('agents');
+    await t.open('technique');
+    expect(t.reads('/v1/pilotage/copies')).toBe(2);
+    expect(t.els['copies-etat']!.textContent).toBe('Non sauvegardé : aucune copie réussie à ce jour.');
+    expect(t.els['copies-corps']!.firstChild).not.toBeNull();
+    // Tout est lu : rouvrir ne redemande plus rien.
+    await t.open('agents');
+    await t.open('technique');
+    expect(t.reads('/v1/pilotage/copies')).toBe(2);
+  });
+
+  it('un bloc lu sans rien à montrer n’est pas une panne : rouvrir la rubrique ne relit rien', async () => {
+    const t = await run({ ...QUIET, ...TECHNIQUE });
+    await t.open('technique');
+    // La restauration et le parcours du mois n'ont pas de reçu : leur état le dit, leur corps reste vide.
+    expect(t.els['restauration-etat']!.textContent).toBe('Aucune preuve de restauration pour mai 2027.');
+    expect(t.els['restauration-corps']!.firstChild).toBeNull();
+    expect(t.els['parcours-mois-corps']!.firstChild).toBeNull();
+    for (let i = 0; i < 3; i++) {
+      await t.open('agents');
+      await t.open('technique');
+    }
+    expect(t.reads('/v1/pilotage/copies/restauration')).toBe(1);
+    expect(t.reads('/v1/pilotage/rapport-matin')).toBe(1);
+  });
+
+  it('dans « Chiffres » aussi : la preuve lue, un autre bloc en panne, et revenir le relit', async () => {
+    // Les indicateurs du mois ne répondent pas ; la preuve à Dijon, elle, se lit.
+    const t = await run({ ...QUIET, ...REPORT });
+    await t.open('chiffres');
+    expect(t.els['preuve-corps']!.firstChild).not.toBeNull();
+    expect(t.els['indicateurs-etat']!.textContent).toMatch(/Réessayez/);
+    const before = t.reads('/v1/pilotage/preuve');
+    await t.open('jour');
+    await t.open('chiffres');
+    expect(t.reads('/v1/pilotage/preuve')).toBe(before + 1);
   });
 
   it('sans le script des finances, la panne se dit dans la rubrique ouverte, pas dans une autre', async () => {
