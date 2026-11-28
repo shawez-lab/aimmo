@@ -65,6 +65,7 @@ export const APP_SHOTS: readonly AppShot[] = [
   { name: 'application · connexion', role: 'aucun', page: '/app/', screen: 'connexion' },
   { name: 'application · journée', role: 'agent', page: '/app/', screen: 'accueil' },
   { name: 'application · clients', role: 'agent', page: '/app/', screen: 'clients', clicks: ['#clients-ouvrir'] },
+  { name: 'application · biens', role: 'agent', page: '/app/', screen: 'mes-biens', clicks: ['#mes-biens-ouvrir'] },
   { name: 'application · outils', role: 'agent', page: '/app/', screen: 'outils', clicks: ['#outils-ouvrir'] },
   { name: 'application · chiffres', role: 'agent', page: '/app/', screen: 'chiffres', clicks: ['#chiffres-ouvrir'] },
   { name: 'application · fiche du client', role: 'agent', page: '/app/', screen: 'fiche', state: (k) => ({ s: 'fiche', a: [k.seller], t: 'accueil' }) },
