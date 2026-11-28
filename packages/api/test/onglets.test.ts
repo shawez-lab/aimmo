@@ -319,6 +319,49 @@ async function ouvrir(viewport: { width: number; height: number }) {
 const box = (page: any, selector: string) => page.evaluate((s: string) => { const r = (globalThis as any).document.querySelector(s).getBoundingClientRect(); return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width, height: r.height }; }, selector);
 
 describe('DS005 · dans Chromium', () => {
+  it.skipIf(navigateur === null)('à 200 % de texte, la barre reste dans l’écran : elle défile dans sa largeur, aucun mot n’est coupé, le dernier onglet s’atteint', async () => {
+    const page = await ouvrir({ width: 390, height: 844 });
+    try {
+      const read = () =>
+        page.evaluate(() => {
+          const d = (globalThis as any).document;
+          const nav = d.getElementById('onglets');
+          const tabs = [...nav.querySelectorAll('button')];
+          return {
+            page: d.documentElement.scrollWidth,
+            nav: [Math.round(nav.getBoundingClientRect().left), Math.round(nav.getBoundingClientRect().right), nav.clientWidth, nav.scrollWidth],
+            tabs: tabs.map((b: any) => ({ id: b.id, left: Math.round(b.getBoundingClientRect().left), right: Math.round(b.getBoundingClientRect().right), cut: b.scrollWidth > b.clientWidth })),
+          };
+        });
+      // À la taille ordinaire : cinq onglets égaux, rien à faire défiler.
+      const plain = await read();
+      expect(plain.tabs.map((t: any) => t.id)).toEqual(['journee-ouvrir', 'clients-ouvrir', 'mes-biens-ouvrir', 'outils-ouvrir', 'chiffres-ouvrir']);
+      expect(plain.nav).toEqual([0, 390, 390, 390]);
+      expect(plain.tabs.at(-1).right).toBe(390);
+      // Le texte doublé : les cinq mots ne tiennent plus de front. La barre garde la largeur de l'écran et défile ;
+      // la page, elle, ne défile pas de côté.
+      await page.evaluate(() => {
+        (globalThis as any).document.documentElement.style.fontSize = '200%';
+      });
+      const big = await read();
+      expect(big.page).toBe(390);
+      expect(big.nav.slice(0, 3)).toEqual([0, 390, 390]);
+      expect(big.nav[3]).toBeGreaterThan(390);
+      expect(big.tabs.every((t: any) => !t.cut)).toBe(true);
+      expect(big.tabs.at(-1).right).toBeGreaterThan(390);
+      // Le dernier onglet s'atteint : amené à l'écran, il y tient en entier, et il s'ouvre.
+      await page.evaluate(() => (globalThis as any).document.getElementById('chiffres-ouvrir').scrollIntoView({ inline: 'end' }));
+      const scrolled = await read();
+      expect(scrolled.tabs.at(-1).right).toBeLessThanOrEqual(390);
+      expect(scrolled.tabs.at(-1).left).toBeGreaterThanOrEqual(0);
+      expect(scrolled.page).toBe(390);
+      await page.click('#chiffres-ouvrir');
+      await page.waitForSelector('#chiffres:not([hidden])');
+    } finally {
+      await page.close();
+    }
+  });
+
   it.skipIf(navigateur === null)('sur téléphone, la barre tient en bas, chaque onglet fait 48 px au moins, et rien du contenu ne reste dessous', async () => {
     const page = await ouvrir({ width: 390, height: 844 });
     try {
