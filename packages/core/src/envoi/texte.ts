@@ -160,8 +160,12 @@ export function checkText(text: string, context: TextContext, settings: TextSett
     problems.push({ rule: 'question', reason: `Pas plus de ${context.maxQuestions} question dans ce message.` });
   }
 
+  // Une suite de chiffres fournie en texte (référence, empreinte) se compare chiffre pour chiffre, sans passer par un
+  // nombre : au-delà de seize chiffres, un nombre l'arrondirait et le texte qui la cite serait refusé à tort (AU118).
   const allowed = new Set(
-    (context.figures ?? []).flatMap((f) => (typeof f === 'number' || /^\d+(?:\.\d+)?$/.test(f) ? [String(Number(f))] : numbersIn(f))),
+    (context.figures ?? []).flatMap((f) =>
+      typeof f === 'string' && /^\d+$/.test(f) ? [f.replace(/^0+(?=\d)/, '')] : typeof f === 'number' || /^\d+\.\d+$/.test(f) ? [String(Number(f))] : numbersIn(f),
+    ),
   );
   if (numbersIn(text).some((n) => !allowed.has(n))) {
     problems.push({ rule: 'R10', reason: 'Un chiffre du texte ne vient pas des données fournies.' });
