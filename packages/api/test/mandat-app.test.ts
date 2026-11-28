@@ -931,21 +931,43 @@ describe('DS049 · le fil du mandat : préparer, contrôler, signer, inscrit', (
     expect(rail(amend).done).toEqual([true, true, true, true]);
   });
 
-  it('un mandat de location signé en entier, sans mandat de vente : les quatre étapes sont faites ; un autre mandat préparé ensuite reprend le fil', async () => {
-    // La lecture ne résume que le mandat de vente : pour une location, « mandate » est vide, le document dit le reste.
+  it('AU120 · un mandat de location en cours, sans mandat de vente : l’écran le dit, les quatre étapes sont faites ; rétracté, annulé ou échu, il rend le fil', async () => {
+    // La lecture résume le mandat de location à part : « mandate » ne parle que de la vente.
     const RENT = { ...DOC, id: 'd3', kind: 'mandat_location', signature: { signedAt: '2027-02-10T12:00:00.000Z', place: 'agence', number: 'T-009', complete: true } };
-    const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [RENT] }) });
+    const rental = (reason: string, allowed = false) => ({ id: 'm9', number: 'T-009', signedAt: '2027-02-10T12:00:00.000Z', allowed, reason, withdrawalLastDay: null, withdrawalUnfinished: false });
+    const said = (t: T) => t.body().all().filter((e) => e.tagName === 'p').map((e) => e.textContent);
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [RENT], rental: rental('allowed', true) }) });
     await t.open();
     expect(rail(t).steps).toEqual(['Préparer · fait', 'Contrôler · fait', 'Signer · fait', 'Inscrit · fait']);
     expect(rail(t).current).toEqual([]);
+    expect(said(t)).toContain('Mandat de location n° T-009, signé le 10 février 2027 : en cours.');
+    expect(said(t)).not.toContain('Aucun mandat signé pour ce bien.');
+    // Le constat : le document porte toujours sa signature, mais le mandat est fini. Le fil se rouvre, et l'écran dit pourquoi.
+    for (const [reason, words] of [['withdrawn', 'rétracté'], ['cancelled', 'annulé au registre'], ['expired', 'arrivé à échéance']] as const) {
+      const over = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [RENT], rental: rental(reason) }) });
+      await over.open();
+      expect(rail(over).current, reason).toEqual(['Préparer']);
+      expect(said(over), reason).toContain(`Mandat de location n° T-009, signé le 10 février 2027 : ${words}.`);
+    }
+    // Dans son délai de rétractation, il est inscrit : la location attend, le fil ne se rouvre pas.
+    const waiting = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [RENT], rental: rental('withdrawal_period') }) });
+    await waiting.open();
+    expect(rail(waiting).current).toEqual([]);
+    expect(said(waiting)).toContain('Mandat de location n° T-009, signé le 10 février 2027 : en délai de rétractation.');
     // Un mandat de vente préparé à côté : c'est lui qui attend son contrôle.
-    const both = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC, RENT] }) });
+    const both = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC, RENT], rental: rental('allowed', true) }) });
     await both.open();
     expect(rail(both).current).toEqual(['Contrôler']);
-    // Un mandat de location dont l'enregistrement s'est arrêté en route n'est pas inscrit.
+    // Un mandat de location dont l'enregistrement s'est arrêté en route n'est pas inscrit : la lecture n'en résume aucun.
     const begun = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [{ ...RENT, signature: { ...RENT.signature, number: null, complete: false } }] }) });
     await begun.open();
     expect(rail(begun).current).toEqual(['Signer']);
+    expect(said(begun)).toContain('Aucun mandat signé pour ce bien.');
+    // Vente et location ensemble : chacun a sa ligne.
+    const two = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [SIGNED, RENT], mandate: LIVE, rental: rental('allowed', true) }) });
+    await two.open();
+    expect(said(two)).toContain('Numéro au registre : T-007');
+    expect(said(two)).toContain('Mandat de location n° T-009, signé le 10 février 2027 : en cours.');
   });
 
   it('un mandat rétracté rouvre le fil : tout recommence à « Préparer »', async () => {

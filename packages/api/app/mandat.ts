@@ -106,6 +106,15 @@ const DIFFUSION: Record<DiffusionReason, string> = {
   allowed: 'Le bien peut être diffusé.',
   allowed_early_start: 'Le bien peut être diffusé : le mandant a demandé de commencer tout de suite.',
 };
+/** L'état d'un mandat de location, en quelques mots (AU120) ; en cours quand la location est ouverte. */
+const RENT: Partial<Record<DiffusionReason, string>> = {
+  no_mandate: 'pas au registre',
+  cancelled: 'annulé au registre',
+  withdrawn: 'rétracté',
+  expired: 'arrivé à échéance',
+  duration_unknown: 'sans durée connue',
+  withdrawal_period: 'en délai de rétractation',
+};
 /** Les deux gestes sur un mandat signé hors de l'agence (D16). Leurs refus sont à part : `bad_date` n'y parle pas de signature. */
 const STOPS = {
   retractation: {
@@ -197,7 +206,7 @@ export const MANDAT_JS = `
 export const MANDAT_SCRIPT = `'use strict';
 globalThis.AIMMO_MANDAT = function (t) {
   var $ = t.$, el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, show = t.show, ID = t.ID;
-  var NO = ${JSON.stringify(REFUSALS)}, CHECKS = ${JSON.stringify(CHECKS)}, DIFFUSION = ${JSON.stringify(DIFFUSION)}, KINDS = ${JSON.stringify(KINDS)}, FIELDS = ${JSON.stringify(FIELD_NAMES)};
+  var NO = ${JSON.stringify(REFUSALS)}, CHECKS = ${JSON.stringify(CHECKS)}, DIFFUSION = ${JSON.stringify(DIFFUSION)}, RENT = ${JSON.stringify(RENT)}, KINDS = ${JSON.stringify(KINDS)}, FIELDS = ${JSON.stringify(FIELD_NAMES)};
   var STOPS = ${JSON.stringify(STOPS)}, STOP_NO = ${JSON.stringify(STOP_REFUSALS)};
   var LOST = 'Pas de réponse : la note est peut-être rangée. Réessayez, rien ne se notera deux fois.';
   var PLACE_KEYS = ${JSON.stringify(SIGNATURE_PLACES)}, PLACES = ${JSON.stringify(PLACES)}, SOURCE_KEYS = ${JSON.stringify(MANDATE_SOURCES)}, SOURCES = ${JSON.stringify(SOURCES)};
@@ -293,8 +302,11 @@ globalThis.AIMMO_MANDAT = function (t) {
     fil = body().appendChild(el('ol', null, 'parcours'));
     fil.setAttribute('aria-label', 'Étapes du mandat');
     var box = bloc('Mandat en cours');
-    if (!m) box.appendChild(el('p', 'Aucun mandat signé pour ce bien.', 'doux'));
-    else {
+    // AU120 · le mandat de location se dit à part : la lecture le résume comme celui de la vente, par sa propre porte.
+    var r = data.rental || null;
+    if (!m && !r) box.appendChild(el('p', 'Aucun mandat signé pour ce bien.', 'doux'));
+    if (r) box.appendChild(el('p', 'Mandat de location' + (r.number ? ' n° ' + r.number : '') + (r.signedAt ? ', signé le ' + date(r.signedAt) : '') + ' : ' + (RENT[r.reason] || (r.allowed ? 'en cours' : 'fermé')) + '.'));
+    if (m) {
       box.appendChild(el('p', m.number ? 'Numéro au registre : ' + m.number : 'Pas encore de numéro au registre.'));
       if (m.signedAt) box.appendChild(el('p', 'Signé le ' + date(m.signedAt) + '.', 'doux'));
       box.appendChild(el('p', DIFFUSION[m.reason] || (m.allowed ? 'Le bien peut être diffusé.' : 'Le bien ne se diffuse pas.')));
@@ -313,8 +325,8 @@ globalThis.AIMMO_MANDAT = function (t) {
     var waiting = list.some(function (d) { return ID.test(d.id) && /^mandat_/.test(String(d.kind)) && !(d.signature && d.signature.complete); });
     // En cours : tout est fait. Enregistrement commencé : contrôle passé. Préparé : à contrôler.
     passed = {};
-    // Le résumé « mandat » ne parle que de la vente : un mandat de location signé en entier est inscrit lui aussi.
-    var rented = list.some(function (d) { return ID.test(d.id) && d.kind === 'mandat_location' && d.signature && d.signature.complete; });
+    // Un mandat de location en cours est inscrit lui aussi ; rétracté, annulé ou échu, il rend le fil.
+    var rented = r && !/^(cancelled|withdrawn|expired)$/.test(String(r.reason));
     at = !free ? 4 : list.some(function (d) { return ID.test(d.id) && /^mandat_/.test(String(d.kind)) && d.signature && !d.signature.complete; }) ? 2 : waiting ? 1 : rented ? 4 : 0;
     rail(at);
     if (free) drawGenerate(Array.isArray(data.owners) ? data.owners : [], waiting);
