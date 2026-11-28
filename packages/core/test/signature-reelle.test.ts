@@ -29,7 +29,7 @@ const CONSENT = { consentProof: 'accord donné au rendez-vous (test)' };
 const SOURCE = { source: 'referral' };
 const AVIS = { reference: 'Avis écrit 2027-02 du cabinet Exemple-Avocats', validatedOn: new Date('2027-02-01T00:00:00.000Z') };
 
-async function setup(options: { mail?: boolean } = {}) {
+async function setup(options: { mail?: boolean; ids?: string } = {}) {
   const raw = openMemoryDatabase();
   const db: SqlDatabase = fromSyncSqlite(raw);
   await applyMigrations(db, loadMigrations());
@@ -38,7 +38,9 @@ async function setup(options: { mail?: boolean } = {}) {
   const journal = new SqlJournalStore(db);
   const store = new FicheClient(db, { now });
   const acces = new Acces(db, store, new FicheUnique(db, store, { now }), journal, { now });
-  const modeles = new Modeles(db, acces, journal, { now });
+  // AU118 · au besoin, des références de documents qui portent une longue suite de chiffres.
+  let made = 0;
+  const modeles = new Modeles(db, acces, journal, { now, ...(options.ids ? { newId: () => `d${options.ids}-${++made}` } : {}) });
   const controles = new ControlesSignature(db, acces, journal, { now });
   const network = await store.createNetwork('Réseau test');
   const alex = await store.createAgent({ networkId: network.id, firstName: 'Alex', lastName: 'Agent' });
@@ -297,6 +299,28 @@ describeWithSqlite('AU003 · la signature en ligne réelle, distincte de l’ess
     expect(remis).toHaveLength(1);
     expect(remis[0]!.attachments).toHaveLength(2);
     expect(await t.db.first('SELECT status, attempt FROM signature_remises')).toEqual({ status: 'envoyee', attempt: 3 });
+  });
+
+  it('[R10] [R39] AU118 · la remise part aussi quand la référence du document porte une longue suite de chiffres', async () => {
+    // Le constat : une remise sur 150 environ était refusée, et le restait à chaque reprise. Une empreinte porte parfois
+    // 17 chiffres d'affilée ou plus ; le contrôle des chiffres la comparait après l'avoir arrondie [R10]. L'empreinte ne
+    // se choisit pas et le dossier de preuve ne se réécrit pas : la même suite est donnée ici à la référence du document,
+    // que le même message cite et que le même contrôle lit. L'empreinte elle-même est essayée dans `controle-envois.test.ts`.
+    const LONG = '68040567197994687901';
+    const t = await setup({ mail: true, ids: LONG });
+    expect(t.documentId).toContain(LONG);
+    expect((await t.online.recordValidation(t.direction, AVIS)).ok).toBe(true);
+    const s = await t.online.start(t.agent, t.documentId, CONSENT);
+    if (!s.ok) throw new Error(s.code);
+    expect((await t.online.sign(t.agent, s.value.sessionId, { code: t.realCodes()[0]! })).ok).toBe(true);
+    expect(await t.online.finish(t.agent, t.documentId, SOURCE)).toMatchObject({ ok: true, value: { remises: [{ position: 1, sent: true }] } });
+    const first = t.mail.sent.filter((m) => m.body.includes('dossier de preuve vous sont remis'));
+    expect(first).toHaveLength(1);
+    expect(first[0]!.body).toContain(`sous la référence ${t.documentId},`);
+    // Reprise : rien ne repart, la remise est faite.
+    expect(await t.online.finish(t.agent, t.documentId)).toMatchObject({ ok: true, value: { remises: [{ position: 1, sent: true }] } });
+    expect(t.mail.sent.filter((m) => m.body.includes('dossier de preuve vous sont remis'))).toHaveLength(1);
+    expect(await t.db.first('SELECT status FROM signature_remises WHERE document_id = ?', [t.documentId])).toEqual({ status: 'envoyee' });
   });
 
   it('[R01] une remise refusée la nuit reste à envoyer, et part à la demande suivante, une seule fois', async () => {

@@ -123,6 +123,25 @@ describe('S06 · contrôle du texte', () => {
     expect(rules(text, client('email', { figures: [240000, 82.5, 3] }))).toContain('R10');
   });
 
+  it('[R10] AU118 · un identifiant fourni tel quel est reconnu chiffre pour chiffre, quelle que soit sa longueur', () => {
+    // Vingt chiffres d'affilée, comme une empreinte en porte parfois : un nombre les arrondirait à 68040567197994690000.
+    const run = '68040567197994687901';
+    const text = `Votre exemplaire vous est remis sous l’empreinte 6fc${run}d634.`;
+    expect(numbersIn(text)).toEqual(['6', run, '634']);
+    expect(rules(text, client('email', { figures: ['6', run, '634'] }))).toEqual([]);
+    // Dans une référence aussi, où des lettres l'entourent ; les zéros de tête ne comptent pas, d'un côté comme de l'autre.
+    expect(rules(`Votre référence : d${run}-2.`, client('email', { figures: [run, 2] }))).toEqual([]);
+    expect(rules(`Votre référence : d000${run}-2.`, client('email', { figures: [run, 2] }))).toEqual([]);
+    expect(rules(`Votre référence : d${run}-2.`, client('email', { figures: [`000${run}`, 2] }))).toEqual([]);
+    // Un nombre qui n'en diffère que par ses derniers chiffres n'est pas fourni, même si un nombre les confond.
+    expect(Number('68040567197994687902')).toBe(Number(run));
+    expect(rules('Votre référence : d68040567197994687902-2.', client('email', { figures: [run, 2] }))).toEqual(['R10']);
+    expect(rules(`Votre référence : d${run}-2.`, client('email', { figures: [Number(run), 2] }))).toEqual(['R10']);
+    // Sans la donnée, refusé ; un nombre à virgule fourni en texte se lit toujours comme avant.
+    expect(rules(`Votre référence : d${run}-2.`, client('email', { figures: [2] }))).toEqual(['R10']);
+    expect(rules('Une surface de 82,5 m².', client('email', { figures: ['82.50'] }))).toEqual([]);
+  });
+
   it('longueur par canal', () => {
     expect(rules('Merci. '.repeat(100), client('sms'))).toContain('length');
     expect(rules('Merci. '.repeat(100), client('email'))).toEqual([]);
