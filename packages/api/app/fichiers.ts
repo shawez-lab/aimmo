@@ -351,6 +351,12 @@ summary::before { content: "+"; width: 1em; font-weight: 400; }
 summary > .doux { margin-left: var(--e-1); font-weight: 400; font-size: inherit; }
 [aria-invalid="true"] { border-color: var(--danger); box-shadow: inset 0 0 0 1px var(--danger); }
 [aria-invalid="true"] + .retard { margin: var(--e-3) 0 0; font-size: var(--t-s); }
+html { scroll-padding-block: 3rem 9rem; }
+.envoi { position: sticky; z-index: 1; bottom: calc(var(--cible) + var(--e-2) + 1px + env(safe-area-inset-bottom)); margin-top: var(--e-4); padding: var(--e-3) 0; background: var(--papier); border-top: 1px solid var(--trait); }
+.envoi > button { margin: 0; }
+.envoi > p { margin: var(--e-2) 0 0; }
+.envoi > p:empty { display: none; }
+@media (min-width: 64rem) { .envoi { bottom: 0; } }
 details[open] > summary::before { content: "–"; }
 #fiche-corps li > button { display: flex; width: fit-content; }
 details { margin-top: var(--e-2); }

@@ -535,6 +535,21 @@ describe('DS039 · la fiche du bien se remplit par parties, chacune dit où elle
     expect(go[0]!.className).toBe('');
   });
 
+  it('DS059 · « Enregistrer la fiche » et ce qu’il répond sont ensemble dans la barre d’envoi, dernière chose de la fiche', async () => {
+    const t = await run({ ...SUBJECTS, [POST]: ok({ version: 5 }) });
+    await t.open();
+    const go = t.find('Enregistrer la fiche')!;
+    const bar = t.body().all().find((e: FakeElement) => e.children.includes(go))!;
+    expect(bar.className).toBe('envoi');
+    expect(bar.children.map((e: FakeElement) => [e.tagName, e.attributes.role ?? ''])).toEqual([['button', ''], ['p', 'status']]);
+    const zone = t.body().all().find((e: FakeElement) => e.children.includes(bar))!;
+    expect(zone.children.at(-1)).toBe(bar);
+    // Ce que le bouton répond s'écrit dans la barre : un refus se lit là où le pouce vient d'appuyer.
+    type(t, 'fiche-bien-charges', '12,5');
+    await t.save();
+    expect(bar.children[1]!.textContent).toBe('À vérifier : Charges annuelles, un nombre entier sans lettre.');
+  });
+
   it('sans fiche ni photo : cinq parties, toutes à zéro, et rien n’est compté d’avance', async () => {
     const t = await run({ [GET]: no(404, { ok: false, rule: null, code: 'no_sheet' }) });
     await t.open();
@@ -770,19 +785,42 @@ describe('DS039 · dans Chromium', () => {
       '/v1/annonces/b1/fiche': ok({ propertyId: 'b1', version: 4, sheet: SHEET }),
       '/v1/annonces/b1/photos/sujets': ok({ photos: [{ ref: MEDIA[0]!.ref, subject: null }], allowed: ['cuisine'] }),
     };
+    const serve = async (route: any) => {
+      const path = new URL(route.request().url()).pathname;
+      const file = AGENT_APP_FILES[path];
+      if (file !== undefined) return route.fulfill({ status: 200, contentType: path.endsWith('.js') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : path === '/app/' ? 'text/html' : 'application/octet-stream', body: file });
+      const answer = answers[path];
+      if (!answer || route.request().method() !== 'GET') return route.fulfill({ status: 503, contentType: 'application/json', body: '{"ok":false}' });
+      return route.fulfill({ status: 200, contentType: 'application/json', body: await (await answer()).text() });
+    };
+    // DS059 · sur ordinateur, les onglets sont à gauche : la barre d'envoi se colle au bas de la fenêtre, sans rien laisser dessous.
+    const wide = await navigateur!.newPage({ viewport: { width: 1440, height: 900 } });
+    try {
+      wide.setDefaultTimeout(5000);
+      await wide.addInitScript((k: string) => (globalThis as any).localStorage.setItem('aimmo.cle', k), KEY);
+      await wide.route('**/*', serve);
+      await wide.goto('https://aimmo.example.test/app/');
+      await wide.waitForSelector('#accueil:not([hidden])');
+      await wide.evaluate(() => (globalThis as any).dispatchEvent(new (globalThis as any).PopStateEvent('popstate', { state: { s: 'vente', a: ['b1', 'REF-T-1'], t: 'accueil' } })));
+      await wide.click('text=Remplir la fiche du bien');
+      await wide.waitForSelector('#fiche-bien-bedrooms');
+      const desk = await wide.evaluate(() => {
+        const d = (globalThis as any).document;
+        d.getElementById('fiche-bien-bedrooms').scrollIntoView({ block: 'start' });
+        const go = [...d.querySelectorAll('button')].find((b: any) => b.textContent === 'Enregistrer la fiche');
+        return { pin: Math.round(go.parentElement.getBoundingClientRect().bottom), end: Math.round(go.parentElement.parentElement.getBoundingClientRect().bottom), view: (globalThis as any).innerHeight };
+      });
+      expect(desk.end).toBeGreaterThan(desk.view);
+      expect(desk.pin).toBe(desk.view);
+    } finally {
+      await wide.close();
+    }
     for (const width of [360, 390]) {
       const page = await navigateur!.newPage({ viewport: { width, height: 844 } });
       try {
         page.setDefaultTimeout(5000);
         await page.addInitScript((k: string) => (globalThis as any).localStorage.setItem('aimmo.cle', k), KEY);
-        await page.route('**/*', async (route: any) => {
-          const path = new URL(route.request().url()).pathname;
-          const file = AGENT_APP_FILES[path];
-          if (file !== undefined) return route.fulfill({ status: 200, contentType: path.endsWith('.js') ? 'text/javascript' : path.endsWith('.css') ? 'text/css' : path === '/app/' ? 'text/html' : 'application/octet-stream', body: file });
-          const answer = answers[path];
-          if (!answer || route.request().method() !== 'GET') return route.fulfill({ status: 503, contentType: 'application/json', body: '{"ok":false}' });
-          return route.fulfill({ status: 200, contentType: 'application/json', body: await (await answer()).text() });
-        });
+        await page.route('**/*', serve);
         await page.goto('https://aimmo.example.test/app/');
         await page.waitForSelector('#accueil:not([hidden])');
         await page.evaluate(() => (globalThis as any).dispatchEvent(new (globalThis as any).PopStateEvent('popstate', { state: { s: 'vente', a: ['b1', 'REF-T-1'], t: 'accueil' } })));
@@ -793,7 +831,9 @@ describe('DS039 · dans Chromium', () => {
             const d = (globalThis as any).document;
             const seen = (e: any) => e.checkVisibility({ contentVisibilityAuto: true, visibilityProperty: true });
             const go = [...d.querySelectorAll('button')].find((b: any) => b.textContent === 'Enregistrer la fiche');
-            const zone = go.parentElement;
+            const zone = go.parentElement.parentElement;
+            const pin = go.parentElement.getBoundingClientRect();
+            const tabs = d.querySelector('.onglets').getBoundingClientRect();
             return {
               fields: [...zone.querySelectorAll('input, select')].filter(seen).length,
               all: zone.querySelectorAll('input, select').length,
@@ -803,6 +843,12 @@ describe('DS039 · dans Chromium', () => {
               save: seen(go) && go.className === '',
               overflow: d.documentElement.scrollWidth > (globalThis as any).innerWidth,
               focus: d.activeElement && d.activeElement.id,
+              // DS059 · la barre d'envoi : où elle est, et où finit la fiche.
+              pinTop: Math.round(pin.top),
+              pinBottom: Math.round(pin.bottom),
+              tabsTop: Math.round(tabs.top),
+              end: Math.round(zone.getBoundingClientRect().bottom),
+              view: (globalThis as any).innerHeight,
             };
           });
         const first = await measure();
@@ -818,6 +864,31 @@ describe('DS039 · dans Chromium', () => {
         expect(first.screens).toBeLessThanOrEqual(2.2);
         expect(first.save).toBe(true);
         expect(first.overflow).toBe(false);
+        // DS059 · en haut de la fiche, sa fin est sous l'écran : « Enregistrer la fiche » est collé juste au-dessus des onglets.
+        await page.evaluate(() => (globalThis as any).document.getElementById('fiche-bien-bedrooms').scrollIntoView({ block: 'start' }));
+        const top = await measure();
+        expect(top.end).toBeGreaterThan(top.view);
+        expect(top.pinBottom).toBe(top.tabsTop);
+        expect(top.pinTop).toBeGreaterThan(top.view / 2);
+        // Un champ qui prend le curseur ne passe pas sous la barre : il se voit en entier au-dessus d'elle.
+        const under = await page.evaluate(() => {
+          const d = (globalThis as any).document;
+          const f = d.getElementById('fiche-bien-etat');
+          f.focus();
+          const pin = [...d.querySelectorAll('button')].find((b: any) => b.textContent === 'Enregistrer la fiche').parentElement.getBoundingClientRect();
+          const r = f.getBoundingClientRect();
+          return { bottom: Math.round(r.bottom), top: Math.round(r.top), pin: Math.round(pin.top) };
+        });
+        expect(under.bottom).toBeLessThanOrEqual(under.pin);
+        expect(under.top).toBeGreaterThanOrEqual(40);
+        // Au bout de la fiche, la barre est à sa place, sous la dernière partie : plus rien n'est collé.
+        await page.evaluate(() => {
+          const d = (globalThis as any).document;
+          [...d.querySelectorAll('button')].find((b: any) => b.textContent === 'Enregistrer la fiche').scrollIntoView({ block: 'center' });
+        });
+        const end = await measure();
+        expect(end.pinBottom).toBeLessThan(end.tabsTop);
+        expect(end.pinBottom).toBe(end.end);
         // Une partie s'ouvre au geste : ses champs se voient, les autres parties ne bougent pas.
         await page.click('summary:has-text("Surfaces")');
         expect((await measure()).fields).toBe(15);
