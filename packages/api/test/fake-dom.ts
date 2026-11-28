@@ -1,4 +1,5 @@
 import { FICHE_SCRIPT } from '../app/fiche.ts';
+import { PARTENAIRES_SCRIPT } from '../app/partenaires.ts';
 import { RESEAU_SCRIPT } from '../app/reseau.ts';
 import { RESEAU_HTML } from '../app/fichiers.ts';
 /**
@@ -33,10 +34,10 @@ export class FakeElement {
   }
   /**
    * Les scripts servis à part que ce faux document « charge » de lui-même, dès qu'ils sont posés dans la page : la fiche
-   * d'un client (DS010), que presque tous les essais de la fiche traversent. Un essai qui veut voir le script ne pas
-   * arriver vide cette table. Les autres scripts servis à part restent chargés à la main par l'essai qui les étudie.
+   * d'un client (DS010), que presque tous les essais de la fiche traversent, l'écran de la direction et celui des
+   * partenaires (DS068). Un essai qui veut voir le script ne pas arriver vide cette table. Les autres scripts servis à part restent chargés à la main par l'essai qui les étudie.
    */
-  static served: Record<string, string> = { '/app/fiche.js': FICHE_SCRIPT, '/app/reseau.js': RESEAU_SCRIPT };
+  static served: Record<string, string> = { '/app/fiche.js': FICHE_SCRIPT, '/app/reseau.js': RESEAU_SCRIPT, '/app/partenaires.js': PARTENAIRES_SCRIPT };
   appendChild(child: FakeElement): FakeElement {
     this.children.push(child);
     const source = child.tagName === 'script' ? FakeElement.served[child.attributes.src ?? ''] : undefined;

@@ -264,9 +264,10 @@ describe('U11 · écran « Partenaires » de l’application', () => {
       expect(c.auth).toBe(`Bearer ${KEY}`);
       expect(c.url).not.toContain(KEY);
     }
-    // Les routes de l'écran sont toutes des routes de M18 sous R16.
-    const routes = [...JS.matchAll(/'(\/v1\/partenaires[^']*)'/g)].map((m) => m[1]);
+    // Les routes de l'écran sont toutes des routes de M18 sous R16 ; elles vivent dans son script, servi à part (DS068).
+    const routes = [...AGENT_APP_FILES['/app/partenaires.js']!.matchAll(/'(\/v1\/partenaires[^']*)'/g)].map((m) => m[1]);
     expect(routes.length).toBeGreaterThan(2);
+    expect(JS).not.toContain('/v1/partenaires/');
   });
 
   it('[R76] [R74] le texte des rémunérations est montré, puis l’accord noté devient une preuve que l’accord reprend', async () => {

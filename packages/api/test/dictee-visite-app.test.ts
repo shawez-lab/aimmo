@@ -123,8 +123,10 @@ describe('BR103 · la dictée en sortant d’une visite, depuis l’écran de la
     // chargeur qui laisse gagner le dernier geste. La fiche du client, servie à part (DS010), en a rendu plus de 3 000 : la réserve remonte.
     // Les cinq rubriques de la direction (DS008) en reprennent environ 650, pour la phrase de ce qui attend et le choix de la rubrique ;
     // les trois rubriques du responsable de la conformité (DS009) environ 120, pour leur rangée dans la page. Le dessin de l'écran de la
-    // direction, servi à part (DS068), en rend environ 3 000 : la réserve remonte encore.
-    expect(gzipSize(HTML) + gzipSize(AGENT_APP_FILES['/app/app.css']!) + gzipSize(JS)).toBeLessThan(BUDGETS.application.gzipBytes - 5500);
+    // direction, servi à part (DS068), en rend environ 3 000 : la réserve remonte encore. L'écran « Partenaires », servi à part lui
+    // aussi (DS068), en rend environ 4 400 : la réserve remonte de 4 000, et garde la place de ce qui suit dans l'audit (le bien nommé
+    // sous ses titres, la fiche du bien en parties, le refus sous son champ, le bouton d'envoi à portée).
+    expect(gzipSize(HTML) + gzipSize(AGENT_APP_FILES['/app/app.css']!) + gzipSize(JS)).toBeLessThan(BUDGETS.application.gzipBytes - 9500);
     await t.open();
     expect(t.scripts()).toHaveLength(1);
     expect(t.part().textContent).toContain('ce que le visiteur a pensé du bien');
