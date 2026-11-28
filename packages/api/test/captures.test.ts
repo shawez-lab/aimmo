@@ -87,7 +87,9 @@ export const APP_SHOTS: readonly AppShot[] = [
   fromTools('application · fiche Google', 'fiche-google'),
   fromTools('application · mon dossier', 'integration'),
   { name: 'application · le réseau', role: 'direction', page: '/app/reseau', screen: 'reseau' },
-  { name: 'application · attirer', role: 'direction', page: '/app/reseau', screen: 'attirer', clicks: ['#attirer-ouvrir'] },
+  // DS008 · chaque rubrique de la direction a sa capture : aucune ne se cache derrière la première.
+  ...['chiffres', 'agents', 'reglages', 'technique'].map((r): AppShot => ({ name: `application · le réseau · ${r}`, role: 'direction', page: '/app/reseau', screen: 'reseau', clicks: [`#reseau-r-${r}`] })),
+  { name: 'application · attirer', role: 'direction', page: '/app/reseau', screen: 'attirer', clicks: ['#reseau-r-reglages', '#attirer-ouvrir'] },
   { name: 'application · conformité', role: 'conformite', page: '/app/', screen: 'conformite' },
   { name: 'espace partenaire · entrée', role: 'aucun', page: '/partenaire/', screen: 'entree' },
 ];

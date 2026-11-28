@@ -153,16 +153,23 @@ const PROOF_ENTRY_HTML = `<section class="bloc" aria-labelledby="preuve-titre">
 const COPIES_ENTRY_HTML = stateAndBody('copies', 'La copie de la base', 'Se relit avec le rapport du matin. Chaque nuit, une copie chiffrée, gardée à part.');
 const RESTAURATION_ENTRY_HTML = stateAndBody('restauration', 'La preuve de restauration, ce mois-ci', 'Chaque mois, la dernière copie est vraiment restaurée, hors de la production, en moins d’une heure.');
 const PARCOURS_MOIS_ENTRY_HTML = stateAndBody('parcours-mois', 'Le parcours complet, ce mois-ci', 'Chaque mois, un client inventé traverse tout le logiciel, du premier message à l’après-vente.');
-export const RAPPORT_DIRECTION_HTML = reportEntry('direction') + PROOF_ENTRY_HTML + INDICATEURS_ENTRY_HTML + ENGAGEMENTS_ENTRY_HTML + MANQUES_ENTRY_HTML + TEMPS_RESEAU_ENTRY_HTML + DISPONIBILITE_ENTRY_HTML + COPIES_ENTRY_HTML + RESTAURATION_ENTRY_HTML + PARCOURS_MOIS_ENTRY_HTML;
+/**
+ * DS008 · le rapport de la direction, rangé par rubrique de l'écran du réseau : ce qui attend un geste aujourd'hui,
+ * ce qui se compte, ce qui prouve que la machine tient. Les trois se relisent ensemble, d'une seule lecture.
+ */
+export const RAPPORT_DIRECTION_HTML = reportEntry('direction') + MANQUES_ENTRY_HTML;
+export const RAPPORT_CHIFFRES_HTML = PROOF_ENTRY_HTML + INDICATEURS_ENTRY_HTML + ENGAGEMENTS_ENTRY_HTML + TEMPS_RESEAU_ENTRY_HTML;
+export const RAPPORT_TECHNIQUE_HTML = DISPONIBILITE_ENTRY_HTML + COPIES_ENTRY_HTML + RESTAURATION_ENTRY_HTML + PARCOURS_MOIS_ENTRY_HTML;
 
-export const REGLAGES_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-grille">
+export const GRILLE_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-grille">
 <h3 id="titre-grille">Grille des commissions et alertes</h3>
 <p class="doux">Une nouvelle version s’ajoute : les ventes passées gardent la leur.</p>
 <button id="grille-voir" type="button" class="secondaire">Voir et régler</button>
 <p id="grille-etat" class="etat" role="status"></p>
 <div id="grille-corps"></div>
 </section>
-<section class="bloc" aria-labelledby="titre-factures">
+`;
+export const FACTURES_ENTRY_HTML = `<section class="bloc" aria-labelledby="titre-factures">
 <h3 id="titre-factures">Factures émises</h3>
 <p class="doux">Une facture ne change plus : un avoir la corrige.</p>
 <button id="factures-voir" type="button" class="secondaire">Voir les factures</button>
