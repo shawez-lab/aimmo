@@ -121,12 +121,13 @@ export function isReviewLink(url: string): boolean {
 }
 
 /**
- * Le texte d'une demande d'avis, écrit par le code : vouvoiement avec le prénom, aucune parenthèse [R08], aucun chiffre
- * hors de la référence du bien et du lien [R10], aucune promesse ni contrepartie, un avis bienvenu quel qu'il soit [R64].
+ * Le texte d'une demande d'avis, écrit par le code : vouvoiement avec le prénom, aucune parenthèse ni formule
+ * administrative [R08], aucun chiffre hors du lien [R10], aucune promesse ni contrepartie, un avis bienvenu quel qu'il
+ * soit [R64]. Le bien se dit par sa ville : sa référence interne n'apprend rien au client (DS053).
  */
-export function reviewText(firstName: string | null, side: 'vendeur' | 'acquereur', property: { city: string | null; reference: string }, url: string, satisfactionLink: string | null = null): string {
+export function reviewText(firstName: string | null, side: 'vendeur' | 'acquereur', property: { city: string | null }, url: string, satisfactionLink: string | null = null): string {
   const hello = firstName ? `Bonjour ${firstName},` : 'Bonjour,';
-  const where = `${property.city ? ` à ${property.city}` : ''}, référence ${property.reference}`;
+  const where = property.city ? ` à ${property.city}` : '';
   const thanks = side === 'vendeur' ? `merci encore de nous avoir confié la vente de votre bien${where}.` : `merci encore de votre confiance pour l'achat de votre bien${where}.`;
   return `${hello} ${thanks} Si vous le voulez bien, vous pouvez donner votre avis sur votre agent immobilier, sur sa fiche Google, que l'expérience vous ait plu ou non : ${url} Votre avis, quel qu'il soit, aide d'autres personnes à choisir.${satisfactionLink ? ` Pour dire à votre agent immobilier seulement ce que vous en avez pensé, sans rien publier : ${satisfactionLink}` : ''} Merci !`;
 }
@@ -284,8 +285,8 @@ export class DemandesAvis {
           fallbackTexts: [reviewText(firstName, c.side, sale, url, satisfactionLink)],
           // Le lien de satisfaction donne la note de ce client : remis au canal, jamais rangé en clair [HX61, RC16].
           ...(satisfactionLink ? { secrets: [{ kind: 'lien' as const, value: satisfactionLink }] } : {}),
-          // Les chiffres de la référence du bien et ceux du lien, lus dans la base [R10].
-          figures: [...(sale.reference.match(/\d+/g) ?? []).map(Number), url],
+          // Les seuls chiffres du texte sont ceux du lien, lu dans la base [R10].
+          figures: [url],
           // Le nom d'un client de l'autre côté n'apparaît jamais [R19].
           sellerNames: await this.forbiddenNames(others, firstName),
         });

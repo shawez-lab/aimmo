@@ -13,11 +13,12 @@ const BASE = 'https://aimmo.example.test/satisfaction/';
 const paris = (day: string, hour: number, minute = 0) => new Date(`${day}T${String(hour - 1).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00.000Z`);
 
 it('[R64] [R10] le lien de satisfaction s’ajoute à la demande d’avis, sans rien promettre, et le texte passe le contrôle', () => {
-  const text = reviewText('Léa', 'vendeur', { city: 'Dijon', reference: 'REF-T-1' }, LINK, `${BASE}bcdefghijklmnopqrstuvwxyzabcdefg`);
+  const text = reviewText('Léa', 'vendeur', { city: 'Dijon' }, LINK, `${BASE}bcdefghijklmnopqrstuvwxyzabcdefg`);
   expect(text).toContain(`sans rien publier : ${BASE}bcdefghijklmnopqrstuvwxyzabcdefg Merci !`);
-  expect(checkText(text, { audience: 'client', channel: 'email', figures: [1, LINK] })).toEqual([]);
+  // Les seuls chiffres du texte sont ceux de ses liens : plus de référence interne (DS053).
+  expect(checkText(text, { audience: 'client', channel: 'email', figures: [LINK] })).toEqual([]);
   // Sans adresse réglée, le texte de F02 ne change pas.
-  expect(reviewText('Léa', 'vendeur', { city: 'Dijon', reference: 'REF-T-1' }, LINK)).not.toContain('publier');
+  expect(reviewText('Léa', 'vendeur', { city: 'Dijon' }, LINK)).not.toContain('publier');
 });
 
 describeWithSqlite('F05 · satisfaction : note et commentaire rangés pour M13', () => {

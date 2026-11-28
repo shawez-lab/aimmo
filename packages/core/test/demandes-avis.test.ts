@@ -22,20 +22,22 @@ const LINK = 'https://g.page/r/CexempleAgent42/review';
 
 it('[R64] [R08] [R10] le texte de la demande est écrit par le code : sans promesse, sans parenthèse, un avis bienvenu quel qu’il soit', () => {
   for (const side of ['vendeur', 'acquereur'] as const) {
-    const text = reviewText('Léa', side, { city: 'Dijon', reference: 'REF-T-1' }, LINK);
+    const text = reviewText('Léa', side, { city: 'Dijon' }, LINK);
     expect(text.startsWith('Bonjour Léa,')).toBe(true);
     expect(text).toContain(LINK);
     expect(text).toContain('que l’expérience vous ait plu ou non'.replace('’', "'"));
-    expect(text).toContain('référence REF-T-1');
+    // DS053 · le bien se dit par sa ville ; aucune référence interne, aucune formule de dossier [R08].
+    expect(text).not.toMatch(/référence|réf\.|REF-/i);
     // Aucune contrepartie ni promesse [R64], aucun mot interdit [R07], rien sur l'IA [R06].
     expect(mentionsReward(text.replace(LINK, ''))).toBe(false);
     expect(text).not.toMatch(/[()]|mandataire|gratuit|\bIA\b|intelligence|gagne|offert|tirage|concours|réduction/i);
-    // Seuls chiffres : ceux de la référence et du lien [R10].
-    expect(text.replace(LINK, '').replace('REF-T-1', '')).not.toMatch(/\d/);
+    // Seuls chiffres : ceux du lien [R10].
+    expect(text.replace(LINK, '')).not.toMatch(/\d/);
   }
-  expect(reviewText('Léa', 'vendeur', { city: 'Dijon', reference: 'A' }, LINK)).toContain('la vente de votre bien à Dijon');
-  expect(reviewText('Léa', 'acquereur', { city: 'Dijon', reference: 'A' }, LINK)).toContain("l'achat de votre bien à Dijon");
-  expect(reviewText(null, 'vendeur', { city: null, reference: 'A' }, LINK).startsWith('Bonjour, merci encore de nous avoir confié la vente de votre bien, référence A.')).toBe(true);
+  expect(reviewText('Léa', 'vendeur', { city: 'Dijon' }, LINK).startsWith('Bonjour Léa, merci encore de nous avoir confié la vente de votre bien à Dijon. Si vous le voulez bien')).toBe(true);
+  expect(reviewText('Léa', 'acquereur', { city: 'Dijon' }, LINK).startsWith("Bonjour Léa, merci encore de votre confiance pour l'achat de votre bien à Dijon. Si vous le voulez bien")).toBe(true);
+  // Sans ville connue, la phrase tient seule.
+  expect(reviewText(null, 'vendeur', { city: null }, LINK).startsWith('Bonjour, merci encore de nous avoir confié la vente de votre bien. Si vous le voulez bien')).toBe(true);
 });
 
 it('seul un lien https de fiche Google est accepté', () => {
@@ -260,7 +262,9 @@ describeWithSqlite('F02 · demande d’avis le lendemain de l’acte, à tous, e
       for (let i = 0; i < 5; i++) {
         const fileId = `${day}-${i}`;
         if (i === 0) firstFile.push(fileId);
-        t.close(fileId, day, [{ personId: await t.client(`Ven${i}`, 'Un'), side: 'vendeur' }, { personId: await t.client(`Ach${i}`, 'Deux'), side: 'acquereur' }]);
+        // Des prénoms sans chiffre : un chiffre d'un message vient de la base [R10], et le texte ne porte plus la référence du
+        // bien (DS053), dont les chiffres couvraient par hasard ceux de ces prénoms.
+        t.close(fileId, day, [{ personId: await t.client(`Ven${'abcde'[i]}`, 'Un'), side: 'vendeur' }, { personId: await t.client(`Ach${'abcde'[i]}`, 'Deux'), side: 'acquereur' }]);
       }
     }
     t.dossiers.sales.reverse();

@@ -410,6 +410,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : demande d'avis — `packages/core/src/apres-vente/demandes-avis.ts`
 - Preuve : « …la vente de votre bien à Dijon, référence B-CCD5185A. »
 - Solution : « votre appartement de la rue … ». La référence n'apprend rien au client.
+- Suite : corrigé le 2026-11-28 pour la demande d'avis : « …la vente de votre bien à Dijon. », sans la référence ; les seuls chiffres du message sont ceux du lien. « Votre appartement de la rue … » demanderait le type du bien et sa rue dans la vente close lue ici : non fait. Les mêmes mots « , référence … » restent dans cinq autres textes, hors de l'endroit nommé par ce point : le mot de remerciement préparé (`remerciements.ts`, un brouillon rangé qui ne se réécrit pas), les relances d'après-vente, le carnet du bien, les relances et l'alerte du dossier de vente.
 
 #### DS054 · Des libellés de bouton qui ne disent rien seuls
 - Gravité : mineur · Catégorie : microcopie, accessibilité · Effort : S
