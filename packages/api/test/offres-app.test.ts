@@ -394,3 +394,143 @@ describe('O10 · écran des offres', () => {
     expect(u.state()).toBe('Pas de réseau : rien n’est rangé.');
   });
 });
+
+describe('DS058 · DS059 · l’offre reçue : le refus sous le champ fautif, le bouton d’envoi à portée', () => {
+  const ref = 'offres/0b6f1d2e-1111-4a2b-8c3d-000000000002.pdf';
+  const FORM: Record<string, Answer> = {
+    [SUIVI]: ok(board([])),
+    'GET /v1/offres/biens/b1/contacts': ok({ contacts: [{ personId: 'p1', firstName: 'Acheteur', lastName: 'Exemple' }], more: false }),
+    'POST /v1/offres/biens/b1/fichiers/signee': ok({ ref }),
+  };
+  type T = Awaited<ReturnType<typeof run>>;
+  const form = async (answers: Record<string, Answer> = {}) => {
+    const t = await run({ ...FORM, ...answers });
+    await t.open();
+    await t.click(t.byText('Enregistrer une offre reçue'));
+    return t;
+  };
+  const type = (t: T, id: string, value: string) => {
+    const f = t.input(id);
+    f.value = value;
+    f.listeners.input!({});
+  };
+  const send = (t: T) => t.click(t.byText('Inscrire au registre'));
+  /** Les champs marqués, et pour chacun ce qui est écrit juste après lui. */
+  const flagged = (t: T) =>
+    t
+      .body()
+      .all()
+      .filter((e) => e.attributes['aria-invalid'] === 'true')
+      .map((f) => {
+        const box = t.body().all().find((d) => d.children.includes(f))!;
+        const next = box.children[box.children.indexOf(f) + 1]!;
+        return { id: f.attributes.id, describedBy: f.attributes['aria-describedby'], noteId: next.attributes.id, note: next.textContent, cls: next.className };
+      });
+  const bar = (t: T) => t.body().all().find((e) => e.children.includes(t.byText('Inscrire au registre')!))!;
+  const NUMBERS = 'Montant, apport et prêt s’écrivent en euros, en chiffres seulement (0 s’il n’y en a pas).';
+
+  it('[R10] chaque refus marque son champ, le dit juste dessous et y met le curseur ; la saisie dans ce champ l’efface ; un seul à la fois', async () => {
+    const t = await form({ 'POST /v1/offres/biens/b1': no(400, 'invalid', { field: 'validUntil' }) });
+    expect(flagged(t)).toEqual([]);
+    await send(t);
+    expect(flagged(t)).toEqual([{ id: 'of-acquereur', describedBy: 'of-acquereur-erreur', noteId: 'of-acquereur-erreur', note: 'Choisissez l’acquéreur.', cls: 'retard' }]);
+    expect(FakeElement.active).toBe(t.input('of-acquereur'));
+    expect(t.state()).toBe('Choisissez l’acquéreur.');
+    // Choisir l'acquéreur lève sa marque ; taper ailleurs ne l'aurait pas levée.
+    type(t, 'of-montant', 'deux cent mille');
+    expect(flagged(t).map((x) => x.id)).toEqual(['of-acquereur']);
+    const who = t.input('of-acquereur');
+    who.value = 'p1';
+    who.listeners.change!({});
+    expect(flagged(t)).toEqual([]);
+    expect(who.attributes['aria-describedby']).toBeUndefined();
+    // Les trois montants : le premier mal écrit est marqué, avec la phrase qui vaut pour les trois.
+    type(t, 'of-apport', '70000');
+    type(t, 'of-pret', '150000');
+    await send(t);
+    expect(flagged(t)).toMatchObject([{ id: 'of-montant', note: NUMBERS }]);
+    type(t, 'of-montant', '205 000');
+    type(t, 'of-apport', 'soixante-dix');
+    await send(t);
+    expect(flagged(t)).toMatchObject([{ id: 'of-apport', note: NUMBERS }]);
+    type(t, 'of-apport', '70000');
+    await send(t);
+    expect(flagged(t)).toMatchObject([{ id: 'of-recue', note: 'Vérifiez le moment où l’offre a été reçue.' }]);
+    type(t, 'of-recue', '2027-03-01T09:00');
+    type(t, 'of-validite', '2027-03-10');
+    (t.input('of-c-pret') as unknown as { checked: boolean }).checked = true;
+    type(t, 'of-c-taux', 'trois');
+    await send(t);
+    expect(flagged(t)).toMatchObject([{ id: 'of-c-taux', note: 'Taux maximal du prêt : en %, de 0,01 à 20, deux décimales au plus, ou laissé vide.' }]);
+    type(t, 'of-c-taux', '3,85');
+    await send(t);
+    expect(flagged(t)).toMatchObject([{ id: 'of-c-montant', note: 'Vérifiez les conditions : le prêt demande son montant et sa durée.' }]);
+    type(t, 'of-c-montant', '150000');
+    await send(t);
+    expect(flagged(t)).toMatchObject([{ id: 'of-c-duree', note: 'Vérifiez les conditions : le prêt demande son montant et sa durée.' }]);
+    type(t, 'of-c-duree', '240');
+    await send(t);
+    expect(flagged(t)).toMatchObject([{ id: 'of-signee', note: 'Joignez l’offre signée.' }]);
+    expect(t.posts().filter((c) => c.url === '/v1/offres/biens/b1')).toEqual([]);
+    // Le refus du serveur va au champ qu'il nomme, avec ses mots ; un seul champ reste marqué.
+    t.input('of-signee').files = [pdf()];
+    t.input('of-signee').listeners.change!({});
+    await send(t);
+    expect(flagged(t)).toEqual([{ id: 'of-validite', describedBy: 'of-validite-erreur', noteId: 'of-validite-erreur', note: 'Dernier jour de validité : à partir d’aujourd’hui et du jour de réception, deux ans au plus.', cls: 'retard' }]);
+    expect(FakeElement.active).toBe(t.input('of-validite'));
+    expect(t.body().all().filter((e) => /-erreur$/.test(e.attributes.id ?? ''))).toHaveLength(1);
+    // Ce qui est saisi reste.
+    expect(t.input('of-montant').value).toBe('205 000');
+  });
+
+  it('un refus qui ne nomme aucun champ, ou une coupure, ne marque rien : il se dit, c’est tout', async () => {
+    const same = await form({ 'POST /v1/offres/biens/b1': no(409, 'buyer_is_seller', { field: 'buyerPersonId' }) });
+    const fill = (t: T) => {
+      t.input('of-acquereur').value = 'p1';
+      type(t, 'of-montant', '205000');
+      type(t, 'of-apport', '0');
+      type(t, 'of-pret', '0');
+      type(t, 'of-recue', '2027-03-01T09:00');
+      type(t, 'of-validite', '2027-03-10');
+      t.input('of-signee').files = [pdf()];
+    };
+    fill(same);
+    await send(same);
+    expect(same.state()).not.toBe('');
+    expect(same.state()).not.toBe('Choisissez l’acquéreur.');
+    expect(flagged(same)).toEqual([]);
+    const cut = await form();
+    fill(cut);
+    await send(cut);
+    expect(cut.state()).toBe('Pas de réseau : rien n’est rangé.');
+    expect(flagged(cut)).toEqual([]);
+    // Sans champ à marquer, ce que l'écran répond se lit aussi près du bouton.
+    expect(bar(cut).children[1]!.textContent).toBe('Pas de réseau : rien n’est rangé.');
+    expect(bar(same).children[1]!.textContent).toBe(same.state());
+  });
+
+  it('DS059 · « Inscrire au registre » est dans la barre d’envoi, avec une copie de ce que l’écran répond ; l’annonce reste celle du titre', async () => {
+    const t = await form();
+    expect(bar(t).className).toBe('envoi');
+    expect(bar(t).children.map((e) => [e.tagName, e.attributes['aria-hidden'] ?? '', e.attributes.role ?? ''])).toEqual([['button', '', ''], ['p', 'true', '']]);
+    const copy = bar(t).children[1]!;
+    // « Revenir aux offres » reste sous la barre, filaire : un seul geste est collé, un seul bouton est plein (DS022).
+    const box = t.body().all().find((e) => e.children.includes(bar(t)))!;
+    expect(box.children.at(-1)!.textContent).toBe('Revenir aux offres');
+    expect(box.children.at(-1)!.className).toBe('secondaire');
+    expect(t.byText('Inscrire au registre')!.className).toBe('');
+    // Le chargement des contacts s'est dit près du bouton, puis s'est tu.
+    expect(copy.textContent).toBe('');
+    // Un refus qui a son champ se lit sous ce champ, et sous le titre : la copie près du bouton ne le répète pas.
+    await send(t);
+    expect(t.state()).toBe('Choisissez l’acquéreur.');
+    expect(copy.textContent).toBe('');
+    expect(flagged(t).map((x) => x.id)).toEqual(['of-acquereur']);
+    // Quitter le formulaire : tant qu'il est à l'écran, la copie suit (« Chargement… ») ; une fois l'écran redessiné, elle
+    // n'est plus tenue, et l'écran continue de répondre sous son titre.
+    await t.click(t.byText('Revenir aux offres'));
+    expect(t.body().textContent).toContain('Aucune offre reçue');
+    expect(copy.textContent).toBe('Chargement…');
+    expect(t.state()).toBe('');
+  });
+});

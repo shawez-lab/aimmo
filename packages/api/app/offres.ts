@@ -135,8 +135,12 @@ globalThis.AIMMO_OFFRES = function (t) {
   var CONDITIONS = ${JSON.stringify(CONDITIONS)}, EVENTS = ${JSON.stringify(EVENTS)}, PROPOSAL_EVENTS = ${JSON.stringify(PROPOSAL_EVENTS)};
   var TYPES = ${JSON.stringify(OFFER_DEPOSIT_TYPES)}, MAX = ${OFFER_DEPOSIT_MAX_BYTES};
   var cur = null, seq = 0, busy = null;
-  function state(x) { $('offres-etat').textContent = x; }
+  // DS059 · ce que l'écran répond s'écrit sous le titre, et aussi près du bouton d'envoi quand un formulaire y a posé sa
+  // ligne : celle-ci n'est qu'une copie pour l'œil, l'annonce reste celle du titre.
+  var near = null;
+  function state(x) { $('offres-etat').textContent = x; if (near) near.textContent = x; }
   function body() { return $('offres-corps'); }
+  function empty() { near = null; clear(body()); }
   function money(n) { return String(n).replace(/\\B(?=(\\d{3})+(?!\\d))/g, ' ') + ' €'; }
   /** Un taux écrit « 3,85 » ou « 3.85 % », en centièmes de point ; vide : null ; illisible ou hors de 0,01 à 20 % : NaN. */
   function rate(f) {
@@ -162,7 +166,7 @@ globalThis.AIMMO_OFFRES = function (t) {
     }
     return (b && NO[b.code]) || (res.status === 403 || res.status === 404 ? 'Ce bien n’est pas dans vos droits.' : fallback);
   }
-  function wipe() { seq += 1; busy = null; clear(body()); state(''); $('offres-titre').textContent = 'Offres'; cur = null; }
+  function wipe() { seq += 1; busy = null; empty(); state(''); $('offres-titre').textContent = 'Offres'; cur = null; }
   function open(id, reference) {
     if (!t.key() || !ID.test(id)) return Promise.resolve(false);
     t.bump();
@@ -179,9 +183,9 @@ globalThis.AIMMO_OFFRES = function (t) {
     return send(base() + '/suivi', 'GET').then(function (res) {
       if (res.gone || mine !== seq) return false;
       // Le geste a réussi, seule la relecture manque : on le dit, sans laisser un formulaire périmé à l'écran.
-      if (!res.ok && message) { clear(body()); state(message + ' Rouvrez cet écran pour le relire.'); return true; }
+      if (!res.ok && message) { empty(); state(message + ' Rouvrez cet écran pour le relire.'); return true; }
       if (!res.ok) { state(res.offline ? 'Pas de réseau. Réessayez dans un moment.' : why(res, 'Indisponible pour le moment. Réessayez plus tard.')); return false; }
-      clear(body());
+      empty();
       state(message || '');
       draw(res.body.data);
       return true;
@@ -274,7 +278,7 @@ globalThis.AIMMO_OFFRES = function (t) {
     if (n > 1) seal.appendChild(el('p', 'Dans l’ordre d’arrivée, sans classement.', 'doux'));
     body().appendChild(seal);
     (Array.isArray(data.offers) ? data.offers : []).forEach(function (o) { if (ID.test(o.id)) body().appendChild(card(o)); });
-    body().appendChild(button('Enregistrer une offre reçue', act(function () { seq += 1; clear(body()); state(''); return form(); })));
+    body().appendChild(button('Enregistrer une offre reçue', act(function () { seq += 1; empty(); state(''); return form(); })));
   }
   function buyerName(b) { return b ? [b.firstName, b.lastName].filter(Boolean).join(' ') : ''; }
   function condition(c) {
@@ -420,7 +424,7 @@ globalThis.AIMMO_OFFRES = function (t) {
     var down = field(box, 'of-apport', 'Apport déclaré, en euros');
     var loan = field(box, 'of-pret', 'Prêt déclaré, en euros');
     [price, down, loan].forEach(function (f) { f.setAttribute('inputmode', 'numeric'); });
-    var received = moment(box, 'of-recue', 'Reçue le');
+    var received = moment(box, 'of-recue', 'Reçue le'), receivedF = box.children[box.children.length - 1];
     var last = field(box, 'of-validite', 'Dernier jour de validité');
     last.setAttribute('type', 'date');
     box.appendChild(el('p', 'Conditions suspensives', 'doux'));
@@ -434,15 +438,50 @@ globalThis.AIMMO_OFFRES = function (t) {
     var condRate = field(box, 'of-c-taux', 'Taux nominal maximal hors assurance, en % (si l’offre le dit)');
     condRate.setAttribute('inputmode', 'decimal');
     var condType = select(box, 'of-c-type', 'Type de prêt (si l’offre le dit)', [['', 'Non précisé']].concat(Object.keys(LOAN_TYPES).map(function (k) { return [k, LOAN_TYPES[k]]; })));
-    var signed = piece(box, 'of-signee', 'Offre signée', 'signee');
+    var signed = piece(box, 'of-signee', 'Offre signée', 'signee'), signedF = box.children[box.children.length - 1];
+    // DS058 · le refus se dit sous le champ fautif : il est marqué, décrit et reçoit le curseur ; la saisie dans ce
+    // champ l'efface. Un seul champ marqué à la fois. Le refus reste dit sous le titre, et près du bouton.
+    var flagged = null;
+    function unflag() {
+      if (!flagged) return;
+      flagged.f.removeAttribute('aria-invalid');
+      flagged.f.removeAttribute('aria-describedby');
+      box.removeChild(flagged.note);
+      flagged = null;
+    }
+    function flag(f, text) {
+      unflag();
+      state(text);
+      // Le refus se lit sous son champ, qui reçoit le curseur : la copie près du bouton ne le répète pas.
+      if (near) near.textContent = '';
+      var note = el('p', text, 'retard');
+      note.setAttribute('id', f.getAttribute('id') + '-erreur');
+      f.setAttribute('aria-invalid', 'true');
+      f.setAttribute('aria-describedby', f.getAttribute('id') + '-erreur');
+      box.insertBefore(note, box.children[Array.prototype.indexOf.call(box.children, f) + 1] || null);
+      flagged = { f: f, note: note };
+      f.focus();
+      return false;
+    }
+    // Les champs sous le nom que le serveur leur donne : un refus va au champ.
+    var named = { buyerPersonId: who, amountEur: price, downPaymentEur: down, loanEur: loan, receivedAt: receivedF, validUntil: last, signedRef: signedF, conditions: condAmount };
+    [who, price, down, loan, receivedF, last, signedF, condAmount, condMonths, condRate].forEach(function (f) {
+      function touched() { if (flagged && flagged.f === f) unflag(); }
+      f.addEventListener('input', touched);
+      f.addEventListener('change', touched);
+    });
     // La même clé tant que l'écran reste ouvert : un envoi rejoué après une coupure ne crée pas une seconde ligne [R56].
     var requestKey = crypto.randomUUID();
-    box.appendChild(button('Inscrire au registre', act(function () {
-      if (!who.value) { state(FIELDS.buyerPersonId); return false; }
+    // DS059 · le bouton d'envoi et ce qu'il répond restent à portée pendant la saisie, collés au-dessus des onglets.
+    var bar = el('div', null, 'envoi');
+    bar.appendChild(button('Inscrire au registre', act(function () {
+      unflag();
+      if (!who.value) return flag(who, FIELDS.buyerPersonId);
       var numbers = [amount(price), amount(down), amount(loan)];
-      if (numbers.some(Number.isNaN)) { state('Montant, apport et prêt s’écrivent en euros, en chiffres seulement (0 s’il n’y en a pas).'); return false; }
+      var wrong = [price, down, loan].filter(function (f, i) { return Number.isNaN(numbers[i]); })[0];
+      if (wrong) return flag(wrong, 'Montant, apport et prêt s’écrivent en euros, en chiffres seulement (0 s’il n’y en a pas).');
       var iso = received();
-      if (!iso) { state(FIELDS.receivedAt); return false; }
+      if (!iso) return flag(receivedF, FIELDS.receivedAt);
       var conditions = [];
       Object.keys(marks).forEach(function (k) {
         if (!marks[k].checked) return;
@@ -453,23 +492,35 @@ globalThis.AIMMO_OFFRES = function (t) {
         if (condType.value) p.loanType = condType.value;
         conditions.push(p);
       });
-      if (marks.pret.checked && Number.isNaN(rate(condRate))) { state(FIELDS['conditions.taux']); return false; }
-      if (marks.pret.checked && (Number.isNaN(amount(condAmount)) || Number.isNaN(amount(condMonths)))) { state(FIELDS.conditions); return false; }
+      if (marks.pret.checked && Number.isNaN(rate(condRate))) return flag(condRate, FIELDS['conditions.taux']);
+      if (marks.pret.checked && (Number.isNaN(amount(condAmount)) || Number.isNaN(amount(condMonths)))) return flag(Number.isNaN(amount(condAmount)) ? condAmount : condMonths, FIELDS.conditions);
       return signed().then(function (ref) {
         if (ref === false) return false;
-        if (ref === null) { state(FIELDS.signedRef); return false; }
+        if (ref === null) return flag(signedF, FIELDS.signedRef);
         var mine = ++seq;
         return send(base(), 'POST', { buyerPersonId: who.value, amountEur: numbers[0], downPaymentEur: numbers[1], loanEur: numbers[2], conditions: conditions, validUntil: last.value, receivedAt: iso, signedRef: ref, requestKey: requestKey }).then(function (res) {
           if (res.gone || mine !== seq) return false;
-          if (!res.ok) { state(why(res, 'L’offre n’est pas inscrite : réessayez.')); return false; }
+          if (!res.ok) {
+            var said = why(res, 'L’offre n’est pas inscrite : réessayez.');
+            var head = res.body && res.body.field ? String(res.body.field).split('.')[0] : '';
+            if (named[head] && said === FIELDS[head]) return flag(named[head], said);
+            state(said);
+            return false;
+          }
           // Une durée inhabituelle se dit tout de suite : l'offre est gardée, l'agent vérifie la date (AU080).
           var long = (res.body && res.body.data && Array.isArray(res.body.data.lines) ? res.body.data.lines : []).filter(function (l) { return l && l.check === 'validite_longue'; })[0];
           return load('Offre inscrite au registre, avec son contrôle.' + (long ? ' ' + lineText(long) : ''));
         });
       });
     })));
-    box.appendChild(button('Revenir aux offres', act(function () { return load(); })));
+    var copy = bar.appendChild(el('p', null, 'doux'));
+    copy.setAttribute('aria-hidden', 'true');
+    box.appendChild(bar);
+    // DS022 · revenir n'est pas le pas à faire : filaire, sous la barre.
+    var back = box.appendChild(button('Revenir aux offres', act(function () { return load(); })));
+    back.className = 'secondaire';
     body().appendChild(box);
+    near = copy;
     // L'acquéreur se choisit parmi les contacts : aucun identifiant à saisir [R16].
     var mine = ++seq;
     state('Chargement de vos contacts…');
