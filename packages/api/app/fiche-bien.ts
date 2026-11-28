@@ -210,7 +210,7 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
     // DS058 · chaque champ sous le nom que le serveur lui donne : un refus va au champ, pas seulement à la partie.
     var named = {
       'characteristics.heating': heating, 'characteristics.elevator': elevator, 'characteristics.dwelling': dwelling, 'characteristics.condition': condition,
-      'characteristics.carrezM2': surfaces.carrez, 'characteristics.usableM2': surfaces.utile, 'characteristics.surfaceSources': surfaceSrc.habitable,
+      'characteristics.carrezM2': surfaces.carrez, 'characteristics.usableM2': surfaces.utile,
       'energy.costReferenceYears': energy.costReferenceYear,
       'coownership.isCoownership': isCo, 'coownership.lots': lots, 'coownership.annualChargesEur': charges, 'coownership.proceedings': proceedings, 'risks.inRiskZone': risk,
     };
@@ -417,7 +417,13 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
             : code === 'busy' ? 'Un enregistrement est déjà en cours : réessayez dans un instant.'
             : 'La fiche n’a pas pu être rangée.';
           // Le champ que le serveur nomme reçoit le refus ; s'il n'en nomme pas, ou si c'est un groupe de cases, la partie s'ouvre.
-          if (code === 'invalid') { if (named[res.body.field]) reveal(named[res.body.field], said.textContent); else unfold(res.body.field); }
+          if (code === 'invalid') {
+            var at = named[res.body.field];
+            // Une source dite pour une surface vide : c'est cette surface qu'il faut remplir. Sinon, le refus vaut pour
+            // le groupe des sources, et leur partie s'ouvre sans rien marquer.
+            if (res.body.field === 'characteristics.surfaceSources') at = ['carrez', 'utile'].map(function (k) { return surfaceSrc[k].value && !surfaces[k].value.trim() ? surfaces[k] : null; }).filter(Boolean)[0];
+            if (at) reveal(at, said.textContent); else unfold(res.body.field === 'characteristics.surfaceSources' ? 'surfaceSources' : res.body.field);
+          }
           return false;
         }
         // Seule la saisie envoyée s'efface : une saisie plus récente, d'un autre onglet, reste gardée.

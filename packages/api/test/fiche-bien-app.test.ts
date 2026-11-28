@@ -731,6 +731,36 @@ describe('DS058 · dans la fiche du bien, le refus se dit sous le champ fautif',
     expect(flagged(group)).toEqual([]);
     expect(group.body().textContent).toContain('À vérifier : Équipements du bien.');
 
+    // Une source dite pour une surface vide : le refus va à la surface à remplir, jamais à la source de la surface
+    // habitable, qui n'y est pour rien ; la remplir efface la marque.
+    const SOURCES = no(400, { ok: false, rule: null, code: 'invalid', field: 'characteristics.surfaceSources' });
+    const opened = (t: T) => t.body().all().filter((e: FakeElement) => e.tagName === 'details' && e.open).map((d: FakeElement) => d.children[0]!.textContent.split(' · ')[0]);
+    const carrez = await run({ ...SUBJECTS, [POST]: SOURCES });
+    await carrez.open();
+    carrez.f('fiche-bien-source-carrez').value = 'mesurage';
+    carrez.f('fiche-bien-source-carrez').listeners.change?.({});
+    type(carrez, 'fiche-bien-bedrooms', '5');
+    await carrez.save();
+    expect(flagged(carrez)).toMatchObject([{ id: 'fiche-bien-carrez', note: 'À vérifier : Source d’une surface : elle se dit pour une surface remplie.' }]);
+    expect(FakeElement.active).toBe(carrez.f('fiche-bien-carrez'));
+    expect(opened(carrez)).toContain('Surfaces');
+    type(carrez, 'fiche-bien-carrez', '61,35');
+    expect(flagged(carrez)).toEqual([]);
+    const usable = await run({ ...SUBJECTS, [POST]: SOURCES });
+    await usable.open();
+    usable.f('fiche-bien-source-utile').value = 'mesurage';
+    type(usable, 'fiche-bien-bedrooms', '5');
+    await usable.save();
+    expect(flagged(usable).map((x) => x.id)).toEqual(['fiche-bien-utile']);
+    // Le même refus sans surface vide (une source que le socle ne connaît pas) : c'est le groupe, sa partie s'ouvre, rien n'est marqué.
+    const sources = await run({ ...SUBJECTS, [POST]: SOURCES });
+    await sources.open();
+    type(sources, 'fiche-bien-bedrooms', '5');
+    await sources.save();
+    expect(flagged(sources)).toEqual([]);
+    expect(opened(sources)).toEqual(['Le logement', 'Surfaces']);
+    expect(sources.body().textContent).toContain('À vérifier : Source d’une surface : elle se dit pour une surface remplie.');
+
     // Une fiche changée entre-temps ne marque aucun champ : ce n'est pas une erreur de saisie.
     const stale = await run({ ...SUBJECTS, [POST]: no(409, { ok: false, rule: null, code: 'stale' }) });
     await stale.open();
