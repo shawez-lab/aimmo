@@ -8020,8 +8020,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS023 · Le bien s'appelle « B-E6B8BB51 »
-- Statut : à faire
-- Suivi : fait en partie le 2026-11-27 (#822 fusionnée) : dans la journée et sur l'écran du bien, il se dit par ce qu'il est (« Maison 5 pièces · Talant »), la référence en petit. Restent : les titres des six écrans d'outils, qui portent encore la référence.
+- Statut : en cours (voie 3)
+- Suivi : fait en partie le 2026-11-27 (#822 fusionnée) : dans la journée et sur l'écran du bien, il se dit par ce qu'il est (« Maison 5 pièces · Talant »), la référence en petit. Restent : les titres des six écrans d'outils, qui portent encore la référence. Branche voie3/DS023-titres prête pour ces écrans (le titre dit l'outil, une ligne dessous dit le bien et sa référence) ; proposée après « Attirer » (DS022), mêmes fichiers.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS023 (majeur, hiérarchie, microcopie, effort M), endroit : titres de six écrans, carte de l'accueil
 - Constat de l’audit : `appli-mandat-offres-avis.jpg`. 105 occurrences dans les plans des écrans. Le point médian passe seul en début de ligne : « Avis de valeur / · B-E6B8BB51 ».
