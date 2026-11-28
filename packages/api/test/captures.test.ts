@@ -163,7 +163,8 @@ afterAll(async () => {
 const measure = (page: any): Promise<{ ecrans: number; boutonsPleins: number; deborde: boolean }> =>
   page.evaluate(() => {
     const w = globalThis as any;
-    const seen = (e: any) => e.getClientRects().length > 0 && w.getComputedStyle(e).visibility !== 'hidden';
+    // Ce qui se voit vraiment : un bouton dans un volet fermé garde sa boîte, mais ne se voit pas (DS009).
+    const seen = (e: any) => e.getClientRects().length > 0 && w.getComputedStyle(e).visibility !== 'hidden' && (typeof e.checkVisibility !== 'function' || e.checkVisibility({ contentVisibilityAuto: true }));
     // Dans le contenu seulement : ni le lien d'évitement, ni la barre d'onglets ne sont des gestes de l'écran.
     const filled = [...w.document.querySelectorAll('main button, main a.appel')].filter((b: any) => seen(b) && !/(^| )(secondaire|second|retour|discret)( |$)/.test(b.className));
     return { ecrans: Math.round((w.document.documentElement.scrollHeight / w.innerHeight) * 10) / 10, boutonsPleins: filled.length, deborde: w.document.documentElement.scrollWidth > w.innerWidth };
@@ -330,6 +331,18 @@ describe('DS086 · dans Chromium', () => {
       expect(m.deborde).toBe(false);
       // La journée du parcours est bien là : le rendez-vous de visite du jour, pas un écran vide.
       expect(await page.textContent('#accueil')).toContain('Visite');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it.skipIf(navigateur === null)('DS009 · un bouton plein dans un volet fermé ne compte pas ; le volet ouvert, il compte', async () => {
+    const page = await navigateur!.newPage({ viewport: { width: 390, height: 844 } });
+    try {
+      await page.setContent('<main><button class="secondaire">Lire</button><details><summary>Noter une relecture</summary><button>Noter la relecture</button></details></main>');
+      expect((await measure(page)).boutonsPleins).toBe(0);
+      await page.click('summary');
+      expect((await measure(page)).boutonsPleins).toBe(1);
     } finally {
       await page.close();
     }
