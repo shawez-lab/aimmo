@@ -7845,8 +7845,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS003 · Aucune liste ni recherche de clients
-- Statut : en cours (voie 3)
-- Suivi : proposition #824 ouverte le 2026-11-28 (l'onglet « Clients », la liste de ses clients et la recherche par nom ; avec DS054).
+- Statut : à faire
+- Suivi : fait en partie le 2026-11-28, fusionnée (#824, `999c0ddb`) : l'onglet « Clients », la liste de ses clients (le dernier échange d'abord) et la recherche par nom, même comme on l'entend. Codex : 1 P1 et 1 P2 corrigés, puis rien à signaler. Restent : chercher par téléphone et par bien, filtrer par projet et par étape.
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS003 (bloquant, navigation, effort L), endroit : toute l'application — `packages/api/app/fichiers.ts`
 - Constat de l’audit : la coquille n'appelle que `/v1/contacts-chauds`, `/v1/rendez-vous/jour`, `/v1/plan-du-jour` et `/v1/fiches/<id>`. Au stade « rendez-vous pris » du parcours, la vendeuse qui vient d'écrire n'est joignable depuis aucun écran : elle n'est plus « chaude » et son rendez-vous n'est pas aujourd'hui.
@@ -7889,7 +7889,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS008 · « Le réseau » empile 35 blocs
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : branche voie3/DS008 prête (cinq rubriques, une seule visible ; une phrase dit ce qui attend) ; proposée après les écrans d'un bien (DS022), mêmes fichiers.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS008 (majeur, architecture de l'information, effort L), endroit : console de la direction — `packages/api/app/fichiers.ts` (`#reseau`)
 - Constat de l’audit : `appli-reseau-chiffres-connexion.jpg`. 12 écrans, 35 blocs dont 11 vides, 33 boutons. Alertes, factures, réglages du mandat, loyers, sauvegardes et preuve à Dijon se suivent sans ordre.
@@ -7906,7 +7907,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS010 · La fiche d'un client fait cinq écrans, sans synthèse
 - Statut : en cours (voie 3)
-- Suivi : branche voie3/DS010 prête (la fiche ouvre sur l'essentiel, en quatre parties, servie à part ; avec DS050 et la fiche de DS022) ; proposée après la fusion de #824, mêmes fichiers.
+- Suivi : proposition #826 ouverte le 2026-11-28 (la fiche ouvre sur l'essentiel, en quatre parties, servie à part ; avec DS050 et la fiche de DS022).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS010 (majeur, architecture de l'information, effort L), endroit : fiche client — `packages/api/app/fichiers.ts` (`#fiche`) et modules chargés
 - Constat de l’audit : `appli-fiche-client.jpg`. 5,2 écrans, 14 blocs dont 6 réduits à un bouton, 9 boutons pleins. La fiche ouvre sur un prénom et un nom, sans rôle, sans coordonnées, sans dernier échange.
@@ -8240,7 +8241,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS050 · La fiche n'ouvre pas sur le geste du jour
 - Statut : en cours (voie 3)
-- Suivi : avec DS010, même branche.
+- Suivi : avec DS010, même proposition (#826).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS050 (majeur, parcours, effort M), endroit : fiche client
 - Constat de l’audit : `appli-fiche-client.jpg` : aucune coordonnée en tête, aucun lien `tel:`, `sms:` ni `mailto:`. Les gestes sont « J'ai appelé » et « La personne a refusé ».
@@ -8275,7 +8276,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Suivi : « votre bien à Dijon, référence … » est la convention de tous les messages (remerciement, relances, carnet, demande d’avis), chacune avec son test. À changer pour tous d’un coup, avec la famille des mails de l’étape 5, quand le bien aura un nom lisible (DS023).
 
 ### DS054 · Des libellés de bouton qui ne disent rien seuls
-- Statut : à faire
+- Statut : fait (2026-11-28)
+- Suivi : fusionnée avec DS003 (#824, `999c0ddb`) : un essai garde les libellés de l'accueil, chacun dit seul ce qu'il ouvre.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS054 (mineur, microcopie, accessibilité, effort S), endroit : accueil
 - Constat de l’audit : deux boutons « Ouvrir » (Gagner des mandats, Fiche Google), « Voir et régler », « Voir mes clés », « Voir mes clés à rendre ».
