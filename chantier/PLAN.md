@@ -7898,8 +7898,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS009 · « Conformité » empile 13 blocs
-- Statut : en cours (voie 3)
-- Suivi : proposition #830 ouverte le 2026-11-28 (trois rubriques, la première échéance dite en tête, les saisies dans des volets).
+- Statut : fait (2026-11-28)
+- Suivi : fusionnée (#830, 40396684) : trois rubriques (« À décider », « Registres », « Modèles »), la première échéance légale dite en tête, comptée à la fin du jour à Paris, les saisies dans des volets. Au téléphone : 2,6 écrans au lieu de 4,5 à l'arrivée, aucun bouton plein quand rien n'est à décider. Restent : l'en-tête de l'écran, les trois gestes d'une fuite.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS009 (majeur, architecture de l'information, effort M), endroit : écran du responsable de la conformité — `packages/api/app/conformite.ts`
 - Constat de l’audit : 6,3 écrans, 13 blocs, 7 boutons pleins.
@@ -8406,7 +8406,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS068 · Les budgets de poids sont pleins
 - Statut : en cours (voie 3)
-- Suivi : branche voie3/DS068 prête (le dessin de l'écran de la direction servi à part, `/app/reseau.js` : environ 3 000 octets rendus à chaque agent) ; proposée après « Conformité » (DS009), mêmes fichiers. Second pas en cours, branche voie3/DS068-partenaires (l'écran « Partenaires » servi à part, `/app/partenaires.js` : environ 4 400 octets rendus), en fin de pile.
+- Suivi : proposition #831 ouverte le 2026-11-28 (le dessin de l'écran de la direction servi à part, `/app/reseau.js` : environ 3 000 octets rendus à chaque agent). Second pas en cours, branche voie3/DS068-partenaires (l'écran « Partenaires » servi à part, `/app/partenaires.js` : environ 4 400 octets rendus), en fin de pile.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS068 (majeur, performance, système de design, effort L), endroit : `packages/core/src/design/audit.ts` (`BUDGETS`)
 - Constat de l’audit : la coquille pèse 48 446 octets compressés pour 49 152 permis. `mandat.js` 13 036, `louer.js` 13 431, `finances.js` 14 074, `commerces.js` 14 162, pour 14 336 permis.
