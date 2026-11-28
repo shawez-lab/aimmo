@@ -295,7 +295,7 @@ describe('DS008 · dans Chromium', () => {
           page.evaluate(() => {
             const d = (globalThis as any).document;
             const seen = (e: any) => e.offsetParent !== null;
-            const tabs = [...d.querySelectorAll('.rubriques button')].map((b: any) => b.getBoundingClientRect());
+            const tabs = [...d.querySelectorAll('#reseau .rubriques button')].map((b: any) => b.getBoundingClientRect());
             return {
               screens: d.documentElement.scrollHeight / (globalThis as any).innerHeight,
               overflow: d.documentElement.scrollWidth > (globalThis as any).innerWidth,
