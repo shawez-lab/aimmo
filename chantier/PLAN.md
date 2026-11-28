@@ -8325,7 +8325,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS059 · Le bouton d'envoi est au bout du formulaire
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : branche voie3/DS059 en cours, pour la fiche du bien (« Enregistrer la fiche » collé au-dessus des onglets pendant la saisie) ; proposée après DS058, même fichier. Reste l'offre reçue.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS059 (mineur, formulaires, une main, effort S), endroit : fiche du bien (42 champs), offre reçue (16 champs)
 - Constat de l’audit : Le bouton d'envoi est au bout du formulaire.
