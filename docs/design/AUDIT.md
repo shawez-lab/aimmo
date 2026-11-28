@@ -63,6 +63,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Preuve : la coquille n'appelle que `/v1/contacts-chauds`, `/v1/rendez-vous/jour`, `/v1/plan-du-jour` et `/v1/fiches/<id>`. Au stade « rendez-vous pris » du parcours, la vendeuse qui vient d'écrire n'est joignable depuis aucun écran : elle n'est plus « chaude » et son rendez-vous n'est pas aujourd'hui.
 - Principe : le cahier promet à l'agent « ses clients, biens et dossiers » (onglet Le produit).
 - Solution : un onglet « Clients » avec recherche par nom, téléphone ou bien, et filtres (vendeurs, acquéreurs, à rappeler). Une recherche générale dans l'en-tête.
+- Suite : premier pas le 2026-11-27 : l'onglet « Clients », entre la journée et les outils. Il lit la liste des fiches de l'agent (`GET /v1/fiches`, les siens seulement, chaque lecture au journal, R16), le dernier échange d'abord ; un champ cherche par nom, sans accents ni capitales, et « à l'oreille » : un nom entendu au téléphone ou dicté se trouve même mal écrit (« filip dupon » trouve « Philippe Dupont »), après les noms exacts et dit comme tel (`packages/api/app/oreille.ts`, une suite fixe de remplacements, sans réseau) ; une ligne ouvre la fiche, dont le « Retour » ramène à la liste. Cinquante lignes, puis la suite. L'écran est servi à part, chargé au premier geste. Restent la recherche par téléphone ou par bien et les filtres (vendeurs, acquéreurs, à rappeler) : la liste ne rend ni les coordonnées ni les projets, il faut une route de recherche. Avant et après : `captures/avant-apres/DS003-clients.jpg`.
 
 #### DS004 · Aucune liste de biens
 - Gravité : bloquant · Catégorie : navigation · Effort : L
@@ -409,6 +410,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : accueil
 - Preuve : deux boutons « Ouvrir » (Gagner des mandats, Fiche Google), « Voir et régler », « Voir mes clés », « Voir mes clés à rendre ».
 - Solution : le bouton nomme ce qu'il ouvre. Avec les onglets, la plupart disparaissent.
+- Suite : le constat ne se reproduit plus depuis l'onglet « Outils » (2026-11-27) : chaque rangée porte le nom de son outil, plus aucun bouton ne dit seulement « Ouvrir » ou « Voir ». Un essai le garde.
 
 #### DS055 · Une écriture de tableur
 - Gravité : mineur · Catégorie : microcopie · Effort : S
