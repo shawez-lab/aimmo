@@ -94,11 +94,23 @@ it('[R62] aucune fausse alerte sur les phrases d’usage de la vente', () => {
   ]) expect([t, fundSignals(t)]).toEqual([t, []]);
 });
 
-// Un mail de 40 000 caractères, fait de lettres espacées : une lecture qui s'emballerait (quadratique) prendrait des
-// secondes ; la marge large tient sous une machine chargée.
+// Un mail de 40 000 caractères, fait de lettres espacées. Une lecture qui s'emballerait (quadratique) mettrait
+// soixante-quatre fois le temps d'un mail huit fois plus court ; une lecture en ligne droite, de cinq à onze fois
+// (mesuré). La machine est comparée à elle-même, sur la meilleure de trois lectures de chaque côté : une machine lente
+// ou chargée ne fait pas tomber l'essai, un emballement si. Un plafond large reste, pour une lecture droite devenue
+// très lente.
 it('[R62] une longue suite de lettres espacées se lit vite', () => {
-  const long = `${'a '.repeat(10_000)}b1 ${'x.'.repeat(10_000)}`;
-  const t0 = performance.now();
-  fundSignals(long);
-  expect(performance.now() - t0).toBeLessThan(500);
+  const mail = (n: number) => `${'a '.repeat(n)}b1 ${'x.'.repeat(n)}`;
+  const best = (text: string) =>
+    Math.min(
+      ...[1, 2, 3].map(() => {
+        const t0 = performance.now();
+        fundSignals(text);
+        return performance.now() - t0;
+      }),
+    );
+  const short = best(mail(1_250));
+  const long = best(mail(10_000));
+  expect(long).toBeLessThan(short * 30);
+  expect(long).toBeLessThan(3_000);
 });
