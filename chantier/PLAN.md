@@ -8160,7 +8160,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS040 · La preuve de chaque phrase est toujours dépliée
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : branche voie3/DS040 prête (l'annonce se lit d'un trait, les preuves s'ouvrent au geste) ; proposée après le dossier de vente (DS022), mêmes fichiers.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS040 (majeur, composants, effort S), endroit : « L'annonce, phrase par phrase » — `packages/api/app/fichiers.ts` (`#vente`)
 - Constat de l’audit : `appli-mettre-en-vente.jpg` : « 3 : pièces, lu dans la fiche du bien » sous chaque phrase. L'écran fait 3,6 écrans.
