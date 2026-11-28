@@ -804,10 +804,12 @@ globalThis.AIMMO_CONFORMITE = function (t) {
       (f.cuts || []).forEach(function (c) {
         var cut = el('p', (c.scope === 'tous' ? 'Tous les accès coupés' : 'Un accès coupé') + ' le ' + date(c.cutAt) + ' à ' + hour(c.cutAt) + (c.restoredAt ? ', rétabli le ' + date(c.restoredAt) : ''), 'doux');
         li.appendChild(cut);
-        if (!c.restoredAt) li.appendChild(button('Rétablir cet accès', function () { cAct(state, path + '/retablir', { cutId: c.id }, 'Accès rétabli.'); }));
+        if (!c.restoredAt) li.appendChild(quiet(button('Rétablir cet accès', function () { cAct(state, path + '/retablir', { cutId: c.id }, 'Accès rétabli.'); })));
       });
       var cutting = button('Couper tous les accès maintenant', function () { cAct(state, path + '/couper', { scope: 'tous' }, 'Accès coupés, sauf le vôtre.'); });
-      cutting.className = 'danger';
+      // DS022 · une fuite a un pas à la fois : l'évaluer, puis prévenir la CNIL. Couper reste le geste d'urgence, en
+      // rouge, tant que tout n'est pas coupé ; rétablir un accès n'est jamais le pas à faire.
+      cutting.className = (f.cuts || []).some(function (c) { return c.scope === 'tous' && !c.restoredAt; }) ? 'secondaire' : 'danger';
       li.appendChild(cutting);
       // L'évaluation est le pas à faire tant qu'elle manque : ouverte. Une fois rangée, elle se rouvre au geste.
       var form = el('details', null, 'decision');
@@ -824,11 +826,13 @@ globalThis.AIMMO_CONFORMITE = function (t) {
       if (!f.notified.cnil && f.due.cnil) {
         var notify = el('div', null, 'decision');
         var late = cSelect(notify, id + '-retard', 'Cause du retard, si l’échéance est passée', C_LATE);
-        notify.appendChild(button('Noter la CNIL prévenue maintenant', function () {
+        var told = notify.appendChild(button('Noter la CNIL prévenue maintenant', function () {
           var b = { target: 'cnil', notifiedAt: new Date().toISOString() };
           if (Date.now() > Date.parse(f.deadlineAt)) b.lateCause = late.value;
           cAct(state, path + '/notification', b, 'Notification notée.');
         }));
+        // Tant que l'évaluation manque, c'est elle le pas à faire : prévenir reste possible, filaire.
+        if (!f.evaluation) quiet(told);
         li.appendChild(notify);
       }
       li.appendChild(state);
