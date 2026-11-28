@@ -1347,14 +1347,21 @@ export const APP_JS = `'use strict';
     } else {
       text.appendChild(el('h4', draft.title));
       var ol = el('ol', null, 'liste');
-      // Chaque phrase avec les champs de la fiche d'où viennent ses nombres et ses faits.
+      // DS040 · l'annonce se lit d'un trait : chaque phrase, et sous elle seulement ce qui est à corriger. Les champs de la
+      // fiche d'où viennent ses nombres et ses faits se lisent au geste, dans un volet, dans l'ordre des phrases.
+      var proofs = el('ul');
       (draft.sentences || []).forEach(function (sentence) {
         var li = el('li', sentence.text);
-        (sentence.sources || []).forEach(function (src) { li.appendChild(el('p', src.value + ' : ' + (FIELDS[src.field] || 'champ de la fiche') + ', lu dans la fiche du bien', 'doux')); });
+        (sentence.sources || []).forEach(function (src) { proofs.appendChild(el('li', src.value + ' : ' + (FIELDS[src.field] || 'champ de la fiche') + ', lu dans la fiche du bien')); });
         (sentence.problems || []).forEach(function (pb) { li.appendChild(el('p', 'À corriger : ' + (SENTENCE_PROBLEMS[pb.code] || 'phrase refusée') + ' (« ' + pb.value + ' »)', 'retard')); });
         ol.appendChild(li);
       });
       text.appendChild(ol);
+      if (proofs.firstChild) {
+        var from = text.appendChild(el('details'));
+        from.appendChild(el('summary', 'D’où vient chaque nombre'));
+        from.appendChild(proofs);
+      }
       if (draft.stale) text.appendChild(el('p', 'La fiche du bien a changé depuis la validation de ce texte : l’annonce ne peut plus partir. Rédigez-la de nouveau ou corrigez-la, puis validez-la.', 'alerte'));
       else if (draft.validated) text.appendChild(el('p', 'Annonce validée le ' + date(draft.validated.at) + '.', 'fait'));
       else if (ID.test(draft.id)) text.appendChild(button('Valider l’annonce', function () { venteAct('/v1/annonces/brouillons/' + encodeURIComponent(draft.id) + '/validation', 'L’annonce n’est pas validée.'); }));

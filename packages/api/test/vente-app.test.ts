@@ -110,6 +110,25 @@ describe('P10 · écran « Mettre en vente »', () => {
     expect(t.els['vente-etat']!.textContent).toBe('Il manque des mentions obligatoires : complétez la fiche du bien.');
   });
 
+  it('DS040 · l’annonce se lit d’un trait : sous une phrase, seulement ce qui est à corriger ; d’où vient chaque nombre se lit au geste', async () => {
+    const t = await run({});
+    await t.click(placeTool(t.els, 'Mettre en vente'));
+    const body = t.els['vente-corps']!;
+    const lines = body.all().find((e) => e.tagName === 'ol')!.children;
+    expect(lines).toHaveLength(2);
+    // La phrase prouvée ne porte plus sa preuve dessous ; la phrase sans preuve garde ce qui est à corriger, sous les yeux.
+    expect(lines[0]!.children).toEqual([]);
+    expect(lines[1]!.children.map((p) => [p.className, p.textContent])).toEqual([['retard', 'À corriger : fait absent de la fiche (« gare »)']]);
+    // Les preuves vivent dans un volet, dans l'ordre des phrases.
+    const fold = body.all().find((e) => e.tagName === 'details' && e.children[0]?.textContent === 'D’où vient chaque nombre')!;
+    expect(fold.children[0]!.tagName).toBe('summary');
+    expect(fold.all().filter((e) => e.tagName === 'li').map((li) => li.textContent)).toEqual(['62 m² : surface, lu dans la fiche du bien']);
+    // Une annonce sans aucun nombre lu dans la fiche : pas de volet vide.
+    const bare = await run({ 'GET /v1/annonces/b1/brouillon': ok({ ...DRAFT, sentences: [{ text: 'Proche de la gare.', sources: [], problems: [] }] }) });
+    await bare.click(placeTool(bare.els, 'Mettre en vente'));
+    expect(bare.els['vente-corps']!.all().some((e) => e.tagName === 'summary' && e.textContent === 'D’où vient chaque nombre')).toBe(false);
+  });
+
   it('sans annonce : « Rédiger l’annonce » ; publiée : la version, le prix et chaque canal', async () => {
     const t = await run({ 'GET /v1/annonces/b1/brouillon': no(404, { ok: false, rule: null, code: 'no_draft' }) });
     await t.click(placeTool(t.els, 'Mettre en vente'));
