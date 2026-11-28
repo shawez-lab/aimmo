@@ -84,6 +84,7 @@ const PROPOSAL_EVENTS = { vendeur: 'Proposition du vendeur', acquereur: 'Proposi
 export const OFFRES_HTML = `<section id="offres" hidden>
 <button id="offres-retour" type="button" class="retour">Retour</button>
 <h2 id="offres-titre">Offres</h2>
+<p id="offres-bien" class="doux"></p>
 <p id="offres-etat" class="etat" role="status"></p>
 <div id="offres-corps"></div>
 </section>
@@ -167,7 +168,7 @@ globalThis.AIMMO_OFFRES = function (t) {
     t.bump();
     wipe();
     cur = { id: id, reference: reference || 'ce bien' };
-    $('offres-titre').textContent = 'Offres · ' + cur.reference;
+    $('offres-titre').textContent = 'Offres';
     show('offres', [id, reference]);
     return load();
   }

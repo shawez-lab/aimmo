@@ -120,15 +120,21 @@ describe('DS013 · un bien a son écran : son nom, où il en est, ses outils en 
       expect(a.shown(), tool).toEqual([tool]);
       // L'outil s'ouvre pour ce bien : c'est lui, et sa référence, que l'écran reçoit.
       expect(a.states.at(-1), tool).toEqual({ s: tool, a: [B1, 'REF-1'], t: 'accueil' });
+      // DS023 · sous le titre de l'outil, le bien se dit par ce qu'il est, sa référence à la fin ; jamais dans le titre.
+      expect(a.els[`${tool}-bien`]!.textContent, tool).toBe('Maison 5 pièces · Talant · Réf. REF-1');
+      expect(a.els[`${tool}-titre`]!.textContent, tool).not.toContain('REF-1');
       await a.click(a.els[`${tool}-retour`]!);
       expect(a.shown(), tool).toEqual(['un-bien']);
+      // En quittant l'outil, sa ligne s'efface : aucun écran caché ne garde le nom d'un bien.
+      expect(a.els[`${tool}-bien`]!.textContent, tool).toBe('');
       expect(a.els['un-bien-titre']!.textContent).toBe('Maison 5 pièces · Talant');
     }
-    // La mise en vente lit bien ce bien-là, et son titre porte sa référence.
+    // La mise en vente lit bien ce bien-là ; sous son titre, le bien se dit par ce qu'il est, sa référence à la fin (DS023).
     expect(a.calls).toContain(`/v1/annonces/${B1}/controle`);
     expect(a.els['vente-titre']!.textContent).toBe('');
     await a.click(a.els['un-bien-vente']!);
-    expect(a.els['vente-titre']!.textContent).toBe('Mettre en vente · REF-1');
+    expect(a.els['vente-titre']!.textContent).toBe('Mettre en vente');
+    expect(a.els['vente-bien']!.textContent).toBe('Maison 5 pièces · Talant · Réf. REF-1');
     await a.click(a.els['vente-retour']!);
     // « Retour » de l'écran du bien ramène à la journée, relue.
     const reads = a.calls.filter((c) => c === '/v1/annonces').length;

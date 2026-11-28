@@ -93,7 +93,7 @@ describe('P10 · écran « Mettre en vente »', () => {
     expect(tool.textContent).toBe('Mettre en vente');
     await t.click(tool);
     expect(t.els.vente!.hidden).toBe(false);
-    expect(t.els['vente-titre']!.textContent).toBe('Mettre en vente · REF-T-1');
+    expect(t.els['vente-titre']!.textContent).toBe('Mettre en vente');
     const text = t.els['vente-corps']!.textContent;
     expect(text).toContain('Il manque des mentions : l’annonce ne peut pas partir.');
     expect(text).toContain('Prix et honoraires : présente');

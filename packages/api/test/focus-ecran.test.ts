@@ -78,7 +78,7 @@ describe('DS064 · le focus va au titre du nouvel écran', () => {
     await a.tick();
     expect(a.els['fiche-nom']!.textContent).toBe('Fiche du client');
     // La visite pose aussi un titre avant d'être lue, au lieu de le vider.
-    expect(JS).toMatch(/\$\('visite-titre'\)\.textContent = 'Visite';\s*\$\('visite-etat'\)\.textContent = 'Chargement…';\s*show\('visite', \[id\]\);/);
+    expect(JS).toMatch(/\$\('visite-titre'\)\.textContent = 'Visite';\s*\$\('visite-bien'\)\.textContent = '';\s*\$\('visite-etat'\)\.textContent = 'Chargement…';\s*show\('visite', \[id\]\);/);
     expect(JS).not.toContain("$('visite-titre').textContent = '';");
   });
 
@@ -163,15 +163,16 @@ describe('DS063 · le titre de la page dit l’écran, jamais une personne', () 
     expect(title).not.toContain('Léa');
   });
 
-  it('l’écran d’un bien précise son titre par sa référence, et la page le suit', async () => {
+  it('l’écran d’un bien porte son nom ; son outil garde le sien, et le bien se dit dessous, hors du titre de la page', async () => {
     const a = await app();
-    // DS013 · la ligne du bien ouvre son écran, au nom du bien ; puis la mise en vente, à sa référence.
+    // DS013 · la ligne du bien ouvre son écran, au nom du bien ; puis la mise en vente, qui dit le bien sous son titre (DS023).
     const tool = placeTool(a.els, 'Mettre en vente');
     expect((a.document as unknown as { title: string }).title).toBe('Appartement 3 pièces · Dijon · AIMMO');
     tool.listeners.click!({});
     await a.tick();
     expect(a.els.vente!.hidden).toBe(false);
-    expect((a.document as unknown as { title: string }).title).toBe('Mettre en vente · REF-1 · AIMMO');
+    expect((a.document as unknown as { title: string }).title).toBe('Mettre en vente · AIMMO');
+    expect(a.els['vente-bien']!.textContent).toBe('Appartement 3 pièces · Dijon · Réf. REF-1');
   });
 
   it('un écran qui écrit un prénom dans son titre ne le met pas dans celui de la page : seuls les écrans d’un bien sont suivis', async () => {
@@ -250,7 +251,8 @@ describe('DS064 · dans Chromium', () => {
       expect(await page.title()).toBe('Appartement 3 pièces · Dijon · AIMMO');
       await page.click('#un-bien-vente');
       await page.waitForSelector('#vente:not([hidden])');
-      expect(await page.title()).toBe('Mettre en vente · REF-1 · AIMMO');
+      expect(await page.title()).toBe('Mettre en vente · AIMMO');
+      expect(await page.textContent('#vente-bien')).toBe('Appartement 3 pièces · Dijon · Réf. REF-1');
       await page.evaluate(() => { (globalThis as any).document.getElementById('vente-titre').textContent = 'Mettre en vente · REF-2'; });
       await page.waitForFunction(() => (globalThis as any).document.title === 'Mettre en vente · REF-2 · AIMMO');
     } finally {

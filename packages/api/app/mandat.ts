@@ -152,6 +152,7 @@ const FIELD_NAMES = Object.fromEntries(Object.entries(TEMPLATE_FIELDS).map(([k, 
 export const MANDAT_HTML = `<section id="mandat" hidden>
 <button id="mandat-retour" type="button" class="retour">Retour</button>
 <h2 id="mandat-titre">Mandat</h2>
+<p id="mandat-bien" class="doux"></p>
 <p id="mandat-etat" class="etat" role="status"></p>
 <div id="mandat-corps"></div>
 </section>
@@ -227,7 +228,7 @@ globalThis.AIMMO_MANDAT = function (t) {
     t.bump();
     wipe();
     cur = { id: id, reference: reference || 'ce bien' };
-    $('mandat-titre').textContent = 'Mandat · ' + cur.reference;
+    $('mandat-titre').textContent = 'Mandat';
     show('mandat', [id, reference]);
     return load();
   }

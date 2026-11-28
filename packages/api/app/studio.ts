@@ -70,6 +70,7 @@ const REFUSALS = {
 export const STUDIO_HTML = `<section id="studio" hidden>
 <button id="studio-retour" type="button" class="retour">Retour</button>
 <h2 id="studio-titre">Studio</h2>
+<p id="studio-bien" class="doux"></p>
 <p class="doux">Photos, vidéo et plan se préparent sur ce téléphone : aucune image ne part pour être traitée.</p>
 <p id="studio-etat" class="etat" role="status"></p>
 <div id="studio-corps"></div>
@@ -156,7 +157,7 @@ globalThis.AIMMO_STUDIO = function (t) {
     t.bump();
     wipe();
     cur = { id: id, reference: reference || 'ce bien', part: 'guide', atelier: null };
-    $('studio-titre').textContent = 'Studio · ' + cur.reference;
+    $('studio-titre').textContent = 'Studio';
     show('studio', [id, reference]);
     return part('guide');
   }
