@@ -8013,7 +8013,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS022 · Trop de boutons pleins : aucune action ne domine
 - Statut : en cours (voie 3)
-- Suivi : la fiche du client est faite (#826) ; les écrans d'un bien aussi (#828, `7b5be55b`, fusionnée le 2026-11-28 : mettre en vente, mandat, avis de valeur, visite ; Codex sans remarque). Branches prêtes, proposées à leur tour : voie3/DS022-attirer (« Attirer »), voie3/DS022-dossier (dossier de vente, acquéreurs d'un bien, preuve à Dijon). Puis les gestes d'une fuite à la conformité (un pas à la fois : évaluer, puis prévenir), branche voie3/DS022-fuite, en fin de pile.
+- Suivi : la fiche du client est faite (#826) ; les écrans d'un bien aussi (#828, `7b5be55b`, fusionnée le 2026-11-28 : mettre en vente, mandat, avis de valeur, visite ; Codex sans remarque). Branches prêtes, proposées à leur tour : voie3/DS022-attirer (« Attirer »), voie3/DS022-dossier (dossier de vente, acquéreurs d'un bien, preuve à Dijon). Puis les gestes d'une fuite à la conformité (un pas à la fois : évaluer, puis prévenir), branche voie3/DS022-fuite, en fin de pile. « Attirer » : proposition #835 ouverte le 2026-11-28, à part.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS022 (majeur, hiérarchie, effort M), endroit : fiche client (9 boutons pleins), « Gagner des mandats » (8), conformité (7), « Mettre en vente » (5), carte d'un bien sur l'accueil (5), mandat (4), offres (4)
 - Constat de l’audit : `appli-accueil.jpg`, `appli-mettre-en-vente.jpg` : « Rédiger de nouveau » et « Corriger le texte » sont pleins tous les deux.
@@ -8145,7 +8145,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS038 · Les formulaires sont toujours ouverts
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : proposition #836 ouverte le 2026-11-28 (le « + » des volets partout dans l'application), à part. Restent : les formulaires encore ouverts de « Louer », des commerces et de la preuve à Dijon, et la feuille elle-même.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS038 (majeur, composants, effort M), endroit : mandat (« Préparer un avenant » : 6 champs), fiche client (« Biens du client » : 7 champs, « Accords » : 4 champs)
 - Constat de l’audit : `appli-mandat-offres-avis.jpg`, `appli-fiche-client.jpg`.
