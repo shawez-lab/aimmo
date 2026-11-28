@@ -1337,8 +1337,8 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Attend : rien.
 
 ### AU118 · L'exemplaire signé n'est pas remis au mandant quand son empreinte porte une longue suite de chiffres
-- Statut : en cours (voie 3)
-- Suivi : trouvé le 2026-11-28 par « Vérifier », tombé au hasard sur #833 (essais AU003 de `signature-reelle.test.ts`) ; reproduit en boucle : une remise sur 150 environ. Proposition #842 ouverte le 2026-11-28 : une ligne de `texte.ts`, deux essais qui échouent sans elle, R10 mise à jour.
+- Statut : fait (2026-11-28)
+- Suivi : trouvé le 2026-11-28 par « Vérifier », tombé au hasard sur #833 (essais AU003 de `signature-reelle.test.ts`) ; reproduit en boucle : une remise sur 150 environ. #842 fusionnée le 2026-11-28 (2ac17c8b, voie 3, Codex sans remarque, « Vérifier » vert) : une ligne de `texte.ts`, deux essais qui échouent sans elle, R10 mise à jour. Sur 200 000 tirages, le contrôle des chiffres ne refuse plus aucune remise ; reste la seconde cause, AU119.
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Cahier : M06 Mandats et documents ; M12 Conformité ; endroit : `packages/core/src/envoi/texte.ts` (contrôle des chiffres, R10), vu depuis `packages/core/src/documents/signature-en-ligne.ts` (remise de l'exemplaire, R39).
 - Constat : le mail qui remet l'exemplaire signé cite la référence du document et son empreinte. Quand l'une des deux porte 17 chiffres d'affilée ou plus, le contrôle des chiffres la compare après un passage par un nombre, qui l'arrondit : le chiffre « ne vient pas des données fournies », le mail est refusé (R10), et il le sera à chaque reprise, puisque la référence et l'empreinte ne changent pas. Le mandant ne reçoit jamais son exemplaire.
@@ -8265,8 +8265,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS049 · La signature du mandat n'a pas de fil
-- Statut : en cours (voie 3)
-- Suivi : proposition #834 ouverte le 2026-11-28 (le fil « Préparer, Contrôler, Signer, Inscrit » en tête de l'écran du mandat), à part de la pile : elle ne touche que le script du mandat. Deux remarques P2 de Codex, justes, corrigées avec leurs essais : le fil revient à « Contrôler » quand un contrôle échoue après une réussite ou quand le document est relu ; un mandat de location signé en entier se lit « Inscrit » (cause en amont : AU120). Restent le dossier de vente et l'offre.
+- Statut : à faire
+- Suivi : #834 fusionnée le 2026-11-28 (08c21314, voie 3) : le fil « Préparer, Contrôler, Signer, Inscrit » en tête de l'écran du mandat. Deux remarques P2 de Codex, justes, corrigées avec leurs essais : le fil revient à « Contrôler » quand un contrôle échoue après une réussite ou quand le document est relu ; un mandat de location signé en entier se lit « Inscrit » (cause en amont : AU120). Une troisième, juste aussi, reste ouverte : un mandat de location rétracté ou échu se lit « Inscrit » à tort, tant que la lecture ne rend pas son état ; c'est AU120. Restent le dossier de vente et l'offre.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS049 (majeur, parcours, effort M), endroit : mandat — `packages/api/app/mandat.ts`
 - Constat de l’audit : questionnaire, document, contrôle, signature papier ou en ligne, rétractation et avenant sont des cartes de même rang. Le fil d'étapes `.parcours` existe, pour la location seulement.
