@@ -16,6 +16,7 @@ import { DOSSIER_HTML, DOSSIER_JS } from './dossier.ts';
 import { MANDAT_HTML, MANDAT_JS } from './mandat.ts';
 import { CLIENTS_HTML, CLIENTS_JS, CLIENTS_TAB_HTML } from './clients.ts';
 import { FICHE_JS } from './fiche.ts';
+import { MES_BIENS_HTML, MES_BIENS_JS, MES_BIENS_TAB_HTML } from './mes-biens.ts';
 import { STUDIO_HTML, STUDIO_JS } from './studio.ts';
 import { ATTIRER_ENTRY_HTML, ATTIRER_HTML, ATTIRER_JS } from './attirer.ts';
 import { BASCULE_ENTRY_HTML, BASCULE_JS } from './bascule.ts';
@@ -112,7 +113,7 @@ export const INDEX_HTML = `<!doctype html>
 <div class="frise" aria-hidden="true"></div>
 <nav id="onglets" class="onglets" aria-label="Sections" hidden>
 <button id="journee-ouvrir" type="button" class="discret"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9 7 7M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1"/></svg>Journée</button>
-${CLIENTS_TAB_HTML}<button id="outils-ouvrir" type="button" class="discret"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 3.5h7v7h-7zM13.5 3.5h7v7h-7zM3.5 13.5h7v7h-7zM13.5 13.5h7v7h-7z"/></svg>Outils</button>
+${CLIENTS_TAB_HTML}${MES_BIENS_TAB_HTML}<button id="outils-ouvrir" type="button" class="discret"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 3.5h7v7h-7zM13.5 3.5h7v7h-7zM3.5 13.5h7v7h-7zM13.5 13.5h7v7h-7z"/></svg>Outils</button>
 <button id="chiffres-ouvrir" type="button" class="discret"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>Chiffres</button>
 </nav>
 <main>
@@ -183,7 +184,7 @@ ${GAGNER_HOME_HTML}${LOUER_HOME_HTML}${COMMERCES_HOME_HTML}${INVESTIR_HOME_HTML}
 ${CLES_A_RENDRE_HOME_HTML}<div id="remises-accueil"></div>
 ${FICHE_GOOGLE_HOME_HTML}${ACTUALITES_HOME_HTML}<h3>Mon compte</h3>
 ${INTEGRATION_HOME_HTML}${NOTIFICATIONS_HOME_HTML}${clesEntryHtml('accueil')}</section>
-${CLIENTS_HTML}<section id="fiche" hidden>
+${CLIENTS_HTML}${MES_BIENS_HTML}<section id="fiche" hidden>
 <button id="retour" type="button" class="retour">Retour</button>
 <h2 id="fiche-nom"></h2>
 <p id="fiche-etat" class="etat" role="status"></p>
@@ -283,10 +284,10 @@ body { min-height: 100dvh; }
 button.rangee, #remises-accueil > .bloc > button { width: 100%; justify-content: space-between; min-height: calc(var(--cible) + var(--e-2)); margin: 0; padding: var(--e-3) 0; border-top: 1px solid var(--trait); border-radius: 0; box-shadow: none; color: var(--encre); text-align: left; }
 button.rangee::after, #remises-accueil > .bloc > button::after { content: "›"; color: var(--doux); font-size: 1.4em; line-height: .8; font-weight: 400; }
 button.rangee > span { display: grid; gap: var(--e-1); font-weight: 400; }
-#biens > li, #clients-liste > li { margin: 0; padding: 0; border: 0; }
-#biens button.rangee, #clients-liste button.rangee { margin: 0; padding: var(--e-2) 0; }
+#biens > li, #clients-liste > li, #mes-biens-liste > li { margin: 0; padding: 0; border: 0; }
+#biens button.rangee, #clients-liste button.rangee, #mes-biens-liste button.rangee { margin: 0; padding: var(--e-2) 0; }
 #un-bien > .doux { margin-bottom: var(--e-4); }
-#clients-corps > .doux { margin: var(--e-3) 0; }
+#clients-corps > .doux, #mes-biens-corps > .doux { margin: var(--e-3) 0; }
 #remises-accueil > .bloc { margin: 0; padding: 0; border: 0; }
 #outils > .etat { margin: 0 0 var(--e-3); }
 #actualites-vues { padding-left: var(--e-5); }
@@ -647,6 +648,7 @@ export const APP_JS = `'use strict';
     places = {};
     wipeFiche();
     wipeClients(true);
+    wipeMesBiens(true);
     wipeM08();
     wipeApres();
     wipeChiffres();
@@ -2080,7 +2082,7 @@ export const APP_JS = `'use strict';
       $(host).appendChild(s);
     });
   }
-${CLIENTS_JS}${FICHE_JS}${COFFRE_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${A_TENIR_JS}${ACTUALITES_JS}${CLES_A_RENDRE_JS}${NOTIFICATIONS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${MANDAT_MODELES_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${PHASES_JS}${LICENCES_JS}${CLES_JS}${GUIDES_PHOTO_JS}${CHARGEUR_JS}${FINANCES_JS}
+${CLIENTS_JS}${MES_BIENS_JS}${FICHE_JS}${COFFRE_JS}${INVESTIR_JS}${COMMERCES_JS}${AVIS_JS}${A_TENIR_JS}${ACTUALITES_JS}${CLES_A_RENDRE_JS}${NOTIFICATIONS_JS}${OFFRES_JS}${DOSSIER_JS}${MANDAT_JS}${STUDIO_JS}${GAGNER_JS}${ATTIRER_JS}${FICHE_GOOGLE_JS}${INTEGRATION_JS}${REPRISE_JS}${BASCULE_JS}${REGLAGES_MANDAT_JS}${MANDAT_MODELES_JS}${LOYERS_JS}${MESURE_SOURCES_JS}${ANNUAIRE_JS}${PROSPECTION_JS}${BIBLIOTHEQUE_JS}${ENGAGEMENTS_JS}${PHASES_JS}${LICENCES_JS}${CLES_JS}${GUIDES_PHOTO_JS}${CHARGEUR_JS}${FINANCES_JS}
 ${LOUER_JS}
   function wipeM08() {
     ['visite-corps', 'bien-corps', 'vente-corps'].forEach(function (id) { clear($(id)); });
@@ -2099,7 +2101,7 @@ ${LOUER_JS}
   // AU117 · chaque écran ouvert entre dans l'historique du navigateur : Retour et Avancer le rouvrent tel qu'il était.
   var shownId = null, shownArgs = 'null', fromHistory = false, seenId = null;
   // DS005 · les onglets de l'agent : sa journée, ses outils, ses chiffres. Un écran ouvert depuis un onglet y revient.
-  var ROOTS = { accueil: 'journee', clients: 'clients', outils: 'outils', chiffres: 'chiffres' };
+  var ROOTS = { accueil: 'journee', clients: 'clients', 'mes-biens': 'mes-biens', outils: 'outils', chiffres: 'chiffres' };
   var tab = 'accueil', agentIn = false;
   function titleOf(id) { return $(id === 'accueil' ? 'bonjour' : id === 'fiche' ? 'fiche-nom' : id + '-titre'); }
   // DS063 · le titre de la page dit l'écran, jamais une personne : la fiche d'un client reste « Fiche client », la
@@ -2117,7 +2119,7 @@ ${LOUER_JS}
     if (watch) watch.disconnect();
     if (h) (watch = new MutationObserver(function () { retitle(); })).observe(h, { childList: true, characterData: true, subtree: true });
   }
-  var SCREENS = ['connexion', 'invitation', 'accueil', 'clients', 'outils', 'attente', 'fiche', 'hors-ligne', 'visite', 'bien', 'un-bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'];
+  var SCREENS = ['connexion', 'invitation', 'accueil', 'clients', 'mes-biens', 'outils', 'attente', 'fiche', 'hors-ligne', 'visite', 'bien', 'un-bien', 'vente', 'apres', 'chiffres', 'reseau', 'partenaires', 'louer', 'investir', 'conformite', 'commerces', 'avis', 'offres', 'dossier', 'mandat', 'studio', 'gagner', 'attirer', 'fiche-google', 'integration'];
   function show(id, args) {
     SCREENS.forEach(function (s) { $(s).hidden = s !== id; });
     var out = id === 'connexion' || id === 'attente' || id === 'invitation';
@@ -2286,7 +2288,7 @@ ${LOUER_JS}
     fromHistory = true;
     // Un écran que le changement d'onglet a vidé est relu, pas rouvert vide ; s'il montre encore quelque chose (un dossier
     // ouvert, un formulaire commencé), il le garde, comme avant.
-    var reread = { clients: function () { openClients(); }, chiffres: function () { openChiffres(); }, partenaires: function () { openPartenaires('', 0); }, apres: function () { openApres(); }, louer: function () { openLouer('', 0); }, investir: function () { openInvestir(''); }, commerces: function () { openCommerces(''); }, gagner: function () { openGagner(); } }[s];
+    var reread = { clients: function () { openClients(); }, 'mes-biens': function () { openMesBiens(); }, chiffres: function () { openChiffres(); }, partenaires: function () { openPartenaires('', 0); }, apres: function () { openApres(); }, louer: function () { openLouer('', 0); }, investir: function () { openInvestir(''); }, commerces: function () { openCommerces(''); }, gagner: function () { openGagner(); } }[s];
     if (again && Array.isArray(a)) again.apply(null, a); else if (reread && (force || !$(s + '-corps').firstChild)) reread(); else show(s);
     fromHistory = false;
   }
@@ -2322,6 +2324,7 @@ ${LOUER_JS}
       place = null;
       wipeFiche();
       wipeClients();
+      wipeMesBiens();
       wipeM08();
       wipeApres();
       wipeChiffres();
@@ -2339,6 +2342,7 @@ ${LOUER_JS}
       leave();
       if (tab === 'outils') { show('outils'); return; }
       if (tab === 'clients') { openClients(); return; }
+      if (tab === 'mes-biens') { openMesBiens(); return; }
       show('accueil');
       day(currentKey, session);
     }
@@ -2347,6 +2351,7 @@ ${LOUER_JS}
     // Depuis la journée, rien n'est à effacer : ses lectures en route continuent.
     $('outils-ouvrir').addEventListener('click', function () { if (!currentKey) return; if (shownId !== 'accueil' && shownId !== 'outils') leave(); show('outils'); });
     $('clients-ouvrir').addEventListener('click', function () { if (!currentKey) return; leave(); tab = 'clients'; openClients(); });
+    $('mes-biens-ouvrir').addEventListener('click', function () { if (!currentKey) return; leave(); tab = 'mes-biens'; openMesBiens(); });
     $('vers-contenu').addEventListener('click', function () { var t = titleOf(shownId); if (t && t.focus) { t.tabIndex = -1; t.focus(); } });
     $('visite-retour').addEventListener('click', home);
     $('apres-retour').addEventListener('click', home);
