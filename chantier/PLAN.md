@@ -8317,7 +8317,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS058 · L'erreur s'écrit loin du champ
 - Statut : en cours (voie 3)
-- Suivi : branche voie3/DS058 en cours, pour la fiche du bien d'abord (le champ marqué, le refus dessous, le curseur dessus ; un refus du serveur va au champ qu'il nomme) ; proposée après DS039, même fichier. Restent les autres formulaires.
+- Suivi : branche voie3/DS058 en cours, pour la fiche du bien d'abord (le champ marqué, le refus dessous, le curseur dessus ; un refus du serveur va au champ qu'il nomme) ; proposée après DS039, même fichier. Puis l'offre reçue, branche voie3/DS058-offre, en fin de pile (avec son bouton d'envoi à portée, DS059). Restent les autres formulaires.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS058 (mineur, formulaires, effort M), endroit : tous les formulaires
 - Constat de l’audit : le refus s'écrit dans la zone d'état, sous le bouton. Aucun champ ne porte `aria-invalid`.
@@ -8326,7 +8326,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS059 · Le bouton d'envoi est au bout du formulaire
 - Statut : en cours (voie 3)
-- Suivi : branche voie3/DS059 en cours, pour la fiche du bien (« Enregistrer la fiche » collé au-dessus des onglets pendant la saisie) ; proposée après DS058, même fichier. Reste l'offre reçue.
+- Suivi : branche voie3/DS059 en cours, pour la fiche du bien (« Enregistrer la fiche » collé au-dessus des onglets pendant la saisie) ; proposée après DS058, même fichier. L'offre reçue suit, branche voie3/DS058-offre.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS059 (mineur, formulaires, une main, effort S), endroit : fiche du bien (42 champs), offre reçue (16 champs)
 - Constat de l’audit : Le bouton d'envoi est au bout du formulaire.
