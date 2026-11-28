@@ -300,7 +300,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
       ul.appendChild(li);
     });
     box.appendChild(ul);
-    box.appendChild(button('Recalculer les prix', recompute));
+    box.appendChild(quiet(button('Recalculer les prix', recompute)));
     return box;
   }
 
@@ -393,7 +393,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
     var li = el('li');
     li.appendChild(el('strong', z.name));
     if (redraw[z.id]) li.appendChild(el('p', 'Contour à refaire : mise de côté du calcul. Retirez-la, puis retracez-la.', 'etat'));
-    li.appendChild(confirmed('Retirer', warning, function () {
+    li.appendChild(quiet(confirmed('Retirer', warning, function () {
       once(function () {
         state('Envoi…');
         return send('/v1/attirer/prix/zones/' + encodeURIComponent(z.id) + '/retrait', 'POST').then(function (x) {
@@ -402,7 +402,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
           return open('« ' + z.name + ' » a quitté le site et les prochains calculs.');
         });
       });
-    }));
+    })));
     return li;
   }
   /*
@@ -476,15 +476,15 @@ globalThis.AIMMO_ATTIRER = function (t) {
     function setSite(baseUrl, active, okText) {
       agentWrite('/v1/attirer/sites', { kind: 'agent', agentId: a.agentId, baseUrl: baseUrl, active: active }, okText, 'Le site n’est pas enregistré.');
     }
-    if (site && site.active) li.appendChild(confirmed('Mettre hors service', SITE_WARNING, function () { setSite(site.baseUrl, false, 'Site mis hors service.'); }));
-    if (site && !site.active) li.appendChild(button('Remettre en service', function () { setSite(site.baseUrl, true, 'Site remis en service.'); }));
+    if (site && site.active) li.appendChild(quiet(confirmed('Mettre hors service', SITE_WARNING, function () { setSite(site.baseUrl, false, 'Site mis hors service.'); })));
+    if (site && !site.active) li.appendChild(quiet(button('Remettre en service', function () { setSite(site.baseUrl, true, 'Site remis en service.'); })));
     var form = details(li, site ? 'Changer l’adresse du site' : 'Ajouter un site');
     var url = field(form, 'attirer-a-site-' + i, 'Adresse du site');
     url.setAttribute('type', 'url');
     url.setAttribute('inputmode', 'url');
     function putOn() { setSite(url.value.trim(), true, 'Site mis en service.'); }
     form.appendChild(site && site.active ? confirmed('Changer l’adresse', SITE_WARNING, putOn) : button('Mettre en service', putOn));
-    li.appendChild(button('Fiche Google de cet agent', function () { t.openGoogle(a.agentId); }));
+    li.appendChild(quiet(button('Fiche Google de cet agent', function () { t.openGoogle(a.agentId); })));
     return li;
   }
   /* RS05 · les mentions du site : ce qui manque se voit, et le site reste en essai tant que c'est le cas. */
@@ -540,7 +540,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
       s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
       box.appendChild(s);
     });
-    box.appendChild(b);
+    box.appendChild(quiet(b));
     box.appendChild(inner);
     return box;
   }
@@ -569,7 +569,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
       s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
       box.appendChild(s);
     });
-    box.appendChild(b);
+    box.appendChild(quiet(b));
     box.appendChild(inner);
     return box;
   }
@@ -598,7 +598,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
       s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
       box.appendChild(s);
     });
-    box.appendChild(b);
+    box.appendChild(quiet(b));
     box.appendChild(inner);
     return box;
   }
@@ -608,10 +608,10 @@ globalThis.AIMMO_ATTIRER = function (t) {
     if (!data) return missing(box, res);
     var holder = field(box, 'attirer-titulaire', 'Titulaire de la carte professionnelle');
     holder.value = data.holder || '';
-    box.appendChild(button('Enregistrer le titulaire', function () {
+    box.appendChild(quiet(button('Enregistrer le titulaire', function () {
       agentWrite('/v1/attirer/titulaire', { holder: holder.value }, 'Titulaire enregistré.', 'Le titulaire n’est pas enregistré.');
-    }));
-    box.appendChild(button('Mentions légales du site', function () { openLegal(); }));
+    })));
+    box.appendChild(quiet(button('Mentions légales du site', function () { openLegal(); })));
     box.appendChild(el('p', data.cardNumber ? 'Carte professionnelle : ' + data.cardNumber : 'Numéro de carte professionnelle du réseau : pas encore réglé.', 'doux'));
     if (!data.agents.length) box.appendChild(el('p', 'Aucun agent en activité.', 'doux'));
     var ul = el('ul', null, 'liste');
@@ -647,7 +647,7 @@ globalThis.AIMMO_ATTIRER = function (t) {
       var li = el('li');
       li.appendChild(el('strong', z.name));
       li.appendChild(el('p', z.communeName, 'doux'));
-      li.appendChild(button('Ouvrir', function () { openQuarter(z, ''); }));
+      li.appendChild(quiet(button('Ouvrir', function () { openQuarter(z, ''); })));
       ul.appendChild(li);
     });
     box.appendChild(ul);
@@ -762,9 +762,9 @@ globalThis.AIMMO_ATTIRER = function (t) {
       var li = el('li');
       li.appendChild(el('strong', factLine(f)));
       li.appendChild(el('p', (FACT_KINDS[f.kind] || 'Autre') + ' · ' + f.source + ', ' + date(f.sourceDate), 'doux'));
-      li.appendChild(confirmed('Retirer ce fait', 'Un texte qui le cite ne sera plus servi. Appuyez de nouveau pour confirmer.', function () {
+      li.appendChild(quiet(confirmed('Retirer ce fait', 'Un texte qui le cite ne sera plus servi. Appuyez de nouveau pour confirmer.', function () {
         quarterWrite(z, quarterPath(z, '/faits'), { key: f.key, retired: true }, 'Fait retiré.', 'Le fait reste rangé.');
-      }));
+      })));
       ul.appendChild(li);
     });
     box.appendChild(ul);
@@ -798,6 +798,9 @@ globalThis.AIMMO_ATTIRER = function (t) {
    * Un geste qui retire quelque chose du public se confirme : le premier appui demande de confirmer ; un second appui trop rapproché
    * n'est pas une confirmation ; sans suite, la demande retombe.
    */
+  // DS022 · sur cet écran de réglages, rien n'est « le pas à faire » : ouvrir, recalculer, mettre hors service sont
+  // filaires ; un bouton plein ne se voit que dans un formulaire ouvert au geste.
+  function quiet(b) { b.className = 'secondaire'; return b; }
   function confirmed(text, warning, act) {
     var armedAt = null;
     var b = button(text, function () {
@@ -855,18 +858,19 @@ globalThis.AIMMO_ATTIRER = function (t) {
       li.appendChild(el('strong', s.baseUrl));
       li.appendChild(el('p', s.kind === 'agent' ? 'Site d’un agent' : 'Site du réseau', 'doux'));
       var plan = el('div');
-      li.appendChild(button('Voir le plan', function () { openPlan(s, plan); }));
-      if (s.kind !== 'agent') li.appendChild(confirmed('Mettre hors service', SITE_WARNING, function () { saveSite(s.baseUrl, false, 'Site mis hors service.', 'Le site reste en service.'); }));
+      li.appendChild(quiet(button('Voir le plan', function () { openPlan(s, plan); })));
+      if (s.kind !== 'agent') li.appendChild(quiet(confirmed('Mettre hors service', SITE_WARNING, function () { saveSite(s.baseUrl, false, 'Site mis hors service.', 'Le site reste en service.'); })));
       li.appendChild(plan);
       ul.appendChild(li);
     });
     box.appendChild(ul);
     var hasNetwork = items.some(function (s) { return s.kind !== 'agent'; });
-    var f = field(box, 'attirer-site', hasNetwork ? 'Changer l’adresse du site du réseau' : 'Adresse du site du réseau');
+    var form = details(box, hasNetwork ? 'Changer l’adresse du site du réseau' : 'Mettre le site du réseau en service');
+    var f = field(form, 'attirer-site', 'Adresse du site du réseau');
     f.setAttribute('type', 'url');
     f.setAttribute('inputmode', 'url');
     function putOn() { saveSite(f.value.trim(), true, 'Site mis en service.', 'Le site n’est pas enregistré.'); }
-    box.appendChild(hasNetwork ? confirmed('Changer l’adresse', SITE_WARNING, putOn) : button('Mettre en service', putOn));
+    form.appendChild(hasNetwork ? confirmed('Changer l’adresse', SITE_WARNING, putOn) : button('Mettre en service', putOn));
     return box;
   }
   return { open: open, wipe: wipe, inside: function () { return inside; } };
