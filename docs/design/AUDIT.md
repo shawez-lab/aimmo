@@ -323,6 +323,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : « L'annonce, phrase par phrase » — `packages/api/app/fichiers.ts` (`#vente`)
 - Preuve : `appli-mettre-en-vente.jpg` : « 3 : pièces, lu dans la fiche du bien » sous chaque phrase. L'écran fait 3,6 écrans.
 - Solution : l'annonce se lit d'un trait. Un appui sur une phrase montre ses preuves. Une phrase sans preuve est signalée.
+- Suite : corrigé le 2026-11-28 : l'annonce se lit d'un trait, phrase après phrase ; sous une phrase ne reste que ce qui est à corriger (« À corriger : fait absent de la fiche »), toujours sous les yeux. Les champs de la fiche d'où vient chaque nombre se lisent au geste, dans un seul volet (« D'où vient chaque nombre »), dans l'ordre des phrases ; une annonce sans nombre lu n'a pas de volet. Sur le jeu de capture, au téléphone : 2,9 écrans au lieu de 3,4. Reste : un appui sur une phrase pour ses seules preuves. Avant et après : `captures/avant-apres/DS040-annonce-d-un-trait.jpg`.
 
 #### DS041 · Une liste ne se touche que par son bouton
 - Gravité : mineur · Catégorie : composants · Effort : S
