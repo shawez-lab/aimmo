@@ -619,6 +619,127 @@ describe('DS039 · la fiche du bien se remplit par parties, chacune dit où elle
   });
 });
 
+describe('DS058 · dans la fiche du bien, le refus se dit sous le champ fautif', () => {
+  const SUBJECTS = { 'GET /v1/annonces/b1/photos/sujets': ok({ photos: [{ ref: MEDIA[0]!.ref, subject: null }], allowed: ['cuisine'] }) };
+  type T = Awaited<ReturnType<typeof run>>;
+  const type = (t: T, id: string, value: string) => {
+    const f = t.f(id);
+    f.value = value;
+    f.listeners.input!({});
+  };
+  /** Les champs marqués, et pour chacun ce qui est écrit juste après lui, dans sa partie. */
+  const flagged = (t: T) =>
+    t
+      .body()
+      .all()
+      .filter((e: FakeElement) => e.attributes['aria-invalid'] === 'true')
+      .map((f: FakeElement) => {
+        const box = t.body().all().find((d: FakeElement) => d.children.includes(f))!;
+        const next = box.children[box.children.indexOf(f) + 1]!;
+        return { id: f.attributes.id, describedBy: f.attributes['aria-describedby'], noteId: next.attributes.id, note: next.textContent, cls: next.className };
+      });
+  const notes = (t: T) => t.body().all().filter((e: FakeElement) => /-erreur$/.test(e.attributes.id ?? ''));
+
+  it('[R10] un nombre mal écrit : le champ est marqué et décrit, le refus se lit juste dessous, et la saisie dans ce champ l’efface', async () => {
+    const t = await run({ ...SUBJECTS, [POST]: ok({ version: 5 }) });
+    await t.open();
+    expect(flagged(t)).toEqual([]);
+    type(t, 'fiche-bien-charges', '12,5');
+    await t.save();
+    expect(t.posts()).toEqual([]);
+    expect(flagged(t)).toEqual([{ id: 'fiche-bien-charges', describedBy: 'fiche-bien-charges-erreur', noteId: 'fiche-bien-charges-erreur', note: 'À vérifier : Charges annuelles, un nombre entier sans lettre.', cls: 'retard' }]);
+    expect(FakeElement.active).toBe(t.f('fiche-bien-charges'));
+    // Le refus reste dit près du bouton, pour qui vient d'appuyer.
+    expect(t.body().all().find((e: FakeElement) => e.attributes.role === 'status')!.textContent).toBe('À vérifier : Charges annuelles, un nombre entier sans lettre.');
+    // Taper ailleurs ne lève pas la marque ; taper dans le champ la lève, avec son texte.
+    type(t, 'fiche-bien-bedrooms', '3');
+    expect(flagged(t)).toHaveLength(1);
+    type(t, 'fiche-bien-charges', '1250');
+    expect(flagged(t)).toEqual([]);
+    expect(notes(t)).toEqual([]);
+    expect(t.f('fiche-bien-charges').attributes['aria-describedby']).toBeUndefined();
+    await t.save();
+    expect(t.posts()).toHaveLength(1);
+  });
+
+  it('un seul champ marqué à la fois : la première erreur d’abord, puis la suivante', async () => {
+    const t = await run({ ...SUBJECTS, [POST]: ok({ version: 5 }) });
+    await t.open();
+    type(t, 'fiche-bien-bedrooms', 'deux');
+    type(t, 'fiche-bien-charges', '12,5');
+    await t.save();
+    // Dans l'ordre de la fiche : les chambres d'abord.
+    expect(flagged(t).map((x) => x.id)).toEqual(['fiche-bien-bedrooms']);
+    expect(flagged(t)[0]!.note).toBe('À vérifier : Chambres, un nombre entier sans lettre.');
+    // Le champ corrigé sans que sa marque ait été levée par la saisie (collage, remplissage) : l'essai suivant la déplace.
+    t.f('fiche-bien-bedrooms').value = '2';
+    await t.save();
+    expect(flagged(t).map((x) => x.id)).toEqual(['fiche-bien-charges']);
+    expect(notes(t)).toHaveLength(1);
+    expect(t.f('fiche-bien-bedrooms').attributes['aria-invalid']).toBeUndefined();
+  });
+
+  it('une surface mal écrite se dit avec sa forme, pas comme un nombre entier', async () => {
+    const t = await run({ ...SUBJECTS, [POST]: ok({ version: 5 }) });
+    await t.open();
+    type(t, 'fiche-bien-carrez', '61,456');
+    await t.save();
+    expect(t.posts()).toEqual([]);
+    expect(flagged(t)).toMatchObject([{ id: 'fiche-bien-carrez', note: 'À vérifier : Surface Carrez, en m², au centième au plus.' }]);
+    expect(t.body().textContent).not.toContain('Surface Carrez, un nombre entier');
+    type(t, 'fiche-bien-carrez', '61,45');
+    await t.save();
+    expect(t.posts()[0]!.body.characteristics.carrezM2).toBe(61.45);
+  });
+
+  it('des lots sans « en copropriété : oui » : la question est marquée, avec ce qu’il faut faire', async () => {
+    const t = await run({ [GET]: no(404, { ok: false, rule: null, code: 'no_sheet' }) });
+    await t.open();
+    type(t, 'fiche-bien-lots', '12');
+    await t.save();
+    expect(flagged(t)).toMatchObject([{ id: 'fiche-bien-copro', note: 'À vérifier : les lots, les charges et la procédure vont avec « en copropriété : oui ». Choisissez oui, ou videz-les.' }]);
+    const co = t.f('fiche-bien-copro');
+    co.value = 'oui';
+    co.listeners.change!({});
+    expect(flagged(t)).toEqual([]);
+  });
+
+  it('un refus du socle va au champ qu’il nomme, en français ; un groupe de cases ou un champ inconnu ouvre sa partie sans rien marquer', async () => {
+    const dated = await run({ ...SUBJECTS, [POST]: no(400, { ok: false, rule: null, code: 'invalid', field: 'energy.diagnosedOn' }) });
+    await dated.open();
+    type(dated, 'fiche-bien-bedrooms', '5');
+    await dated.save();
+    expect(flagged(dated)).toMatchObject([{ id: 'fiche-bien-diagnostic', note: 'À vérifier : Jour du diagnostic, jamais dans le futur.' }]);
+    expect(FakeElement.active).toBe(dated.f('fiche-bien-diagnostic'));
+
+    const years = await run({ ...SUBJECTS, [POST]: no(400, { ok: false, rule: null, code: 'invalid', field: 'energy.costReferenceYears' }) });
+    await years.open();
+    type(years, 'fiche-bien-bedrooms', '5');
+    await years.save();
+    expect(flagged(years).map((x) => x.id)).toEqual(['fiche-bien-cout-annee']);
+
+    const floor = await run({ ...SUBJECTS, [POST]: no(400, { ok: false, rule: null, code: 'invalid', field: 'characteristics.floor' }) });
+    await floor.open();
+    type(floor, 'fiche-bien-bedrooms', '5');
+    await floor.save();
+    expect(flagged(floor)).toMatchObject([{ id: 'fiche-bien-floor', note: 'À vérifier : Étage : il ne peut pas dépasser le nombre d’étages.' }]);
+
+    const group = await run({ ...SUBJECTS, [POST]: no(400, { ok: false, rule: null, code: 'invalid', field: 'characteristics.amenities' }) });
+    await group.open();
+    type(group, 'fiche-bien-bedrooms', '5');
+    await group.save();
+    expect(flagged(group)).toEqual([]);
+    expect(group.body().textContent).toContain('À vérifier : Équipements du bien.');
+
+    // Une fiche changée entre-temps ne marque aucun champ : ce n'est pas une erreur de saisie.
+    const stale = await run({ ...SUBJECTS, [POST]: no(409, { ok: false, rule: null, code: 'stale' }) });
+    await stale.open();
+    type(stale, 'fiche-bien-bedrooms', '5');
+    await stale.save();
+    expect(flagged(stale)).toEqual([]);
+  });
+});
+
 /** Dans Chromium, là où Playwright et son navigateur sont installés : sinon l'essai se signale sauté. */
 type Navigateur = { newPage(o?: object): Promise<any>; close(): Promise<void> };
 async function lancer(): Promise<Navigateur | null> {
@@ -711,6 +832,21 @@ describe('DS039 · dans Chromium', () => {
         expect(after.open).toContain('Copropriété et risques · 5 sur 5');
         expect(after.focus).toBe('fiche-bien-charges');
         expect(await page.isVisible('#fiche-bien-charges')).toBe(true);
+        // DS058 · le champ est cerné de la couleur du refus, et le refus s'écrit juste dessous, hors de l'anneau du curseur.
+        const mark = await page.evaluate(() => {
+          const d = (globalThis as any).document;
+          const f = d.getElementById('fiche-bien-charges');
+          const n = d.getElementById('fiche-bien-charges-erreur');
+          const calm = d.getElementById('fiche-bien-lots');
+          const css = (e: any) => (globalThis as any).getComputedStyle(e);
+          return { invalid: f.getAttribute('aria-invalid'), border: css(f).borderTopColor, calm: css(calm).borderTopColor, color: css(n).color, gap: Math.round(n.getBoundingClientRect().top - f.getBoundingClientRect().bottom), text: n.textContent };
+        });
+        expect(mark.invalid).toBe('true');
+        expect(mark.border).not.toBe(mark.calm);
+        expect(mark.color).toBe(mark.border);
+        expect(mark.gap).toBeGreaterThanOrEqual(6);
+        expect(mark.gap).toBeLessThanOrEqual(16);
+        expect(mark.text).toBe('À vérifier : Charges annuelles, un nombre entier sans lettre.');
       } finally {
         await page.close();
       }
