@@ -264,7 +264,7 @@ describe('X11 · écran « Studio » de l’application', () => {
     t.table['POST /v1/studio/biens/b1/publications'] = ok({ ...POST_VIEW });
     await t.openB1();
     expect(t.els.studio!.hidden).toBe(false);
-    expect(t.els['studio-titre']!.textContent).toBe('Studio · ST-1');
+    expect(t.els['studio-titre']!.textContent).toBe('Studio');
     await t.click(t.byText('Retenir cette photo'));
     expect(t.state()).toBe('Photo retenue pour Entrée.');
     const shot = t.calls.find((c) => c.method === 'POST' && c.url === '/v1/studio/biens/b1/guide/vues')!;

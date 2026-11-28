@@ -60,6 +60,7 @@ const CHOICES = {
 export const AVIS_HTML = `<section id="avis" hidden>
 <button id="avis-retour" type="button" class="retour">Retour</button>
 <h2 id="avis-titre">Avis de valeur</h2>
+<p id="avis-bien" class="doux"></p>
 <p id="avis-etat" class="etat" role="status"></p>
 <div id="avis-corps"></div>
 </section>
@@ -133,7 +134,7 @@ globalThis.AIMMO_AVIS = function (t) {
     t.bump();
     wipe();
     cur = { id: id, reference: reference || 'ce bien' };
-    $('avis-titre').textContent = 'Avis de valeur · ' + cur.reference;
+    $('avis-titre').textContent = 'Avis de valeur';
     show('avis', [id, reference]);
     return load();
   }
