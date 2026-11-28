@@ -864,6 +864,50 @@ describe('DS049 · le fil du mandat : préparer, contrôler, signer, inscrit', (
     expect(rail(failed).current).toEqual(['Contrôler']);
   });
 
+  it('un contrôle réussi puis un contrôle qui échoue, dans le même écran : le fil revient à « Contrôler », comme le formulaire de signature s’efface', async () => {
+    const answers = [PASSED, FAILED, PASSED];
+    let n = 0;
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC] }), 'POST /v1/documents/d1/controle': () => ok(answers[n++])() });
+    await t.open();
+    await t.press('Contrôler avant signature');
+    expect(rail(t).current).toEqual(['Signer']);
+    expect(t.input('mandat-jour-d1')).toBeDefined();
+    // Une pièce a changé entre-temps : le second contrôle échoue.
+    await t.press('Contrôler avant signature');
+    expect(t.state()).toBe('Un point au moins n’est pas réglé : rien ne se signe.');
+    expect(t.input('mandat-jour-d1')).toBeUndefined();
+    expect(rail(t).steps).toEqual(['Préparer · fait', 'Contrôler', 'Signer', 'Inscrit']);
+    expect(rail(t).current).toEqual(['Contrôler']);
+    // Réglé : le contrôle repasse, le fil avance de nouveau.
+    await t.press('Contrôler avant signature');
+    expect(rail(t).current).toEqual(['Signer']);
+    // Le contrôle qui ne répond pas efface aussi le formulaire : même retour.
+    const cut = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC] }), 'POST /v1/documents/d1/controle': () => (n++ === 3 ? ok(PASSED)() : Promise.reject(new TypeError('hors ligne'))) });
+    await cut.open();
+    await cut.press('Contrôler avant signature');
+    expect(rail(cut).current).toEqual(['Signer']);
+    await cut.press('Contrôler avant signature');
+    expect(cut.input('mandat-jour-d1')).toBeUndefined();
+    expect(rail(cut).current).toEqual(['Contrôler']);
+  });
+
+  it('le document relu prend la place du formulaire de signature : le fil revient à « Contrôler » ; un enregistrement arrêté en route reste à « Signer »', async () => {
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC] }), 'GET /v1/documents/d1': ok({ content: '<p>Mandat de vente</p>' }) });
+    await t.open();
+    await t.press('Contrôler avant signature');
+    expect(rail(t).current).toEqual(['Signer']);
+    await t.press('Lire le document');
+    expect(t.input('mandat-jour-d1')).toBeUndefined();
+    expect(rail(t).current).toEqual(['Contrôler']);
+    const begun = await run({
+      'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [{ ...DOC, signature: { signedAt: '2027-02-10T12:00:00.000Z', place: 'agence', number: null, complete: false } }] }),
+      'GET /v1/documents/d1': ok({ content: '<p>Mandat de vente</p>' }),
+    });
+    await begun.open();
+    await begun.press('Lire le document');
+    expect(rail(begun).current).toEqual(['Signer']);
+  });
+
   it('[R38] un enregistrement arrêté en route a passé son contrôle : l’étape en cours est « Signer »', async () => {
     const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [{ ...DOC, signature: { signedAt: '2027-02-10T12:00:00.000Z', place: 'agence', number: null, complete: false } }] }) });
     await t.open();
