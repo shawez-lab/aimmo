@@ -78,7 +78,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Preuve : aucun élément `nav`. Le seul lien entre écrans est « Retour à ma journée ». Passer du mandat aux offres du même bien demande : retour, défilement jusqu'au bien, « Offres ».
 - Principe : on sait toujours où l'on est et comment aller ailleurs.
 - Solution : une barre de cinq onglets en bas sur téléphone (Journée, Clients, Biens, Outils, Chiffres), une colonne à gauche sur ordinateur.
-- Suite : corrigé le 2026-11-27 : une barre d'onglets pour l'agent, Journée, Outils et Chiffres, en bas sur téléphone et en colonne à gauche sur ordinateur ; un écran ouvert depuis un onglet y revient. Clients et Biens auront leur onglet avec leur liste (DS003, DS004). Avant et après : `captures/avant-apres/DS005-onglets.jpg`, `DS005-onglets-ordinateur.jpg`.
+- Suite : corrigé le 2026-11-27 : une barre d'onglets pour l'agent, Journée, Outils et Chiffres, en bas sur téléphone et en colonne à gauche sur ordinateur ; un écran ouvert depuis un onglet y revient. Clients et Biens auront leur onglet avec leur liste (DS003, DS004). Avant et après : `captures/avant-apres/DS005-onglets.jpg`, `DS005-onglets-ordinateur.jpg`. Le 2026-11-28, en rejouant les mesures : avec cinq onglets et le texte à 200 %, le dernier sortait de l'écran sans pouvoir s'atteindre ; la barre défile maintenant dans sa largeur, ses mots ne se touchent plus, et la page ne défile pas de côté (un essai dans Chromium le garde). Avant et après : `captures/avant-apres/DS005-onglets-texte-200.jpg`.
 
 #### DS006 · « Se déconnecter » occupe la meilleure place
 - Gravité : majeur · Catégorie : navigation · Effort : S

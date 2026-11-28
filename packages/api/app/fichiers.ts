@@ -289,8 +289,8 @@ body { min-height: 100dvh; }
 .tete h1 { font-size: var(--t-s); }
 .evitement { position: absolute; z-index: 4; top: var(--e-2); left: var(--e-4); margin: 0; }
 .evitement:not(:focus) { width: 1px; height: 1px; min-height: 0; padding: 0; overflow: hidden; clip-path: inset(50%); }
-.onglets { position: fixed; z-index: 3; left: 0; right: 0; bottom: 0; display: flex; padding-bottom: env(safe-area-inset-bottom); background: var(--surface); border-top: 1px solid var(--trait); }
-.onglets button { flex: 1 1 0; flex-direction: column; gap: var(--e-1); min-height: calc(var(--cible) + var(--e-2)); margin: 0; padding: var(--e-1) 0; border-radius: 0; color: var(--doux); font-size: var(--t-xs); text-decoration: none; }
+.onglets { position: fixed; z-index: 3; left: 0; right: 0; bottom: 0; display: flex; overflow-x: auto; padding-bottom: env(safe-area-inset-bottom); background: var(--surface); border-top: 1px solid var(--trait); }
+.onglets button { flex: 1 1 0; flex-direction: column; gap: var(--e-1); min-height: calc(var(--cible) + var(--e-2)); margin: 0; padding: var(--e-1) var(--e-2); border-radius: 0; color: var(--doux); font-size: var(--t-xs); text-decoration: none; }
 .onglets button[aria-current] { color: var(--encre); box-shadow: inset 0 2px 0 var(--encre); }
 .onglets button:focus-visible { outline-offset: -3px; }
 .onglets svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
