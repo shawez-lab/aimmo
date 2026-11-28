@@ -271,9 +271,20 @@ globalThis.AIMMO_MANDAT = function (t) {
     keys.forEach(function (k) { var o = el('option', names[k] || k); o.value = k; f.appendChild(o); });
     return f;
   }
+  // DS049 · le fil du mandat : les étapes faites le disent, la première qui ne l'est pas est l'étape en cours.
+  var fil = null;
+  function rail(done) {
+    clear(fil);
+    ['Préparer', 'Contrôler', 'Signer', 'Inscrit'].forEach(function (name, i) {
+      var li = fil.appendChild(el('li', name + (i < done ? ' · fait' : ''), i < done ? 'fait' : null));
+      if (i === done) li.setAttribute('aria-current', 'step');
+    });
+  }
   function draw(data) {
     var m = data.mandate;
     cur.owners = Array.isArray(data.owners) ? data.owners.filter(function (o) { return o && ID.test(o.personId); }) : [];
+    fil = body().appendChild(el('ol', null, 'parcours'));
+    fil.setAttribute('aria-label', 'Étapes du mandat');
     var box = bloc('Mandat en cours');
     if (!m) box.appendChild(el('p', 'Aucun mandat signé pour ce bien.', 'doux'));
     else {
@@ -293,6 +304,8 @@ globalThis.AIMMO_MANDAT = function (t) {
     list.forEach(function (d) { if (ID.test(d.id)) drawDocument(docs, d, free, amendable); });
     if (free) drawDesignation(data.designation || null, Array.isArray(data.owners) ? data.owners : []);
     var waiting = list.some(function (d) { return ID.test(d.id) && /^mandat_/.test(String(d.kind)) && !(d.signature && d.signature.complete); });
+    // En cours : tout est fait. Enregistrement commencé : contrôle passé. Préparé : à contrôler.
+    rail(!free ? 4 : list.some(function (d) { return ID.test(d.id) && /^mandat_/.test(String(d.kind)) && d.signature && !d.signature.complete; }) ? 2 : waiting ? 1 : 0);
     if (free) drawGenerate(Array.isArray(data.owners) ? data.owners : [], waiting);
     else if (amendable) drawAmend(m, Array.isArray(data.owners) ? data.owners : []);
   }
@@ -481,6 +494,8 @@ globalThis.AIMMO_MANDAT = function (t) {
       // Un seul échec, et il n'y a rien à signer [R41].
       if (check.passed !== true) { state('Un point au moins n’est pas réglé : rien ne se signe.'); return true; }
       state('Contrôle réussi : vous pouvez enregistrer la signature.');
+      // Un avenant ne déplace pas le fil.
+      if (d.kind !== 'avenant_mandat') rail(2);
       drawSign(zone, d);
       if (d.kind !== 'avenant_mandat') online(zone, d);
       return true;

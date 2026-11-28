@@ -832,3 +832,64 @@ describe('DS022 · « Mandat » : un seul bouton plein, le pas qui fait avancer 
     expect(named(t, 'Ne rien noter')!.className).toBe('secondaire');
   });
 });
+
+describe('DS049 · le fil du mandat : préparer, contrôler, signer, inscrit', () => {
+  type T = Awaited<ReturnType<typeof run>>;
+  /** Le fil tel qu'il se lit : chaque étape, et celle qui est en cours. */
+  const rail = (t: T) => {
+    const ol = t.body().children[0]!;
+    return { tag: ol.tagName, cls: ol.className, label: ol.attributes['aria-label'], steps: ol.children.map((li) => li.textContent), done: ol.children.map((li) => li.className === 'fait'), current: ol.children.filter((li) => li.attributes['aria-current'] === 'step').map((li) => li.textContent) };
+  };
+  const LIVE = { id: 'm1', number: 'T-007', signedAt: '2027-02-10T12:00:00.000Z', allowed: true, reason: 'ok' };
+  const SIGNED = { ...DOC, signature: { signedAt: '2027-02-10T12:00:00.000Z', place: 'agence', number: 'T-007', complete: true } };
+
+  it('le fil est la première chose de l’écran, le même composant que pour la location ; sans mandat préparé, tout commence à « Préparer »', async () => {
+    const t = await run();
+    await t.open();
+    expect(rail(t)).toEqual({ tag: 'ol', cls: 'parcours', label: 'Étapes du mandat', steps: ['Préparer', 'Contrôler', 'Signer', 'Inscrit'], done: [false, false, false, false], current: ['Préparer'] });
+  });
+
+  it('un mandat préparé attend son contrôle ; le contrôle réussi fait passer à « Signer », un échec n’avance pas', async () => {
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC] }) });
+    await t.open();
+    expect(rail(t).steps).toEqual(['Préparer · fait', 'Contrôler', 'Signer', 'Inscrit']);
+    expect(rail(t).current).toEqual(['Contrôler']);
+    await t.press('Contrôler avant signature');
+    expect(rail(t).steps).toEqual(['Préparer · fait', 'Contrôler · fait', 'Signer', 'Inscrit']);
+    expect(rail(t).done).toEqual([true, true, false, false]);
+    expect(rail(t).current).toEqual(['Signer']);
+    const failed = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC] }), 'POST /v1/documents/d1/controle': ok(FAILED) });
+    await failed.open();
+    await failed.press('Contrôler avant signature');
+    expect(rail(failed).current).toEqual(['Contrôler']);
+  });
+
+  it('[R38] un enregistrement arrêté en route a passé son contrôle : l’étape en cours est « Signer »', async () => {
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [{ ...DOC, signature: { signedAt: '2027-02-10T12:00:00.000Z', place: 'agence', number: null, complete: false } }] }) });
+    await t.open();
+    expect(rail(t).steps).toEqual(['Préparer · fait', 'Contrôler · fait', 'Signer', 'Inscrit']);
+    expect(rail(t).current).toEqual(['Signer']);
+  });
+
+  it('un mandat en cours : les quatre étapes sont faites, aucune n’est en cours ; le contrôle d’un avenant ne déplace pas le fil', async () => {
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [SIGNED], mandate: LIVE }) });
+    await t.open();
+    expect(rail(t).steps).toEqual(['Préparer · fait', 'Contrôler · fait', 'Signer · fait', 'Inscrit · fait']);
+    expect(rail(t).current).toEqual([]);
+    const amend = await run({
+      'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [SIGNED, { ...DOC, id: 'd2', kind: 'avenant_mandat', mandateId: 'm1' }], mandate: LIVE }),
+      'POST /v1/documents/d2/controle': ok({ ...PASSED, documentId: 'd2' }),
+    });
+    await amend.open();
+    await amend.press('Contrôler avant signature');
+    expect(amend.state()).toContain('Contrôle réussi');
+    expect(rail(amend).current).toEqual([]);
+    expect(rail(amend).done).toEqual([true, true, true, true]);
+  });
+
+  it('un mandat rétracté rouvre le fil : tout recommence à « Préparer »', async () => {
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [SIGNED], mandate: { ...LIVE, allowed: false, reason: 'withdrawn' } }) });
+    await t.open();
+    expect(rail(t).current).toEqual(['Préparer']);
+  });
+});

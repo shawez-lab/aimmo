@@ -382,6 +382,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Où : mandat — `packages/api/app/mandat.ts`
 - Preuve : questionnaire, document, contrôle, signature papier ou en ligne, rétractation et avenant sont des cartes de même rang. Le fil d'étapes `.parcours` existe, pour la location seulement.
 - Solution : le même fil d'étapes sur tous les parcours : préparer, contrôler, signer, inscrit. L'étape en cours porte le bouton plein.
+- Suite : corrigé pour le mandat le 2026-11-28 : l'écran s'ouvre sur le fil « Préparer, Contrôler, Signer, Inscrit », le composant `.parcours` de la location. Une étape faite le dit ; la première qui ne l'est pas est l'étape en cours. Sans mandat préparé : « Préparer ». Un mandat préparé : « Contrôler ». Contrôle réussi, ou enregistrement arrêté en route : « Signer ». Un mandat au registre : les quatre étapes faites. Un mandat rétracté, annulé ou échu rouvre le fil ; le contrôle d'un avenant ne le déplace pas. Le bouton plein reste celui de l'étape en cours (DS022). Restent : le même fil sur le dossier de vente et sur l'offre. Avant et après : `captures/avant-apres/DS049-fil-du-mandat.jpg`.
 
 #### DS050 · La fiche n'ouvre pas sur le geste du jour
 - Gravité : majeur · Catégorie : parcours · Effort : M
