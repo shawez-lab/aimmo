@@ -1338,7 +1338,7 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 
 ### AU118 · L'exemplaire signé n'est pas remis au mandant quand son empreinte porte une longue suite de chiffres
 - Statut : en cours (voie 3)
-- Suivi : trouvé le 2026-11-28 par « Vérifier », tombé au hasard sur #833 (essais AU003 de `signature-reelle.test.ts`) ; reproduit en boucle : une remise sur 150 environ. Branche voie3/AU118.
+- Suivi : trouvé le 2026-11-28 par « Vérifier », tombé au hasard sur #833 (essais AU003 de `signature-reelle.test.ts`) ; reproduit en boucle : une remise sur 150 environ. Proposition #842 ouverte le 2026-11-28 : une ligne de `texte.ts`, deux essais qui échouent sans elle, R10 mise à jour.
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Cahier : M06 Mandats et documents ; M12 Conformité ; endroit : `packages/core/src/envoi/texte.ts` (contrôle des chiffres, R10), vu depuis `packages/core/src/documents/signature-en-ligne.ts` (remise de l'exemplaire, R39).
 - Constat : le mail qui remet l'exemplaire signé cite la référence du document et son empreinte. Quand l'une des deux porte 17 chiffres d'affilée ou plus, le contrôle des chiffres la compare après un passage par un nombre, qui l'arrondit : le chiffre « ne vient pas des données fournies », le mail est refusé (R10), et il le sera à chaque reprise, puisque la référence et l'empreinte ne changent pas. Le mandant ne reçoit jamais son exemplaire.
@@ -1353,6 +1353,15 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Constat : mesuré le 2026-11-28, en cherchant AU118, sur 300 000 empreintes tirées au hasard : 166, une sur 1 800 environ, portent une suite que le bouclier lit comme un IBAN. Le mail qui remet l'exemplaire signé est alors refusé (R62), et il le sera à chaque reprise. Exemple : `0bd65d10f21aac07f12cd27fad5475be457d2e2cc5bed926e70ae19f57c79d9c`. Les références tirées au hasard (UUID) sont déjà mises à part avant la recherche ; une empreinte ne l'est pas.
 - Objectif : une empreinte que le code place lui-même dans un message n'est jamais prise pour une coordonnée bancaire, sans ouvrir de passage à un IBAN caché dans un message reçu.
 - Critères : le constat est d'abord reproduit par un test qui échoue (l'empreinte ci-dessus), puis passe ; un IBAN caché dans une suite de 64 caractères d'un message reçu reste masqué et alerte toujours (test) ; les règles R15 et R62 de `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
+### AU120 · L'écran du mandat dit « Aucun mandat signé pour ce bien » quand le bien a un mandat de location signé
+- Statut : à faire
+- Qui : Claude · Relecture : forte · Dépend de : rien
+- Cahier : M06 Mandats et documents ; M15 Louer ; endroit : `packages/core/src/documents/mandat-du-bien.ts` (`PropertyMandates.read`), `packages/api/app/mandat.ts` (bloc « Mandat en cours »).
+- Constat : relevé par Codex le 2026-11-28 sur #834. La lecture du mandat d'un bien appelle `canDiffuse` sans objet, donc pour la vente seule : pour un bien dont le seul mandat signé est un mandat de location, « mandate » est vide. Le bloc « Mandat en cours » dit « Aucun mandat signé pour ce bien » alors que le document, juste dessous, porte sa signature et son numéro ; l'écran propose d'en préparer un autre, et ne sait pas si le mandat de location a été rétracté ou est échu.
+- Objectif : la lecture résume aussi le mandat de location du bien (numéro, date, état), et l'écran le dit, avec ses arrêts.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; un mandat de location rétracté ou échu se lit comme tel (test) ; le fil de DS049 lit cet état au lieu du seul document (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
 
 ## Phase 3 : faire mieux que Hektor et Modelo (demande de Shawez du 2026-11-06)
@@ -8040,8 +8049,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS023 · Le bien s'appelle « B-E6B8BB51 »
-- Statut : en cours (voie 3)
-- Suivi : proposition #837 ouverte le 2026-11-28 (sous le titre de chaque outil d'un bien, le bien se dit par ce qu'il est), à part. Restent la rue, et « l'étape est l'onglet ».
+- Statut : à faire
+- Suivi : #837 fusionnée le 2026-11-28 (a77ac0e5, voie 3, Codex sans remarque) : sous le titre de chaque outil d'un bien, le bien se dit par ce qu'il est. Restent la rue, et « l'étape est l'onglet ».
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS023 (majeur, hiérarchie, microcopie, effort M), endroit : titres de six écrans, carte de l'accueil
 - Constat de l’audit : `appli-mandat-offres-avis.jpg`. 105 occurrences dans les plans des écrans. Le point médian passe seul en début de ligne : « Avis de valeur / · B-E6B8BB51 ».
@@ -8164,8 +8173,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS038 · Les formulaires sont toujours ouverts
-- Statut : en cours (voie 3)
-- Suivi : proposition #836 ouverte le 2026-11-28 (le « + » des volets partout dans l'application), à part. Restent : les formulaires encore ouverts de « Louer », des commerces et de la preuve à Dijon, et la feuille elle-même.
+- Statut : à faire
+- Suivi : #836 fusionnée le 2026-11-28 (6b16c34e, voie 3, Codex sans remarque) : le « + » des volets partout dans l'application, avec son essai. Restent : les formulaires encore ouverts de « Louer », des commerces et de la preuve à Dijon, et la feuille elle-même.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS038 (majeur, composants, effort M), endroit : mandat (« Préparer un avenant » : 6 champs), fiche client (« Biens du client » : 7 champs, « Accords » : 4 champs)
 - Constat de l’audit : `appli-mandat-offres-avis.jpg`, `appli-fiche-client.jpg`.
@@ -8182,8 +8191,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS040 · La preuve de chaque phrase est toujours dépliée
-- Statut : en cours (voie 3)
-- Suivi : proposition #838 ouverte le 2026-11-28 (l'annonce se lit d'un trait, les preuves s'ouvrent au geste), à part.
+- Statut : fait (2026-11-28)
+- Suivi : #838 fusionnée le 2026-11-28 (e851e1a1, voie 3, Codex sans remarque) : l'annonce se lit d'un trait, les preuves s'ouvrent au geste. Reste, non fait : un appui sur une phrase pour ses seules preuves.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS040 (majeur, composants, effort S), endroit : « L'annonce, phrase par phrase » — `packages/api/app/fichiers.ts` (`#vente`)
 - Constat de l’audit : `appli-mettre-en-vente.jpg` : « 3 : pièces, lu dans la fiche du bien » sous chaque phrase. L'écran fait 3,6 écrans.
@@ -8257,7 +8266,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS049 · La signature du mandat n'a pas de fil
 - Statut : en cours (voie 3)
-- Suivi : proposition #834 ouverte le 2026-11-28 (le fil « Préparer, Contrôler, Signer, Inscrit » en tête de l'écran du mandat), à part de la pile : elle ne touche que le script du mandat. Restent le dossier de vente et l'offre.
+- Suivi : proposition #834 ouverte le 2026-11-28 (le fil « Préparer, Contrôler, Signer, Inscrit » en tête de l'écran du mandat), à part de la pile : elle ne touche que le script du mandat. Deux remarques P2 de Codex, justes, corrigées avec leurs essais : le fil revient à « Contrôler » quand un contrôle échoue après une réussite ou quand le document est relu ; un mandat de location signé en entier se lit « Inscrit » (cause en amont : AU120). Restent le dossier de vente et l'offre.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS049 (majeur, parcours, effort M), endroit : mandat — `packages/api/app/mandat.ts`
 - Constat de l’audit : questionnaire, document, contrôle, signature papier ou en ligne, rétractation et avenant sont des cartes de même rang. Le fil d'étapes `.parcours` existe, pour la location seulement.
@@ -8428,8 +8437,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS068 · Les budgets de poids sont pleins
-- Statut : en cours (voie 3)
-- Suivi : premier pas fusionné (#831, 8e755737) : le dessin de l'écran de la direction servi à part, `/app/reseau.js`, environ 3 000 octets rendus à chaque agent. Second pas : proposition #839 ouverte le 2026-11-28 (l'écran « Partenaires » servi à part, `/app/partenaires.js`, environ 4 400 octets rendus), à part.
+- Statut : à faire
+- Suivi : deux pas fusionnés par la voie 3. #831 (8e755737) : le dessin de l'écran de la direction servi à part, `/app/reseau.js`, environ 3 000 octets rendus à chaque agent. #839 (5625424b, 2026-11-28) : l'écran « Partenaires » servi à part, `/app/partenaires.js`, environ 4 400 octets rendus ; la coquille pèse 39 024 octets pour 49 152 permis, et un essai tient cette réserve. Restent : les scripts de page près de leur plafond (mandat 13 873 pour 14 336), et les composants communs à sortir.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS068 (majeur, performance, système de design, effort L), endroit : `packages/core/src/design/audit.ts` (`BUDGETS`)
 - Constat de l’audit : la coquille pèse 48 446 octets compressés pour 49 152 permis. `mandat.js` 13 036, `louer.js` 13 431, `finances.js` 14 074, `commerces.js` 14 162, pour 14 336 permis.
