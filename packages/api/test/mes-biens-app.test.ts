@@ -235,6 +235,27 @@ describe('DS004 · l’agent a la liste de ses biens, y cherche et la filtre', (
     expect(search).not.toMatch(/send\(|fetch|Math\.random/);
   });
 
+  it('une grande maison se cherche comme les autres : dix pièces ou plus sont comprises, sans se confondre avec une pièce', async () => {
+    const big = { id: id(6), reference: 'REF-6', city: 'Dijon', state: 'en_vente', kind: 'home', rooms: 12, dwelling: 'house' };
+    const a = await run({ '/v1/annonces': ok([...PLACES, big]) });
+    await a.click(a.els['mes-biens-ouvrir']!);
+    const M12 = 'Maison 12 pièces · Dijon', A1 = 'Appartement 1 pièce · Dijon';
+    for (const typed of ['t12', 'f 12', '12p', '12 pièces', 'maison 12 pieces dijon']) {
+      await a.type(typed);
+      expect(a.names(), typed).toEqual([M12]);
+      expect(a.understood(), typed).toContain('12 pièces');
+    }
+    // « t1 » reste une pièce : la maison de douze pièces n'y entre pas, et « t2 » ne la trouve pas non plus.
+    await a.type('t1');
+    expect(a.names()).toEqual([A1]);
+    await a.type('t2');
+    expect(a.names()).toEqual([]);
+    // Un nombre trop long n'est pas un nombre de pièces : il se cherche tel quel, comme une référence.
+    await a.type('t2100');
+    expect(a.understood()).toBe('');
+    expect(a.names()).toEqual([]);
+  });
+
   it('un seul état dans la liste : pas de filtre ; un état inconnu se dit « Publiée » ; une longue liste se déroule par cinquante', async () => {
     const same = await run({ '/v1/annonces': ok(PLACES.filter((p) => p.state === 'en_vente')) });
     await same.click(same.els['mes-biens-ouvrir']!);

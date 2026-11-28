@@ -82,8 +82,9 @@ ${OREILLE_JS}
     take(/ publiee?s? | en ligne /, state('publiee', 'annonce publiée'));
     function rooms(n) { want.rooms = n; want.said.push(n + (n > 1 ? ' pièces' : ' pièce')); }
     take(/ studios? /, function () { rooms(1); });
-    take(/ [tf] ?([1-9]) /, function (m) { rooms(Number(m[1])); });
-    take(/ ([1-9]) ?(?:p|pieces?|pcs?) /, function (m) { rooms(Number(m[1])); });
+    /* Jusqu'à trois chiffres : une grande maison a dix pièces ou plus, et se cherche comme les autres. */
+    take(/ [tf] ?([1-9][0-9]{0,2}) /, function (m) { rooms(Number(m[1])); });
+    take(/ ([1-9][0-9]{0,2}) ?(?:p|pieces?|pcs?) /, function (m) { rooms(Number(m[1])); });
     take(/ maisons? /, function () { want.dwelling = 'house'; want.said.push('maison'); });
     take(/ app(?:artement|art|t)s? /, function () { want.dwelling = 'apartment'; want.said.push('appartement'); });
     function kind(code) { return function () { want.kind = code; want.said.push(KINDS[code]); }; }
