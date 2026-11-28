@@ -1336,6 +1336,16 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 - Critères : le constat est d'abord reproduit par un test qui échoue, puis passe ; le critère de l'audit est vérifié par un test (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
 - Attend : rien.
 
+### AU118 · L'exemplaire signé n'est pas remis au mandant quand son empreinte porte une longue suite de chiffres
+- Statut : en cours (voie 3)
+- Suivi : trouvé le 2026-11-28 par « Vérifier », tombé au hasard sur #833 (essais AU003 de `signature-reelle.test.ts`) ; reproduit en boucle : une remise sur 150 environ. Branche voie3/AU118.
+- Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
+- Cahier : M06 Mandats et documents ; M12 Conformité ; endroit : `packages/core/src/envoi/texte.ts` (contrôle des chiffres, R10), vu depuis `packages/core/src/documents/signature-en-ligne.ts` (remise de l'exemplaire, R39).
+- Constat : le mail qui remet l'exemplaire signé cite la référence du document et son empreinte. Quand l'une des deux porte 17 chiffres d'affilée ou plus, le contrôle des chiffres la compare après un passage par un nombre, qui l'arrondit : le chiffre « ne vient pas des données fournies », le mail est refusé (R10), et il le sera à chaque reprise, puisque la référence et l'empreinte ne changent pas. Le mandant ne reçoit jamais son exemplaire.
+- Objectif : un identifiant fourni tel quel est reconnu chiffre pour chiffre, quelle que soit sa longueur ; aucun chiffre non fourni ne passe pour autant.
+- Critères : le constat est d'abord reproduit par un test qui échoue, puis passe (test) ; la remise part avec une référence et une empreinte faites de longues suites de chiffres (test) ; un nombre qui ne diffère d'un nombre fourni que par ses derniers chiffres reste refusé (test) ; les règles touchées dans `docs/REGLES.md` sont mises à jour.
+- Attend : rien.
+
 ## Phase 3 : faire mieux que Hektor et Modelo (demande de Shawez du 2026-11-06)
 
 Relevé fait dans Hektor (compte de Shawez, lecture seule, aucune donnée de client copiée) et dans les présentations publiques de Hektor, Hektor Voice et Modelo. Ce qu'AIMMO a déjà est écarté ; voici ce qui manque. Chaque tâche fait la même chose qu'eux ET un pas de plus, écrit dans « Jamais vu ». Relecture forte pour toutes. Section 9 du protocole.
@@ -8013,7 +8023,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS022 · Trop de boutons pleins : aucune action ne domine
 - Statut : en cours (voie 3)
-- Suivi : la fiche du client est faite (#826) ; les écrans d'un bien aussi (#828, `7b5be55b`, fusionnée le 2026-11-28 : mettre en vente, mandat, avis de valeur, visite ; Codex sans remarque). Branches prêtes, proposées à leur tour : voie3/DS022-attirer (« Attirer »), voie3/DS022-dossier (dossier de vente, acquéreurs d'un bien, preuve à Dijon). Puis les gestes d'une fuite à la conformité (un pas à la fois : évaluer, puis prévenir), branche voie3/DS022-fuite, en fin de pile. « Attirer » : proposition #835 ouverte le 2026-11-28, à part.
+- Suivi : la fiche du client est faite (#826) ; les écrans d'un bien aussi (#828, `7b5be55b`, fusionnée le 2026-11-28 : mettre en vente, mandat, avis de valeur, visite ; Codex sans remarque). Branches prêtes, proposées à leur tour : voie3/DS022-attirer (« Attirer »), voie3/DS022-dossier (dossier de vente, acquéreurs d'un bien, preuve à Dijon). Puis les gestes d'une fuite à la conformité (un pas à la fois : évaluer, puis prévenir), branche voie3/DS022-fuite, en fin de pile. « Attirer » : #835 fusionnée le 2026-11-28 (`cd80f835`, Codex sans remarque, « Vérifier » vert).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS022 (majeur, hiérarchie, effort M), endroit : fiche client (9 boutons pleins), « Gagner des mandats » (8), conformité (7), « Mettre en vente » (5), carte d'un bien sur l'accueil (5), mandat (4), offres (4)
 - Constat de l’audit : `appli-accueil.jpg`, `appli-mettre-en-vente.jpg` : « Rédiger de nouveau » et « Corriger le texte » sont pleins tous les deux.
