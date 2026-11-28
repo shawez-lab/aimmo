@@ -168,7 +168,9 @@ describe('DS071 · l’accueil du site, dans Chromium', () => {
       // L'aplat du bien sans photo a la taille des photos de son rang : son titre est à la hauteur des autres.
       const titles = await page.evaluate(() => [...(globalThis as any).document.querySelectorAll('.biens > li strong')].slice(3).map((s: any) => Math.round(s.getBoundingClientRect().top)));
       expect(new Set(titles).size).toBe(1);
-      const [field, search] = [await box(page, '#chercher-q'), await box(page, '.chercher button')];
+      // Les deux mesures dans le même rendu : entre deux allers-retours, une photo qui arrive allonge la page, la barre
+      // de défilement apparaît, et les espacements fluides bougent d'un pixel (l'essai tombait de temps en temps).
+      const [field, search] = await page.evaluate(() => ['#chercher-q', '.chercher button'].map((s) => { const r = (globalThis as any).document.querySelector(s).getBoundingClientRect(); return { top: r.top, height: r.height }; }));
       expect(Math.abs(field.top - search.top)).toBeLessThanOrEqual(1);
       expect(field.height).toBe(search.height);
     } finally {
