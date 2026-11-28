@@ -91,6 +91,8 @@ export const APP_SHOTS: readonly AppShot[] = [
   ...['chiffres', 'agents', 'reglages', 'technique'].map((r): AppShot => ({ name: `application · le réseau · ${r}`, role: 'direction', page: '/app/reseau', screen: 'reseau', clicks: [`#reseau-r-${r}`] })),
   { name: 'application · attirer', role: 'direction', page: '/app/reseau', screen: 'attirer', clicks: ['#reseau-r-reglages', '#attirer-ouvrir'] },
   { name: 'application · conformité', role: 'conformite', page: '/app/', screen: 'conformite' },
+  // DS009 · chaque rubrique du responsable a sa capture.
+  ...['registres', 'modeles'].map((r): AppShot => ({ name: `application · conformité · ${r}`, role: 'conformite', page: '/app/', screen: 'conformite', clicks: [`#conformite-r-${r}`] })),
   { name: 'espace partenaire · entrée', role: 'aucun', page: '/partenaire/', screen: 'entree' },
 ];
 
@@ -198,7 +200,7 @@ async function appPage(serve: Awaited<ReturnType<typeof world>>['serve'], role: 
 
 async function openShot(page: any, shot: AppShot, known: Known): Promise<boolean> {
   await page.goto(`https://aimmo.example.test${shot.page}`);
-  const home = shot.page === '/app/reseau' ? '#reseau' : '#accueil';
+  const home = shot.page === '/app/reseau' ? '#reseau' : shot.role === 'conformite' ? '#conformite' : '#accueil';
   if (shot.state) {
     const state = shot.state(known);
     if (!state) return false;

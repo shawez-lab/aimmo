@@ -83,7 +83,8 @@ async function run(answers: Record<string, Answer> = {}, opts: { role?: string; 
   runInNewContext(JS, context);
   listeners.DOMContentLoaded!();
   await settle();
-  const all = () => [...els.conformite!.all(), ...els['conformite-corps']!.all(), ...els.reseau!.all()];
+  // DS009 : le dossier vit dans la rubrique des registres.
+  const all = () => [...els.conformite!.all(), ...els['conformite-corps']!.all(), ...els['conformite-registres']!.all(), ...els.reseau!.all()];
   const scriptOf = (src: string) => all().find((e) => e.tagName === 'script' && e.attributes.src === src);
   const loaded = new Set<string>();
   /** Fait arriver les scripts servis à part que l'application a demandés, comme le navigateur. */
@@ -98,9 +99,9 @@ async function run(answers: Record<string, Answer> = {}, opts: { role?: string; 
     }
   };
   await deliver();
-  const section = () => els['conformite-corps']!.all().find((e) => e.tagName === 'section' && e.children[0]?.textContent === 'Dossier anti-blanchiment de l’agence');
+  const section = () => els['conformite-registres']!.all().find((e) => e.tagName === 'section' && e.children[0]?.textContent === 'Dossier anti-blanchiment de l’agence');
   const texts = () => section()!.all().map((e) => e.textContent).join(' | ');
-  const pageText = () => [...els.conformite!.all(), ...els['conformite-corps']!.all(), ...page.body.all()].map((e) => e.textContent).join(' | ');
+  const pageText = () => [...els.conformite!.all(), ...els['conformite-corps']!.all(), ...els['conformite-registres']!.all(), ...page.body.all()].map((e) => e.textContent).join(' | ');
   const state = () => section()!.all().find((e) => e.className === 'etat')!.textContent;
   const find = (text: string) => section()?.all().find((e) => e.tagName === 'button' && e.textContent === text);
   const click = async (b: FakeElement | undefined) => {

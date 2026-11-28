@@ -348,8 +348,8 @@ main > section > h2 { font-size: var(--t-xxl); margin: var(--e-2) 0 var(--e-4); 
 .gestes > button { padding-inline: var(--e-4); }
 .gestes > :not(button) { flex: 1 0 100%; }
 #fiche-corps .periodes button { margin-top: 0; }
-#fiche-corps summary::before, #mandat-corps summary::before { content: "+"; width: 1em; font-weight: 400; }
-#fiche-corps details[open] > summary::before, #mandat-corps details[open] > summary::before { content: "–"; }
+#fiche-corps summary::before, #mandat-corps summary::before, #conformite summary::before { content: "+"; width: 1em; font-weight: 400; }
+#fiche-corps details[open] > summary::before, #mandat-corps details[open] > summary::before, #conformite details[open] > summary::before { content: "–"; }
 #fiche-corps li > button { display: flex; width: fit-content; }
 details { margin-top: var(--e-2); }
 summary { min-height: var(--cible); display: flex; align-items: center; cursor: pointer; color: var(--accent); font-weight: 600; list-style-position: inside; }
@@ -2312,7 +2312,7 @@ ${LOUER_JS}
       if (me.role === 'compliance') {
         $('erreur').hidden = true;
         currentKey = key;
-        return openConformite();
+        return openConformite(true);
       }
       if (me.role === 'direction') {
         if (!reseauHere()) {
