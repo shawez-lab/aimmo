@@ -125,8 +125,9 @@ describe('BR103 · la dictée en sortant d’une visite, depuis l’écran de la
     // les trois rubriques du responsable de la conformité (DS009) environ 120, pour leur rangée dans la page. Le dessin de l'écran de la
     // direction, servi à part (DS068), en rend environ 3 000 : la réserve remonte encore. L'écran « Partenaires », servi à part lui
     // aussi (DS068), en rend environ 4 400 : la réserve remonte de 4 000, et garde la place de ce qui suit dans l'audit (le bien nommé
-    // sous ses titres, la fiche du bien en parties, le refus sous son champ, le bouton d'envoi à portée).
-    expect(gzipSize(HTML) + gzipSize(AGENT_APP_FILES['/app/app.css']!) + gzipSize(JS)).toBeLessThan(BUDGETS.application.gzipBytes - 9500);
+    // sous ses titres, la fiche du bien en parties, le refus sous son champ, le bouton d'envoi à portée). Une adresse par écran (DS007)
+    // en reprend environ 390, pour l'écrire, la relire à l'ouverture et n'y laisser entrer que des écrans et des identifiants connus.
+    expect(gzipSize(HTML) + gzipSize(AGENT_APP_FILES['/app/app.css']!) + gzipSize(JS)).toBeLessThan(BUDGETS.application.gzipBytes - 9100);
     await t.open();
     expect(t.scripts()).toHaveLength(1);
     expect(t.part().textContent).toContain('ce que le visiteur a pensé du bien');
