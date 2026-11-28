@@ -395,8 +395,11 @@ globalThis.AIMMO_FICHE_BIEN = function (t) {
       });
     });
     if (waiting) go.disabled = true;
-    zone.appendChild(go);
-    zone.appendChild(said);
+    // DS059 · le bouton d'envoi et ce qu'il répond restent à portée pendant la saisie : collés au bas de l'écran tant
+    // que la fiche y est, à leur place quand on arrive au bout.
+    var bar = zone.appendChild(el('div', null, 'envoi'));
+    bar.appendChild(go);
+    bar.appendChild(said);
   }
   return {
     open: function (zone, o) {

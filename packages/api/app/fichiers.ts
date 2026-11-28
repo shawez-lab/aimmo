@@ -296,6 +296,12 @@ body { min-height: 100dvh; }
 .onglets svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .onglets:not([hidden]) ~ main { padding-bottom: calc(var(--e-8) + var(--cible) + var(--e-2) + env(safe-area-inset-bottom)); }
 .onglets:not([hidden]) ~ main #note { bottom: calc(var(--cible) + var(--e-5) + env(safe-area-inset-bottom)); }
+html { scroll-padding-block: 3rem 9rem; }
+.envoi { position: sticky; z-index: 1; bottom: calc(var(--cible) + var(--e-2) + 1px + env(safe-area-inset-bottom)); margin-top: var(--e-4); padding: var(--e-3) 0; background: var(--papier); border-top: 1px solid var(--trait); }
+.envoi > button { margin: 0; }
+.envoi > p { margin: var(--e-2) 0 0; }
+.envoi > p:empty { display: none; }
+@media (min-width: 64rem) { .envoi { bottom: 0; } }
 #sortir { margin-top: var(--e-7); }
 #jour:not(:empty) { margin: calc(var(--e-2) * -1) 0 var(--e-4); }
 :is(#accueil, #reseau-p-jour, #conformite-corps) > .bloc:has(> .liste:empty) { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--e-2); margin: 0; padding: var(--e-3) 0; }

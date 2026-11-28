@@ -455,6 +455,7 @@ Chaque problème a son identifiant, sa gravité, sa catégorie et son effort (S 
 - Gravité : mineur · Catégorie : formulaires, une main · Effort : S
 - Où : fiche du bien (42 champs), offre reçue (16 champs)
 - Solution : un bouton d'envoi collé en bas de l'écran pendant la saisie.
+- Suite : corrigé pour la fiche du bien le 2026-11-28 : « Enregistrer la fiche » et ce qu'il répond sont dans une barre d'envoi (`.envoi`), collée au-dessus des onglets tant que la fiche est à l'écran, et à sa place, sous la dernière partie, quand on arrive au bout. Sur ordinateur, elle se colle au bas de la fenêtre. Un champ qui prend le curseur ne passe ni sous la barre ni sous l'en-tête (`scroll-padding`). Reste : l'offre reçue (16 champs), dont la réponse s'écrit en haut de l'écran : à déplacer près du bouton avant de le coller (avec DS058). Avant et après : `captures/avant-apres/DS059-envoi-a-portee.jpg`.
 
 ### M. États
 
