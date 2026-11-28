@@ -59,14 +59,35 @@ const LATE_CAUSES: Labels<(typeof BREACH_LATE_CAUSES)[number]> = {
 };
 const PIECES = VAULT_PIECES.map((p) => ({ kind: p.kind, label: p.label }));
 
+/**
+ * DS009 · l'écran du responsable en trois rubriques, une seule à la fois : ce qui est à décider (les personnes, les
+ * alertes, les fuites), les registres (traitements, gels, dossier anti-blanchiment), les modèles à valider. Les clés de
+ * l'appareil restent dessous, avec la déconnexion : c'est le compte, pas une rubrique.
+ *
+ * La rangée des rubriques est cachée dans la page et montrée par le script du responsable : s'il n'arrive pas, les
+ * modèles, eux dans la page, restent à portée comme avant.
+ */
+export const CONFORMITE_RUBRIQUES: readonly (readonly [id: string, name: string, host: string])[] = [
+  ['decider', 'À décider', 'conformite-corps'],
+  ['registres', 'Registres', 'conformite-registres'],
+  ['modeles', 'Modèles', 'conformite-modeles'],
+];
+
 export const CONFORMITE_HTML = `<section id="conformite" hidden>
 <h2 id="conformite-titre">Conformité</h2>
 <p class="doux">Vous seul lisez cet écran. Chaque décision porte votre nom ; rien n’en part vers un client.</p>
 <p id="conformite-etat" class="etat" role="status"></p>
+<p id="conformite-echeance" class="etat"></p>
 <ul id="conformite-resume" class="resume" aria-label="À traiter"></ul>
 <button id="conformite-actualiser" type="button" class="secondaire">Actualiser</button>
+<div id="conformite-rubriques" class="rubriques" role="group" aria-label="Rubrique" hidden>
+${CONFORMITE_RUBRIQUES.map(([id, name], i) => `<button id="conformite-r-${id}" type="button" class="secondaire" aria-pressed="${i === 0}">${name}</button>`).join('\n')}
+</div>
 <div id="conformite-corps"></div>
-${MANDAT_MODELES_CONFORMITE_HTML}${LOUER_MODELES_CONFORMITE_HTML}${clesEntryHtml('conformite')}</section>
+<div id="conformite-registres"></div>
+<div id="conformite-modeles">
+${MANDAT_MODELES_CONFORMITE_HTML}${LOUER_MODELES_CONFORMITE_HTML}</div>
+${clesEntryHtml('conformite')}</section>
 `;
 
 export const CONFORMITE_CSS = `
@@ -108,15 +129,14 @@ export const COFFRE_JS = `
   function cSeq() { formSeq += 1; return 'c' + formSeq; }
   function cState() { var p = el('p', null, 'etat'); p.setAttribute('role', 'status'); return p; }
   function wipeConformite() {
-    clear($('conformite-corps'));
-    clear($('conformite-resume'));
-    $('conformite-etat').textContent = '';
+    ['conformite-corps', 'conformite-registres', 'conformite-resume'].forEach(function (id) { clear($(id)); });
+    $('conformite-etat').textContent = $('conformite-echeance').textContent = '';
   }
   var conformiteScreen = null;
   // Le script du responsable, chargé une fois, reçoit les outils de l'application ; il ne garde aucune donnée.
-  function openConformite() {
+  function openConformite(fresh) {
     show('conformite');
-    if (conformiteScreen) return conformiteScreen.open();
+    if (conformiteScreen) return conformiteScreen.open(fresh);
     var mine = session;
     $('conformite-etat').textContent = 'Chargement…';
     return new Promise(function (resolve) {
@@ -340,9 +360,50 @@ globalThis.AIMMO_CONFORMITE = function (t) {
     });
   }
   function wipeConformite() {
-    clear($('conformite-corps'));
-    clear($('conformite-resume'));
-    $('conformite-etat').textContent = '';
+    ['conformite-corps', 'conformite-registres', 'conformite-resume'].forEach(function (id) { clear($(id)); });
+    $('conformite-etat').textContent = $('conformite-echeance').textContent = '';
+  }
+  function quiet(b) { b.className = 'secondaire'; return b; }
+  // DS009 · une rubrique à la fois ; un geste dans l'écran garde la rubrique ouverte, une nouvelle entrée rouvre la première.
+  var C_TABS = ${JSON.stringify(CONFORMITE_RUBRIQUES)}, cTab = C_TABS[0][0];
+  function cShow(name) {
+    cTab = name;
+    $('conformite-rubriques').hidden = false;
+    C_TABS.forEach(function (r) {
+      $('conformite-r-' + r[0]).setAttribute('aria-pressed', r[0] === name ? 'true' : 'false');
+      $(r[2]).hidden = r[0] !== name;
+    });
+  }
+  C_TABS.forEach(function (r) { $('conformite-r-' + r[0]).addEventListener('click', function () { cShow(r[0]); }); });
+  // DS009 · l'échéance légale qui tombe la première, tous registres confondus : la réponse à une personne (un mois),
+  // la CNIL après une fuite (72 heures), la relecture du registre. Une échéance passée se dit passée. Si une de ces
+  // trois lectures a manqué, la phrase dit qu'elle n'est pas sûre : elle ne donne jamais pour première une échéance
+  // qui ne l'est peut-être pas.
+  // Un jour du calendrier finit à Paris, quel que soit le fuseau de l'appareil : le serveur compte ses jours à Paris,
+  // et l'écran les écrit à Paris. L'écart de Paris ce jour-là est lu dans Intl ; sans lui, la fin du jour universel.
+  function cDayEnd(day) {
+    var utc = Date.parse(day + 'T23:59:59Z');
+    try {
+      var v = {};
+      new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Paris', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' }).formatToParts(new Date(utc)).forEach(function (x) { v[x.type] = Number(x.value); });
+      return 2 * utc - Date.UTC(v.year, v.month - 1, v.day, v.hour, v.minute, v.second);
+    } catch (e) { return utc; }
+  }
+  function cDeadline(data) {
+    var first = null;
+    function due(ms, text) {
+      if (isFinite(ms) && (!first || ms < first.ms)) first = { ms: ms, text: text };
+    }
+    (data.demandes || []).forEach(function (d) {
+      if (!d.answeredOn) due(cDayEnd(d.dueOn), 'répondre à une demande d’une personne avant le ' + date(d.dueOn));
+    });
+    (data.fuites || []).forEach(function (f) {
+      if (!f.notified.cnil && f.due.cnil) due(Date.parse(f.deadlineAt), 'prévenir la CNIL d’une fuite avant le ' + date(f.deadlineAt) + ' à ' + hour(f.deadlineAt));
+    });
+    if (data.registre) due(cDayEnd(data.registre.dueOn), 'relire le registre des traitements avant le ' + date(data.registre.dueOn));
+    var sure = Array.isArray(data.demandes) && Array.isArray(data.fuites) && !!data.registre;
+    var said = first ? (first.ms < Date.now() ? 'Échéance passée : ' : sure ? 'Première échéance : ' : 'Échéance connue : ') + first.text + '.' : '';
+    $('conformite-echeance').textContent = said + (sure ? '' : (said ? ' ' : '') + 'Une partie n’a pas pu être lue : une échéance plus proche est possible.');
   }
   // Les lectures de l'écran, toutes sous /v1/conformite [R16], plus les alertes de cession de M16 [R118], dans l'ordre où l'écran les montre.
   var C_PARTS = ['risque', 'vigilance', 'cessions', 'signalements', 'demandes', 'demandesAlertes', 'prospects', 'fuites', 'fuitesAlertes', 'registre', 'registreAlertes'];
@@ -377,6 +438,8 @@ globalThis.AIMMO_CONFORMITE = function (t) {
       }
       $('conformite-etat').textContent = message || (missing ? 'Une partie de l’écran n’a pas pu être lue : actualisez dans un moment.' : '');
       renderConformite(data);
+      cDeadline(data);
+      cShow(cTab);
       return true;
     });
   }
@@ -417,9 +480,10 @@ globalThis.AIMMO_CONFORMITE = function (t) {
     if (data.demandes) body.appendChild(cRequests(data.demandes));
     if (data.prospects) body.appendChild(cProspects(data.prospects));
     if (data.fuites) body.appendChild(cBreaches(data.fuites));
-    if (data.registre) body.appendChild(cRegistry(data.registre));
-    body.appendChild(cGels());
-    body.appendChild(cLcb());
+    var kept = $('conformite-registres');
+    if (data.registre) kept.appendChild(cRegistry(data.registre));
+    kept.appendChild(cGels());
+    kept.appendChild(cLcb());
   }
   /* BR114 : le dossier anti-blanchiment de l'agence sous licence, script servi à part, chargé au geste [R201, R662]. */
   var lcbScreen = null;
@@ -428,7 +492,7 @@ globalThis.AIMMO_CONFORMITE = function (t) {
     var inner = el('div');
     var state = cState();
     var say = function (x) { state.textContent = x; };
-    var b = button('Ouvrir le dossier anti-blanchiment', function () {
+    var b = quiet(button('Ouvrir le dossier anti-blanchiment', function () {
       if (b.disabled) return;
       if (lcbScreen) { lcbScreen.show(inner, say); return; }
       b.disabled = true;
@@ -446,7 +510,7 @@ globalThis.AIMMO_CONFORMITE = function (t) {
       });
       s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) say('Pas de réseau. Réessayez dans un moment.'); });
       box.appendChild(s);
-    });
+    }));
     box.appendChild(b);
     box.appendChild(inner);
     box.appendChild(state);
@@ -458,7 +522,7 @@ globalThis.AIMMO_CONFORMITE = function (t) {
     var box = section('Registre des gels');
     box.appendChild(el('p', 'Le registre national des gels de la DG Trésor, importé en un appui ; chaque dossier en cours est recontrôlé aussitôt.', 'doux'));
     var inner = el('div');
-    var b = button('Ouvrir l’import du registre', function () {
+    var b = quiet(button('Ouvrir l’import du registre', function () {
       if (b.disabled) return;
       if (gelScreen) { gelScreen.show(inner); return; }
       b.disabled = true;
@@ -476,7 +540,7 @@ globalThis.AIMMO_CONFORMITE = function (t) {
       });
       s.addEventListener('error', function () { b.disabled = false; if (mine === t.session()) { clear(inner); inner.appendChild(el('p', 'Pas de réseau. Réessayez dans un moment.', 'etat')); } });
       box.appendChild(s);
-    });
+    }));
     box.appendChild(b);
     box.appendChild(inner);
     return box;
@@ -511,14 +575,14 @@ globalThis.AIMMO_CONFORMITE = function (t) {
         if (reason.value.trim()) b.reason = reason.value.trim();
         cAct(state, '/v1/conformite/risque/' + encodeURIComponent(s.sheetId) + '/valider', b, 'Fiche validée.');
       }));
-      form.appendChild(button('Rejouer la fiche', function () {
+      form.appendChild(quiet(button('Rejouer la fiche', function () {
         state.textContent = 'Calcul…';
         send('/v1/conformite/risque/' + encodeURIComponent(s.sheetId) + '/rejouer', 'GET').then(function (res) {
           if (res.gone) return;
           if (!res.ok) { state.textContent = cRefusal(res, 'Indisponible pour le moment.'); return; }
           state.textContent = res.body.same ? 'Rejouée à l’identique : même calcul, même empreinte.' : 'Rejouée avec un écart : ' + (res.body.differences || []).join(', ') + '.';
         });
-      }));
+      })));
       form.appendChild(state);
       li.appendChild(form);
       ul.appendChild(li);
@@ -687,8 +751,8 @@ globalThis.AIMMO_CONFORMITE = function (t) {
       ul.appendChild(li);
     });
     box.appendChild(ul);
-    var form = el('div', null, 'decision');
-    form.appendChild(el('h4', 'Enregistrer une demande reçue'));
+    var form = el('details', null, 'decision');
+    form.appendChild(el('summary', 'Enregistrer une demande reçue'));
     var id = cSeq();
     var person = field(form, id + '-fiche', 'Identifiant de la fiche');
     person.setAttribute('autocomplete', 'off');
@@ -745,8 +809,10 @@ globalThis.AIMMO_CONFORMITE = function (t) {
       var cutting = button('Couper tous les accès maintenant', function () { cAct(state, path + '/couper', { scope: 'tous' }, 'Accès coupés, sauf le vôtre.'); });
       cutting.className = 'danger';
       li.appendChild(cutting);
-      var form = el('div', null, 'decision');
-      form.appendChild(el('h4', 'Évaluer la fuite'));
+      // L'évaluation est le pas à faire tant qu'elle manque : ouverte. Une fois rangée, elle se rouvre au geste.
+      var form = el('details', null, 'decision');
+      form.open = !f.evaluation;
+      form.appendChild(el('summary', f.evaluation ? 'Revoir l’évaluation' : 'Évaluer la fuite'));
       var id = cSeq();
       var risk = cSelect(form, id + '-risque', 'Risque', C_RISKS, f.evaluation ? f.evaluation.risk : 'eleve');
       var natures = cChecks(form, id + '-nature', 'Atteinte', C_NATURES);
@@ -772,7 +838,7 @@ globalThis.AIMMO_CONFORMITE = function (t) {
     box.appendChild(ul);
     var declare = el('div', null, 'decision');
     var dState = cState();
-    declare.appendChild(button('Déclarer une fuite connue maintenant', function () { cAct(dState, '/v1/conformite/fuites', { awareAt: new Date().toISOString() }, 'Fuite déclarée : l’échéance de 72 heures court.'); }));
+    declare.appendChild(quiet(button('Déclarer une fuite connue maintenant', function () { cAct(dState, '/v1/conformite/fuites', { awareAt: new Date().toISOString() }, 'Fuite déclarée : l’échéance de 72 heures court.'); })));
     declare.appendChild(dState);
     box.appendChild(declare);
     return box;
@@ -782,7 +848,8 @@ globalThis.AIMMO_CONFORMITE = function (t) {
     box.appendChild(el('p', (r.initial ? 'Écrit le ' : 'Relu le ') + date(r.lastReviewOn) + ' · prochaine relecture avant le ' + date(r.dueOn)));
     if (r.changedSinceReview) box.appendChild(el('p', 'Le registre a changé depuis la dernière relecture.', 'alerte'));
     box.appendChild(el('p', 'Empreinte du registre : ' + r.registryHash, 'empreinte'));
-    var form = el('div', null, 'decision');
+    var form = el('details', null, 'decision');
+    form.appendChild(el('summary', 'Noter une relecture'));
     var id = cSeq();
     var name = field(form, id + '-nom', 'Votre nom');
     var day = field(form, id + '-jour', 'Relu le');
@@ -796,6 +863,6 @@ globalThis.AIMMO_CONFORMITE = function (t) {
   }
 
   /* Sur la fiche d'un client : son agent dépose une pièce au coffre et lit la preuve de dépôt, jamais la pièce [R90]. */
-  return { open: function () { return openConformite(); } };
+  return { open: function (fresh) { if (fresh) cTab = C_TABS[0][0]; return openConformite(); } };
 };
 `;

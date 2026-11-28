@@ -580,7 +580,8 @@ describe('BR85 · le registre des gels sur l’écran du responsable', () => {
   it('[R201] l’import se charge au premier geste, une seule fois, et appelle la route du téléchargement', async () => {
     const t = await run(COMPLIANCE);
     await t.loadScript();
-    const part = t.body().children.find((e) => e.tagName === 'section' && e.textContent.startsWith('Registre des gels'))!;
+    // DS009 : les registres ont leur rubrique.
+    const part = t.els['conformite-registres']!.children.find((e) => e.tagName === 'section' && e.textContent.startsWith('Registre des gels'))!;
     expect(part).toBeDefined();
     const before = t.calls.length;
     // Rien n'est chargé ni appelé tant que le responsable n'a pas ouvert l'import.
