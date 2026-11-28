@@ -312,7 +312,9 @@ globalThis.AIMMO_MANDAT = function (t) {
     var waiting = list.some(function (d) { return ID.test(d.id) && /^mandat_/.test(String(d.kind)) && !(d.signature && d.signature.complete); });
     // En cours : tout est fait. Enregistrement commencé : contrôle passé. Préparé : à contrôler.
     passed = {};
-    at = !free ? 4 : list.some(function (d) { return ID.test(d.id) && /^mandat_/.test(String(d.kind)) && d.signature && !d.signature.complete; }) ? 2 : waiting ? 1 : 0;
+    // Le résumé « mandat » ne parle que de la vente : un mandat de location signé en entier est inscrit lui aussi.
+    var rented = list.some(function (d) { return ID.test(d.id) && d.kind === 'mandat_location' && d.signature && d.signature.complete; });
+    at = !free ? 4 : list.some(function (d) { return ID.test(d.id) && /^mandat_/.test(String(d.kind)) && d.signature && !d.signature.complete; }) ? 2 : waiting ? 1 : rented ? 4 : 0;
     rail(at);
     if (free) drawGenerate(Array.isArray(data.owners) ? data.owners : [], waiting);
     else if (amendable) drawAmend(m, Array.isArray(data.owners) ? data.owners : []);

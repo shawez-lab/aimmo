@@ -931,6 +931,23 @@ describe('DS049 · le fil du mandat : préparer, contrôler, signer, inscrit', (
     expect(rail(amend).done).toEqual([true, true, true, true]);
   });
 
+  it('un mandat de location signé en entier, sans mandat de vente : les quatre étapes sont faites ; un autre mandat préparé ensuite reprend le fil', async () => {
+    // La lecture ne résume que le mandat de vente : pour une location, « mandate » est vide, le document dit le reste.
+    const RENT = { ...DOC, id: 'd3', kind: 'mandat_location', signature: { signedAt: '2027-02-10T12:00:00.000Z', place: 'agence', number: 'T-009', complete: true } };
+    const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [RENT] }) });
+    await t.open();
+    expect(rail(t).steps).toEqual(['Préparer · fait', 'Contrôler · fait', 'Signer · fait', 'Inscrit · fait']);
+    expect(rail(t).current).toEqual([]);
+    // Un mandat de vente préparé à côté : c'est lui qui attend son contrôle.
+    const both = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [DOC, RENT] }) });
+    await both.open();
+    expect(rail(both).current).toEqual(['Contrôler']);
+    // Un mandat de location dont l'enregistrement s'est arrêté en route n'est pas inscrit.
+    const begun = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [{ ...RENT, signature: { ...RENT.signature, number: null, complete: false } }] }) });
+    await begun.open();
+    expect(rail(begun).current).toEqual(['Signer']);
+  });
+
   it('un mandat rétracté rouvre le fil : tout recommence à « Préparer »', async () => {
     const t = await run({ 'GET /v1/biens/b1/mandat': ok({ ...READ, documents: [SIGNED], mandate: { ...LIVE, allowed: false, reason: 'withdrawn' } }) });
     await t.open();
