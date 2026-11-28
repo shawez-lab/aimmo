@@ -97,11 +97,13 @@ describe('DS069 · l’écran de la direction n’est plus dans la page de l’a
       const t = await run('/app/reseau', stored);
       expect(t.calls[0]).toBe('GET /v1/moi');
       expect(t.went).toEqual([]);
-      for (const id of ['reseau-mois', 'reseau-precedent', 'reseau-annee', 'reseau-export', 'vers-journee']) expect(typeof t.els[id]?.listeners.click, id).toBe('function');
+      for (const id of ['reseau-mois', 'reseau-precedent', 'reseau-annee', 'vers-journee']) expect(typeof t.els[id]?.listeners.click, id).toBe('function');
     }
     const direction = await run('/app/reseau', { 'aimmo.cle': DIRECTION, 'aimmo.reseau': '1' });
     expect(direction.els.reseau!.hidden).toBe(false);
     expect(direction.calls.some((c) => c.startsWith('GET /v1/pilotage/reseau'))).toBe(true);
+    // DS068 : l'export et les rubriques sont branchés par le script de la direction, arrivé avec son écran.
+    for (const id of ['reseau-export', 'reseau-r-jour', 'reseau-r-technique']) expect(typeof direction.els[id]?.listeners.click, id).toBe('function');
   });
 
   it('[R201] la première entrée de la direction sur un appareil le note, et ouvre sa page', async () => {

@@ -53,6 +53,7 @@ import { ATTIRER_SCRIPT } from '../app/attirer.ts';
 import { BASCULE_SCRIPT } from '../app/bascule.ts';
 import { CLIENTS_SCRIPT } from '../app/clients.ts';
 import { FICHE_SCRIPT } from '../app/fiche.ts';
+import { RESEAU_SCRIPT } from '../app/reseau.ts';
 import { MES_BIENS_SCRIPT } from '../app/mes-biens.ts';
 import { REGLAGES_MANDAT_SCRIPT } from '../app/reglages-mandat.ts';
 import { LOYERS_SCRIPT } from '../app/loyers.ts';
@@ -243,6 +244,8 @@ const FILES: Readonly<Record<string, { body: string; type: string }>> = Object.f
   '/app/clients.js': { body: CLIENTS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // DS010 · la fiche d'un client, chargée à la première fiche ouverte, jamais gardée sur l'appareil [R201].
   '/app/fiche.js': { body: FICHE_SCRIPT, type: 'text/javascript; charset=utf-8' },
+  // DS068 : le dessin de l'écran de la direction, demandé par sa page seulement.
+  '/app/reseau.js': { body: RESEAU_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // DS004 · la liste des biens de l'agent, chargée au premier geste, jamais gardée sur l'appareil [R201].
   '/app/mes-biens.js': { body: MES_BIENS_SCRIPT, type: 'text/javascript; charset=utf-8' },
   // Les réglages du mandat pour la direction (D13), chargés au premier geste, jamais gardés sur l'appareil [R201].
