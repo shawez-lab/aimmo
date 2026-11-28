@@ -84,6 +84,7 @@ const IDENTITY = { verifiee: 'Identité de l’acquéreur vérifiée.', non_veri
 export const DOSSIER_HTML = `<section id="dossier" hidden>
 <button id="dossier-retour" type="button" class="retour">Retour</button>
 <h2 id="dossier-titre">Dossier de vente</h2>
+<p id="dossier-bien" class="doux"></p>
 <p id="dossier-etat" class="etat" role="status"></p>
 <div id="dossier-corps"></div>
 </section>
@@ -151,7 +152,7 @@ globalThis.AIMMO_DOSSIER = function (t) {
     t.bump();
     wipe();
     cur = { id: id, reference: reference || 'ce bien' };
-    $('dossier-titre').textContent = 'Dossier de vente · ' + cur.reference;
+    $('dossier-titre').textContent = 'Dossier de vente';
     show('dossier', [id, reference]);
     return load();
   }

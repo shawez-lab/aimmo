@@ -85,7 +85,8 @@ describe('T08 · écran de la visite', () => {
   it('depuis la journée, la visite s’ouvre : bien, heure, visiteur, sécurité, compte rendu, bon ; aucun code interne affiché', async () => {
     const t = await openVisit({ 'GET /v1/visites/v1': ok(VISIT) });
     expect(t.els.visite!.hidden).toBe(false);
-    expect(t.els['visite-titre']!.textContent).toBe('Visite · REF-T-1, Dijon');
+    expect(t.els['visite-titre']!.textContent).toBe('Visite');
+    expect(t.els['visite-bien']!.textContent).toBe('Réf. REF-T-1 · Dijon');
     const text = t.els['visite-corps']!.textContent;
     expect(text).toContain('14:00 à 15:00 · avec Inès');
     expect(text).toContain('Avant d’ouvrir la porte, le visiteur confirme son téléphone et son identité.');
@@ -93,6 +94,27 @@ describe('T08 · écran de la visite', () => {
     expect(text).not.toMatch(/a_confirmer|complet\b|essai'|booked/);
     // L'alerte en un geste est là, en tête de l'écran.
     expect(HTML).toContain('<button id="alerte" type="button" class="danger">Alerte sécurité</button>');
+  });
+
+  it('DS023 · le bien de la visite se dit par ce qu’il est quand la journée le connaît, sinon par sa référence et sa commune ; jamais dans le titre', async () => {
+    // Le bien visité est dans « Mes biens » de la journée : son nom est connu, la visite le dit.
+    const known = await openVisit({ 'GET /v1/visites/v1': ok(VISIT), 'GET /v1/annonces': ok([{ id: 'b1', reference: 'REF-T-1', city: 'Dijon', state: 'en_vente', kind: 'home', rooms: 5, dwelling: 'house' }]) });
+    expect(known.els['visite-titre']!.textContent).toBe('Visite');
+    expect(known.els['visite-bien']!.textContent).toBe('Maison 5 pièces · Dijon · Réf. REF-T-1');
+    // De la visite aux acquéreurs du bien : même ligne, sous un titre qui ne porte plus la référence.
+    await known.click(known.byText(known.els['visite-corps']!, 'Acquéreurs pour ce bien'));
+    expect(known.els['bien-titre']!.textContent).toBe('Acquéreurs pour ce bien');
+    expect(known.els['bien-bien']!.textContent).toBe('Maison 5 pièces · Dijon · Réf. REF-T-1');
+    expect(known.els['visite-bien']!.textContent).toBe('');
+    // Un bien que la journée ne liste pas : sa référence et sa commune, sans nom deviné.
+    const unknown = await openVisit({ 'GET /v1/visites/v1': ok(VISIT) });
+    expect(unknown.els['visite-bien']!.textContent).toBe('Réf. REF-T-1 · Dijon');
+    // Un bien sorti des droits de l'agent : aucune ligne.
+    const gone = await openVisit({ 'GET /v1/visites/v1': ok({ ...VISIT, property: null }) });
+    expect(gone.els['visite-bien']!.textContent).toBe('');
+    // Sortir efface la ligne avec le reste.
+    await known.click(known.els.sortir!);
+    for (const id of ['visite-bien', 'bien-bien']) expect(known.els[id]!.textContent, id).toBe('');
   });
 
   it('[R54] le code ne part qu’avec l’accord du visiteur coché ; puis code et nom sont saisis ; un refus est dit en clair', async () => {
@@ -219,7 +241,8 @@ describe('T08 · visite sans prénom', () => {
   it('le prénom n’est pas un droit : une visite sans prénom s’ouvre, la route contrôle l’accès', async () => {
     const t = await run({ 'GET /v1/rendez-vous/jour': ok({ ...RDV, appointments: [{ ...RDV.appointments[0], firstName: null }] }), 'GET /v1/visites/v1': ok({ ...VISIT, visitor: { firstName: null } }) });
     await t.click(t.byText(t.els.rdv!, 'Ouvrir la visite'));
-    expect(t.els['visite-titre']!.textContent).toBe('Visite · REF-T-1, Dijon');
+    expect(t.els['visite-titre']!.textContent).toBe('Visite');
+    expect(t.els['visite-bien']!.textContent).toBe('Réf. REF-T-1 · Dijon');
   });
 });
 
@@ -247,7 +270,8 @@ describe('T08 · écran des acquéreurs d’un bien', () => {
   it('[R51] les acquéreurs dans l’ordre du rapprochement, avec leurs raisons, et la carte de la demande ; un texte reste un texte', async () => {
     const t = await open();
     expect(t.els.bien!.hidden).toBe(false);
-    expect(t.els['bien-titre']!.textContent).toBe('Acquéreurs pour REF-T-1');
+    expect(t.els['bien-titre']!.textContent).toBe('Acquéreurs pour ce bien');
+    expect(t.els['bien-bien']!.textContent).toBe('Réf. REF-T-1');
     const corps = t.els['bien-corps']!;
     expect(corps.textContent).toContain('2 acquéreur(s) sur 7 recherche(s) active(s) du réseau.');
     expect(corps.textContent).toContain('3 écarté(s) par un seul critère : budget.');

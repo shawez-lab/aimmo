@@ -221,12 +221,14 @@ ${CLIENTS_HTML}${MES_BIENS_HTML}<section id="fiche" hidden>
 <button id="alerte" type="button" class="danger">Alerte sécurité</button>
 <p id="alerte-etat" role="alert" hidden></p>
 <h2 id="visite-titre"></h2>
+<p id="visite-bien" class="doux"></p>
 <p id="visite-etat" class="etat" role="status"></p>
 <div id="visite-corps"></div>
 </section>
 <section id="bien" hidden>
 <button id="bien-retour" type="button" class="retour">Retour à la visite</button>
 <h2 id="bien-titre"></h2>
+<p id="bien-bien" class="doux"></p>
 <p id="bien-etat" class="etat" role="status"></p>
 <div id="bien-corps"></div>
 </section>
@@ -243,6 +245,7 @@ ${CLIENTS_HTML}${MES_BIENS_HTML}<section id="fiche" hidden>
 <section id="vente" hidden>
 <button id="vente-retour" type="button" class="retour">Retour</button>
 <h2 id="vente-titre"></h2>
+<p id="vente-bien" class="doux"></p>
 <p id="vente-etat" class="etat" role="status"></p>
 <div id="vente-corps"></div>
 </section>
@@ -676,6 +679,7 @@ export const APP_JS = `'use strict';
     clear($('remises-accueil'));
     place = null;
     places = {};
+    names = {};
     wipeFiche();
     wipeClients(true);
     wipeMesBiens(true);
@@ -805,6 +809,7 @@ export const APP_JS = `'use strict';
     visitId = id;
     clear($('visite-corps'));
     $('visite-titre').textContent = 'Visite';
+    $('visite-bien').textContent = '';
     $('visite-etat').textContent = 'Chargement…';
     show('visite', [id]);
     return send('/v1/visites/' + encodeURIComponent(id), 'GET').then(function (res) {
@@ -834,7 +839,7 @@ export const APP_JS = `'use strict';
     var body = $('visite-corps');
     clear(body);
     var p = v.property || {};
-    $('visite-titre').textContent = v.property ? 'Visite · ' + (p.reference || 'bien') + (p.city ? ', ' + p.city : '') : 'Visite';
+    $('visite-bien').textContent = v.property && p.reference ? (names[p.id] ? placeLine(p.id, p.reference) : 'Réf. ' + p.reference + (p.city ? ' · ' + p.city : '')) : '';
     if (!v.property) body.appendChild(el('p', 'Le bien n’est plus dans vos droits : ni sa référence ni ses acquéreurs ne sont montrés.', 'doux'));
     body.appendChild(el('p', dayLabel(v.start) + ', ' + hour(v.start) + ' à ' + hour(v.end) + (v.visitor && v.visitor.firstName ? ' · avec ' + v.visitor.firstName : ''), 'doux'));
     if (v.status !== 'booked' && v.status !== 'honored') body.appendChild(el('p', 'Cette visite n’est plus prévue.', 'alerte'));
@@ -1000,7 +1005,7 @@ export const APP_JS = `'use strict';
     if (!ID.test(propertyId)) return Promise.resolve(false);
     currentBien = { id: propertyId, reference: reference };
     clear($('bien-corps'));
-    $('bien-titre').textContent = 'Acquéreurs pour ' + reference;
+    $('bien-titre').textContent = 'Acquéreurs pour ce bien';
     $('bien-etat').textContent = 'Chargement…';
     show('bien', [propertyId, reference]);
     var path = '/v1/acquereurs/biens/' + encodeURIComponent(propertyId);
@@ -1090,7 +1095,11 @@ export const APP_JS = `'use strict';
   function placeState(reference, state) { return 'Réf. ' + reference + (state ? ', annonce ' + (LISTING_STATES[state] || 'publiée') + '.' : ', pas encore publiée.'); }
   // DS013 · un bien a son écran : son nom, où il en est, et ses outils en rangées. La journée n'en garde qu'une ligne,
   // entière à toucher (DS041), au lieu de cinq boutons pleins.
-  var place = null, places = {};
+  var place = null, places = {}, names = {};
+  // DS023 · sous le titre d'un outil, le bien se dit par ce qu'il est, sa référence en petit à la fin. Son nom vient des
+  // listes déjà lues ; sans lui, la référence seule, jamais un nom deviné.
+  var PLACE_TOOLS = ['vente', 'mandat', 'offres', 'avis', 'studio', 'dossier', 'bien', 'visite'];
+  function placeLine(id, reference) { return (names[id] ? names[id] + ' · ' : '') + 'Réf. ' + reference; }
   function paintPlace(p, unread) {
     $('un-bien-titre').textContent = p[2];
     $('un-bien-etat').textContent = placeState(p[1], p[3]) + (unread ? ' Non relu : réessayez dans un moment.' : '');
@@ -1101,7 +1110,7 @@ export const APP_JS = `'use strict';
   function openPlace(id, reference, name, state, fresh) {
     if (!ID.test(id)) return;
     // Chaque bien ouvert est retenu par son identifiant : le « Retour » d'un outil retrouve le bien de cet outil-là.
-    place = places[id] = [id, reference, name, state];
+    place = places[id] = [id, reference, names[id] = name, state];
     paintPlace(place);
     show('un-bien', place);
     if (fresh === true) return;
@@ -1110,7 +1119,7 @@ export const APP_JS = `'use strict';
       if (!res.ok) { paintPlace(place, true); return; }
       (res.body.data || []).forEach(function (b) {
         if (b.id !== id) return;
-        paintPlace(place = places[id] = [id, b.reference, placeName(b), b.state || '']);
+        paintPlace(place = places[id] = [id, b.reference, names[id] = placeName(b), b.state || '']);
         if (shownId === 'un-bien') retitle('un-bien');
       });
     });
@@ -1119,6 +1128,7 @@ export const APP_JS = `'use strict';
     var items = Array.isArray(data) ? data : [];
     items.forEach(function (b) {
       if (!ID.test(b.id)) return;
+      names[b.id] = placeName(b);
       var row = list.appendChild(el('li')).appendChild(button('', function () { openPlace(b.id, b.reference, placeName(b), b.state || '', true); }));
       row.className = 'secondaire rangee';
       var text = row.appendChild(el('span'));
@@ -1158,7 +1168,7 @@ export const APP_JS = `'use strict';
     if (venteSending) { show('vente'); $('vente-etat').textContent = VENTE_WAIT; return Promise.resolve(false); }
     currentVente = { id: propertyId, reference: reference };
     clear($('vente-corps'));
-    $('vente-titre').textContent = 'Mettre en vente · ' + reference;
+    $('vente-titre').textContent = 'Mettre en vente';
     $('vente-etat').textContent = 'Chargement…';
     show('vente', [propertyId, reference]);
     var base = '/v1/annonces/' + encodeURIComponent(propertyId);
@@ -1974,6 +1984,10 @@ ${LOUER_JS}
     Object.keys(ROOTS).forEach(function (r) {
       var b = $(ROOTS[r] + '-ouvrir');
       if (r === tab) b.setAttribute('aria-current', r === id ? 'page' : 'true'); else b.removeAttribute('aria-current');
+    });
+    PLACE_TOOLS.forEach(function (s) {
+      if (s !== id) $(s + '-bien').textContent = '';
+      else if (args && args[1]) $(s + '-bien').textContent = placeLine(args[0], args[1]);
     });
     var a = JSON.stringify(args || null);
     if (!out && !fromHistory && (id !== shownId || a !== shownArgs)) try { history[shownId ? 'pushState' : 'replaceState']({ s: id, a: args || null, t: tab }, ''); } catch (e) { /* sans historique */ }
