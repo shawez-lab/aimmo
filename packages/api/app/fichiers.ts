@@ -354,6 +354,7 @@ main > section > h2 { font-size: var(--t-xxl); margin: var(--e-2) 0 var(--e-4); 
 .gestes > :not(button) { flex: 1 0 100%; }
 #fiche-corps .periodes button { margin-top: 0; }
 summary::before { content: "+"; width: 1em; font-weight: 400; }
+summary > .doux { margin-left: var(--e-1); font-weight: 400; font-size: inherit; }
 details[open] > summary::before { content: "–"; }
 #fiche-corps li > button { display: flex; width: fit-content; }
 details { margin-top: var(--e-2); }
