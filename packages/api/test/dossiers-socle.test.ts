@@ -5,6 +5,7 @@ import { sha256Hex } from '../src/index.ts';
 import { runScheduler } from '../src/planificateur.ts';
 import { setupDossier } from '../../core/test/dossiers-jeu.ts';
 import { describeWithSqlite } from '../../core/test/sqlite.ts';
+import { expectLinear } from '../../core/test/lineaire.ts';
 
 // Réseau, bien, clients, IBAN et clés inventés. L'IBAN est celui des exemples publics, il ne mène à aucun compte.
 const BASE = 'https://aimmo-api.example.test';
@@ -68,10 +69,7 @@ it('[R15] un IBAN reçu est masqué, même coupé par des espaces ; le bouclier 
   expect(payload).toBe(JSON.stringify({ text: '[IBAN masqué]', id: 7 }));
   expect(maskPayload(`brut ${IBAN} fin`)).toBe('brut [IBAN masqué] fin');
   // Un texte reçu piégé ne fait pas s'emballer la recherche.
-  const started = Date.now();
-  const trap = `FR76${'1'.repeat(30)}abcdefghijklmnop ${'FR76 1 '.repeat(2000)}`;
-  maskIban(trap);
-  expect(Date.now() - started).toBeLessThan(500);
+  expectLinear((n) => `FR76${'1'.repeat(30)}abcdefghijklmnop ${'FR76 1 '.repeat(n / 7)}`, maskIban, 14_000);
   for (const plainText of ['Appelez-moi au 06 12 34 56 78.', 'Le lot ab12 avec cela pour vous, merci.', 'Référence 3f2a4b1c-9d8e-4f7a-b6c5-1234567890ab enregistrée.', 'Dijon 21000, bien REF-T-1, T3 de 62 m², 210 000 €.']) expect(maskIban(plainText)).toBe(plainText);
   expect(m10.fundSignals(maskIban(`virement sur ${IBAN}`))).toContain('iban');
 });

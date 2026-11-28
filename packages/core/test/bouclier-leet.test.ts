@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { fundSignals, unleet } from '../src/dossiers/bouclier.ts';
+import { expectLinear } from './lineaire.ts';
 
 // RC71 : un faux RIB écrit en « leet », des chiffres ou des signes à la place des lettres. Textes inventés.
 
@@ -53,9 +54,7 @@ it('un nombre seul ne change jamais, un mot sans chiffre non plus', () => {
   expect(unleet('paypa1', 'l')).toBe('paypal');
 });
 
-it('[R62] lecture linéaire : 40 000 caractères de leet en moins de 500 ms', () => {
-  const t = 'v1r3 c00 @b$ 4a5 '.repeat(2400);
-  const start = performance.now();
-  fundSignals(t);
-  expect(performance.now() - start).toBeLessThan(500);
+it('[R62] lecture linéaire : 40 000 caractères de leet, sans emballement', () => {
+  const chunk = 'v1r3 c00 @b$ 4a5 ';
+  expectLinear((n) => chunk.repeat(Math.ceil(n / chunk.length)), fundSignals);
 });

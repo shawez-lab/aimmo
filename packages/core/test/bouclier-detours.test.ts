@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest';
 import { fundSignals } from '../src/dossiers/index.ts';
 import type { FundSignal } from '../src/dossiers/index.ts';
+import { expectLinear } from './lineaire.ts';
 
 // RC66 : les détours d'écriture et de langue de la fraude au faux RIB. Textes inventés.
 
@@ -94,23 +95,8 @@ it('[R62] aucune fausse alerte sur les phrases d’usage de la vente', () => {
   ]) expect([t, fundSignals(t)]).toEqual([t, []]);
 });
 
-// Un mail de 40 000 caractères, fait de lettres espacées. Une lecture qui s'emballerait (quadratique) mettrait
-// soixante-quatre fois le temps d'un mail huit fois plus court ; une lecture en ligne droite, de cinq à onze fois
-// (mesuré). La machine est comparée à elle-même, sur la meilleure de trois lectures de chaque côté : une machine lente
-// ou chargée ne fait pas tomber l'essai, un emballement si. Un plafond large reste, pour une lecture droite devenue
-// très lente.
+// Un mail de 40 000 caractères, fait de lettres espacées, ne fait pas s'emballer la lecture. La mesure compare la
+// machine à elle-même (`lineaire.ts`) : une machine lente ou chargée ne fait pas tomber l'essai, un emballement si.
 it('[R62] une longue suite de lettres espacées se lit vite', () => {
-  const mail = (n: number) => `${'a '.repeat(n)}b1 ${'x.'.repeat(n)}`;
-  const best = (text: string) =>
-    Math.min(
-      ...[1, 2, 3].map(() => {
-        const t0 = performance.now();
-        fundSignals(text);
-        return performance.now() - t0;
-      }),
-    );
-  const short = best(mail(1_250));
-  const long = best(mail(10_000));
-  expect(long).toBeLessThan(short * 30);
-  expect(long).toBeLessThan(3_000);
+  expectLinear((n) => `${'a '.repeat(n / 4)}b1 ${'x.'.repeat(n / 4)}`, fundSignals);
 });

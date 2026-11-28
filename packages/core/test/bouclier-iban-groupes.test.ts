@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { dictatedIban, fundSignals } from '../src/dossiers/bouclier.ts';
+import { expectLinear } from './lineaire.ts';
 
 // RC69 : un IBAN dicté par groupes de quatre, « trois mille, six mille, zéro zéro zéro un… ». IBAN inventés : la clé
 // est calculée ici.
@@ -191,10 +192,9 @@ it('aucune alerte sur une clé fausse ni sur des nombres ordinaires en mots', ()
   }
 });
 
-it('lecture linéaire : 40 000 caractères de mots en nombres en moins de 500 ms', () => {
+it('lecture linéaire : 40 000 caractères de mots en nombres, sans emballement', () => {
   const chunk = 'neuf mille neuf cent quatre-vingt-dix-neuf trois cents mil cent and hundred thousand ';
-  const text = chunk.repeat(Math.ceil(40_000 / chunk.length)).slice(0, 40_000);
-  const t0 = performance.now();
-  expect(dictatedIban(text)).toBe(false);
-  expect(performance.now() - t0).toBeLessThan(500);
+  const build = (n: number): string => chunk.repeat(Math.ceil(n / chunk.length)).slice(0, n);
+  expect(dictatedIban(build(40_000))).toBe(false);
+  expectLinear(build, dictatedIban);
 });

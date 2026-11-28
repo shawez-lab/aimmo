@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import { dictatedIban, fundSignals } from '../src/dossiers/bouclier.ts';
+import { expectLinear } from './lineaire.ts';
 
 // RC68 : un IBAN dicté en mots, ou écrit avec des sosies de chiffres. IBAN inventés : la clé est calculée ici.
 
@@ -133,15 +134,18 @@ it('aucune alerte sur une clé fausse, des nombres en mots ordinaires, un télé
   }
 });
 
-it('lecture linéaire : 40 000 caractères de mots en nombres en moins de 500 ms', () => {
+it('lecture linéaire : 40 000 caractères de mots en nombres, sans emballement', () => {
   const chunks = ['soixante-dix-sept', 'quatre-vingt-dix-neuf', 'double', 'zéro', 'vingt et un', 'O', 'l', 'F', 'R', 'et'];
-  let t = '';
-  let k = 0;
-  while (t.length < 40_000) t += `${chunks[k++ % chunks.length]} `;
-  const start = performance.now();
-  dictatedIban(t);
-  fundSignals(t);
-  expect(performance.now() - start).toBeLessThan(500);
+  const build = (n: number): string => {
+    let t = '';
+    let k = 0;
+    while (t.length < n) t += `${chunks[k++ % chunks.length]} `;
+    return t;
+  };
+  expectLinear(build, (t) => {
+    dictatedIban(t);
+    fundSignals(t);
+  });
 });
 
 it('[R62] un L ou un O vrais d\'un compte, ou d\'un code de pays épelé, ne sont pas pris pour des chiffres', () => {

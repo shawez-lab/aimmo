@@ -2,6 +2,7 @@ import { expect, it } from 'vitest';
 import { dictatedIban, fundSignals, spelledIban, unmasked } from '../src/dossiers/bouclier.ts';
 import { unmaskedText } from '../src/envoi/iban-detours.ts';
 import { IBAN, IBAN_MASK, bankDetailsIn, checkText, fundsInOutgoing, maskIban, paymentRequestIn } from '../src/envoi/texte.ts';
+import { expectLinear } from './lineaire.ts';
 
 // BR107 : le socle lit le texte comme l'œil le voit. Un IBAN ou un mot d'argent caché par des caractères invisibles ou
 // des sosies grecs ou cyrilliques est masqué à l'entrée [R15] et refusé à la sortie [R62]. IBAN inventés.
@@ -124,12 +125,8 @@ it('[R15] tout IBAN que le bouclier lit dans le texte démasqué est masqué par
   }
 });
 
-it('lecture linéaire : 40 000 caractères d\'invisibles et de sosies en moins de 500 ms', () => {
+it('lecture linéaire : 40 000 caractères d\'invisibles et de sosies, sans emballement', () => {
   const chunk = `RΙΒ${ZW}vir${SHY}ement Привет о0О ${LRM}`;
-  const big = chunk.repeat(Math.ceil(40_000 / chunk.length)).slice(0, 40_000);
-  for (const read of [maskIban, fundsInOutgoing, unmaskedText] as ((t: string) => unknown)[]) {
-    const t0 = performance.now();
-    read(big);
-    expect(performance.now() - t0).toBeLessThan(500);
-  }
+  const build = (n: number): string => chunk.repeat(Math.ceil(n / chunk.length)).slice(0, n);
+  for (const read of [maskIban, fundsInOutgoing, unmaskedText] as ((t: string) => unknown)[]) expectLinear(build, read);
 });
