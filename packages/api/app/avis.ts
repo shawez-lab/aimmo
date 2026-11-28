@@ -114,6 +114,9 @@ globalThis.AIMMO_AVIS = function (t) {
     drop: function (k) { var a = dAll(); if (k in a) { delete a[k]; dPut(a); } },
   };
   var $ = t.$, el = t.el, clear = t.clear, send = t.send, button = t.button, field = t.field, show = t.show, ID = t.ID;
+  /* DS022 · un seul bouton plein : le pas qui fait avancer l'avis. Enregistrer, refaire, écarter ou abandonner sont filaires. */
+  function quiet(b) { b.className = 'secondaire'; return b; }
+  function wire(text, run) { return quiet(button(text, run)); }
   var NO = ${JSON.stringify(REFUSALS)};
   var CH = ${JSON.stringify(CHOICES)};
   var cur = null, seq = 0;
@@ -175,7 +178,7 @@ globalThis.AIMMO_AVIS = function (t) {
       if (address.value.trim() !== '') p.address = address.value;
       return p;
     }
-    box.appendChild(button('Préparer le brouillon', function () {
+    var go = box.appendChild(button('Préparer le brouillon', function () {
       state('Calcul en cours…');
       var mine = ++seq;
       var payload = current();
@@ -184,7 +187,7 @@ globalThis.AIMMO_AVIS = function (t) {
         if (!res.ok) {
           state(why(res, 'Le brouillon n’a pas pu être préparé.'));
           // Sans fourchette du calcul : l'avis motivé par les ventes vérifiées de l'agent [R690].
-          if (res.body && res.body.manualPossible === true) manual(box, current);
+          if (res.body && res.body.manualPossible === true) { manual(box, current); quiet(go); }
           return false;
         }
         address.value = '';
@@ -221,7 +224,7 @@ globalThis.AIMMO_AVIS = function (t) {
       rows.push(r);
     }
     row(); row(); row();
-    m.appendChild(button('Ajouter une vente', function () { if (rows.length < 20) row(); return Promise.resolve(true); }));
+    m.appendChild(wire('Ajouter une vente', function () { if (rows.length < 20) row(); return Promise.resolve(true); }));
     var check = el('input');
     check.setAttribute('id', 'avis-motive-verifie');
     check.setAttribute('type', 'checkbox');
@@ -263,7 +266,7 @@ globalThis.AIMMO_AVIS = function (t) {
       note.appendChild(el('p', 'Une correction d’un avis précédent n’a pas été enregistrée sur cet appareil, et cet avis ne se corrige plus : la voici, pour l’avis en cours.'));
       note.appendChild(el('p', 'Fourchette : ' + late.value.low + ' à ' + late.value.high + ' €.', 'doux'));
       note.appendChild(el('p', late.value.text, 'brouillon'));
-      note.appendChild(button('Abandonner cette correction', function () { drafts.drop('avis:' + x.id); box.removeChild(note); }));
+      note.appendChild(wire('Abandonner cette correction', function () { drafts.drop('avis:' + x.id); box.removeChild(note); }));
       box.insertBefore(note, box.firstChild);
     });
   }
@@ -275,7 +278,7 @@ globalThis.AIMMO_AVIS = function (t) {
     if (r.status === 'validated') {
       box.appendChild(el('p', r.text, 'brouillon'));
       box.appendChild(button('Télécharger la page à imprimer', function () { return download(r.id); }));
-      box.appendChild(button('Préparer un nouvel avis', function () { seq += 1; clear(body()); state(''); form(); }));
+      box.appendChild(wire('Préparer un nouvel avis', function () { seq += 1; clear(body()); state(''); form(); }));
       // AU105 · une correction gardée sur cet appareil, l'avis validé depuis ailleurs : elle reste lisible, pour la
       // reporter dans un nouvel avis, jusqu'à ce que l'agent dise l'abandonner.
       lateNotes(box, list, null);
@@ -313,8 +316,8 @@ globalThis.AIMMO_AVIS = function (t) {
       note.appendChild(el('p', kept.value.updatedAt === r.updatedAt ? 'Une correction de cet avis n’a pas été enregistrée sur cet appareil.' : 'Une correction de cet avis n’a pas été enregistrée sur cet appareil, mais l’avis a changé depuis : relisez-la avant de l’enregistrer.'));
       note.appendChild(el('p', 'Choisissez d’abord : l’avis se corrige une fois la correction reprise ou abandonnée.', 'doux'));
       var settle = function () { waiting = false; [low, high, text].forEach(function (f) { f.disabled = false; }); box.removeChild(note); };
-      note.appendChild(button('Reprendre la correction', function () { low.value = String(kept.value.low); high.value = String(kept.value.high); text.value = kept.value.text; settle(); }));
-      note.appendChild(button('Abandonner la correction', function () { drafts.drop(key); settle(); }));
+      note.appendChild(wire('Reprendre la correction', function () { low.value = String(kept.value.low); high.value = String(kept.value.high); text.value = kept.value.text; settle(); }));
+      note.appendChild(wire('Abandonner la correction', function () { drafts.drop(key); settle(); }));
       box.insertBefore(note, box.firstChild);
       waiting = true;
       [low, high, text].forEach(function (f) { f.disabled = true; });
@@ -338,7 +341,7 @@ globalThis.AIMMO_AVIS = function (t) {
     var parts = [low, high, text];
     function lock(on) { parts.forEach(function (p) { p.disabled = on; }); }
     function add(b) { parts.push(b); box.appendChild(b); }
-    add(button('Enregistrer', function () {
+    add(wire('Enregistrer', function () {
       if (waiting) { state('Choisissez d’abord : reprendre ou abandonner la correction gardée.'); return Promise.resolve(false); }
       var c = change();
       if (Object.keys(c).length === 0) { state('Rien à enregistrer.'); return Promise.resolve(false); }
@@ -373,8 +376,8 @@ globalThis.AIMMO_AVIS = function (t) {
     if (r.method === 'computed') selection(box, r, function () { return waiting || Object.keys(change()).length > 0; });
     versions(box, r, list);
     // Un brouillon faux se remplace ; il reste rangé, jamais validé.
-    add(button('Refaire le calcul', function () { seq += 1; clear(body()); state(''); form(); }));
-    if (older) box.appendChild(button('Télécharger le dernier avis validé', function () { return download(older.id); }));
+    add(wire('Refaire le calcul', function () { seq += 1; clear(body()); state(''); form(); }));
+    if (older) box.appendChild(wire('Télécharger le dernier avis validé', function () { return download(older.id); }));
     body().appendChild(box);
   }
   function pick(box, id, label, pairs) {
@@ -423,7 +426,7 @@ globalThis.AIMMO_AVIS = function (t) {
       li.appendChild(el('p', sale(c)));
       if (fixed) { ul.appendChild(li); return; }
       var why2 = pick(li, 'avis-motif-' + (i + 1), 'Motif pour écarter cette vente', [['', 'À choisir']].concat(CH.reasons));
-      li.appendChild(button('Écarter cette vente', function () {
+      li.appendChild(wire('Écarter cette vente', function () {
         if (guard()) return Promise.resolve(false);
         if (!why2.value) { state('Choisissez le motif avant d’écarter la vente.'); return Promise.resolve(false); }
         return again(r, { exclude: [{ id: c.id, reason: why2.value }] }, 'Vente écartée : voici la nouvelle version, à relire puis valider.');
@@ -452,7 +455,7 @@ globalThis.AIMMO_AVIS = function (t) {
     var pct = field(m, 'avis-ajust-pct', 'Votre coefficient, en % (de -15 à +15)');
     pct.setAttribute('inputmode', 'numeric');
     var motive = pick(m, 'avis-ajust-motif', 'Motif', [['', 'À choisir']].concat(CH.motives));
-    m.appendChild(button('Retenir cet ajustement', function () {
+    m.appendChild(wire('Retenir cet ajustement', function () {
       if (guard()) return Promise.resolve(false);
       var n = Number(String(pct.value).replace(/[\\s%]/g, '').replace('+', '').replace('−', '-'));
       if (!label.value || !motive.value || String(pct.value).trim() === '' || !Number.isInteger(n) || Math.abs(n) > 15) { state('Choisissez la caractéristique, un pourcentage entier de -15 à +15 et le motif.'); return Promise.resolve(false); }

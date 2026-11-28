@@ -14,7 +14,7 @@ import { ACCORDS_JS } from './accords.ts';
  * Un seul bouton plein : « Appeler ». Tout autre geste de la fiche est filaire (DS022).
  *
  * Son dessin tient en quatre règles de la feuille de l'application, sans commentaire pour garder son poids : les gestes
- * d'appel sur une ligne quand l'écran le permet (`.gestes`), le sélecteur des parties centré dans sa piste, un plus puis
+ * d'appel sur une ligne quand l'écran le permet (`.gestes`, que l'écran du mandat reprend), le sélecteur des parties centré dans sa piste, un plus puis
  * un moins devant un volet (`summary::before`), et un geste posé dans une ligne de liste qui passe sous son texte.
  *
  * Décidé, lecture prudente : aucun lien `sms:` ni `mailto:`. Un message écrit depuis le téléphone de l'agent partirait

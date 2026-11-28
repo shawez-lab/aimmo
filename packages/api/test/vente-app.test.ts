@@ -1,7 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { AGENT_APP_FILES } from '../src/agent-app.ts';
-import { FakeElement, fakeDocument, pageIds, placeTool } from './fake-dom.ts';
+import { FakeElement, fakeDocument, filledButtons, pageIds, placeTool } from './fake-dom.ts';
 
 // Tout est inventé : bien, annonce, clé de test.
 const KEY = 'k'.repeat(40);
@@ -279,5 +279,40 @@ describe('X18 · corriger le texte de l’annonce à l’écran', () => {
     expect(t.inside('vente-correction-texte').value).toBe('Avec piscine.');
     await t.click(t.byText(t.els['vente-corps']!, 'Valider l’annonce'));
     expect(t.posts().map((c) => c.url)).toEqual(['/v1/annonces/b1/correction', '/v1/annonces/brouillons/d2/validation']);
+  });
+});
+
+describe('DS022 · « Mettre en vente » : un seul bouton plein, le pas à faire', () => {
+  const VALIDATED = { by: 'agent:a1', at: '2027-02-12T10:05:00.000Z' };
+  const opened = async (answers: Record<string, Answer> = {}) => {
+    const t = await run(answers);
+    await t.click(placeTool(t.els, 'Mettre en vente'));
+    return t;
+  };
+  const filled = (t: Awaited<ReturnType<typeof run>>) => filledButtons(t.els['vente-corps']!);
+
+  it('sans annonce : rédiger ; brouillon : valider ; fiche changée depuis : rédiger de nouveau ; validée : aucun', async () => {
+    const none = await opened({ 'GET /v1/annonces/b1/brouillon': no(404, { ok: false, rule: null, code: 'no_draft' }) });
+    expect(filled(none)).toEqual(['Rédiger l’annonce']);
+    const draft = await opened();
+    expect(filled(draft)).toEqual(['Valider l’annonce']);
+    // Validée sur la version 1 de la fiche du bien, qui en est à la version 2 : l'annonce ne peut plus partir [R47].
+    const stale = await opened({ 'GET /v1/annonces/b1/brouillon': ok({ ...DRAFT, validated: VALIDATED }), 'GET /v1/annonces/b1/fiche': ok({ version: 2 }) });
+    expect(stale.els['vente-corps']!.textContent).toContain('La fiche du bien a changé depuis la validation de ce texte');
+    expect(filled(stale)).toEqual(['Rédiger de nouveau']);
+    const done = await opened({ 'GET /v1/annonces/b1/brouillon': ok({ ...DRAFT, validated: VALIDATED }), 'GET /v1/annonces/b1/fiche': ok({ version: 1 }) });
+    expect(done.els['vente-corps']!.textContent).toContain('Annonce validée le 12/02/2027.');
+    expect(filled(done)).toEqual([]);
+    // Les autres gestes restent là, filaires : la fiche du bien, rédiger de nouveau, corriger, l'armoire.
+    for (const t of [draft, done]) {
+      for (const text of ['Remplir la fiche du bien', 'Rédiger de nouveau', 'Corriger le texte', 'Ouvrir l’armoire']) expect(t.byText(t.els['vente-corps']!, text)!.className, text).toBe('secondaire');
+    }
+  });
+
+  it('ouvrir la correction n’ajoute pas de bouton plein : « Valider l’annonce » reste le seul', async () => {
+    const t = await opened();
+    await t.click(t.byText(t.els['vente-corps']!, 'Corriger le texte'));
+    expect(t.byText(t.els['vente-corps']!, 'Enregistrer la correction')!.className).toBe('secondaire');
+    expect(filled(t)).toEqual(['Valider l’annonce']);
   });
 });

@@ -121,3 +121,16 @@ export function placeTool(els: Record<string, FakeElement>, label: 'Mettre en ve
   const tool = { 'Mettre en vente': 'vente', 'Voir l’annonce': 'vente', Mandat: 'mandat', Offres: 'offres', 'Avis de valeur': 'avis', Studio: 'studio' }[label];
   return els[`un-bien-${tool}`]!;
 }
+
+/**
+ * DS022 · les boutons pleins sous un élément, par leur libellé : un bouton, ou un lien d'appel, sans classe filaire.
+ * C'est la règle du contrôle du système (`filledButtons` de `packages/core/src/design/audit.ts`), lue sur un écran
+ * dessiné par le script plutôt que dans la page servie.
+ */
+export function filledButtons(root: FakeElement): string[] {
+  const classes = (e: FakeElement) => e.className.split(/\s+/).filter(Boolean);
+  return root
+    .all()
+    .filter((e) => (e.tagName === 'button' || (e.tagName === 'a' && classes(e).includes('appel'))) && !classes(e).some((c) => /^(?:secondaire|second|retour|discret)$/.test(c)))
+    .map((e) => e.textContent);
+}
