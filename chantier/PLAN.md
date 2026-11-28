@@ -8301,8 +8301,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Suivi : proposition #803 pour l’élision (« d’Alex »). Les mots « Réponse immédiate… » sont la formule acceptée par Shawez le 2026-10-24 : ils ne changent pas sans lui ; cette partie reste ouverte.
 
 ### DS053 · Une référence interne dans un mot de remerciement
-- Statut : en cours (voie 3)
-- Suivi : proposition #841 ouverte le 2026-11-28 : la demande d'avis nomme le bien par sa ville, sans sa référence. Restent, hors de l'endroit nommé par l'audit, les mêmes mots dans cinq autres textes (mot de remerciement préparé, relances d'après-vente, carnet du bien, relances et alerte du dossier de vente).
+- Statut : à faire
+- Suivi : reporté le 2026-11-28 par la voie 3, proposition #841 retirée. Ôter la référence rendait identiques deux demandes d'avis au même client qui vend deux biens dans la même ville : l'anti-doublon du texte (R05) refuse alors la seconde, et R64 (une demande à chaque client d'un dossier clos) ne tient plus ; remarque P0 de Codex, juste. Pour reprendre : la vente close doit porter le type et la rue du bien, le texte doit rester distinct quand un même client vend deux biens semblables (essai à écrire : un client vendeur dans deux dossiers de la même ville reçoit deux demandes), et les mêmes mots « , référence … » sont aussi dans cinq autres textes (mot de remerciement préparé, relances d'après-vente, carnet du bien, relances et alerte du dossier de vente).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS053 (mineur, mails et SMS, effort S), endroit : demande d'avis — `packages/core/src/apres-vente/demandes-avis.ts`
 - Constat de l’audit : « …la vente de votre bien à Dijon, référence B-CCD5185A. »
@@ -8366,8 +8366,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS060 · Un état vide prend la place d'un état plein
-- Statut : en cours (voie 3)
-- Suivi : proposition #832 ouverte le 2026-11-28 (un bloc vide tient sur une ligne, chez la direction et à la conformité).
+- Statut : à faire
+- Suivi : #832 fusionnée le 2026-11-28 (cb7f8900, voie 3, Codex sans remarque) : un bloc vide tient sur une ligne, chez la direction et à la conformité. Restent : les blocs vides qui ne sont pas des listes, et « un seul message quand tout est vide ».
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS060 (majeur, états, effort S), endroit : accueil, réseau, « Gagner des mandats »
 - Constat de l’audit : cinq cartes de suite ne disent que « Rien à… » ou « Aucun… ». 11 des 35 blocs du réseau sont vides.
