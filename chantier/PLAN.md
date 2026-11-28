@@ -7881,7 +7881,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS007 · Aucun écran n'a d'adresse
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : branche voie3/DS007 en cours, pour l'agent (une adresse par écran qui sait se rouvrir, relue à l'ouverture ; aucun nom dans l'adresse) ; en fin de pile. Restent la direction et la conformité.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS007 (majeur, navigation, effort M), endroit : toute l'application — fonction `show`
 - Constat de l’audit : ouvrir « Mandat », recharger : l'accueil revient, l'adresse est restée `/app/`.
