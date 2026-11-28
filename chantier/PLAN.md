@@ -8437,7 +8437,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS071 · L'accueil du site est une liste de liens
 - Statut : fait (2026-11-27)
-- Suivi : #814 fusionnée (ouverture avec la promesse et la recherche, derniers biens en cartes avec photo, pages du site en rangées). Restent, faute de donnée sur la page : avis, visage de l'agent, chiffres du compte public.
+- Suivi : #814 fusionnée (ouverture avec la promesse et la recherche, derniers biens en cartes avec photo, pages du site en rangées). Restent, faute de donnée sur la page : avis, visage de l'agent, chiffres du compte public. Un essai instable de son rendu (« sur ordinateur : trois biens par rang… ») est rendu sûr par la voie 3, proposition #833.
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS071 (bloquant, site public, effort L), endroit : `packages/core/src/attirer/accueil-site.ts`
 - Constat de l’audit : `site-accueil-et-bien-telephone.jpg`. Un titre, un champ de recherche, sept liens soulignés avec leur explication. Ni image, ni promesse, ni preuve, ni visage. iad ouvre son estimation sur « 4,9/5 » et 271 107 avis, avec les dernières ventes en photo.
