@@ -8316,7 +8316,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Suivi : proposition #802.
 
 ### DS058 · L'erreur s'écrit loin du champ
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : branche voie3/DS058 en cours, pour la fiche du bien d'abord (le champ marqué, le refus dessous, le curseur dessus ; un refus du serveur va au champ qu'il nomme) ; proposée après DS039, même fichier. Restent les autres formulaires.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS058 (mineur, formulaires, effort M), endroit : tous les formulaires
 - Constat de l’audit : le refus s'écrit dans la zone d'état, sous le bouton. Aucun champ ne porte `aria-invalid`.
