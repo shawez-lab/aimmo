@@ -1357,7 +1357,7 @@ Voie : 2 (AU046 à AU052, groupe Estimer, réservé par la voie 2 le 2026-11-22,
 
 ### AU120 · L'écran du mandat dit « Aucun mandat signé pour ce bien » quand le bien a un mandat de location signé
 - Statut : en cours (voie 3)
-- Suivi : branche voie3/AU120 : la lecture rend `rental`, de même forme que `mandate` ; l'écran dit le mandat de location et son état sur une ligne, le fil lit cet état. Restent, hors de cette tâche : les gestes sur un mandat de location depuis cet écran (rétractation, début anticipé, avenant).
+- Suivi : proposition #848 ouverte le 2026-11-28 : la lecture rend `rental`, de même forme que `mandate` ; l'écran dit le mandat de location et son état sur une ligne, le fil lit cet état. Restent, hors de cette tâche : les gestes sur un mandat de location depuis cet écran (rétractation, début anticipé, avenant).
 - Qui : Claude, voie 3 · Relecture : forte · Dépend de : rien
 - Cahier : M06 Mandats et documents ; M15 Louer ; endroit : `packages/core/src/documents/mandat-du-bien.ts` (`PropertyMandates.read`), `packages/api/app/mandat.ts` (bloc « Mandat en cours »).
 - Constat : relevé par Codex le 2026-11-28 sur #834. La lecture du mandat d'un bien appelle `canDiffuse` sans objet, donc pour la vente seule : pour un bien dont le seul mandat signé est un mandat de location, « mandate » est vide. Le bloc « Mandat en cours » dit « Aucun mandat signé pour ce bien » alors que le document, juste dessous, porte sa signature et son numéro ; l'écran propose d'en préparer un autre, et ne sait pas si le mandat de location a été rétracté ou est échu.
@@ -8350,7 +8350,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS058 · L'erreur s'écrit loin du champ
 - Statut : en cours (voie 3)
-- Suivi : branche voie3/DS058 en cours, pour la fiche du bien d'abord (le champ marqué, le refus dessous, le curseur dessus ; un refus du serveur va au champ qu'il nomme) ; proposée après DS039, même fichier. Puis l'offre reçue, branche voie3/DS058-offre, en fin de pile (avec son bouton d'envoi à portée, DS059). Restent les autres formulaires.
+- Suivi : proposition #849 ouverte le 2026-11-28, pour la fiche du bien d'abord (le champ marqué, le refus dessous, le curseur dessus ; un refus du serveur va au champ qu'il nomme). Puis l'offre reçue, branche voie3/DS058-offre, en fin de pile (avec son bouton d'envoi à portée, DS059). Restent les autres formulaires.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : rien
 - Audit : `docs/design/AUDIT.md`, DS058 (mineur, formulaires, effort M), endroit : tous les formulaires
 - Constat de l’audit : le refus s'écrit dans la zone d'état, sous le bouton. Aucun champ ne porte `aria-invalid`.
