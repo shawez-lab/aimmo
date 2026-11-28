@@ -8330,7 +8330,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS060 · Un état vide prend la place d'un état plein
-- Statut : à faire
+- Statut : en cours (voie 3)
+- Suivi : branche voie3/DS060 prête (un bloc vide tient sur une ligne chez la direction et à la conformité, comme sur la journée) ; proposée après le script de la direction (DS068), mêmes fichiers.
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS060 (majeur, états, effort S), endroit : accueil, réseau, « Gagner des mandats »
 - Constat de l’audit : cinq cartes de suite ne disent que « Rien à… » ou « Aucun… ». 11 des 35 blocs du réseau sont vides.
