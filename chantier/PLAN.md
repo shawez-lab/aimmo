@@ -7889,8 +7889,8 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 - Critères : le constat ne se reproduit plus sur le jeu de capture (test) ; `design.test.ts`, les budgets et axe-core restent verts (tests) ; captures avant et après dans la proposition.
 
 ### DS008 · « Le réseau » empile 35 blocs
-- Statut : en cours (voie 3)
-- Suivi : proposition #829 ouverte le 2026-11-28 (cinq rubriques, une seule visible ; une phrase dit ce qui attend).
+- Statut : fait (2026-11-28)
+- Suivi : fusionnée (#829, 37db4c54) : cinq rubriques, une seule visible ; une phrase dit ce qui attend. À l'arrivée, au téléphone : 1,7 écran au lieu de 11,1. Reste : « Chiffres », encore long (6,7 écrans).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS008 (majeur, architecture de l'information, effort L), endroit : console de la direction — `packages/api/app/fichiers.ts` (`#reseau`)
 - Constat de l’audit : `appli-reseau-chiffres-connexion.jpg`. 12 écrans, 35 blocs dont 11 vides, 33 boutons. Alertes, factures, réglages du mandat, loyers, sauvegardes et preuve à Dijon se suivent sans ordre.
@@ -7899,7 +7899,7 @@ Audit de Claude Fable, joué en designer, sur le commit `4c0a0dbc` : 87 points (
 
 ### DS009 · « Conformité » empile 13 blocs
 - Statut : en cours (voie 3)
-- Suivi : branche voie3/DS009 prête (trois rubriques, la première échéance dite en tête, formulaires au geste) ; proposée après « Le réseau » (DS008), mêmes fichiers.
+- Suivi : proposition #830 ouverte le 2026-11-28 (trois rubriques, la première échéance dite en tête, les saisies dans des volets).
 - Qui : Claude, voie 3 · Relecture : normale · Dépend de : DS000
 - Audit : `docs/design/AUDIT.md`, DS009 (majeur, architecture de l'information, effort M), endroit : écran du responsable de la conformité — `packages/api/app/conformite.ts`
 - Constat de l’audit : 6,3 écrans, 13 blocs, 7 boutons pleins.
